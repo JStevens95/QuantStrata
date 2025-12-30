@@ -102,6 +102,34 @@ class VolSurfaceWithAdditiveBump:
 
 
 @dataclass(frozen=True, slots=True)
+class VolSurfaceWithBump:
+    """
+    VolSurface wrapper applying either an absolute or relative bump to implied vol.
+
+    - absolute: sigma' = max(sigma + bump, floor)
+    - relative: sigma' = max(sigma * (1 + bump), floor)
+
+    Works for ANY surface implementing vol(expiry, strike).
+    """
+    base_surface: object
+    bump: float
+    bump_mode: str = "relative"  # "relative" or "absolute"
+    vol_floor: float = 1e-8
+
+    def vol(self, expiry: float, strike: float) -> float:
+        base_sigma = float(self.base_surface.vol(expiry, strike))
+
+        if self.bump_mode == "relative":
+            shocked_sigma = base_sigma * (1.0 + float(self.bump))
+        elif self.bump_mode == "absolute":
+            shocked_sigma = base_sigma + float(self.bump)
+        else:
+            raise ValueError("VolSurfaceWithBump.bump_mode must be 'relative' or 'absolute'.")
+
+        return float(max(float(self.vol_floor), shocked_sigma))
+
+
+@dataclass(frozen=True, slots=True)
 class MarketWithOverriddenVolSurface:
     """A MarketView that overrides vol_surface() for a single MarketId."""
     base_market: MarketView
@@ -173,6 +201,39 @@ class FlatVolShock:
         shocked_surface = VolSurfaceWithAdditiveBump(
             base_surface=base_surface,
             vol_bump=float(self.vol_bump),
+            vol_floor=float(self.vol_floor),
+        )
+
+        return MarketWithOverriddenVolSurface(
+            base_market=base_market,
+            vol_id=self.vol_id,
+            overridden_vol_surface=shocked_surface,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class VolShock:
+    """
+    Shock an implied vol surface by either a relative or absolute bump.
+
+    Examples
+    --------
+    - bump_mode="absolute", bump=+0.01: 12% -> 13%
+    - bump_mode="relative", bump=+0.10: 12% -> 13.2%
+    """
+    name: str
+    vol_id: MarketId
+    bump: float
+    bump_mode: str = "relative"  # "relative" or "absolute"
+    vol_floor: float = 1e-8
+
+    def apply(self, base_market: MarketView) -> MarketView:
+        base_surface = base_market.vol_surface(self.vol_id)
+
+        shocked_surface = VolSurfaceWithBump(
+            base_surface=base_surface,
+            bump=float(self.bump),
+            bump_mode=str(self.bump_mode),
             vol_floor=float(self.vol_floor),
         )
 
