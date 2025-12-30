@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 import numpy as np
 
-from src.marketdata.curves.discount import FlatDiscountCurve, ZeroRateCurve
+from src.marketdata.curves.discount import FlatDiscountCurve, ZeroRateDiscountCurve
 
 
 def test_flat_discount_curve_df_properties() -> None:
@@ -24,7 +24,7 @@ def test_flat_discount_curve_df_properties() -> None:
 def test_zero_rate_curve_interpolation_and_df() -> None:
     tenors = np.array([0.5, 1.0, 2.0, 5.0], dtype=float)
     rates = np.array([0.02, 0.025, 0.03, 0.035], dtype=float)
-    curve = ZeroRateCurve(tenors=tenors, zero_rates=rates, extrapolation="flat")
+    curve = ZeroRateDiscountCurve(tenors=tenors, zero_rates=rates, extrapolation="flat")
 
     # df(0) = 1
     assert curve.df(0.0) == pytest.approx(1.0)
@@ -47,8 +47,8 @@ def test_zero_rate_curve_interpolation_and_df() -> None:
 def test_zero_rate_curve_validation() -> None:
     # tenors must be increasing
     with pytest.raises(ValueError):
-        ZeroRateCurve(tenors=np.array([1.0, 0.5]), zero_rates=np.array([0.02, 0.03]))
+        ZeroRateDiscountCurve(tenors=np.array([1.0, 0.5]), zero_rates=np.array([0.02, 0.03]))
 
     # length mismatch
     with pytest.raises(ValueError):
-        ZeroRateCurve(tenors=np.array([0.5, 1.0]), zero_rates=np.array([0.02]))
+        ZeroRateDiscountCurve(tenors=np.array([0.5, 1.0]), zero_rates=np.array([0.02]))

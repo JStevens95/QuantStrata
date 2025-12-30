@@ -3,16 +3,16 @@ from __future__ import annotations
 import pytest
 
 from src.instruments.fx.linear.spot import FxSpot
-from src.instruments.fx.options.european import EuropeanFxOption
+from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
 from src.marketdata.ids import MarketId
 from src.marketdata.requests import MarketRequest, Universe
 from src.marketdata.scenarios.base import ScenarioPack
 from src.marketdata.scenarios.shocks import SpotShock
 from src.marketdata.synthetic.provider import SyntheticProvider
 from src.portfolio.core import Portfolio, Position
-from src.pricers.portfolio import PortfolioPricer
+from src.portfolio.portfolio import PortfolioPricer
 from src.pricers.registry import DefaultPricerRegistry
-from src.risk.scenario_analysis import run_portfolio_scenarios  # rename if needed
+from src.risk.scenarios.runner import run_portfolio_scenarios
 
 
 @pytest.fixture(scope="module")
@@ -41,7 +41,7 @@ def fx_market_book_and_ids():
             ),
             Position(
                 position_id="CALL",
-                instrument=EuropeanFxOption(
+                instrument=EuropeanFxVanillaOption(
                     option_type="call",
                     notional=1_000_000.0,
                     strike=S0,
@@ -60,7 +60,7 @@ def fx_market_book_and_ids():
     return market, portfolio, pricer, spot_id
 
 
-def test_scenario_analysis_includes_base_and_zero_pnl(fx_market_book_and_ids) -> None:
+def test_runner_includes_base_and_zero_pnl(fx_market_book_and_ids) -> None:
     market, portfolio, pricer, spot_id = fx_market_book_and_ids
 
     pack = ScenarioPack(

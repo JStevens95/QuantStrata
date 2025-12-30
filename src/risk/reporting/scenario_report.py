@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import List, Mapping
+from typing import Any, List, Mapping
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,33 +46,31 @@ class ScenarioReport:
     base_scenario: str = "BASE"
 
     @staticmethod
-    def from_result(result, *, base_scenario: str = "BASE") -> "ScenarioReport":  # noqa: ANN001
+    def from_result(result: Any, *, base_scenario: str = "BASE") -> "ScenarioReport":
         """
-        Build a ScenarioReport from scenario_analysis output.
+        Build a ScenarioReport from scenario runner output (duck-typed).
 
         Expected `result` interface
         --------------------------
         - result.scenario_names: Sequence[str]
         - result.pv: Sequence[float]
         - result.pnl: Sequence[float]
-
-        This deliberately uses duck-typing so it remains compatible even if
-        you later rename StressResult / ScenarioResult classes.
         """
-        names = list(result.scenario_names)
-        pv = list(result.pv)
-        pnl = list(result.pnl)
+        scenario_names = list(getattr(result, "scenario_names"))
+        pv = list(getattr(result, "pv"))
+        pnl = list(getattr(result, "pnl"))
 
-        if len(names) != len(pv) or len(names) != len(pnl):
+        if len(scenario_names) != len(pv) or len(scenario_names) != len(pnl):
             raise ValueError("result fields must have the same length: scenario_names, pv, pnl.")
 
-        rows = [ScenarioRow(scenario=str(n), pv=float(v), pnl=float(p)) for n, v, p in zip(names, pv, pnl)]
-        return ScenarioReport(rows=rows, base_scenario=base_scenario)
+        rows = [
+            ScenarioRow(scenario=str(name), pv=float(pv_i), pnl=float(pnl_i))
+            for name, pv_i, pnl_i in zip(scenario_names, pv, pnl)
+        ]
+        return ScenarioReport(rows=rows, base_scenario=str(base_scenario))
 
     def to_dicts(self) -> List[Mapping[str, float | str]]:
-        """
-        Return list of dicts suitable for JSON export.
-        """
+        """Return list of dicts suitable for JSON export."""
         return [{"scenario": r.scenario, "pv": r.pv, "pnl": r.pnl} for r in self.rows]
 
     def to_csv(self) -> str:
@@ -124,10 +122,26 @@ class ScenarioReport:
 
     @staticmethod
     def _fmt_number(x: float, decimals: int, signed: bool = False) -> str:
-        """
-        Format numeric values defensively for reporting.
-        """
-        if not math.isfinite(float(x)):
-            return "nan" if math.isnan(float(x)) else ("+inf" if float(x) > 0 else "-inf")
-        fmt = f"{{:{'+' if signed else ''}.{decimals}f}}"
-        return fmt.format(float(x))
+        """Format numeric values defensively for reporting."""
+        x_f = float(x)
+        if not math.isfinite(x_f):
+            if math.isnan(x_f):
+                return "nan"
+            return "+inf" if x_f > 0 else "-inf"
+
+        fmt = f"{{:{'+' if signed else ''}.{int(decimals)}f}}"
+        return fmt.format(x_f)
+
+
+def build_scenario_report(result: Any, *, base_scenario: str = "BASE") -> ScenarioReport:
+    """
+    Convenience helper: build a ScenarioReport from a scenario runner result.
+
+    This keeps examples tiny:
+        report = build_scenario_report(res)
+        print(report.to_console())
+    """
+    return ScenarioReport.from_result(result, base_scenario=base_scenario)
+
+
+__all__ = ["ScenarioRow", "ScenarioReport", "build_scenario_report"]

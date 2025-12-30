@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 import numpy as np
 
-from src.risk.reporting import ScenarioReport
+from src.risk.reporting.scenario_report import ScenarioReport
 
 
 class _DummyResult:
@@ -48,7 +48,7 @@ def test_scenario_report_to_console_contains_expected_fields() -> None:
     assert "PV" in out
     assert "PnL" in out
 
-    # Check values are formatted and present
+    # Values are formatted and present
     assert "100.00" in out
     assert "+10.00" in out
     assert "-10.00" in out

@@ -5,10 +5,11 @@ from typing import List, Mapping, Tuple
 
 from src.instruments.fx.linear.forward import FxForward
 from src.instruments.fx.linear.spot import FxSpot
+from src.instruments.fx.options.european import EuropeanFxOption
 from src.marketdata.ids import MarketId
 from src.marketdata.requests import MarketRequest, Universe
 from src.marketdata.scenarios.base import ScenarioPack
-from src.marketdata.scenarios.shocks import ParallelRateShock, SpotShock
+from src.marketdata.scenarios.shocks import FlatVolShock, ParallelRateShock, SpotShock
 from src.marketdata.synthetic.provider import SyntheticProvider
 from src.portfolio.core import Portfolio, Position
 from src.portfolio.portfolio import PortfolioPricer
@@ -21,38 +22,37 @@ from src.risk.scenarios.runner import run_portfolio_scenarios
 # -----------------------------------------------------------------------------
 
 @dataclass(frozen=True, slots=True)
-class FxLinearMarketIds:
-    """Canonical ids for a minimal FX linear market."""
+class FxVanillaMarketIds:
+    """Canonical ids for the FX spot/forward/vanilla option example."""
     spot_id: MarketId
+    vol_id: MarketId
     domestic_curve_id: MarketId
     foreign_curve_id: MarketId
 
 
-def build_fx_linear_ids() -> FxLinearMarketIds:
+def build_fx_vanilla_ids() -> FxVanillaMarketIds:
     """Create the MarketIds used in this example."""
-    return FxLinearMarketIds(
+    return FxVanillaMarketIds(
         spot_id=MarketId("FX", "SPOT", "EURUSD"),
+        vol_id=MarketId("FX", "VOL", "EURUSD"),
         domestic_curve_id=MarketId("IR", "CURVE", "USD.OIS"),
         foreign_curve_id=MarketId("IR", "CURVE", "EUR.OIS"),
     )
 
 
-def build_market(*, ids: FxLinearMarketIds, asof: str = "2025-12-29", seed: int = 123):
+def build_market(*, ids: FxVanillaMarketIds, asof: str = "2025-12-29", seed: int = 123):
     """Build a deterministic synthetic Market snapshot for the requested ids."""
     provider = SyntheticProvider(seed=seed)
     return provider.get_market(
         MarketRequest(
             asof=asof,
-            universe=Universe([ids.spot_id, ids.domestic_curve_id, ids.foreign_curve_id]),
+            universe=Universe([ids.spot_id, ids.vol_id, ids.domestic_curve_id, ids.foreign_curve_id]),
         )
     )
 
 
-def fair_forward_strike(*, market, ids: FxLinearMarketIds, expiry: float) -> float:
-    """
-    Fair forward strike (parity-consistent):
-        F0 = S0 * df_f(T) / df_d(T)
-    """
+def fair_forward_strike(*, market, ids: FxVanillaMarketIds, expiry: float) -> float:
+    """Fair forward strike: F0 = S0 * df_f(T) / df_d(T)."""
     spot = float(market.quote(ids.spot_id))
     df_d = float(market.curve(ids.domestic_curve_id).df(expiry))
     df_f = float(market.curve(ids.foreign_curve_id).df(expiry))
@@ -60,15 +60,25 @@ def fair_forward_strike(*, market, ids: FxLinearMarketIds, expiry: float) -> flo
 
 
 # -----------------------------------------------------------------------------
-# Scenarios
+# Scenario packs
 # -----------------------------------------------------------------------------
 
-def build_linear_scenario_pack(*, ids: FxLinearMarketIds) -> ScenarioPack:
-    """Spot + domestic/foreign parallel rate shocks."""
+def scenario_pack_spot_only(*, ids: FxVanillaMarketIds) -> ScenarioPack:
+    """Spot-only shocks (quick delta sanity)."""
     return ScenarioPack(
         scenarios={
             "spot_up_1pct": SpotShock("spot_up_1pct", ids.spot_id, 0.01, "relative"),
             "spot_down_1pct": SpotShock("spot_down_1pct", ids.spot_id, -0.01, "relative"),
+        }
+    )
+
+
+def scenario_pack_full_risk(*, ids: FxVanillaMarketIds) -> ScenarioPack:
+    """Spot + vol + domestic/foreign rate shocks."""
+    return ScenarioPack(
+        scenarios={
+            "spot_up_1pct": SpotShock("spot_up_1pct", ids.spot_id, 0.01, "relative"),
+            "vol_up_1vol": FlatVolShock("vol_up_1vol", ids.vol_id, 0.01),
             "rd_up_25bp": ParallelRateShock("rd_up_25bp", ids.domestic_curve_id, 0.0025),
             "rf_up_25bp": ParallelRateShock("rf_up_25bp", ids.foreign_curve_id, 0.0025),
         }
@@ -76,7 +86,7 @@ def build_linear_scenario_pack(*, ids: FxLinearMarketIds) -> ScenarioPack:
 
 
 # -----------------------------------------------------------------------------
-# Reporting helpers
+# Reporting helpers (kept consistent with linear-only script)
 # -----------------------------------------------------------------------------
 
 def _scenario_key(name: object) -> str:
@@ -98,36 +108,44 @@ def print_scenario_table(*, title: str, result) -> None:
     print()
 
 
-def predict_linear_pnl_from_greeks(
+def predict_pnl_from_greeks(
     *,
     scenario: object,
     base_market: object,
     totals_greeks: Mapping[str, float],
-    ids: FxLinearMarketIds,
+    ids: FxVanillaMarketIds,
 ) -> float:
     """
-    Predict scenario PnL for *linear-only* books using portfolio totals greeks.
+    Predict scenario PnL using aggregated portfolio greeks.
 
     Supported predictions
     ---------------------
     SpotShock:
-        dPV ≈ delta * dS
+        dPV ≈ delta*dS + 0.5*gamma*dS^2     (gamma optional; 0 if missing)
+
+    FlatVolShock:
+        dPV ≈ vega*dSigma                    (vega per 1.00 vol)
 
     ParallelRateShock:
-        dPV ≈ rho_domestic * dr   (domestic curve shocked)
-        dPV ≈ rho_foreign * dr    (foreign curve shocked)
+        dPV ≈ rho_domestic*dr  if domestic curve shocked
+        dPV ≈ rho_foreign*dr   if foreign curve shocked
     """
-    # Local import keeps example scripts robust to refactors / avoids circular import surprises.
-    from src.marketdata.scenarios.shocks import ParallelRateShock, SpotShock  # noqa: WPS433
+    from src.marketdata.scenarios.shocks import FlatVolShock, ParallelRateShock, SpotShock  # noqa: WPS433
 
     delta = _safe_float(totals_greeks, "delta")
+    gamma = _safe_float(totals_greeks, "gamma")
+    vega = _safe_float(totals_greeks, "vega")
     rho_d = _safe_float(totals_greeks, "rho_domestic")
     rho_f = _safe_float(totals_greeks, "rho_foreign")
 
     if isinstance(scenario, SpotShock):
         base_spot = float(base_market.quote(ids.spot_id))
         dS = base_spot * float(scenario.bump) if scenario.bump_mode == "relative" else float(scenario.bump)
-        return float(delta * dS)
+        return float(delta * dS + 0.5 * gamma * dS * dS)
+
+    if isinstance(scenario, FlatVolShock):
+        d_sigma = float(scenario.vol_bump)
+        return float(vega * d_sigma)
 
     if isinstance(scenario, ParallelRateShock):
         dr = float(scenario.rate_shift)
@@ -137,7 +155,7 @@ def predict_linear_pnl_from_greeks(
             return float(rho_f * dr)
         return 0.0
 
-    raise TypeError(f"Unsupported scenario type for linear predictor: {type(scenario).__name__}")
+    raise TypeError(f"Unsupported scenario type for greek predictor: {type(scenario).__name__}")
 
 
 def print_greeks_vs_scenarios(
@@ -148,16 +166,10 @@ def print_greeks_vs_scenarios(
     base_market: object,
     scenario_pack: ScenarioPack,
     scenario_result,
-    ids: FxLinearMarketIds,
+    ids: FxVanillaMarketIds,
 ) -> None:
-    """
-    Compare realized scenario PnL vs greek-predicted PnL.
-
-    Important:
-    - Many runners include a 'BASE' row; this is *not* in ScenarioPack.scenarios.
-      We skip any row that isn't in the pack.
-    """
-    header = f"Greeks vs Scenario PnL (linear): {title}"
+    """Compare realized scenario PnL vs greek-predicted PnL (skips non-pack rows like BASE)."""
+    header = f"Greeks vs Scenario PnL: {title}"
     print(f"\n{header}")
     print("-" * len(header))
 
@@ -165,6 +177,8 @@ def print_greeks_vs_scenarios(
         "Base totals: "
         f"PV={float(base_pv):,.6f} | "
         f"delta={_safe_float(base_greeks, 'delta'):,.6f} | "
+        f"gamma={_safe_float(base_greeks, 'gamma'):,.6f} | "
+        f"vega={_safe_float(base_greeks, 'vega'):,.6f} | "
         f"rho_d={_safe_float(base_greeks, 'rho_domestic'):,.6f} | "
         f"rho_f={_safe_float(base_greeks, 'rho_foreign'):,.6f}"
     )
@@ -177,10 +191,9 @@ def print_greeks_vs_scenarios(
 
         scenario_obj = scenario_pack.scenarios.get(name)
         if scenario_obj is None:
-            # Skip rows like "BASE" or anything the runner adds beyond the ScenarioPack.
             continue
 
-        predicted = predict_linear_pnl_from_greeks(
+        predicted = predict_pnl_from_greeks(
             scenario=scenario_obj,
             base_market=base_market,
             totals_greeks=base_greeks,
@@ -201,7 +214,6 @@ def print_greeks_vs_scenarios(
             ]
         )
 
-    # Pretty print (fixed width).
     col_widths = (
         [max(len(h), *(len(r[i]) for r in rows)) for i, h in enumerate(headers)]
         if rows
@@ -217,14 +229,37 @@ def print_greeks_vs_scenarios(
 # Portfolio builders
 # -----------------------------------------------------------------------------
 
-def portfolio_spot_plus_forward(*, market, ids: FxLinearMarketIds, expiry: float) -> Portfolio:
-    """Spot + a fair forward (forward PV should be ~0)."""
+def portfolio_spot_only(*, ids: FxVanillaMarketIds) -> Portfolio:
+    return Portfolio(positions=[Position(position_id="SPOT", instrument=FxSpot(spot_id=ids.spot_id), quantity=1.0)])
+
+
+def portfolio_forward_only(*, market, ids: FxVanillaMarketIds, expiry: float, notional: float) -> Portfolio:
+    strike = fair_forward_strike(market=market, ids=ids, expiry=expiry)
+    return Portfolio(
+        positions=[
+            Position(
+                position_id="FWD",
+                instrument=FxForward(
+                    notional=notional,
+                    strike=strike,
+                    expiry=expiry,
+                    spot_id=ids.spot_id,
+                    domestic_curve_id=ids.domestic_curve_id,
+                    foreign_curve_id=ids.foreign_curve_id,
+                ),
+                quantity=1.0,
+            )
+        ]
+    )
+
+
+def portfolio_spot_and_forward(*, market, ids: FxVanillaMarketIds, expiry: float) -> Portfolio:
     strike = fair_forward_strike(market=market, ids=ids, expiry=expiry)
     return Portfolio(
         positions=[
             Position(position_id="SPOT", instrument=FxSpot(spot_id=ids.spot_id), quantity=1.0),
             Position(
-                position_id="FWD_1Y",
+                position_id="FWD",
                 instrument=FxForward(
                     notional=1_000_000.0,
                     strike=strike,
@@ -239,29 +274,41 @@ def portfolio_spot_plus_forward(*, market, ids: FxLinearMarketIds, expiry: float
     )
 
 
-def portfolio_three_forwards(*, market, ids: FxLinearMarketIds) -> Portfolio:
-    """Three forwards across maturities (shows term structure risk)."""
-    expiries = [0.5, 1.0, 2.0]
-    positions: List[Position] = []
+def portfolio_spot_forward_option(*, market, ids: FxVanillaMarketIds, expiry: float) -> Portfolio:
+    spot = float(market.quote(ids.spot_id))
+    strike_fwd = fair_forward_strike(market=market, ids=ids, expiry=expiry)
 
-    for T in expiries:
-        strike = fair_forward_strike(market=market, ids=ids, expiry=float(T))
-        positions.append(
+    return Portfolio(
+        positions=[
+            Position(position_id="SPOT", instrument=FxSpot(spot_id=ids.spot_id), quantity=1.0),
             Position(
-                position_id=f"FWD_{T:g}Y",
+                position_id="FWD",
                 instrument=FxForward(
                     notional=1_000_000.0,
-                    strike=strike,
-                    expiry=float(T),
+                    strike=strike_fwd,
+                    expiry=expiry,
                     spot_id=ids.spot_id,
                     domestic_curve_id=ids.domestic_curve_id,
                     foreign_curve_id=ids.foreign_curve_id,
                 ),
                 quantity=1.0,
-            )
-        )
-
-    return Portfolio(positions=positions)
+            ),
+            Position(
+                position_id="CALL",
+                instrument=EuropeanFxOption(
+                    option_type="call",
+                    notional=1_000_000.0,
+                    strike=spot,
+                    expiry=expiry,
+                    spot_id=ids.spot_id,
+                    vol_id=ids.vol_id,
+                    domestic_curve_id=ids.domestic_curve_id,
+                    foreign_curve_id=ids.foreign_curve_id,
+                ),
+                quantity=1.0,
+            ),
+        ]
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -269,26 +316,27 @@ def portfolio_three_forwards(*, market, ids: FxLinearMarketIds) -> Portfolio:
 # -----------------------------------------------------------------------------
 
 def main() -> None:
-    ids = build_fx_linear_ids()
+    ids = build_fx_vanilla_ids()
     market = build_market(ids=ids)
 
     portfolio_pricer = PortfolioPricer(pricer_registry=DefaultPricerRegistry().build())
-    scenario_pack = build_linear_scenario_pack(ids=ids)
-
     expiry = 1.0
-    books: List[Tuple[str, Portfolio]] = [
-        ("Spot + 1Y Forward", portfolio_spot_plus_forward(market=market, ids=ids, expiry=expiry)),
-        ("3 Forwards (0.5Y/1Y/2Y)", portfolio_three_forwards(market=market, ids=ids)),
+
+    books: List[Tuple[str, Portfolio, ScenarioPack]] = [
+        ("FX Spot only (spot shocks)", portfolio_spot_only(ids=ids), scenario_pack_spot_only(ids=ids)),
+        ("FX Forward only (full risk)", portfolio_forward_only(market=market, ids=ids, expiry=expiry, notional=1_000_000.0), scenario_pack_full_risk(ids=ids)),
+        ("FX Spot + Forward (full risk)", portfolio_spot_and_forward(market=market, ids=ids, expiry=expiry), scenario_pack_full_risk(ids=ids)),
+        ("FX Spot + Forward + Call (full risk)", portfolio_spot_forward_option(market=market, ids=ids, expiry=expiry), scenario_pack_full_risk(ids=ids)),
     ]
 
-    for title, portfolio in books:
+    for title, portfolio, scenario_pack in books:
         base_result = portfolio_pricer.price(portfolio, market)
         base_pv = float(base_result.totals.pv)
         base_greeks = dict(base_result.totals.greeks)
 
         scenario_result = run_portfolio_scenarios(portfolio, market, portfolio_pricer, scenario_pack)
 
-        print_scenario_table(title=f"FX Linear Scenario Analysis: {title}", result=scenario_result)
+        print_scenario_table(title=title, result=scenario_result)
 
         print_greeks_vs_scenarios(
             title=title,
@@ -299,10 +347,6 @@ def main() -> None:
             scenario_result=scenario_result,
             ids=ids,
         )
-
-    print("\nExpectation:")
-    print("  - For linear-only books, residuals should be ~0 (tiny numerical noise).")
-    print("  - If residuals are large: check shock convention vs greek definition.")
 
 
 if __name__ == "__main__":
