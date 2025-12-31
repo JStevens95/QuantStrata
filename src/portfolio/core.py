@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
@@ -19,22 +20,30 @@ class Position:
     - We keep Position generic: no assumptions about asset class or payoff.
     - Instrument typing is intentionally Any to allow mixed books.
       Routing happens in the PortfolioPricer via a pricer registry keyed by instrument type.
+
+    Routing
+    -------
+    - `pricer_id` lets you select a non-default pricer for this position
+      (e.g. "mc" instead of "default").
+    - If pricer_id is None, the PortfolioPricer can still apply a global override
+      (e.g. price the entire portfolio with "mc")
     """
     position_id: str
     instrument: Any
     quantity: float = 1.0
+    pricer_id: Optional[str] = None
     metadata: Optional[Mapping[str, Any]] = None
 
     def __post_init__(self) -> None:
-        # Validate position id is a non-empty string.
         if not isinstance(self.position_id, str) or not self.position_id.strip():
             raise ValueError("position_id must be a non-empty string.")
-
-        # Validate quantity is finite.
         if not isinstance(self.quantity, (int, float)):
             raise TypeError("quantity must be a number.")
-        if self.quantity != self.quantity:  # NaN check
-            raise ValueError("quantity must be finite (not NaN).")
+        if not math.isfinite(float(self.quantity)):
+            raise ValueError("quantity must be finite (not NaN/inf).")
+        if self.pricer_id is not None and (not isinstance(self.pricer_id, str) or not self.pricer_id.strip()):
+            raise ValueError("pricer_id must be None or a non-empty string.")
+
 
 
 @dataclass(frozen=True, slots=True)

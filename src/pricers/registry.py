@@ -1,32 +1,22 @@
+# src/pricers/registry.py
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, Mapping, MutableMapping, Optional, Protocol, Type
 
-# ---- instruments ----
+# import instruments
 from src.instruments.fx.linear.spot import FxSpot
 from src.instruments.fx.linear.forward import FxForward
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
 
-# ---- pricers ----
+# import pricer (linear + non-linear)
 from src.pricers.fx.spot import FxSpotPricer
 from src.pricers.fx.forward import FxForwardPricer
 from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer
 
 
 class InstrumentPricer(Protocol):
-    """
-    Minimal protocol for instrument pricers.
-
-    Required
-    --------
-    price(instrument, market) -> float
-
-    Optional (if implemented, PortfolioPricer will use it)
-    ------------------------------------------------------
-    greeks(instrument, market) -> dict[str, float]
-    """
-
     def price(self, instrument: Any, market: Any) -> float:  # noqa: ANN401
         ...
 
@@ -38,10 +28,32 @@ class UnsupportedInstrumentError(TypeError):
     """Raised when no registered pricer can be resolved for an instrument."""
 
 
+def _normalize_pricer_id(pricer_id: Optional[str]) -> Optional[str]:
+    """
+    Normalize pricer_id for stable routing and caching.
+
+    - None stays None (default routing)
+    - strings are stripped
+    - empty/whitespace-only becomes invalid (raises)
+    """
+    if pricer_id is None:
+        return None
+    if not isinstance(pricer_id, str):
+        raise TypeError("pricer_id must be a string or None.")
+    pid = pricer_id.strip()
+    if not pid:
+        raise ValueError("pricer_id must be a non-empty string when provided.")
+    return pid
+
+
 @dataclass(slots=True)
 class PricerRegistry:
     """
     Registry that resolves instrument -> pricer using MRO-first lookup.
+
+    Supports:
+      - default pricer per instrument type (pricer_id=None)
+      - optional named pricers per instrument type (pricer_id="...")
 
     Resolution rules
     ---------------
@@ -51,60 +63,112 @@ class PricerRegistry:
     """
 
     _by_type: MutableMapping[Type[Any], InstrumentPricer] = field(default_factory=dict)
-    _cache: MutableMapping[Type[Any], InstrumentPricer] = field(default_factory=dict)
+    _by_type_and_id: MutableMapping[tuple[Type[Any], str], InstrumentPricer] = field(default_factory=dict)
+    _cache: MutableMapping[tuple[Type[Any], Optional[str]], InstrumentPricer] = field(default_factory=dict)
 
-    def register(self, instrument_type: Type[Any], pricer: InstrumentPricer, *, overwrite: bool = False) -> None:
+    def register(
+        self,
+        instrument_type: Type[Any],
+        pricer: InstrumentPricer,
+        *,
+        pricer_id: Optional[str] = None,
+        overwrite: bool = False,
+    ) -> None:
         if not isinstance(instrument_type, type):
             raise TypeError("instrument_type must be a class/type.")
 
-        if instrument_type in self._by_type and not overwrite:
-            raise ValueError(
-                f"Pricer already registered for {instrument_type.__name__}. "
-                f"Pass overwrite=True to replace."
-            )
+        pid = _normalize_pricer_id(pricer_id)
 
-        self._by_type[instrument_type] = pricer
-        self._cache.clear()  # conservative: registrations can change resolution paths
+        if pid is None:
+            if instrument_type in self._by_type and not overwrite:
+                raise ValueError(
+                    f"Default pricer already registered for {instrument_type.__name__}. "
+                    f"Pass overwrite=True to replace."
+                )
+            self._by_type[instrument_type] = pricer
+        else:
+            key = (instrument_type, pid)
+            if key in self._by_type_and_id and not overwrite:
+                raise ValueError(
+                    f"Pricer already registered for {instrument_type.__name__} (pricer_id={pid!r}). "
+                    f"Pass overwrite=True to replace."
+                )
+            self._by_type_and_id[key] = pricer
 
-    def unregister(self, instrument_type: Type[Any]) -> None:
-        self._by_type.pop(instrument_type, None)
         self._cache.clear()
 
-    def get(self, instrument_type: Type[Any]) -> Optional[InstrumentPricer]:
-        return self._by_type.get(instrument_type)
+    def unregister(self, instrument_type: Type[Any], *, pricer_id: Optional[str] = None) -> None:
+        pid = _normalize_pricer_id(pricer_id)
+        if pid is None:
+            self._by_type.pop(instrument_type, None)
+        else:
+            self._by_type_and_id.pop((instrument_type, pid), None)
+        self._cache.clear()
+
+    def get(self, instrument_type: Type[Any], *, pricer_id: Optional[str] = None) -> Optional[InstrumentPricer]:
+        pid = _normalize_pricer_id(pricer_id)
+        if pid is None:
+            return self._by_type.get(instrument_type)
+        return self._by_type_and_id.get((instrument_type, pid))
 
     def as_mapping(self) -> Mapping[Type[Any], InstrumentPricer]:
+        # Default mapping only (named pricers intentionally excluded here)
         return dict(self._by_type)
 
-    def resolve(self, instrument: Any) -> InstrumentPricer:  # noqa: ANN401
+    def resolve(self, instrument: Any, *, pricer_id: Optional[str] = None) -> InstrumentPricer:  # noqa: ANN401
         instrument_type = type(instrument)
+        pid = _normalize_pricer_id(pricer_id)
+        cache_key = (instrument_type, pid)
 
-        cached = self._cache.get(instrument_type)
+        cached = self._cache.get(cache_key)
         if cached is not None:
             return cached
 
-        # 1) Exact match
-        pricer = self._by_type.get(instrument_type)
-        if pricer is not None:
-            self._cache[instrument_type] = pricer
-            return pricer
-
-        # 2) MRO walk (most-specific base class wins)
-        for base in instrument_type.__mro__[1:]:
-            pricer = self._by_type.get(base)
+        if pid is None:
+            # ---- default resolution ----
+            pricer = self._by_type.get(instrument_type)
             if pricer is not None:
-                self._cache[instrument_type] = pricer
+                self._cache[cache_key] = pricer
                 return pricer
 
-        # 3) Fallback for ABC / virtual subclass registrations (rare, but safe)
-        for registered_type, pricer in self._by_type.items():
+            for base in instrument_type.__mro__[1:]:
+                pricer = self._by_type.get(base)
+                if pricer is not None:
+                    self._cache[cache_key] = pricer
+                    return pricer
+
+            for registered_type, pricer in self._by_type.items():
+                if isinstance(registered_type, type) and isinstance(instrument, registered_type):
+                    self._cache[cache_key] = pricer
+                    return pricer
+
+            raise UnsupportedInstrumentError(
+                f"No pricer registered for instrument type: {instrument_type.__name__}. "
+                f"Registered types: {[t.__name__ for t in self._by_type.keys()]}"
+            )
+
+        # ---- named resolution ----
+        pricer = self._by_type_and_id.get((instrument_type, pid))
+        if pricer is not None:
+            self._cache[cache_key] = pricer
+            return pricer
+
+        for base in instrument_type.__mro__[1:]:
+            pricer = self._by_type_and_id.get((base, pid))
+            if pricer is not None:
+                self._cache[cache_key] = pricer
+                return pricer
+
+        for (registered_type, registered_pid), pricer in self._by_type_and_id.items():
+            if registered_pid != pid:
+                continue
             if isinstance(registered_type, type) and isinstance(instrument, registered_type):
-                self._cache[instrument_type] = pricer
+                self._cache[cache_key] = pricer
                 return pricer
 
         raise UnsupportedInstrumentError(
-            f"No pricer registered for instrument type: {instrument_type.__name__}. "
-            f"Registered types: {[t.__name__ for t in self._by_type.keys()]}"
+            f"No pricer registered for instrument type: {instrument_type.__name__} with pricer_id={pid!r}. "
+            f"Registered named types: {[t.__name__ for (t, p) in self._by_type_and_id.keys() if p == pid]}"
         )
 
 
