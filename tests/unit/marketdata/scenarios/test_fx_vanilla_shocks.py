@@ -11,7 +11,7 @@ from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
 from src.marketdata.ids import MarketId
 from src.marketdata.scenarios.base import MarketView, ScenarioPack
 from src.marketdata.scenarios.shocks import FlatVolShock, ParallelRateShock, SpotShock
-from src.pricers.fx.european import FxEuropeanVanillaBsmPricer
+from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer
 
 
 # =============================================================================

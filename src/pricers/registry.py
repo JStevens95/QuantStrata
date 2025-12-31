@@ -11,7 +11,7 @@ from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
 # ---- pricers ----
 from src.pricers.fx.spot import FxSpotPricer
 from src.pricers.fx.forward import FxForwardPricer
-from src.pricers.fx.european import FxEuropeanVanillaBsmPricer
+from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer
 
 
 class InstrumentPricer(Protocol):

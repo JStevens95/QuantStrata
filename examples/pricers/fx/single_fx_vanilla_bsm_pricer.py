@@ -8,7 +8,7 @@ from src.marketdata.requests import MarketRequest, Universe
 from src.marketdata.synthetic.provider import SyntheticProvider
 
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
-from src.pricers.fx.european import FxEuropeanVanillaBsmPricer
+from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer
 
 
 @dataclass(frozen=True, slots=True)

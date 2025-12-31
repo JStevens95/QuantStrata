@@ -13,7 +13,7 @@ from src.models.common.normal import std_norm_cdf
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
 from src.instruments.fx.options.digital import EuropeanFxDigitalOption
 
-from src.pricers.fx.european import (
+from src.pricers.fx.european_bsm import (
     FxAmericanVanillaPlaceholderPricer,
     FxEuropeanDigitalBsmPricer,
     FxEuropeanVanillaBsmPricer,
@@ -53,7 +53,7 @@ class _FlatVolSurface:
 
 class _DummyMarket:
     """
-    Minimal Market stub implementing the interface required by pricers/fx/european.py.
+    Minimal Market stub implementing the interface required by pricers/fx/european_bsm.py.
 
     Required by the pricers:
       - quote(market_id) -> float

@@ -43,7 +43,7 @@ class FxEuropeanVanillaBsmPricer:
     - r = r_d (domestic rate)
     - b = r_d - r_f  (cost-of-carry)
     - engine PV is "per 1 unit of foreign notional"
-    - we multiply by notional_foreign to get domestic PV
+    - we multiply by notional to get domestic PV
 
     Greeks mapping (important!)
     ---------------------------
