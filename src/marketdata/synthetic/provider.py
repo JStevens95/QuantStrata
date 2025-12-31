@@ -327,7 +327,7 @@ class SyntheticProvider:
         # Construct the "spot-equivalent" ID.
         spot_id = MarketId(
             asset_class=market_id.asset_class,
-            kind="SPOT",
+            mkt_type="SPOT",
             name=market_id.name,
             qualifiers=market_id.qualifiers,
         )
