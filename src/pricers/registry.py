@@ -9,18 +9,31 @@ from typing import Any, Dict, Mapping, MutableMapping, Optional, Protocol, Type
 from src.instruments.fx.linear.spot import FxSpot
 from src.instruments.fx.linear.forward import FxForward
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
+from src.instruments.fx.options.vanilla import AmericanFxVanillaOption
 
 # import pricer (linear + non-linear)
 from src.pricers.fx.spot import FxSpotPricer
 from src.pricers.fx.forward import FxForwardPricer
 from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer
+from src.pricers.fx.european_mc import FxEuropeanVanillaMcPricer
+from src.pricers.fx.european_fde import FxEuropeanVanillaFdPricer
+from src.pricers.fx.american_fde import FxAmericanVanillaFdPricer
 
 
 class InstrumentPricer(Protocol):
-    def price(self, instrument: Any, market: Any) -> float:  # noqa: ANN401
-        ...
+    """
+    Minimal protocol for instrument pricers.
 
-    def greeks(self, instrument: Any, market: Any) -> Dict[str, float]:  # noqa: ANN401
+    Required
+    --------
+    price(instrument, market) -> float
+
+    Optional
+    --------
+    greeks(instrument, market) -> dict[str, float]
+    (PortfolioPricer checks for this via getattr/callable.)
+    """
+    def price(self, instrument: Any, market: Any) -> float:  # noqa: ANN401
         ...
 
 
@@ -182,7 +195,11 @@ class DefaultPricerRegistry:
 
     def build(self) -> PricerRegistry:
         reg = PricerRegistry()
+        # ----------------- register FX instruments + pricers ---------------------------- #
         reg.register(FxSpot, FxSpotPricer())
         reg.register(FxForward, FxForwardPricer())
         reg.register(EuropeanFxVanillaOption, FxEuropeanVanillaBsmPricer())
+        reg.register(EuropeanFxVanillaOption, FxEuropeanVanillaMcPricer(), pricer_id="mc")
+        reg.register(EuropeanFxVanillaOption, FxEuropeanVanillaFdPricer(), pricer_id="fd")
+        reg.register(AmericanFxVanillaOption, FxAmericanVanillaFdPricer(), pricer_id="fd")
         return reg

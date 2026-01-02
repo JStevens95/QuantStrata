@@ -57,7 +57,7 @@ class AmericanFxVanillaOption:
     """
 
     option_type: OptionType
-    notional_foreign: float
+    notional: float
     strike: float
     expiry: float
     spot_id: MarketId
@@ -68,8 +68,8 @@ class AmericanFxVanillaOption:
     def __post_init__(self) -> None:
         if self.option_type not in ("call", "put"):
             raise ValueError("option_type must be 'call' or 'put'.")
-        if float(self.notional_foreign) == 0.0:
-            raise ValueError("notional_foreign must be non-zero.")
+        if float(self.notional) == 0.0:
+            raise ValueError("notional must be non-zero.")
         if float(self.strike) <= 0.0:
             raise ValueError("strike must be > 0.")
         if float(self.expiry) < 0.0:
