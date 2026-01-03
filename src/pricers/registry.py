@@ -8,6 +8,7 @@ from typing import Any, Dict, Mapping, MutableMapping, Optional, Protocol, Type
 # import instruments
 from src.instruments.fx.linear.spot import FxSpot
 from src.instruments.fx.linear.forward import FxForward
+from src.instruments.fx.options.digital import EuropeanFxDigitalOption
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
 from src.instruments.fx.options.vanilla import AmericanFxVanillaOption
 
@@ -15,6 +16,7 @@ from src.instruments.fx.options.vanilla import AmericanFxVanillaOption
 from src.pricers.fx.spot import FxSpotPricer
 from src.pricers.fx.forward import FxForwardPricer
 from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer
+from src.pricers.fx.european_bsm import FxEuropeanDigitalBsmPricer
 from src.pricers.fx.european_mc import FxEuropeanVanillaMcPricer
 from src.pricers.fx.european_fde import FxEuropeanVanillaFdPricer
 from src.pricers.fx.american_fde import FxAmericanVanillaFdPricer
@@ -151,7 +153,7 @@ class PricerRegistry:
                     return pricer
 
             for registered_type, pricer in self._by_type.items():
-                if isinstance(registered_type, type) and isinstance(instrument, registered_type):
+                if isinstance(instrument, registered_type):
                     self._cache[cache_key] = pricer
                     return pricer
 
@@ -198,7 +200,9 @@ class DefaultPricerRegistry:
         # ----------------- register FX instruments + pricers ---------------------------- #
         reg.register(FxSpot, FxSpotPricer())
         reg.register(FxForward, FxForwardPricer())
+        reg.register(EuropeanFxDigitalOption, FxEuropeanDigitalBsmPricer())
         reg.register(EuropeanFxVanillaOption, FxEuropeanVanillaBsmPricer())
+        reg.register(AmericanFxVanillaOption, FxAmericanVanillaFdPricer())
         reg.register(EuropeanFxVanillaOption, FxEuropeanVanillaMcPricer(), pricer_id="mc")
         reg.register(EuropeanFxVanillaOption, FxEuropeanVanillaFdPricer(), pricer_id="fd")
         reg.register(AmericanFxVanillaOption, FxAmericanVanillaFdPricer(), pricer_id="fd")

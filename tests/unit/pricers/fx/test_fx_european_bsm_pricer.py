@@ -7,14 +7,13 @@ from typing import Callable, Dict
 import pytest
 
 from src.marketdata.ids import MarketId
-from src.models.analytic.black_scholes.european import BlackScholesMertonEuropean
+from src.models.analytic.black_scholes_merton.vanilla import BlackScholesMertonVanilla
 from src.models.common.normal import std_norm_cdf
 
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
 from src.instruments.fx.options.digital import EuropeanFxDigitalOption
 
 from src.pricers.fx.european_bsm import (
-    FxAmericanVanillaPlaceholderPricer,
     FxEuropeanDigitalBsmPricer,
     FxEuropeanVanillaBsmPricer,
 )
@@ -199,7 +198,7 @@ def test_fx_vanilla_price_matches_engine_scaled(
     rf = float(base_params["rf"])
     carry = rd - rf
 
-    engine = BlackScholesMertonEuropean()
+    engine = BlackScholesMertonVanilla()
     pv_per_unit = engine.price(
         option_type=option_type,  # type: ignore[arg-type]
         spot=float(base_params["spot"]),
@@ -369,25 +368,12 @@ def test_fx_digital_cash_price_matches_closed_form(
     digital_pricer: FxEuropeanDigitalBsmPricer,
     option_type: str,
 ) -> None:
-    """
-    Cash-or-nothing digital under FX mapping:
-
-      PV_call = payout * df_d * N(d2)
-      PV_put  = payout * df_d * N(-d2)
-
-    where:
-      d1 = (ln(S/K) + (b + 0.5*sigma^2)T) / (sigma*sqrtT),
-      d2 = d1 - sigma*sqrtT,
-      b = r_d - r_f,
-      df_d = exp(-r_d T)
-    """
     s = float(base_params["spot"])
     k = float(base_params["strike"])
     t = float(base_params["t"])
     rd = float(base_params["rd"])
     rf = float(base_params["rf"])
     sig = float(base_params["sigma"])
-
     payout = 1234.5
 
     market = _DummyMarket(
@@ -416,11 +402,7 @@ def test_fx_digital_cash_price_matches_closed_form(
     d1 = (math.log(s / k) + (b + 0.5 * sig * sig) * t) / (sig * sqrt_t)
     d2 = d1 - sig * sqrt_t
 
-    if option_type == "call":
-        expected = df_d * payout * std_norm_cdf(d2)
-    else:
-        expected = df_d * payout * std_norm_cdf(-d2)
-
+    expected = df_d * payout * (std_norm_cdf(d2) if option_type == "call" else std_norm_cdf(-d2))
     assert pv == pytest.approx(expected, rel=1e-12, abs=1e-12)
 
 
@@ -431,19 +413,12 @@ def test_fx_digital_asset_price_matches_closed_form(
     digital_pricer: FxEuropeanDigitalBsmPricer,
     option_type: str,
 ) -> None:
-    """
-    Asset-or-nothing (pays 'payout_amount' foreign units) under FX mapping:
-
-      PV_call = payout * S * df_f * N(d1)
-      PV_put  = payout * S * df_f * N(-d1)
-    """
     s = float(base_params["spot"])
     k = float(base_params["strike"])
     t = float(base_params["t"])
     rd = float(base_params["rd"])
     rf = float(base_params["rf"])
     sig = float(base_params["sigma"])
-
     payout = 2.5  # foreign units
 
     market = _DummyMarket(
@@ -471,40 +446,119 @@ def test_fx_digital_asset_price_matches_closed_form(
     sqrt_t = math.sqrt(t)
     d1 = (math.log(s / k) + (b + 0.5 * sig * sig) * t) / (sig * sqrt_t)
 
-    if option_type == "call":
-        expected = payout * s * df_f * std_norm_cdf(d1)
-    else:
-        expected = payout * s * df_f * std_norm_cdf(-d1)
-
+    expected = payout * s * df_f * (std_norm_cdf(d1) if option_type == "call" else std_norm_cdf(-d1))
     assert pv == pytest.approx(expected, rel=1e-12, abs=1e-12)
 
 
-# =============================================================================
-# American placeholder tests
-# =============================================================================
-
-def test_fx_american_placeholder_raises_not_implemented(
+def test_fx_digital_price_at_expiry_is_payoff(
     ids: Dict[str, MarketId],
-    base_params: Dict[str, float],
+    digital_pricer: FxEuropeanDigitalBsmPricer,
 ) -> None:
-    """
-    Placeholder pricer must raise NotImplementedError for price/greeks.
-    """
-    pricer = FxAmericanVanillaPlaceholderPricer()
-
-    # We only need a dummy market object for the call signature.
     market = _DummyMarket(
         spot_id=ids["spot"], vol_id=ids["vol"], rd_id=ids["rd"], rf_id=ids["rf"],
-        spot=float(base_params["spot"]),
-        rd=float(base_params["rd"]),
-        rf=float(base_params["rf"]),
-        sigma=float(base_params["sigma"]),
+        spot=105.0, rd=0.03, rf=0.01, sigma=0.20,
     )
 
-    # If you haven't implemented AmericanFxVanillaOption yet, skip constructing it here.
-    # This test only asserts the placeholder behavior.
-    with pytest.raises(NotImplementedError):
-        pricer.price(None, market)  # type: ignore[arg-type]
+    cash_call = EuropeanFxDigitalOption(
+        option_type="call",
+        payoff="cash",
+        payout_amount=100.0,
+        strike=100.0,
+        expiry=0.0,
+        spot_id=ids["spot"],
+        vol_id=ids["vol"],
+        domestic_curve_id=ids["rd"],
+        foreign_curve_id=ids["rf"],
+    )
+    asset_put = EuropeanFxDigitalOption(
+        option_type="put",
+        payoff="asset",
+        payout_amount=3.0,
+        strike=110.0,
+        expiry=0.0,
+        spot_id=ids["spot"],
+        vol_id=ids["vol"],
+        domestic_curve_id=ids["rd"],
+        foreign_curve_id=ids["rf"],
+    )
 
-    with pytest.raises(NotImplementedError):
-        pricer.greeks(None, market)  # type: ignore[arg-type]
+    assert digital_pricer.price(cash_call, market) == pytest.approx(100.0, rel=0.0, abs=0.0)
+    # Put is ITM because 105 < 110, so it pays 3 foreign units -> worth 3*S in domestic at expiry.
+    assert digital_pricer.price(asset_put, market) == pytest.approx(3.0 * 105.0, rel=0.0, abs=0.0)
+
+
+@pytest.mark.parametrize("option_type", ["call", "put"])
+def test_fx_digital_cash_greeks_match_finite_differences(
+    ids: Dict[str, MarketId],
+    base_params: Dict[str, float],
+    digital_pricer: FxEuropeanDigitalBsmPricer,
+    option_type: str,
+) -> None:
+    s0 = float(base_params["spot"])
+    k = float(base_params["strike"])
+    t = float(base_params["t"])
+    rd0 = float(base_params["rd"])
+    rf0 = float(base_params["rf"])
+    sig0 = float(base_params["sigma"])
+    payout = 2500.0
+
+    trade = EuropeanFxDigitalOption(
+        option_type=option_type,  # type: ignore[arg-type]
+        payoff="cash",
+        payout_amount=payout,
+        strike=k,
+        expiry=t,
+        spot_id=ids["spot"],
+        vol_id=ids["vol"],
+        domestic_curve_id=ids["rd"],
+        foreign_curve_id=ids["rf"],
+    )
+
+    market0 = _DummyMarket(
+        spot_id=ids["spot"], vol_id=ids["vol"], rd_id=ids["rd"], rf_id=ids["rf"],
+        spot=s0, rd=rd0, rf=rf0, sigma=sig0,
+    )
+    g = digital_pricer.greeks(trade, market0)
+
+    eps_s = 1e-4 * s0
+    f_s = lambda s: digital_pricer.price(
+        trade,
+        _DummyMarket(
+            spot_id=ids["spot"], vol_id=ids["vol"], rd_id=ids["rd"], rf_id=ids["rf"],
+            spot=float(s), rd=rd0, rf=rf0, sigma=sig0,
+        ),
+    )
+    delta_fd = _fd_first(f_s, s0, eps_s)
+    assert g["delta"] == pytest.approx(delta_fd, rel=2e-4, abs=5e-6)
+
+    eps_v = 1e-4
+    f_sig = lambda sig: digital_pricer.price(
+        trade,
+        _DummyMarket(
+            spot_id=ids["spot"], vol_id=ids["vol"], rd_id=ids["rd"], rf_id=ids["rf"],
+            spot=s0, rd=rd0, rf=rf0, sigma=float(sig),
+        ),
+    )
+    vega_fd = _fd_first(f_sig, sig0, eps_v)
+    assert g["vega"] == pytest.approx(vega_fd, rel=2e-4, abs=5e-6)
+
+    eps_r = 1e-5
+    f_rd = lambda rd: digital_pricer.price(
+        trade,
+        _DummyMarket(
+            spot_id=ids["spot"], vol_id=ids["vol"], rd_id=ids["rd"], rf_id=ids["rf"],
+            spot=s0, rd=float(rd), rf=rf0, sigma=sig0,
+        ),
+    )
+    rho_d_fd = _fd_first(f_rd, rd0, eps_r)
+    assert g["rho_domestic"] == pytest.approx(rho_d_fd, rel=2e-4, abs=5e-6)
+
+    f_rf = lambda rf: digital_pricer.price(
+        trade,
+        _DummyMarket(
+            spot_id=ids["spot"], vol_id=ids["vol"], rd_id=ids["rd"], rf_id=ids["rf"],
+            spot=s0, rd=rd0, rf=float(rf), sigma=sig0,
+        ),
+    )
+    rho_f_fd = _fd_first(f_rf, rf0, eps_r)
+    assert g["rho_foreign"] == pytest.approx(rho_f_fd, rel=2e-4, abs=5e-6)
