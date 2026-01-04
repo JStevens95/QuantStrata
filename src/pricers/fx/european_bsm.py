@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Dict, Literal
+from typing import Dict, Literal, Union
+
+import numpy as np
 
 from src.marketdata.market import Market
 from src.instruments.fx.options.digital import EuropeanFxDigitalOption
@@ -10,9 +12,14 @@ from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
 
 from src.models.analytic.black_scholes_merton.vanilla import BlackScholesMertonVanilla
 from src.models.analytic.black_scholes_merton.digital import (
-    BlackScholesMertonDigitalCash, BlackScholesMertonDigitalAsset
+    BlackScholesMertonDigitalCash,
+    BlackScholesMertonDigitalAsset,
 )
 
+# Payoff library: single source of truth for terminal condition + payout semantics
+from src.models.payoffs.factory import build_payoff_1d, require_terminal_payoff
+from src.models.payoffs.base import BasePayoff1D
+from src.models.payoffs.digital import DigitalCashPayoff, DigitalAssetPayoff
 
 GreekName = Literal[
     "delta",
@@ -36,13 +43,28 @@ def _rate_from_df(*, df: float, t: float) -> float:
     return float(-math.log(df) / t)
 
 
+def _terminal_value(payoff: BasePayoff1D, spot: float) -> float:
+    """
+    Evaluate payoff at a single spot using the payoff library (vectorized API).
+    """
+    return float(payoff.terminal(np.asarray([float(spot)], dtype=np.float64))[0])
+
+
 @dataclass(frozen=True, slots=True)
 class FxEuropeanVanillaBsmPricer:
     """
-    Adapter pricer: EuropeanFxVanillaOption -> BlackScholesMertonEuropean (generic carry).
+    Adapter pricer: EuropeanFxVanillaOption -> BlackScholesMertonVanilla (generic carry).
 
-    FX mapping
-    ----------
+    Alignment policy with MC/FD payoff library
+    -----------------------------------------
+    - Always build the terminal payoff via payoff library.
+    - Handle degenerate cases consistently:
+        * T == 0: PV = payoff(S0) (no discounting), then scale by notional.
+        * sigma == 0: PV = exp(-r_d T) * payoff(F0) where F0 = S0 * exp((r_d - r_f) T),
+                      then scale by notional.
+
+    FX mapping (analytic engine)
+    ----------------------------
     - r = r_d (domestic rate)
     - b = r_d - r_f  (cost-of-carry)
     - engine PV is "per 1 unit of foreign notional"
@@ -51,57 +73,97 @@ class FxEuropeanVanillaBsmPricer:
     Greeks mapping (important!)
     ---------------------------
     The generic engine returns:
-      - rho: dPV/dr holding b fixed
-      - rho_carry: dPV/db holding r fixed  (name in engine may differ)
+      - rho_discount: dPV/dr holding b fixed
+      - rho_carry:    dPV/db holding r fixed
 
     For FX:
       b = r_d - r_f,  r = r_d
 
     Chain rule:
-      dPV/dr_d = dPV/dr * (dr/dr_d) + dPV/db * (db/dr_d) = rho + rho_carry
-      dPV/dr_f = dPV/db * (db/dr_f) = -rho_carry
+      dPV/dr_d = dPV/dr * 1 + dPV/db * 1 = rho_discount + rho_carry
+      dPV/dr_f = dPV/db * (-1)           = -rho_carry
     """
 
-    # define model engine to use.
     engine: BlackScholesMertonVanilla = BlackScholesMertonVanilla()
 
     def price(self, trade: EuropeanFxVanillaOption, market: Market) -> float:
         # ---- Read market inputs ----
-        S = float(market.quote(trade.spot_id))
+        S0 = float(market.quote(trade.spot_id))
         K = float(trade.strike)
         T = float(trade.expiry)
+        notional = float(trade.notional)
 
-        # Discount factors from curves (domestic and foreign).
+        if T < 0.0:
+            raise ValueError("expiry must be >= 0.")
+        if S0 <= 0.0:
+            raise ValueError("spot must be > 0.")
+        if notional < 0.0:
+            raise ValueError("notional must be >= 0.")
+
+        # Terminal payoff (single source of truth).
+        payoff = require_terminal_payoff(build_payoff_1d(trade))
+
+        # Consistent degenerate shortcut: expiry now => immediate payoff (no discounting).
+        if T == 0.0:
+            return notional * _terminal_value(payoff, S0)
+
+        # Discount factors from curves.
         df_d = float(market.curve(trade.domestic_curve_id).df(T))
         df_f = float(market.curve(trade.foreign_curve_id).df(T))
 
-        # Convert DFs -> continuous rates for the engine.
+        # Convert DFs -> continuous rates.
         r_d = _rate_from_df(df=df_d, t=T)
         r_f = _rate_from_df(df=df_f, t=T)
 
-        # Generic carry parameter for the engine.
+        # Generic carry for the analytic engine.
         b = float(r_d - r_f)
 
         # Implied vol from the surface.
         sigma = float(market.vol_surface(trade.vol_id).vol(expiry=T, strike=K))
+        if sigma < 0.0:
+            raise ValueError("Implied vol must be non-negative.")
 
-        # ---- Engine PV is per 1 unit foreign; scale by notional_foreign ----
+        # Consistent degenerate shortcut: zero vol => deterministic forward terminal spot.
+        if sigma == 0.0:
+            F0 = S0 * math.exp((r_d - r_f) * T)
+            disc = math.exp(-r_d * T)
+            return float(notional * disc * _terminal_value(payoff, F0))
+
+        # ---- Analytic engine PV is per 1 unit foreign; scale by notional ----
         pv_per_unit = self.engine.price(
             option_type=trade.option_type,
-            spot=S,
+            spot=S0,
             strike=K,
             time_to_expiry=T,
             discount_rate=r_d,
             carry=b,
             sigma=sigma,
         )
-        return float(trade.notional) * float(pv_per_unit)
+        return float(notional) * float(pv_per_unit)
 
     def greeks(self, trade: EuropeanFxVanillaOption, market: Market) -> Dict[GreekName, float]:
         # ---- Read market inputs ----
-        S = float(market.quote(trade.spot_id))
+        S0 = float(market.quote(trade.spot_id))
         K = float(trade.strike)
         T = float(trade.expiry)
+        notional = float(trade.notional)
+
+        if T < 0.0:
+            raise ValueError("expiry must be >= 0.")
+        if S0 <= 0.0:
+            raise ValueError("spot must be > 0.")
+        if notional < 0.0:
+            raise ValueError("notional must be >= 0.")
+
+        # Policy match with FD: at expiry, return stable zeros (kinked payoff greeks unstable).
+        if T == 0.0:
+            return {
+                "delta": 0.0,
+                "gamma": 0.0,
+                "vega": 0.0,
+                "rho_domestic": 0.0,
+                "rho_foreign": 0.0,
+            }
 
         df_d = float(market.curve(trade.domestic_curve_id).df(T))
         df_f = float(market.curve(trade.foreign_curve_id).df(T))
@@ -111,27 +173,27 @@ class FxEuropeanVanillaBsmPricer:
         b = float(r_d - r_f)
 
         sigma = float(market.vol_surface(trade.vol_id).vol(expiry=T, strike=K))
+        if sigma < 0.0:
+            raise ValueError("Implied vol must be non-negative.")
 
-        # ---- Engine greeks are per 1 unit foreign; scale by notional_foreign ----
+        # Note: we do NOT special-case sigma==0 in greeks; analytic greeks can be ill-conditioned.
+        # Keeping this consistent with your FD policy (where greeks are computed via PDE/bump logic)
+        # is fine; if you want a deterministic-limit greek policy later, do it explicitly.
+
         g = self.engine.greeks(
             option_type=trade.option_type,
-            spot=S,
+            spot=S0,
             strike=K,
             time_to_expiry=T,
             discount_rate=r_d,
             carry=b,
             sigma=sigma,
         )
-
-        notional = float(trade.notional)
 
         delta = notional * float(g["delta"])
         gamma = notional * float(g["gamma"])
         vega = notional * float(g["vega"])
 
-        # Engine provides:
-        # - rho (wrt discount_rate r, holding carry fixed)
-        # - rho_carry (wrt carry_rate b, holding r fixed)
         rho_r = notional * float(g["rho_discount"])
         rho_carry = notional * float(g["rho_carry"])
 
@@ -152,111 +214,145 @@ class FxEuropeanDigitalBsmPricer:
     """
     FX adapter for EuropeanFxDigitalOption using BSM-with-carry analytic engines.
 
-    FX mapping
-    ----------
-    discount_rate = r_d
-    carry         = r_d - r_f
+    Alignment policy with MC/FD payoff library
+    -----------------------------------------
+    - Build payoff via payoff library (single source of truth).
+    - Handle degenerate cases consistently:
+        * T == 0: PV = payoff(S0) (no discounting)
+        * sigma == 0: PV = exp(-r_d T) * payoff(F0) with F0 = S0 * exp((r_d - r_f) T)
+
+    Engine routing
+    --------------
+    We route cash-vs-asset engine selection from the payoff object type
+    (DigitalCashPayoff vs DigitalAssetPayoff) to avoid duplicating trade.payoff logic.
     """
 
-    cash_engine: BlackScholesMertonDigitalCash = BlackScholesMertonDigitalCash()  # Cash digital engine.
-    asset_engine: BlackScholesMertonDigitalAsset = BlackScholesMertonDigitalAsset()  # Asset digital engine.
+    cash_engine: BlackScholesMertonDigitalCash = BlackScholesMertonDigitalCash()
+    asset_engine: BlackScholesMertonDigitalAsset = BlackScholesMertonDigitalAsset()
 
     def price(self, trade: EuropeanFxDigitalOption, market: Market) -> float:
-        S = float(market.quote(trade.spot_id))  # Read spot.
-        K = float(trade.strike)  # Read strike.
-        T = float(trade.expiry)  # Read expiry.
+        S0 = float(market.quote(trade.spot_id))
+        K = float(trade.strike)
+        T = float(trade.expiry)
 
-        df_d = float(market.curve(trade.domestic_curve_id).df(T))  # Domestic DF.
-        df_f = float(market.curve(trade.foreign_curve_id).df(T))  # Foreign DF.
+        if T < 0.0:
+            raise ValueError("expiry must be >= 0.")
+        if S0 <= 0.0:
+            raise ValueError("spot must be > 0.")
 
-        r_d = _rate_from_df(df=df_d, t=T)  # Domestic rate.
-        r_f = _rate_from_df(df=df_f, t=T)  # Foreign rate.
+        payoff = require_terminal_payoff(build_payoff_1d(trade))
 
-        b = float(r_d - r_f)  # Carry for FX.
+        # Expiry-now shortcut (no discounting).
+        if T == 0.0:
+            return _terminal_value(payoff, S0)
 
-        sigma = float(market.vol_surface(trade.vol_id).vol(expiry=T, strike=K))  # Implied vol.
+        df_d = float(market.curve(trade.domestic_curve_id).df(T))
+        df_f = float(market.curve(trade.foreign_curve_id).df(T))
 
-        payout = float(trade.payout_amount)  # Payout amount (domestic if cash; foreign units if asset).
+        r_d = _rate_from_df(df=df_d, t=T)
+        r_f = _rate_from_df(df=df_f, t=T)
+        b = float(r_d - r_f)
 
-        if trade.payoff == "cash":  # Cash-or-nothing.
-            pv = self.cash_engine.price(  # Price via cash digital engine.
+        sigma = float(market.vol_surface(trade.vol_id).vol(expiry=T, strike=K))
+        if sigma < 0.0:
+            raise ValueError("Implied vol must be non-negative.")
+
+        # Zero-vol shortcut: deterministic forward.
+        if sigma == 0.0:
+            F0 = S0 * math.exp((r_d - r_f) * T)
+            disc = math.exp(-r_d * T)
+            return float(disc * _terminal_value(payoff, F0))
+
+        # Route engine choice from payoff type (single source of truth via build_payoff_1d).
+        if isinstance(payoff, DigitalCashPayoff):
+            pv = self.cash_engine.price(
                 option_type=trade.option_type,
-                spot=S,
+                spot=S0,
                 strike=K,
                 time_to_expiry=T,
                 discount_rate=r_d,
                 carry=b,
                 sigma=sigma,
-                cash=payout,
+                cash=float(payoff.cash),
             )
-            return float(pv)  # PV already domestic.
+            return float(pv)
 
-        # Asset-or-nothing: payout is foreign units; engine returns domestic PV via S*exp(-r_f T).
-        pv = self.asset_engine.price(  # Price via asset digital engine.
-            option_type=trade.option_type,
-            spot=S,
-            strike=K,
-            time_to_expiry=T,
-            discount_rate=r_d,
-            carry=b,
-            sigma=sigma,
-            asset_units=payout,
-        )
-        return float(pv)  # PV already domestic.
+        if isinstance(payoff, DigitalAssetPayoff):
+            pv = self.asset_engine.price(
+                option_type=trade.option_type,
+                spot=S0,
+                strike=K,
+                time_to_expiry=T,
+                discount_rate=r_d,
+                carry=b,
+                sigma=sigma,
+                asset_units=float(payoff.asset_units),
+            )
+            return float(pv)
+
+        # Defensive: if a new payoff type is added later, fail loudly.
+        raise TypeError(f"Unsupported payoff type for FxEuropeanDigitalBsmPricer: {type(payoff)!r}")
 
     def greeks(self, trade: EuropeanFxDigitalOption, market: Market) -> Dict[GreekName, float]:
-        S = float(market.quote(trade.spot_id))  # Read spot.
-        K = float(trade.strike)  # Read strike.
-        T = float(trade.expiry)  # Read expiry.
+        S0 = float(market.quote(trade.spot_id))
+        K = float(trade.strike)
+        T = float(trade.expiry)
 
-        df_d = float(market.curve(trade.domestic_curve_id).df(T))  # Domestic DF.
-        df_f = float(market.curve(trade.foreign_curve_id).df(T))  # Foreign DF.
+        if T < 0.0:
+            raise ValueError("expiry must be >= 0.")
+        if S0 <= 0.0:
+            raise ValueError("spot must be > 0.")
 
-        r_d = _rate_from_df(df=df_d, t=T)  # Domestic rate.
-        r_f = _rate_from_df(df=df_f, t=T)  # Foreign rate.
+        # Policy match with your FD digital greeks: stable zeros at/after expiry.
+        if T == 0.0:
+            return {
+                "delta": 0.0,
+                "gamma": 0.0,
+                "vega": 0.0,
+                "rho_domestic": 0.0,
+                "rho_foreign": 0.0,
+            }
 
-        b = float(r_d - r_f)  # Carry.
+        payoff = require_terminal_payoff(build_payoff_1d(trade))
 
-        sigma = float(market.vol_surface(trade.vol_id).vol(expiry=T, strike=K))  # Implied vol.
+        df_d = float(market.curve(trade.domestic_curve_id).df(T))
+        df_f = float(market.curve(trade.foreign_curve_id).df(T))
 
-        payout = float(trade.payout_amount)  # Payout amount.
+        r_d = _rate_from_df(df=df_d, t=T)
+        r_f = _rate_from_df(df=df_f, t=T)
+        b = float(r_d - r_f)
 
-        if trade.payoff == "cash":  # Cash digital greeks.
+        sigma = float(market.vol_surface(trade.vol_id).vol(expiry=T, strike=K))
+        if sigma < 0.0:
+            raise ValueError("Implied vol must be non-negative.")
+
+        if isinstance(payoff, DigitalCashPayoff):
             g = self.cash_engine.greeks(
                 option_type=trade.option_type,
-                spot=S,
+                spot=S0,
                 strike=K,
                 time_to_expiry=T,
                 discount_rate=r_d,
                 carry=b,
                 sigma=sigma,
-                cash=payout,
+                cash=float(payoff.cash),
             )
-        else:  # Asset digital greeks.
+        elif isinstance(payoff, DigitalAssetPayoff):
             g = self.asset_engine.greeks(
                 option_type=trade.option_type,
-                spot=S,
+                spot=S0,
                 strike=K,
                 time_to_expiry=T,
                 discount_rate=r_d,
                 carry=b,
                 sigma=sigma,
-                asset_units=payout,
+                asset_units=float(payoff.asset_units),
             )
+        else:
+            raise TypeError(f"Unsupported payoff type for FxEuropeanDigitalBsmPricer: {type(payoff)!r}")
 
-        # Engine greeks:
-        #   rho_discount = ∂PV/∂r  holding b fixed
-        #   rho_carry    = ∂PV/∂b  holding r fixed
-        #
-        # FX mapping:
-        #   r = r_d
-        #   b = r_d - r_f
-        #
-        # Chain rule:
-        #   ∂PV/∂r_d = rho_discount*(∂r/∂r_d) + rho_carry*(∂b/∂r_d) = rho_discount + rho_carry
-        #   ∂PV/∂r_f = rho_carry*(∂b/∂r_f) = -rho_carry
-        rho_domestic = float(g["rho_discount"] + g["rho_carry"])  # Domestic rho.
-        rho_foreign = float(-g["rho_carry"])  # Foreign rho.
+        rho_domestic = float(g["rho_discount"] + g["rho_carry"])
+        rho_foreign = float(-g["rho_carry"])
 
         return {
             "delta": float(g["delta"]),

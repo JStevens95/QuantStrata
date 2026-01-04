@@ -259,12 +259,14 @@ def solve_pde_theta_american(
 
         # Explicit component (I + (1-theta) dt L_{n+1}) V^{n+1}
         if (1.0 - theta) != 0.0:
-            rhs += (1.0 - theta) * dt_k * (L_np1.diag * V_np1_int)
-            rhs[1:] += (1.0 - theta) * dt_k * (L_np1.lower * V_np1_int[:-1])
-            rhs[:-1] += (1.0 - theta) * dt_k * (L_np1.upper * V_np1_int[1:])
+            w = (1.0 - theta) * dt_k
 
-            rhs[0] += (1.0 - theta) * dt_k * (L_np1.lower[0] * vL_np1)
-            rhs[-1] += (1.0 - theta) * dt_k * (L_np1.upper[-1] * vR_np1)
+            rhs += w * (L_np1.diag * V_np1_int)
+            rhs[1:] += w * (L_np1.lower * V_np1_int[:-1])
+            rhs[:-1] += w * (L_np1.upper * V_np1_int[1:])
+
+            rhs[0] += w * (L_np1.left_bc * vL_np1)
+            rhs[-1] += w * (L_np1.right_bc * vR_np1)
 
         if theta == 0.0:
             # Explicit step + projection (not recommended for production, but supported).
@@ -278,9 +280,10 @@ def solve_pde_theta_american(
             # Boundary values at t_n (Dirichlet typical; Neumann supported via interior_guess).
             vL_n, vR_n = boundary_values_for_time(x_grid, boundaries, t_n, interior_guess=V_np1_int)
 
-            # Move boundary terms to RHS.
-            rhs[0] -= A_lower[0] * vL_n
-            rhs[-1] -= A_upper[-1] * vR_n
+            # Add implicit boundary contribution to RHS using the operator's boundary coupling.
+            w = theta * dt_k
+            rhs[0] += w * (L_n.left_bc * vL_n)
+            rhs[-1] += w * (L_n.right_bc * vR_n)
 
             # PSOR solve enforcing V >= intrinsic.
             V_n_int = solve_tridiagonal_psor(

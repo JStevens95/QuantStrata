@@ -3,108 +3,141 @@ from __future__ import annotations
 import numpy as np
 from dataclasses import dataclass
 
-from src.models.payoffs.base import Payoff1D, _as_float_array
-from src.models.payoffs.types import BarrierDirection, BarrierKnock, RebateTiming
+from src.models.payoffs.base import BasePathPayoff1D, _as_float_array, _as_paths_array, _validate_option_type
+from src.models.payoffs.types import OptionType, BarrierDirection, BarrierStyle
 
 
 @dataclass(frozen=True, slots=True)
-class BarrierSpec:
+class SingleBarrierPayoff(BasePathPayoff1D):
     """
-    Barrier definition (1D).
+    European single-barrier payoff (path-dependent) for FX under discrete monitoring.
 
-    direction:
-      - 'up'   barrier is breached if S >= barrier
-      - 'down' barrier is breached if S <= barrier
+    What this returns
+    -----------------
+    - A 1D array of payoffs (shape (n_paths,)) in *domestic currency per 1 unit foreign notional*.
 
-    knock:
-      - 'out' knocks the option out on breach
-      - 'in'  knocks the option in on breach
+    Discrete monitoring rule (V1)
+    -----------------------------
+    - `paths` has shape (n_paths, n_steps+1) and includes S0 at column 0.
+    - Barrier is considered "hit" if ANY monitored point crosses the barrier:
+        * up   barrier: hit if max(path) >= B
+        * down barrier: hit if min(path) <= B
+
+    Barrier styles
+    --------------
+    - knock_out:
+        payoff = vanilla(S_T) if NOT hit else rebate
+    - knock_in:
+        payoff = vanilla(S_T) if hit else rebate
+
+    Rebate
+    ------
+    - `rebate_amount` is interpreted as *domestic* amount paid at expiry per unit notional.
+
+    Notes
+    -----
+    - This class intentionally does NOT implement terminal(spot) because the payoff needs the
+      full path to determine hit status.
     """
-    barrier: float
-    direction: BarrierDirection
-    knock: BarrierKnock
-    rebate: float = 0.0
-    rebate_timing: RebateTiming = "at_expiry"
+
+    option_type: OptionType
+    strike: float
+
+    barrier_direction: BarrierDirection  # "up" | "down"
+    barrier_style: BarrierStyle          # "knock_out" | "knock_in"
+    barrier_level: float
+
+    rebate_amount: float = 0.0
 
     def __post_init__(self) -> None:
-        if float(self.barrier) <= 0.0:
-            raise ValueError("barrier must be > 0.")
-        if self.direction not in ("up", "down"):
-            raise ValueError("direction must be 'up' or 'down'.")
-        if self.knock not in ("in", "out"):
-            raise ValueError("knock must be 'in' or 'out'.")
-        if self.rebate_timing not in ("at_hit", "at_expiry"):
-            raise ValueError("rebate_timing must be 'at_hit' or 'at_expiry'.")
-        if not np.isfinite(float(self.rebate)):
-            raise ValueError("rebate must be finite.")
+        # Validate vanilla leg
+        _validate_option_type(self.option_type)
+        if float(self.strike) <= 0.0:
+            raise ValueError("strike must be > 0.")
 
+        # Validate barrier definition
+        if self.barrier_direction not in ("up", "down"):
+            raise ValueError("barrier_direction must be 'up' or 'down'.")
+        if self.barrier_style not in ("knock_out", "knock_in"):
+            raise ValueError("barrier_style must be 'knock_out' or 'knock_in'.")
+        if float(self.barrier_level) <= 0.0:
+            raise ValueError("barrier_level must be > 0.")
 
-@dataclass(frozen=True, slots=True)
-class BarrierPayoff:
-    """
-    Wrapper that makes a base payoff into a barrier product.
+        # Validate rebate
+        rebate = float(self.rebate_amount)
+        if not np.isfinite(rebate):
+            raise ValueError("rebate_amount must be finite.")
+        if rebate < 0.0:
+            raise ValueError("rebate_amount must be >= 0.")
 
-    This object is path-dependent and therefore cannot be evaluated from S_T alone.
-    Pricers should:
-      - determine whether the option is alive at expiry (or knocked-in),
-      - then call `finalize(spot_T, alive_mask, knocked_mask, hit_time_mask, ...)`.
+    # ------------------------------------------------------------------
+    # Core payoff: per-path payoff using full simulated paths
+    # ------------------------------------------------------------------
 
-    V1 behaviour:
-      - We support rebate paid at expiry (common for simple barrier payoffs).
-      - Rebate at hit is supported only if the pricer supplies a `hit_mask` (per path / per node).
-    """
-    base: Payoff1D
-    barrier: BarrierSpec
-
-    @property
-    def is_path_dependent(self) -> bool:
-        return True
-
-    def terminal(self, spot: np.ndarray) -> np.ndarray:
-        # Not meaningful alone for barriers; keep for convenience but document.
-        return self.base.terminal(spot)
-
-    def intrinsic(self, spot: np.ndarray) -> np.ndarray:
-        # For American-barrier combos (rare in FX), this would need exercise + barrier logic.
-        return self.base.intrinsic(spot)
-
-    def finalize(
-        self,
-        *,
-        spot_T: np.ndarray,
-        is_hit: np.ndarray,
-        cash_rebate_if_hit: bool = True,
-    ) -> np.ndarray:
+    def terminal_from_paths(self, paths: np.ndarray) -> np.ndarray:
         """
-        Convert base payoff into barrier payoff given barrier hit information.
+        Compute expiry payoff per path using the full simulated spot path.
 
         Parameters
         ----------
-        spot_T:
-            Terminal spot(s).
-        is_hit:
-            Boolean array: True if barrier was breached at any time (path monitoring result).
-        cash_rebate_if_hit:
-            If True and rebate_timing='at_expiry', pay rebate on hit.
+        paths:
+            Spot paths, shape (n_paths, n_steps+1), including S0 in column 0.
 
         Returns
         -------
-        payoff:
-            Per-unit terminal payoff respecting knock-in/knock-out + rebate (at expiry).
+        np.ndarray
+            Payoffs per unit notional, shape (n_paths,).
         """
-        sT = _as_float_array(spot_T)
-        hit = np.asarray(is_hit, dtype=bool)
+        p = _as_paths_array(paths)
 
-        base_pay = np.asarray(self.base.terminal(sT), dtype=np.float64)
+        # Terminal spots S_T are last column
+        s_t = p[:, -1]
 
-        if self.barrier.knock == "out":
-            alive = ~hit
-        else:
-            alive = hit
+        # Determine barrier hit per path (discrete monitoring, inclusive)
+        hit = self._barrier_hit_mask(p)
 
-        payoff = base_pay * alive.astype(np.float64)
+        # Vanilla payoff on terminal spot
+        vanilla = self._vanilla_terminal(s_t)
 
-        if float(self.barrier.rebate) != 0.0 and cash_rebate_if_hit and self.barrier.rebate_timing == "at_expiry":
-            payoff = payoff + float(self.barrier.rebate) * hit.astype(np.float64)
+        # Rebate is a constant paid at expiry per unit notional
+        rebate = float(self.rebate_amount)
 
-        return payoff
+        # Knock-out / knock-in selection
+        if self.barrier_style == "knock_out":
+            # Pay vanilla if NOT hit, else rebate
+            return np.where(~hit, vanilla, rebate).astype(np.float64, copy=False)
+
+        # knock_in:
+        # Pay vanilla if hit, else rebate
+        return np.where(hit, vanilla, rebate).astype(np.float64, copy=False)
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+
+    def _vanilla_terminal(self, spot_t: np.ndarray) -> np.ndarray:
+        """
+        Vanilla payoff max(S-K,0) or max(K-S,0) per unit notional.
+        """
+        s = _as_float_array(spot_t)
+        k = float(self.strike)
+
+        if self.option_type == "call":
+            return np.maximum(s - k, 0.0)
+        return np.maximum(k - s, 0.0)
+
+    def _barrier_hit_mask(self, paths: np.ndarray) -> np.ndarray:
+        """
+        Boolean array (n_paths,) indicating whether barrier was hit on each path.
+        """
+        b = float(self.barrier_level)
+
+        if self.barrier_direction == "up":
+            # Hit if any monitored spot >= barrier
+            max_s = np.max(paths, axis=1)
+            return (max_s >= b)
+
+        # down:
+        # Hit if any monitored spot <= barrier
+        min_s = np.min(paths, axis=1)
+        return (min_s <= b)

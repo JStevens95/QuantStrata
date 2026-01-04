@@ -1,4 +1,3 @@
-# tests/unit/pricers/fx/test_european_mc_pricer.py
 from __future__ import annotations
 
 import math
@@ -11,15 +10,20 @@ import pytest
 from src.marketdata.ids import MarketId
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
 from src.instruments.fx.options.digital import EuropeanFxDigitalOption
+from src.instruments.fx.options.barrier import EuropeanFxBarrierOption
 
 from src.pricers.fx.european_bsm import (
     FxEuropeanVanillaBsmPricer,
     FxEuropeanDigitalBsmPricer,
+    _rate_from_df
 )
 from src.pricers.fx.european_mc import (
     FxEuropeanVanillaMcPricer,
     FxEuropeanDigitalMcPricer,
+    FxEuropeanBarrierMcPricer,
 )
+
+from src.models.payoffs.barrier import SingleBarrierPayoff
 
 
 # =============================================================================
@@ -583,3 +587,303 @@ def test_fx_digital_mc_price_at_expiry_is_deterministic(
     pv = float(mc.price(trade, market0))
 
     assert pv == pytest.approx(float(expected_domestic), rel=0.0, abs=0.0)
+
+
+# =============================================================================
+# Barrier MC tests (single-barrier KO/KI with rebate, discrete monitoring)
+# =============================================================================
+
+def _make_barrier_trade(
+    *,
+    ids: Dict[str, MarketId],
+    option_type: str,
+    notional: float,
+    strike: float,
+    expiry: float,
+    barrier_direction: str,
+    barrier_style: str,
+    barrier_level: float,
+    rebate_amount: float,
+) -> EuropeanFxBarrierOption:
+    return EuropeanFxBarrierOption(
+        option_type=option_type,  # type: ignore[arg-type]
+        notional=float(notional),
+        strike=float(strike),
+        expiry=float(expiry),
+        barrier_direction=barrier_direction,  # type: ignore[arg-type]
+        barrier_style=barrier_style,          # type: ignore[arg-type]
+        barrier_level=float(barrier_level),
+        rebate_amount=float(rebate_amount),
+        spot_id=ids["spot"],
+        vol_id=ids["vol"],
+        domestic_curve_id=ids["rd"],
+        foreign_curve_id=ids["rf"],
+    )
+
+
+def _deterministic_gbm_paths_zero_vol(
+    *,
+    spot0: float,
+    drift: float,
+    maturity: float,
+    n_steps: int,
+) -> np.ndarray:
+    """
+    Build the deterministic GBM path when sigma=0 under:
+      S(t) = S0 * exp(drift * t)
+    Returns shape (1, n_steps+1).
+    """
+    if n_steps <= 0:
+        raise ValueError("n_steps must be positive.")
+    t = np.linspace(0.0, float(maturity), int(n_steps) + 1, dtype=np.float64)
+    path = float(spot0) * np.exp(float(drift) * t)
+    return path.reshape(1, -1)
+
+
+@pytest.mark.parametrize(
+    "barrier_direction,barrier_level",
+    [
+        # Base params: S0=1.25, drift=rd-rf=0.02, deterministic S_T ~ 1.25*exp(0.02) ~ 1.275...
+        ("up", 1.27),     # crossed by expiry (hit)
+        ("up", 1.40),     # never reaches (no hit)
+        ("down", 1.26),   # hit immediately because S0=1.25 <= 1.26
+        ("down", 1.10),   # never goes that low (no hit)
+    ],
+)
+@pytest.mark.parametrize("barrier_style", ["knock_out", "knock_in"])
+@pytest.mark.parametrize("option_type", ["call", "put"])
+def test_fx_barrier_mc_zero_vol_matches_discounted_deterministic_path(
+    ids: Dict[str, MarketId],
+    base_params: Dict[str, float],
+    barrier_direction: str,
+    barrier_level: float,
+    barrier_style: str,
+    option_type: str,
+) -> None:
+    """
+    With sigma=0 the path is deterministic, so the MC pricer should match a
+    deterministic discrete-monitored payoff computed from that path.
+
+    This regression test is intentionally strong (non-stochastic):
+      - barrier hit logic (up/down, inclusive)
+      - KO/KI logic
+      - rebate usage
+      - discounting + notional scaling
+    """
+    # Market with sigma=0 (deterministic path)
+    mkt0 = _DummyMarket(
+        spot=float(base_params["spot"]),
+        rd=float(base_params["rd"]),
+        rf=float(base_params["rf"]),
+        sigma=0.0,
+        spot_id=ids["spot"],
+        vol_id=ids["vol"],
+        rd_id=ids["rd"],
+        rf_id=ids["rf"],
+    )
+
+    s0 = float(base_params["spot"])
+    k = float(base_params["strike"])
+    t = float(base_params["t"])
+
+    notional = float(base_params["notional"])
+    rebate = 0.1234  # per-unit-notional domestic rebate paid at expiry
+
+    trade = _make_barrier_trade(
+        ids=ids,
+        option_type=option_type,
+        notional=notional,
+        strike=k,
+        expiry=t,
+        barrier_direction=barrier_direction,
+        barrier_style=barrier_style,
+        barrier_level=float(barrier_level),
+        rebate_amount=rebate,
+    )
+
+    # Use multiple steps so discrete monitoring is meaningful.
+    n_steps = 64
+
+    mc = FxEuropeanBarrierMcPricer(
+        n_paths=50_000,
+        seed=7,
+        antithetic=True,
+        n_steps=n_steps,
+        scheme="exact",  # type: ignore[arg-type]
+    )
+    pv_mc = float(mc.price(trade, mkt0))
+
+    # --- Expected PV computed using the SAME df->rate mapping as the pricer ---
+    df_d = float(mkt0.curve(ids["rd"]).df(t))
+    df_f = float(mkt0.curve(ids["rf"]).df(t))
+
+    r_d = _rate_from_df(df=df_d, t=t)
+    r_f = _rate_from_df(df=df_f, t=t)
+    drift = float(r_d - r_f)
+
+    paths = _deterministic_gbm_paths_zero_vol(spot0=s0, drift=drift, maturity=t, n_steps=n_steps)
+
+    payoff = SingleBarrierPayoff(
+        option_type=option_type,  # type: ignore[arg-type]
+        strike=k,
+        barrier_direction=barrier_direction,  # type: ignore[arg-type]
+        barrier_style=barrier_style,          # type: ignore[arg-type]
+        barrier_level=float(barrier_level),
+        rebate_amount=rebate,
+    )
+
+    payoff_per_unit = float(payoff.terminal_from_paths(paths)[0])
+    expected = float(notional) * float(df_d) * float(payoff_per_unit)
+
+    # Avoid brittle exact-equality; numeric round-trips can differ at ~1e-9
+    assert pv_mc == pytest.approx(expected, rel=0.0, abs=1e-8)
+
+
+def test_fx_barrier_mc_scales_linearly_with_notional(
+    ids: Dict[str, MarketId],
+    base_params: Dict[str, float],
+    market: _DummyMarket,
+) -> None:
+    """Barrier PV must scale linearly with notional (foreign units)."""
+    n1 = float(base_params["notional"])
+    n2 = 3.0 * n1
+
+    trade_1 = _make_barrier_trade(
+        ids=ids,
+        option_type="call",
+        notional=n1,
+        strike=float(base_params["strike"]),
+        expiry=float(base_params["t"]),
+        barrier_direction="up",
+        barrier_style="knock_out",
+        barrier_level=1.60,  # far barrier => stable regression behaviour
+        rebate_amount=0.0,
+    )
+    trade_2 = _make_barrier_trade(
+        ids=ids,
+        option_type="call",
+        notional=n2,
+        strike=float(base_params["strike"]),
+        expiry=float(base_params["t"]),
+        barrier_direction="up",
+        barrier_style="knock_out",
+        barrier_level=1.60,
+        rebate_amount=0.0,
+    )
+
+    mc = FxEuropeanBarrierMcPricer(
+        n_paths=120_000,
+        seed=123,
+        antithetic=True,
+        n_steps=64,
+        scheme="exact",  # type: ignore[arg-type]
+    )
+
+    pv_1 = float(mc.price(trade_1, market))
+    pv_2 = float(mc.price(trade_2, market))
+
+    assert pv_2 == pytest.approx(3.0 * pv_1, rel=1e-12, abs=1e-6)
+
+
+def test_fx_barrier_mc_is_reproducible_for_same_seed(
+    ids: Dict[str, MarketId],
+    base_params: Dict[str, float],
+    market: _DummyMarket,
+) -> None:
+    """Same seed => same PV."""
+    trade = _make_barrier_trade(
+        ids=ids,
+        option_type="put",
+        notional=float(base_params["notional"]),
+        strike=float(base_params["strike"]),
+        expiry=float(base_params["t"]),
+        barrier_direction="down",
+        barrier_style="knock_in",
+        barrier_level=1.10,
+        rebate_amount=0.05,
+    )
+
+    pv_a = float(
+        FxEuropeanBarrierMcPricer(
+            n_paths=80_000,
+            seed=999,
+            antithetic=True,
+            n_steps=64,
+            scheme="exact",  # type: ignore[arg-type]
+        ).price(trade, market)
+    )
+    pv_b = float(
+        FxEuropeanBarrierMcPricer(
+            n_paths=80_000,
+            seed=999,
+            antithetic=True,
+            n_steps=64,
+            scheme="exact",  # type: ignore[arg-type]
+        ).price(trade, market)
+    )
+
+    assert pv_a == pytest.approx(pv_b, rel=0.0, abs=0.0)
+
+
+def test_fx_barrier_mc_changes_with_different_seed(
+    ids: Dict[str, MarketId],
+    base_params: Dict[str, float],
+    market: _DummyMarket,
+) -> None:
+    """Different seeds => generally different PV (stochastic)."""
+    trade = _make_barrier_trade(
+        ids=ids,
+        option_type="call",
+        notional=float(base_params["notional"]),
+        strike=float(base_params["strike"]),
+        expiry=float(base_params["t"]),
+        barrier_direction="up",
+        barrier_style="knock_out",
+        barrier_level=1.35,
+        rebate_amount=0.02,
+    )
+
+    pv_a = float(FxEuropeanBarrierMcPricer(n_paths=60_000, seed=1, antithetic=True, n_steps=64, scheme="exact").price(trade, market))  # type: ignore[arg-type]
+    pv_b = float(FxEuropeanBarrierMcPricer(n_paths=60_000, seed=2, antithetic=True, n_steps=64, scheme="exact").price(trade, market))  # type: ignore[arg-type]
+
+    assert pv_a != pv_b
+
+
+def test_fx_barrier_mc_price_at_expiry_is_deterministic(
+    ids: Dict[str, MarketId],
+) -> None:
+    """
+    At T=0, barrier payoff is evaluated on the trivial path [S0].
+    Because monitoring includes S0, the barrier may be hit immediately.
+    """
+    s0 = 1.25
+
+    market0 = _DummyMarket(
+        spot=float(s0),
+        rd=0.03,
+        rf=0.01,
+        sigma=0.20,
+        spot_id=ids["spot"],
+        vol_id=ids["vol"],
+        rd_id=ids["rd"],
+        rf_id=ids["rf"],
+    )
+
+    # Up KO with barrier below S0 => hit immediately => pays rebate (df=1 at T=0)
+    trade = _make_barrier_trade(
+        ids=ids,
+        option_type="call",
+        notional=1_000_000.0,
+        strike=1.20,
+        expiry=0.0,
+        barrier_direction="up",
+        barrier_style="knock_out",
+        barrier_level=1.10,
+        rebate_amount=0.25,  # domestic per unit notional
+    )
+
+    mc = FxEuropeanBarrierMcPricer(n_paths=10_000, seed=1, antithetic=True, n_steps=1, scheme="exact")  # type: ignore[arg-type]
+    pv = float(mc.price(trade, market0))
+
+    expected = float(trade.notional) * float(trade.rebate_amount)
+    assert pv == pytest.approx(expected, rel=0.0, abs=0.0)

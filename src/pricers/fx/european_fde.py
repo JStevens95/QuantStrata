@@ -19,8 +19,7 @@ from src.models.numeric.finite_difference.diagnostics import FdDiagnostics
 # Project imports: payoff library (terminal conditions)
 from src.models.payoffs.types import OptionType
 from src.models.payoffs.base import BasePayoff1D
-from src.models.payoffs.vanilla import VanillaPayoff
-from src.models.payoffs.digital import DigitalCashPayoff, DigitalAssetPayoff
+from src.models.payoffs.factory import build_payoff_1d, require_terminal_payoff
 
 # Keep rate/DF conversion consistent across BSM/MC/FD pricers
 from src.pricers.fx.european_bsm import _rate_from_df
@@ -145,7 +144,7 @@ class FxEuropeanVanillaFdPricer:
         S_max = float(ctx["S_max"])            # right boundary spot
 
         # Build terminal payoff via payoff library (single source of truth).
-        payoff = VanillaPayoff(option_type=option_type, strike=float(K))
+        payoff = require_terminal_payoff(build_payoff_1d(trade))
 
         # Solve PDE once at base parameters (reused for delta/gamma extraction).
         sol0 = self._solve_on_grids(
@@ -341,7 +340,7 @@ class FxEuropeanVanillaFdPricer:
         t_grid = TimeGrid.uniform(t0=0.0, t1=float(T), n=int(self.n_time_steps) + 1, name="t")
 
         # Create payoff from payoff library (terminal condition)
-        payoff = VanillaPayoff(option_type=option_type, strike=float(K))
+        payoff = require_terminal_payoff(build_payoff_1d(trade))
 
         # Solve PDE and keep surface if requested (surface is big -> optional)
         sol = self._solve_on_grids(
@@ -413,7 +412,7 @@ class FxEuropeanVanillaFdPricer:
             raise ValueError("spot must be > 0 for log-space PDE.")
 
         # Build payoff object
-        payoff = VanillaPayoff(option_type=option_type, strike=float(K))
+        payoff = require_terminal_payoff(build_payoff_1d(trade))
 
         # If T == 0, PV is simply payoff(S0) (no discounting)
         if T == 0.0:
@@ -754,7 +753,7 @@ class FxEuropeanDigitalFdPricer:
         S_max = float(ctx["S_max"])
 
         # Construct payoff via payoff library
-        payoff = self._build_payoff(trade)
+        payoff = require_terminal_payoff(build_payoff_1d(trade))
 
         # -----------------------------
         # Vega (bump sigma)
@@ -871,29 +870,10 @@ class FxEuropeanDigitalFdPricer:
     # Internals
     # =====================================================================
 
-    @staticmethod
-    def _build_payoff(trade: EuropeanFxDigitalOption) -> BasePayoff1D:
-        """
-        Create a payoff object from the payoff library.
-
-        This keeps all terminal conditions centralized in src/models/payoffs/*.
-        """
-        option_type: OptionType = trade.option_type  # type: ignore[assignment]
-        K = float(trade.strike)
-        payout = float(trade.payout_amount)
-
-        # Cash digital: payoff returns "cash" when ITM
-        if trade.payoff == "cash":
-            return DigitalCashPayoff(option_type=option_type, strike=K, cash=payout)
-
-        # Asset digital: payoff returns "asset_units * S" when ITM
-        return DigitalAssetPayoff(option_type=option_type, strike=K, asset_units=payout)
-
     def _price_and_context(self, trade: EuropeanFxDigitalOption, market: Market) -> Tuple[float, Dict[str, object]]:
         """
         Price digital via PDE solve (or degenerate shortcuts) and return PV + context.
         """
-        option_type: OptionType = trade.option_type  # type: ignore[assignment]
 
         # Read trade/market values
         S0 = float(market.quote(trade.spot_id))
@@ -907,7 +887,7 @@ class FxEuropeanDigitalFdPricer:
             raise ValueError("spot must be > 0 for log-space PDE.")
 
         # Build payoff from payoff library
-        payoff = self._build_payoff(trade)
+        payoff = require_terminal_payoff(build_payoff_1d(trade))
 
         # If expiry now, PV is immediate payoff at S0 (no discounting)
         if T == 0.0:

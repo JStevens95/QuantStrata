@@ -20,7 +20,7 @@ class VanillaPayoff(BasePayoff1D):
         if float(self.strike) <= 0.0:
             raise ValueError("strike must be > 0.")
 
-    def terminal(self, spot: np.ndarray) -> np.ndarray:
+    def terminal(self, spot: np.ndarray | float) -> np.ndarray:
         s = _as_float_array(spot)
         k = float(self.strike)
         if self.option_type == "call":
