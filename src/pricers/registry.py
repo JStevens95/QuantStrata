@@ -18,7 +18,8 @@ from src.pricers.fx.spot import FxSpotPricer
 from src.pricers.fx.forward import FxForwardPricer
 from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer
 from src.pricers.fx.european_bsm import FxEuropeanDigitalBsmPricer
-from src.pricers.fx.european_mc import FxEuropeanBarrierMcPricer
+from src.pricers.fx.european_mc import FxEuropeanBarrierMcPricer, FxEuropeanVanillaMcPricer, FxEuropeanDigitalMcPricer
+from src.pricers.fx.european_fde import FxEuropeanVanillaFdPricer, FxEuropeanDigitalFdPricer
 from src.pricers.fx.american_fde import FxAmericanVanillaFdPricer
 
 
@@ -204,4 +205,9 @@ class DefaultPricerRegistry:
         reg.register(EuropeanFxVanillaOption, FxEuropeanVanillaBsmPricer())
         reg.register(EuropeanFxBarrierOption, FxEuropeanBarrierMcPricer())
         reg.register(AmericanFxVanillaOption, FxAmericanVanillaFdPricer())
+
+        reg.register(EuropeanFxVanillaOption, FxEuropeanVanillaMcPricer(), pricer_id='mc')
+        reg.register(EuropeanFxDigitalOption, FxEuropeanDigitalMcPricer(), pricer_id='mc')
+        reg.register(EuropeanFxVanillaOption, FxEuropeanVanillaFdPricer(), pricer_id='fd')
+        reg.register(EuropeanFxDigitalOption, FxEuropeanDigitalFdPricer(), pricer_id='fd')
         return reg

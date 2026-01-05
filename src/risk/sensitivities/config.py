@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Mapping, Optional
 
 from src.marketdata.ids import MarketId
@@ -42,7 +42,9 @@ class SensitivitiesConfig:
     *output schema* stays stable either way.
     """
     method: str = "analytic"  # "analytic" or "fd_central"
-    bumps: SensitivitiesBumps = SensitivitiesBumps()
+
+    # IMPORTANT: avoid a shared mutable default instance
+    bumps: SensitivitiesBumps = field(default_factory=SensitivitiesBumps)
 
     # Optional mapping for rate shocks -> greek key when using analytic method.
     # Example (FX): { rd_id: "rho_domestic", rf_id: "rho_foreign" }

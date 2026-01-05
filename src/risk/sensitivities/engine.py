@@ -7,9 +7,13 @@ from src.marketdata.ids import MarketId
 from src.marketdata.scenarios.base import MarketView
 from src.portfolio.core import Portfolio
 
+from src.marketdata.scenarios.shocks import SpotShock
+from src.marketdata.scenarios.shocks import ParallelRateShock
+from src.marketdata.scenarios.shocks import VolShock
+
+from src.risk.scenarios.runner import run_portfolio_scenarios
 from src.risk.sensitivities.config import SensitivitiesConfig
 from src.risk.sensitivities.result import SensitivityKey, SensitivityRow, SensitivitiesReport
-
 
 @dataclass(frozen=True, slots=True)
 class _InferredRiskFactors:
@@ -223,9 +227,7 @@ def _fd_spot_rows(
     pv_base: float,
     spot_ids: Tuple[MarketId, ...],
     rel_bump: float,
-) -> List[SensitivityRow]:
-    from src.marketdata.scenarios.shocks import SpotShock  # noqa: WPS433
-    from src.risk.scenarios.runner import run_portfolio_scenarios  # adjust if your runner module path differs
+) -> List[SensitivityRow]:\
 
     rows: List[SensitivityRow] = []
     for sid in spot_ids:
@@ -271,13 +273,11 @@ def _fd_vol_rows(
     vol_ids: Tuple[MarketId, ...],
     abs_bump: float,
 ) -> List[SensitivityRow]:
-    from src.marketdata.scenarios.shocks import FlatVolShock  # noqa: WPS433
-    from src.risk.scenarios.runner import run_portfolio_scenarios  # adjust if needed
 
     rows: List[SensitivityRow] = []
     for vid in vol_ids:
-        shock_up = FlatVolShock(name=f"vol_up_{vid.name}", vol_id=vid, vol_bump=abs_bump)
-        shock_dn = FlatVolShock(name=f"vol_dn_{vid.name}", vol_id=vid, vol_bump=-abs_bump)
+        shock_up = VolShock(name=f"vol_up_{vid.name}", vol_id=vid, bump=abs_bump, bump_mode="absolute")
+        shock_dn = VolShock(name=f"vol_dn_{vid.name}", vol_id=vid, bump=-abs_bump, bump_mode="absolute")
 
         res = run_portfolio_scenarios(portfolio, market, portfolio_pricer, [shock_up, shock_dn])
         pv_up = float(res.pv_by_scenario[shock_up.name])
@@ -306,8 +306,6 @@ def _fd_rho_rows(
     abs_bump: float,
     rho_key_by_curve_id: Optional[Mapping[MarketId, str]],
 ) -> List[SensitivityRow]:
-    from src.marketdata.scenarios.shocks import ParallelRateShock  # noqa: WPS433
-    from src.risk.scenarios.runner import run_portfolio_scenarios  # adjust if needed
 
     # If you provided a mapping curve_id -> rho_key, use that to decide which curves to bump for rho_domestic/rho_foreign.
     bump_these: List[MarketId] = []

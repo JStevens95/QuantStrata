@@ -38,6 +38,10 @@ class VolSurface(Protocol):
         """Implied volatility for a given expiry and strike."""
         ...
 
+    def vol(self, expiry: float, strike: float) -> float:
+        """Compatibility alias for implied_vol()."""
+        ...
+
 
 @dataclass(frozen=True, slots=True)
 class Quote:

@@ -46,7 +46,7 @@ class _DummyMarketView:
 # =============================================================================
 
 def test_flat_vol_surface_returns_constant_vol() -> None:
-    surface = FlatVolSurface(implied_vol=0.12)
+    surface = FlatVolSurface(sigma=0.12)
 
     assert surface.vol(expiry=0.0, strike=1.0) == pytest.approx(0.12)
     assert surface.vol(expiry=1.0, strike=0.8) == pytest.approx(0.12)
@@ -58,11 +58,11 @@ def test_flat_vol_surface_returns_constant_vol() -> None:
 
 def test_flat_vol_surface_validation() -> None:
     with pytest.raises(ValueError):
-        FlatVolSurface(implied_vol=0.0)
+        FlatVolSurface(sigma=0.0)
     with pytest.raises(ValueError):
-        FlatVolSurface(implied_vol=-0.2)
+        FlatVolSurface(sigma=-0.2)
     with pytest.raises(ValueError):
-        FlatVolSurface(implied_vol=float("nan"))
+        FlatVolSurface(sigma=float("nan"))
 
 
 def test_flat_vol_factory_accepts_scalar_formats() -> None:
@@ -163,7 +163,7 @@ def test_grid_vol_factory_builds_surface_from_flat_params() -> None:
 
 def test_vol_shock_relative_bumps_flat_surface() -> None:
     vol_id = MarketId("FX", "VOL", "EURUSD")
-    base_market = _DummyMarketView(vol_surfaces={vol_id: FlatVolSurface(implied_vol=0.20)})
+    base_market = _DummyMarketView(vol_surfaces={vol_id: FlatVolSurface(sigma=0.20)})
 
     shocked_market = VolShock(
         name="vol_up_10pct",
@@ -179,7 +179,7 @@ def test_vol_shock_relative_bumps_flat_surface() -> None:
 
 def test_vol_shock_absolute_bumps_flat_surface() -> None:
     vol_id = MarketId("FX", "VOL", "EURUSD")
-    base_market = _DummyMarketView(vol_surfaces={vol_id: FlatVolSurface(implied_vol=0.20)})
+    base_market = _DummyMarketView(vol_surfaces={vol_id: FlatVolSurface(sigma=0.20)})
 
     shocked_market = VolShock(
         name="vol_up_1pt",
@@ -204,7 +204,7 @@ def test_vol_shock_applies_to_grid_surface_and_leaves_other_surfaces_unchanged()
     base_market = _DummyMarketView(
         vol_surfaces={
             vol_id_a: GridVolSurface(expiries=expiries, strikes=strikes, implied_vols=vols_a),
-            vol_id_b: FlatVolSurface(implied_vol=0.30),
+            vol_id_b: FlatVolSurface(sigma=0.30),
         }
     )
 
@@ -227,7 +227,7 @@ def test_vol_shock_applies_to_grid_surface_and_leaves_other_surfaces_unchanged()
 
 def test_vol_shock_floor_prevents_non_positive_vol() -> None:
     vol_id = MarketId("FX", "VOL", "EURUSD")
-    base_market = _DummyMarketView(vol_surfaces={vol_id: FlatVolSurface(implied_vol=0.02)})
+    base_market = _DummyMarketView(vol_surfaces={vol_id: FlatVolSurface(sigma=0.02)})
 
     shocked_market = VolShock(
         name="vol_down_extreme",

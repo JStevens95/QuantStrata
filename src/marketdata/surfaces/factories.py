@@ -52,7 +52,7 @@ class FlatVolFactory:
 
     def build(self, params: np.ndarray) -> VolSurface:
         sigma = _coerce_scalar(params)
-        return FlatVolSurface(implied_vol=sigma)
+        return FlatVolSurface(sigma=sigma)
 
 
 @dataclass(frozen=True, slots=True)
