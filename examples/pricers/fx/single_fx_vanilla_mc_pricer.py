@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
 from src.marketdata.ids import MarketId
 from src.marketdata.requests import MarketRequest, Universe
-from src.marketdata.synthetic.provider import SyntheticProvider
+from src.marketdata.providers.synthetic.provider import SyntheticProvider
 
 from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer
 from src.pricers.fx.european_mc import FxEuropeanVanillaMcPricer, FxMcSimulation

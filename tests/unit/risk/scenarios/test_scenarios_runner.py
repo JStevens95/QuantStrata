@@ -8,7 +8,7 @@ from src.marketdata.ids import MarketId
 from src.marketdata.requests import MarketRequest, Universe
 from src.marketdata.scenarios.base import ScenarioPack
 from src.marketdata.scenarios.shocks import SpotShock
-from src.marketdata.synthetic.provider import SyntheticProvider
+from src.marketdata.providers.synthetic.provider import SyntheticProvider
 from src.portfolio.core import Portfolio, Position
 from src.portfolio.portfolio import PortfolioPricer
 from src.pricers.registry import DefaultPricerRegistry

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.marketdata.adaptors.ql_utils import (
+from src.integrations.quantlib.ql_utils import (
     QlContext,
     parse_iso_date,
     require_quantlib,

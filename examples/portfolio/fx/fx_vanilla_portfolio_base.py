@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from src.marketdata.ids import MarketId
 from src.marketdata.requests import MarketRequest, Universe
-from src.marketdata.synthetic.provider import SyntheticProvider
+from src.marketdata.providers.synthetic.provider import SyntheticProvider
 
 from src.instruments.fx.linear.spot import FxSpot
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption

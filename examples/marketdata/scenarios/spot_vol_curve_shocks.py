@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from src.marketdata.ids import MarketId
 from src.marketdata.requests import MarketRequest, Universe
-from src.marketdata.synthetic.provider import SyntheticProvider
+from src.marketdata.providers.synthetic.provider import SyntheticProvider
 
 from src.marketdata.scenarios.base import ScenarioPack
 from src.marketdata.scenarios.shocks import FlatVolShock, ParallelRateShock, SpotShock

@@ -15,7 +15,7 @@ from src.marketdata.market import Market
 from src.marketdata.requests import MarketRequest, TimeseriesRequest
 from src.marketdata.surfaces.factories import GridVolFactory
 
-from src.marketdata.synthetic.config import SyntheticProviderConfig
+from src.marketdata.providers.synthetic.config import SyntheticProviderConfig
 
 logger = logging.getLogger(__name__)
 

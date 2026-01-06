@@ -4,7 +4,7 @@ import numpy as np
 from typing import Union
 
 from src.marketdata.curves.discount import FlatDiscountCurve, ZeroRateDiscountCurve
-from src.marketdata.adaptors.ql_utils import QlContext, require_quantlib, yearfrac_to_ql_date
+from src.integrations.quantlib.ql_utils import QlContext, require_quantlib, yearfrac_to_ql_date
 
 
 CurveLike = Union[FlatDiscountCurve, ZeroRateDiscountCurve]

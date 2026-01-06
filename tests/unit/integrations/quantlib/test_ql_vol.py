@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import numpy as np
 import pytest
+import numpy as np
 
-from src.marketdata.adaptors.ql_utils import QlContext, require_quantlib
-from src.marketdata.adaptors.ql_vol import vol_surface_to_black_vol_handle
+from src.integrations.quantlib.ql_utils import QlContext, require_quantlib
+from src.integrations.quantlib.ql_vol import vol_surface_to_black_vol_handle
 from src.marketdata.surfaces.vol_surface import FlatVolSurface, GridVolSurface
 
 

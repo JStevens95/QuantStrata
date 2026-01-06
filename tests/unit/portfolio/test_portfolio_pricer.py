@@ -8,7 +8,7 @@ import pytest
 # ---- market-data plumbing used by the pricer ----
 from src.marketdata.ids import MarketId
 from src.marketdata.requests import MarketRequest, Universe
-from src.marketdata.synthetic.provider import SyntheticProvider
+from src.marketdata.providers.synthetic.provider import SyntheticProvider
 
 # ---- portfolio domain objects ----
 from src.portfolio.core import Portfolio, Position

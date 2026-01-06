@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+import pytest
 from dataclasses import dataclass
 
-import pytest
-
-from src.marketdata.adaptors.ql_market import build_ql_fx_market_view
-from src.marketdata.adaptors.ql_utils import QlContext, require_quantlib
+from src.integrations.quantlib.ql_market import build_ql_fx_market_view
+from src.integrations.quantlib.ql_utils import QlContext, require_quantlib
 from src.marketdata.curves.discount import FlatDiscountCurve
 from src.marketdata.ids import MarketId
 from src.marketdata.market import Market

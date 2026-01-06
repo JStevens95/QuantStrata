@@ -4,7 +4,7 @@ import pytest
 
 from src.marketdata.ids import MarketId
 from src.marketdata.requests import MarketRequest, Universe
-from src.marketdata.synthetic.provider import SyntheticProvider
+from src.marketdata.providers.synthetic.provider import SyntheticProvider
 
 
 def test_get_market_returns_market_with_expected_objects() -> None:

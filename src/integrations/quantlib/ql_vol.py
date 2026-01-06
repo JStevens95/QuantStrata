@@ -4,7 +4,7 @@ import numpy as np
 from typing import Union
 
 from src.marketdata.surfaces.vol_surface import FlatVolSurface, GridVolSurface
-from src.marketdata.adaptors.ql_utils import QlContext, require_quantlib, yearfrac_to_ql_date
+from src.integrations.quantlib.ql_utils import QlContext, require_quantlib, yearfrac_to_ql_date
 
 
 VolLike = Union[FlatVolSurface, GridVolSurface]

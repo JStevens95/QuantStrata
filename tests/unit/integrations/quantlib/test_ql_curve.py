@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import numpy as np
 import pytest
+import numpy as np
 
-from src.marketdata.adaptors.ql_curve import curve_to_yts_handle
-from src.marketdata.adaptors.ql_utils import QlContext, require_quantlib
+from src.integrations.quantlib.ql_curve import curve_to_yts_handle
+from src.integrations.quantlib.ql_utils import QlContext, require_quantlib
 from src.marketdata.curves.discount import FlatDiscountCurve, ZeroRateDiscountCurve
 
 

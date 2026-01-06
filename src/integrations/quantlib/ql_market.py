@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
+from dataclasses import dataclass
 
 from src.marketdata.ids import MarketId
 from src.marketdata.market import Market
 
-from src.marketdata.adaptors.ql_curve import curve_to_yts_handle
-from src.marketdata.adaptors.ql_utils import QlContext, require_quantlib
-from src.marketdata.adaptors.ql_vol import vol_surface_to_black_vol_handle
+from src.integrations.quantlib.ql_curve import curve_to_yts_handle
+from src.integrations.quantlib.ql_utils import QlContext, require_quantlib
+from src.integrations.quantlib.ql_vol import vol_surface_to_black_vol_handle
 
 
 @dataclass(frozen=True, slots=True)

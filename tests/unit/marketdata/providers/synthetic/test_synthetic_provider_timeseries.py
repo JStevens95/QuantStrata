@@ -5,8 +5,8 @@ import numpy as np
 
 from src.marketdata.ids import MarketId
 from src.marketdata.requests import TimeseriesRequest, Universe
-from src.marketdata.synthetic.provider import SyntheticProvider
-from src.marketdata.synthetic.config import SyntheticProviderConfig, CurveZeroSpec, VolGridSmileSpec
+from src.marketdata.providers.synthetic.provider import SyntheticProvider
+from src.marketdata.providers.synthetic.config import SyntheticProviderConfig, CurveZeroSpec, VolGridSmileSpec
 
 
 

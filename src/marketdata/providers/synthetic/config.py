@@ -5,7 +5,7 @@ from typing import Mapping
 import numpy as np
 
 from src.marketdata.ids import MarketId
-from src.marketdata.synthetic.specs import SpotGbmSpec, CurveZeroSpec, VolGridSmileSpec
+from src.marketdata.providers.synthetic.specs import SpotGbmSpec, CurveZeroSpec, VolGridSmileSpec
 
 @dataclass(frozen=True, slots=True)
 class SyntheticProviderConfig:
