@@ -1,155 +1,74 @@
 from __future__ import annotations
 
 import logging
-import numpy as np
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Callable, Dict, MutableMapping
 
-from src.marketdata.curves.factories import FlatCurveFactory
+import numpy as np
+
+from src.marketdata.curves.factories import ZeroCurveFactory
 from src.marketdata.dataset import MarketDataset
 from src.marketdata.ids import MarketId
 from src.marketdata.interfaces import Panel
 from src.marketdata.market import Market
 from src.marketdata.requests import MarketRequest, TimeseriesRequest
-from src.marketdata.surfaces.factories import FlatVolFactory
+from src.marketdata.surfaces.factories import GridVolFactory
 
-# define logging at module level.
+from src.marketdata.synthetic.config import SyntheticProviderConfig
+
 logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
 class _GenerationState:
-    """
-    Mutable state passed to each generator handler.
-
-    We keep this as a small container so:
-    - handlers can write output panels/params without returning large objects,
-    - the provider remains easy to extend with new kinds or asset classes.
-    """
     rng: np.random.Generator
     n_time: int
     n_scenarios: int
 
-    # Scalar quote panels (SPOT, FIXING, etc.)
     quote_panels: MutableMapping[MarketId, Panel]
-
-    # Parameter panels + factories (CURVE, VOL)
     curve_param_panels: MutableMapping[MarketId, Panel]
-    curve_factories: MutableMapping[MarketId, FlatCurveFactory]
-
+    curve_factories: MutableMapping[MarketId, ZeroCurveFactory]
     vol_param_panels: MutableMapping[MarketId, Panel]
-    vol_factories: MutableMapping[MarketId, FlatVolFactory]
+    vol_factories: MutableMapping[MarketId, GridVolFactory]
 
-    # Cache of generated SPOT arrays so FIXING can reuse them if needed.
     spot_cache: MutableMapping[MarketId, np.ndarray]
 
 
-# A handler generates data for a single MarketId and writes into the shared state.
 _MarketIdHandler = Callable[[MarketId, _GenerationState], None]
 
 
 @dataclass(frozen=True, slots=True)
 class SyntheticProvider:
     """
-    Generic synthetic market-data provider (V1).
+    Synthetic market-data provider (V1→Vn ready).
 
-    What it does
-    ------------
-    - Produces deterministic synthetic data for any MarketId (by routing on MarketId.mkt_type).
-    - Returns:
-        * MarketDataset for ML/RL pipelines (arrays in Panels)
-        * Market snapshots for pricing (via MarketDataset.snapshot())
-
-    Why this design works long-term
-    -------------------------------
-    - Curves and vol surfaces are stored as *parameter panels* in the dataset.
-    - Factories reconstruct Curve/VolSurface objects on demand in snapshot().
-    - Later, you can replace these simple generators with:
-        * term-structured curves
-        * grid/smile vol surfaces
-        * correlated multi-asset simulations
-        * path-based scenarios
-      without changing the consumer-facing API.
-
-    Supported 'kind' routing (V1)
-    -----------------------------
-    - SPOT  : GBM-like synthetic path (positive)
-    - CURVE : flat continuously-compounded rate (scalar)
-    - VOL   : flat implied vol (positive scalar)
-    - FIXING: copies SPOT if present, otherwise constant
-    - other : constant fallback scalar panel
-
-    Determinism
-    -----------
-    For the same (seed, request.start, request.end, request.freq) you get the same panels.
+    Key upgrades vs previous version
+    --------------------------------
+    1) Config object holds all “defaults” (no giant provider dataclass).
+    2) Deterministic per MarketId: outputs do not depend on universe ordering.
+    3) CURVE generates term-structured zero curves (params [T,S,K,2]).
+    4) VOL generates grid smiles (params [T,S,n_exp*n_strikes]) -> GridVolSurface.
     """
-
-    # random seed, default to 7.
     seed: int = 7
+    config: SyntheticProviderConfig = SyntheticProviderConfig()
 
-    # Default levels used as sensible initial values.
-    default_fx_spot: float = 1.10
-    default_eq_spot: float = 100.0
-    default_rate: float = 0.02
-    default_fx_vol: float = 0.12
-    default_eq_vol: float = 0.25
-
-    # SPOT path parameters (V1: simple GBM).
-    spot_drift: float = 0.00
-    spot_vol_fx: float = 0.10
-    spot_vol_eq: float = 0.20
-
-    # Small noise for CURVE/VOL so series are not perfectly constant (optional).
-    curve_noise: float = 0.0005
-    vol_noise: float = 0.005
-
-    # Factories used by MarketDataset.snapshot() to reconstruct objects.
-    curve_factory: FlatCurveFactory = FlatCurveFactory()
-    vol_factory: FlatVolFactory = FlatVolFactory()
-
-    # Registry mapping MarketId.kind -> handler function.
     _handlers_by_kind: Dict[str, _MarketIdHandler] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
-        # Build the dispatch table once.
         handlers: Dict[str, _MarketIdHandler] = {
-            "SPOT": self._generate_spot,
-            "CURVE": self._generate_flat_curve_params,
-            "VOL": self._generate_flat_vol_params,
+            "SPOT": self._generate_spot_gbm,
+            "CURVE": self._generate_zero_curve_params,
+            "VOL": self._generate_grid_vol_params,
             "FIXING": self._generate_fixing,
         }
         object.__setattr__(self, "_handlers_by_kind", handlers)
 
-    # -------------------------------------------------------------------------
-    # Public provider API
-    # -------------------------------------------------------------------------
-
     def get_market(self, request: MarketRequest) -> Market:
-        """
-        Return a Market snapshot for one as-of date.
-
-        Implementation strategy
-        -----------------------
-        To keep one consistent code-path, we:
-        1) generate a 1-date MarketDataset via get_timeseries()
-        2) convert it into a Market using snapshot(0, scenario)
-
-        This prevents divergence between "market" and "timeseries" logic over time.
-        """
         scenario_idx = 0 if request.scenario is None else int(request.scenario)
         if scenario_idx < 0:
             raise ValueError("MarketRequest.scenario must be >= 0 when provided.")
 
-        logger.debug(
-            "SyntheticProvider.get_market(asof=%s, scenario=%s, universe=%d)",
-            request.asof,
-            scenario_idx,
-            len(request.universe.ids),
-        )
-
-        # Create a dataset covering exactly one date. We generate enough scenarios
-        # so that scenario_idx is a valid index.
         dataset = self.get_timeseries(
             TimeseriesRequest(
                 start=request.asof,
@@ -159,41 +78,26 @@ class SyntheticProvider:
                 scenarios=max(1, scenario_idx + 1),
             )
         )
-
-        # Convert the dataset slice into an object-based Market snapshot.
         return dataset.snapshot(time_idx=0, scenario_idx=scenario_idx)
 
     def get_timeseries(self, request: TimeseriesRequest) -> MarketDataset:
-        """
-        Return a MarketDataset with panels shaped [time, scenario] for all IDs.
-
-        Notes
-        -----
-        - We always materialize scalar data as [T, S] with axis_names ("time","scenario")
-          to keep snapshot slicing unambiguous.
-        - CURVE/VOL are returned as parameter panels + factories (not as quotes),
-          so snapshot() can reconstruct Curve/VolSurface objects.
-        """
         dates = _generate_dates(start=request.start, end=request.end, freq=request.freq)
         n_time = len(dates)
         n_scenarios = int(request.scenarios)
-
         if n_scenarios < 1:
             raise ValueError("TimeseriesRequest.scenarios must be >= 1.")
 
-        # Create a deterministic RNG stream derived from request metadata.
-        rng = np.random.default_rng(_stable_seed(self.seed, request.start, request.end, request.freq))
+        base_rng = np.random.default_rng(_stable_seed(self.seed, request.start, request.end, request.freq))
 
-        # Prepare the containers we will populate.
         quote_panels: Dict[MarketId, Panel] = {}
         curve_param_panels: Dict[MarketId, Panel] = {}
         vol_param_panels: Dict[MarketId, Panel] = {}
-        curve_factories: Dict[MarketId, FlatCurveFactory] = {}
-        vol_factories: Dict[MarketId, FlatVolFactory] = {}
+        curve_factories: Dict[MarketId, ZeroCurveFactory] = {}
+        vol_factories: Dict[MarketId, GridVolFactory] = {}
         spot_cache: Dict[MarketId, np.ndarray] = {}
 
-        generation_state = _GenerationState(
-            rng=rng,
+        state = _GenerationState(
+            rng=base_rng,
             n_time=n_time,
             n_scenarios=n_scenarios,
             quote_panels=quote_panels,
@@ -204,17 +108,10 @@ class SyntheticProvider:
             spot_cache=spot_cache,
         )
 
-        # Generate data for each MarketId using dispatch-by-kind.
         for market_id in request.universe.ids:
-            mkt_type = market_id.mkt_type.upper()
+            handler = self._handlers_by_kind.get(market_id.mkt_type.upper(), self._generate_default_scalar_quote)
+            handler(market_id, state)
 
-            # Select a handler; if unknown kind, fall back to a safe constant panel.
-            handler = self._handlers_by_kind.get(mkt_type, self._generate_default_scalar_quote)
-
-            # Handler writes into generation_state dictionaries.
-            handler(market_id, generation_state)
-
-        # Assemble the MarketDataset used for ML/RL and for snapshot()->Market.
         return MarketDataset(
             dates=dates,
             n_scenarios=n_scenarios,
@@ -226,153 +123,103 @@ class SyntheticProvider:
             meta={"provider": "SyntheticProvider", "seed": self.seed, "freq": request.freq},
         )
 
-    # -------------------------------------------------------------------------
-    # Handlers (generate data per MarketId.mkt_type)
-    # -------------------------------------------------------------------------
+    # ---------------------------------------------------------------------
+    # RNG helper: deterministic per MarketId (order-independent)
+    # ---------------------------------------------------------------------
 
-    def _generate_spot(self, market_id: MarketId, state: _GenerationState) -> None:
-        """
-        Generate a SPOT panel.
+    def _rng_for_id(self, base_rng: np.random.Generator, mid: MarketId) -> np.random.Generator:
+        # Derive a stable sub-seed from base seed + MarketId key.
+        # This makes generation independent of request.universe ordering.
+        sub_seed = _stable_seed(int(self.seed), mid.key())
+        return np.random.default_rng(sub_seed)
 
-        Output
-        ------
-        - state.quote_panels[market_id] = Panel([T,S], ("time","scenario"))
-        - state.spot_cache[...] is populated so FIXING can reuse SPOT if appropriate.
-        """
-        initial_level = _default_spot_level(
-            market_id,
-            default_fx=self.default_fx_spot,
-            default_eq=self.default_eq_spot,
-        )
-        spot_vol = _default_spot_vol(
-            market_id,
-            fx_vol=self.spot_vol_fx,
-            eq_vol=self.spot_vol_eq,
-        )
+    # ---------------------------------------------------------------------
+    # Handlers
+    # ---------------------------------------------------------------------
 
-        # Generate a GBM-like positive panel: shape [T, S].
-        spot_panel_array = _generate_gbm_spot_panel(
-            rng=state.rng,
+    def _generate_spot_gbm(self, market_id: MarketId, state: _GenerationState) -> None:
+        rng = self._rng_for_id(state.rng, market_id)
+        spec = self.config.spot_spec(market_id)
+
+        arr = _generate_gbm_spot_panel(
+            rng=rng,
             n_time=state.n_time,
             n_scenarios=state.n_scenarios,
-            initial_level=initial_level,
-            drift=self.spot_drift,
-            vol=spot_vol,
-            dt=1.0 / 252.0,  # business-day-ish time step
+            initial_level=float(spec.initial_level),
+            drift=float(spec.drift),
+            vol=float(spec.vol),
+            dt=float(spec.dt),
+            initial_dispersion=float(spec.initial_dispersion),
         )
 
-        # Wrap the raw ndarray in a Panel with clear axis naming.
-        state.quote_panels[market_id] = Panel(data=spot_panel_array, axis_names=("time", "scenario"))
+        state.quote_panels[market_id] = Panel(data=arr, axis_names=("time", "scenario"))
+        state.spot_cache[market_id] = arr
 
-        # Cache the array for FIXING generation.
-        state.spot_cache[market_id] = spot_panel_array
+    def _generate_zero_curve_params(self, market_id: MarketId, state: _GenerationState) -> None:
+        rng = self._rng_for_id(state.rng, market_id)
+        spec = self.config.curve_spec(market_id)
 
-    def _generate_flat_curve_params(self, market_id: MarketId, state: _GenerationState) -> None:
-        """
-        Generate CURVE params (flat continuously-compounded rate series).
-
-        Output
-        ------
-        - state.curve_param_panels[market_id] = Panel([T,S], ("time","scenario"))
-        - state.curve_factories[market_id] = FlatCurveFactory
-        """
-        # Flat rate with tiny noise so the time series isn't perfectly constant (optional).
-        rate_array = _generate_constant_panel(
-            rng=state.rng,
+        tenors = np.asarray(spec.tenors, dtype=float).reshape(-1)
+        params = _generate_zero_curve_param_panel(
+            rng=rng,
             n_time=state.n_time,
             n_scenarios=state.n_scenarios,
-            level=self.default_rate,
-            noise_scale=self.curve_noise,
+            tenors=tenors,
+            base_rate=float(spec.base_rate),
+            slope=float(spec.slope),
+            curvature=float(spec.curvature),
+            noise_scale=float(spec.noise_scale),
         )
 
-        state.curve_param_panels[market_id] = Panel(data=rate_array, axis_names=("time", "scenario"))
-        state.curve_factories[market_id] = self.curve_factory
+        state.curve_param_panels[market_id] = Panel(data=params, axis_names=("time", "scenario", "tenor", "cols"))
+        state.curve_factories[market_id] = ZeroCurveFactory(extrapolation=str(spec.extrapolation))
 
-    def _generate_flat_vol_params(self, market_id: MarketId, state: _GenerationState) -> None:
-        """
-        Generate VOL params (flat implied vol series).
+    def _generate_grid_vol_params(self, market_id: MarketId, state: _GenerationState) -> None:
+        rng = self._rng_for_id(state.rng, market_id)
+        spec = self.config.vol_spec(market_id)
 
-        Output
-        ------
-        - state.vol_param_panels[market_id] = Panel([T,S], ("time","scenario"))
-        - state.vol_factories[market_id] = FlatVolFactory
-        """
-        base_vol = _default_implied_vol(
-            market_id,
-            default_fx=self.default_fx_vol,
-            default_eq=self.default_eq_vol,
-        )
+        expiries = np.asarray(spec.expiries, dtype=float).reshape(-1)
+        strikes = np.asarray(spec.strikes, dtype=float).reshape(-1)
 
-        vol_array = _generate_positive_constant_panel(
-            rng=state.rng,
+        vol_params = _generate_grid_vol_param_panel(
+            rng=rng,
             n_time=state.n_time,
             n_scenarios=state.n_scenarios,
-            level=base_vol,
-            noise_scale=self.vol_noise,
-            floor=1e-4,
+            expiries=expiries,
+            strikes=strikes,
+            atm_vol=float(spec.atm_vol),
+            skew=float(spec.skew),
+            smile=float(spec.smile),
+            term=float(spec.term),
+            noise_scale=float(spec.noise_scale),
         )
 
-        state.vol_param_panels[market_id] = Panel(data=vol_array, axis_names=("time", "scenario"))
-        state.vol_factories[market_id] = self.vol_factory
+        state.vol_param_panels[market_id] = Panel(data=vol_params, axis_names=("time", "scenario", "params"))
+        state.vol_factories[market_id] = GridVolFactory(expiries=expiries, strikes=strikes, extrapolation=str(spec.extrapolation))
 
     def _generate_fixing(self, market_id: MarketId, state: _GenerationState) -> None:
-        """
-        Generate FIXING panel.
-
-        Default behavior:
-        - If there is a matching SPOT in the universe (same asset_class/name/qualifiers),
-          reuse it (fixings look like observed spots).
-        - Otherwise, fall back to a constant scalar panel.
-        """
-        # Construct the "spot-equivalent" ID.
         spot_id = MarketId(
             asset_class=market_id.asset_class,
             mkt_type="SPOT",
             name=market_id.name,
             qualifiers=market_id.qualifiers,
         )
-
         if spot_id in state.spot_cache:
-            # Reuse the already-generated spot panel array.
             state.quote_panels[market_id] = Panel(data=state.spot_cache[spot_id], axis_names=("time", "scenario"))
             return
-
-        # If we didn't generate a spot, just make a constant fixing series.
         self._generate_default_scalar_quote(market_id, state)
 
     def _generate_default_scalar_quote(self, market_id: MarketId, state: _GenerationState) -> None:
-        """
-        Default handler for unknown MarketId kinds.
-
-        We generate a constant scalar panel [T,S]. This is a useful placeholder for:
-        - dividends
-        - spreads
-        - repo rates
-        - borrow costs
-        - anything you haven't implemented yet
-        """
-        constant_array = _generate_constant_panel(
-            rng=state.rng,
-            n_time=state.n_time,
-            n_scenarios=state.n_scenarios,
-            level=1.0,
-            noise_scale=0.0,
-        )
-        state.quote_panels[market_id] = Panel(data=constant_array, axis_names=("time", "scenario"))
+        arr = np.full((state.n_time, state.n_scenarios), 1.0, dtype=float)
+        state.quote_panels[market_id] = Panel(data=arr, axis_names=("time", "scenario"))
 
 
-# -----------------------------------------------------------------------------
-# Helper functions (small, focused, easy to unit test)
-# -----------------------------------------------------------------------------
+# -------------------------------------------------------------------------
+# Helpers
+# -------------------------------------------------------------------------
 
 def _stable_seed(base_seed: int, *parts: str) -> int:
-    """
-    Build a deterministic seed from (base_seed + request metadata).
-
-    This guarantees that two identical requests create identical synthetic data,
-    which is important for tests and reproducible demos.
-    """
-    h = 2166136261  # FNV-1a 32-bit offset basis
+    h = 2166136261
     for p in parts:
         for b in p.encode("utf-8"):
             h ^= b
@@ -381,15 +228,6 @@ def _stable_seed(base_seed: int, *parts: str) -> int:
 
 
 def _generate_dates(start: str, end: str, freq: str) -> list[str]:
-    """
-    Generate ISO date strings from start to end inclusive.
-
-    Supported in V1:
-    - D: daily
-    - B: business day (Mon-Fri)
-    - W: weekly (7-day step)
-    - M: monthly (30-day step placeholder)
-    """
     start_d = date.fromisoformat(start)
     end_d = date.fromisoformat(end)
     if end_d < start_d:
@@ -423,39 +261,11 @@ def _generate_dates(start: str, end: str, freq: str) -> list[str]:
             current += step
         return dates
 
-    # f == "M": simple placeholder for V1 (30-day increments)
     step = timedelta(days=30)
     while current <= end_d:
         dates.append(current.isoformat())
         current += step
     return dates
-
-
-def _generate_constant_panel(
-    rng: np.random.Generator,
-    n_time: int,
-    n_scenarios: int,
-    level: float,
-    noise_scale: float,
-) -> np.ndarray:
-    """Generate scalar data shaped [time, scenario] with optional small noise."""
-    array = np.full((n_time, n_scenarios), float(level), dtype=float)
-    if noise_scale > 0.0:
-        array += rng.normal(loc=0.0, scale=float(noise_scale), size=(n_time, n_scenarios))
-    return array
-
-
-def _generate_positive_constant_panel(
-    rng: np.random.Generator,
-    n_time: int,
-    n_scenarios: int,
-    level: float,
-    noise_scale: float,
-    floor: float,
-) -> np.ndarray:
-    """Same as constant panel but floored positive (useful for implied vols)."""
-    array = _generate_constant_panel(rng, n_time, n_scenarios, level, noise_scale)
-    return np.maximum(array, float(floor))
 
 
 def _generate_gbm_spot_panel(
@@ -466,12 +276,8 @@ def _generate_gbm_spot_panel(
     drift: float,
     vol: float,
     dt: float,
+    initial_dispersion: float,
 ) -> np.ndarray:
-    """
-    Generate a simple GBM-like spot panel with shape [time, scenario].
-
-    log(S_{t+1}/S_t) = (mu - 0.5*sigma^2)*dt + sigma*sqrt(dt)*Z
-    """
     if initial_level <= 0.0:
         raise ValueError("initial_level must be > 0.")
     if vol < 0.0:
@@ -480,37 +286,104 @@ def _generate_gbm_spot_panel(
         raise ValueError("dt must be > 0.")
 
     spot = np.empty((n_time, n_scenarios), dtype=float)
-    spot[0, :] = float(initial_level)
 
-    # If only one time point, we are done.
+    # t=0: deterministic by default, optional cross-scenario dispersion if requested
+    if initial_dispersion > 0.0:
+        z0 = rng.normal(size=(n_scenarios,))
+        spot0 = float(initial_level) * np.exp(float(initial_dispersion) * z0)
+        spot[0, :] = spot0
+    else:
+        spot[0, :] = float(initial_level)
+
     if n_time == 1:
         return spot
 
-    # Draw standard normal innovations.
-    z = rng.normal(loc=0.0, scale=1.0, size=(n_time - 1, n_scenarios))
-
-    # Compute log-returns.
+    z = rng.normal(size=(n_time - 1, n_scenarios))
     mu = float(drift)
     sigma = float(vol)
     log_returns = (mu - 0.5 * sigma * sigma) * dt + sigma * np.sqrt(dt) * z
 
-    # Build the path forward.
     for t in range(1, n_time):
         spot[t, :] = spot[t - 1, :] * np.exp(log_returns[t - 1, :])
 
     return spot
 
 
-def _default_spot_level(market_id: MarketId, default_fx: float, default_eq: float) -> float:
-    """Heuristic: EQ starts around 100, FX starts around ~1.10 (V1)."""
-    return float(default_eq) if market_id.asset_class.upper() == "EQ" else float(default_fx)
+def _generate_zero_curve_param_panel(
+    rng: np.random.Generator,
+    n_time: int,
+    n_scenarios: int,
+    tenors: np.ndarray,
+    base_rate: float,
+    slope: float,
+    curvature: float,
+    noise_scale: float,
+) -> np.ndarray:
+    """
+    Return params shaped [T, S, K, 2] with columns [tenor, zero_rate].
+    """
+    tenors = np.asarray(tenors, dtype=float).reshape(-1)
+    k = tenors.size
+    if k == 0:
+        raise ValueError("tenors must be non-empty.")
+
+    out = np.empty((n_time, n_scenarios, k, 2), dtype=float)
+    out[..., 0] = tenors[None, None, :, None].squeeze(-1)
+
+    # Smooth base curve: r(tau) = base + slope*tau + curvature*exp(-tau)
+    base_curve = base_rate + slope * tenors + curvature * np.exp(-tenors)
+
+    noise = 0.0
+    if noise_scale > 0.0:
+        noise = rng.normal(loc=0.0, scale=float(noise_scale), size=(n_time, n_scenarios, k))
+
+    rates = base_curve[None, None, :] + noise
+    out[..., 1] = rates
+    return out
 
 
-def _default_spot_vol(market_id: MarketId, fx_vol: float, eq_vol: float) -> float:
-    """Heuristic: equities tend to have higher vol than FX (V1)."""
-    return float(eq_vol) if market_id.asset_class.upper() == "EQ" else float(fx_vol)
+def _generate_grid_vol_param_panel(
+    rng: np.random.Generator,
+    n_time: int,
+    n_scenarios: int,
+    expiries: np.ndarray,
+    strikes: np.ndarray,
+    atm_vol: float,
+    skew: float,
+    smile: float,
+    term: float,
+    noise_scale: float,
+) -> np.ndarray:
+    """
+    Generate flattened vol grid params [T,S,n_exp*n_strikes].
 
+    We use a simple “smile in log-strike” proxy around the middle strike
+    plus a mild term structure in sqrt(T).
+    """
+    expiries = np.asarray(expiries, dtype=float).reshape(-1)
+    strikes = np.asarray(strikes, dtype=float).reshape(-1)
+    n_exp = expiries.size
+    n_k = strikes.size
+    if n_exp == 0 or n_k == 0:
+        raise ValueError("expiries/strikes must be non-empty.")
 
-def _default_implied_vol(market_id: MarketId, default_fx: float, default_eq: float) -> float:
-    """Heuristic: equity implied vols often higher than FX (V1)."""
-    return float(default_eq) if market_id.asset_class.upper() == "EQ" else float(default_fx)
+    k_mid = float(strikes[n_k // 2])
+    logm = np.log(strikes / k_mid)  # proxy
+
+    base_smile = atm_vol * (1.0 + skew * logm + smile * (logm ** 2))
+
+    # term structure multiplier: 1 + term*(sqrt(T) - sqrt(T_mid))
+    t_mid = float(expiries[n_exp // 2])
+    term_mult = 1.0 + term * (np.sqrt(expiries) - np.sqrt(max(t_mid, 1e-12)))
+
+    grid = term_mult[:, None] * base_smile[None, :]
+    grid = np.maximum(grid, 1e-4)
+
+    if noise_scale > 0.0:
+        grid = grid[None, None, :, :] + rng.normal(loc=0.0, scale=float(noise_scale), size=(n_time, n_scenarios, n_exp, n_k))
+    else:
+        grid = grid[None, None, :, :].repeat(n_time, axis=0).repeat(n_scenarios, axis=1)
+
+    grid = np.maximum(grid, 1e-4)
+    flat = grid.reshape(n_time, n_scenarios, n_exp * n_k)
+    return flat

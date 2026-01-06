@@ -132,29 +132,27 @@ def _slice_params(panel: Panel, time_idx: int, scenario_idx: int = 0) -> np.ndar
 
     Supported shapes
     ----------------
-    - [T, K]          : time x parameter_block
-    - [T, S, K]       : time x scenario x parameter_block
+    - [T]                     : scalar parameter per time
+    - [T, S]                  : scalar parameter per time/scenario
+    - [T, K...]               : block parameter per time
+    - [T, S, K...]            : block parameter per time/scenario
+      (e.g. curve grids [T,S,K,2], vol grids [T,S,n_exp,n_k], etc.)
     """
     x = panel.data
 
-    # fast-path: most common shapes for param blocks.
     if x.ndim == 1:
-        # [T] : scalar parameter per time
         return np.asarray(x[time_idx], dtype=float)
+
     if x.ndim == 2:
-        # Ambiguous: could be [T, S] scalar-by-scenario OR [T, K] block params.
-        # Use axis_names to disambiguate when available.
+        # Ambiguous: [T,S] scalar-by-scenario OR [T,K] block params.
         if len(panel.axis_names) >= 2 and panel.axis_names[1] == "scenario":
             return np.asarray(x[time_idx, scenario_idx], dtype=float)
         return np.asarray(x[time_idx], dtype=float)
-    if x.ndim == 3:
-        # [T, S, K]
-        # If second axis is scenario, slice it out, else treat as [T, ...].
-        if len(panel.axis_names) >= 2 and panel.axis_names[1] == "scenario":
-            slicer = (time_idx, scenario_idx) + (slice(None),) * (x.ndim - 2)
-            return np.asarray(x[slicer], dtype=float)
-        slicer = (time_idx,) + (slice(None),) * (x.ndim - 1)
+
+    # General case: ndim >= 3
+    if len(panel.axis_names) >= 2 and panel.axis_names[1] == "scenario":
+        slicer = (time_idx, scenario_idx) + (slice(None),) * (x.ndim - 2)
         return np.asarray(x[slicer], dtype=float)
-    raise ValueError(
-        f"Unsupported parameter panel shape for snapshot slicing: ndim={x.ndim}, axis_names={panel.axis_names}"
-    )
+
+    slicer = (time_idx,) + (slice(None),) * (x.ndim - 1)
+    return np.asarray(x[slicer], dtype=float)
