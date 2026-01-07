@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import math
-import numpy as np
 
-from src.marketdata.surfaces.calibration.fx_smile_surface import (
+from src.marketdata.surfaces.fx.calibration import (
     FxGridToSmileConfig,
     FxSmileToGridConfig,
     calibrate_fx_smile_to_grid_surface,
     extract_fx_smile_from_grid_surface,
 )
-from src.marketdata.surfaces.quotes.fx_smile import FxSmileQuotes, FxSmileSliceQuotes
+from src.marketdata.surfaces.fx.quotes import FxSmileQuotes, FxSmileSliceQuotes
 
 
 def test_fx_smile_to_grid_and_extract_roundtrip_flat_smile() -> None:

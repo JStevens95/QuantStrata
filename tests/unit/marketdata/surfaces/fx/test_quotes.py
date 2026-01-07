@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.marketdata.surfaces.quotes.fx_smile import FxSmileQuotes, FxSmileSliceQuotes
+from src.marketdata.surfaces.fx.quotes import FxSmileQuotes, FxSmileSliceQuotes
 
 
 def test_fx_smile_slice_quotes_call_put_reconstruction() -> None:

@@ -4,7 +4,7 @@ import math
 import numpy as np
 import pytest
 
-from src.marketdata.surfaces.arbitrage import (
+from src.marketdata.surfaces.validation.arbitrage import (
     FxSurfaceArbitrageConfig,
     check_calendar_no_arb_total_variance,
     check_fx_grid_surface_no_static_arb,

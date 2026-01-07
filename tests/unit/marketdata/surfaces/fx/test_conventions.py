@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 
-from src.marketdata.surfaces.conventions.fx_vol import FxDeltaConvention
+from src.marketdata.surfaces.fx.conventions import FxDeltaConvention
 
 
 def test_fx_delta_convention_strike_sanity_relative_to_forward() -> None:
