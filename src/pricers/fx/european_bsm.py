@@ -6,7 +6,7 @@ from typing import Dict, Literal
 
 import numpy as np
 
-from src.marketdata.market import Market
+from src.marketdata.core.market import Market
 from src.instruments.fx.options.digital import EuropeanFxDigitalOption
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
 

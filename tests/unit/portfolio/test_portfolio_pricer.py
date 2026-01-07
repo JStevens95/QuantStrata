@@ -6,8 +6,8 @@ from typing import Dict
 import pytest
 
 # ---- market-data plumbing used by the pricer ----
-from src.marketdata.ids import MarketId
-from src.marketdata.requests import MarketRequest, Universe
+from src.marketdata.core.ids import MarketId
+from src.marketdata.core.requests import MarketRequest, Universe
 from src.marketdata.providers.synthetic.provider import SyntheticProvider
 
 # ---- portfolio domain objects ----

@@ -8,8 +8,8 @@ from src.instruments.fx.linear.forward import FxForward
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
 
 # ---- marketdata objects ----
-from src.marketdata.ids import MarketId
-from src.marketdata.requests import MarketRequest, Universe
+from src.marketdata.core.ids import MarketId
+from src.marketdata.core.requests import MarketRequest, Universe
 from src.marketdata.providers.synthetic.provider import SyntheticProvider
 from src.marketdata.scenarios.shocks import SpotShock
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Mapping, Protocol, runtime_checkable
 
-from src.marketdata.ids import MarketId
+from src.marketdata.core.ids import MarketId
 
 
 @runtime_checkable

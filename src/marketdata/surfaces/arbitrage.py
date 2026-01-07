@@ -87,21 +87,27 @@ def _check_decreasing_and_convex(
     """
     Discrete check: y(x) must be non-increasing and convex in x.
 
+    Robust to non-uniform x spacing.
+
     For call prices vs strike:
-      - C(K) decreasing: first differences <= 0
-      - C(K) convex: second differences >= 0
+      - C(K) decreasing: dy/dK <= 0
+      - C(K) convex:    slope dy/dK is non-decreasing in K
     """
     x = np.asarray(x, dtype=float).reshape(-1)
     y = np.asarray(y, dtype=float).reshape(-1)
+
     if x.size != y.size:
         raise ValueError(f"{label}: x and y length mismatch.")
     if x.size < 3:
         return
 
-    if np.any(np.diff(x) <= 0.0):
+    dx = np.diff(x)
+    if np.any(dx <= 0.0):
         raise ValueError(f"{label}: x must be strictly increasing.")
 
     dy = np.diff(y)
+
+    # Decreasing (allow tiny numerical noise)
     if np.any(dy > float(tol)):
         idx = int(np.where(dy > float(tol))[0][0])
         raise ValueError(
@@ -109,12 +115,16 @@ def _check_decreasing_and_convex(
             f"(y[i]={float(y[idx])} -> y[i+1]={float(y[idx+1])})."
         )
 
-    d2y = y[:-2] - 2.0 * y[1:-1] + y[2:]
-    if np.any(d2y < -float(tol)):
-        idx = int(np.where(d2y < -float(tol))[0][0]) + 1
+    # Convex on an irregular grid: slopes must be non-decreasing
+    slopes = dy / dx
+    tol_slope = float(tol) / max(float(np.min(dx)), 1e-12)
+
+    dslopes = np.diff(slopes)
+    if np.any(dslopes < -tol_slope):
+        idx = int(np.where(dslopes < -tol_slope)[0][0]) + 1
         raise ValueError(
             f"{label}: expected convex; found concavity near i={idx} "
-            f"(second-diff={float(d2y[idx-1])})."
+            f"(slope[i-1]={float(slopes[idx-1])}, slope[i]={float(slopes[idx])})."
         )
 
 

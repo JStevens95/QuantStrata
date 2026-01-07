@@ -4,7 +4,7 @@ import math
 from dataclasses import dataclass
 from typing import Dict, Literal
 
-from src.marketdata.market import Market
+from src.marketdata.core.market import Market
 from src.instruments.fx.linear.forward import FxForward
 
 # Keep greek key names explicit and type-checked.

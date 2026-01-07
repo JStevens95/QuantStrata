@@ -7,10 +7,10 @@ from typing import Dict, Literal, Sequence
 import numpy as np
 import matplotlib.pyplot as plt
 
-from src.marketdata.ids import MarketId
+from src.marketdata.core.ids import MarketId
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption, AmericanFxVanillaOption
 
-from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer, _rate_from_df
+from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer
 from src.pricers.fx.european_fde import FxEuropeanVanillaFdPricer
 from src.pricers.fx.american_fde import FxAmericanVanillaFdPricer
 

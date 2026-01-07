@@ -5,7 +5,7 @@ import pytest
 from typing import Dict
 from dataclasses import dataclass
 
-from src.marketdata.ids import MarketId
+from src.marketdata.core.ids import MarketId
 from src.instruments.fx.options.vanilla import AmericanFxVanillaOption, EuropeanFxVanillaOption
 from src.pricers.fx.european_fde import FxEuropeanVanillaFdPricer
 from src.pricers.fx.american_fde import FxAmericanVanillaFdPricer

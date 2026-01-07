@@ -4,7 +4,7 @@ import numpy as np
 from dataclasses import dataclass
 from typing import Optional
 
-from src.marketdata.ids import MarketId
+from src.marketdata.core.ids import MarketId
 
 
 @dataclass(frozen=True, slots=True)

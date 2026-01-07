@@ -8,12 +8,11 @@ from typing import Literal, Optional  # Literal for payoff-type tags; Optional f
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption  # FX vanilla instrument.
 from src.instruments.fx.options.digital import EuropeanFxDigitalOption  # FX digital instrument.
 from src.instruments.fx.options.barrier import EuropeanFxBarrierOption  # FX barrier instrument.
-from src.marketdata.market import Market  # Market snapshot interface.
+from src.marketdata.core.market import Market  # Market snapshot interface.
 from src.models.numeric.monte_carlo.rng import NormalRng  # Reproducible normal RNG.
 from src.models.dynamics.gbm_dynamics import GbmDynamicsSimulator, GbmScheme  # GBM simulator and scheme.
 from src.pricers.fx.european_bsm import _rate_from_df  # DF -> continuous rate helper (shared with BSM adapters).
 
-from src.models.payoffs.factory import build_payoff_1d, require_terminal_payoff
 from src.models.payoffs.types import OptionType, BarrierDirection, BarrierStyle  # Canonical option type ("call"/"put").
 from src.models.payoffs.factory import build_payoff_1d, require_terminal_payoff, require_path_payoff
 

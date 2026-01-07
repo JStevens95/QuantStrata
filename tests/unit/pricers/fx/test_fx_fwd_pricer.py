@@ -7,7 +7,7 @@ from typing import Any, Dict, Callable
 
 import pytest
 
-from src.marketdata.ids import MarketId
+from src.marketdata.core.ids import MarketId
 from src.pricers.fx.forward import FxForwardPricer
 from src.instruments.fx.linear.forward import FxForward
 

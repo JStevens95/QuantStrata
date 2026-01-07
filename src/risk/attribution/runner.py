@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Mapping, Optional, Sequence, Tuple, Union
 
-from src.marketdata.ids import MarketId
+from src.marketdata.core.ids import MarketId
 from src.marketdata.scenarios.base import MarketView, ScenarioPack, ScenarioShock
 from src.portfolio.core import Portfolio
 from src.risk.attribution.report import AttributionReport, AttributionRow

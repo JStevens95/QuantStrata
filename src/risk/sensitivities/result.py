@@ -4,7 +4,7 @@ import math
 from dataclasses import dataclass
 from typing import List, Mapping, Optional
 
-from src.marketdata.ids import MarketId
+from src.marketdata.core.ids import MarketId
 
 
 @dataclass(frozen=True, slots=True)

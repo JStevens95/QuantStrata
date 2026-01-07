@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import inspect
-import math
 from dataclasses import dataclass
 from typing import Any, Dict
 
 import pytest
 
-from src.marketdata.ids import MarketId
+from src.marketdata.core.ids import MarketId
 from src.pricers.fx.spot import FxSpotPricer
 from src.instruments.fx.linear.spot import FxSpot
 

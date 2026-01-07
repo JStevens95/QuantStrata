@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.marketdata.ids import MarketId
+from src.marketdata.core.ids import MarketId
 
 
 @dataclass(frozen=True, slots=True)

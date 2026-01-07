@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from src.marketdata.ids import MarketId
-from src.marketdata.requests import MarketRequest, Universe
+from src.marketdata.core.ids import MarketId
+from src.marketdata.core.requests import MarketRequest, Universe
 from src.marketdata.providers.synthetic.provider import SyntheticProvider
 
 from src.marketdata.scenarios.shocks import SpotShock

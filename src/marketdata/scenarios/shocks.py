@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from src.marketdata.ids import MarketId
+from src.marketdata.core.ids import MarketId
 from src.marketdata.scenarios.base import MarketView
 
 

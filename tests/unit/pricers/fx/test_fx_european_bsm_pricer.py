@@ -6,7 +6,7 @@ from typing import Callable, Dict
 
 import pytest
 
-from src.marketdata.ids import MarketId
+from src.marketdata.core.ids import MarketId
 from src.models.analytic.black_scholes_merton.vanilla import BlackScholesMertonVanilla
 from src.models.common.normal import std_norm_cdf
 

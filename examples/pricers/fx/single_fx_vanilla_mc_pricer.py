@@ -3,8 +3,8 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
-from src.marketdata.ids import MarketId
-from src.marketdata.requests import MarketRequest, Universe
+from src.marketdata.core.ids import MarketId
+from src.marketdata.core.requests import MarketRequest, Universe
 from src.marketdata.providers.synthetic.provider import SyntheticProvider
 
 from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer

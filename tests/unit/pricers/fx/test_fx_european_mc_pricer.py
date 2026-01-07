@@ -7,7 +7,7 @@ from typing import Dict
 import numpy as np
 import pytest
 
-from src.marketdata.ids import MarketId
+from src.marketdata.core.ids import MarketId
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
 from src.instruments.fx.options.digital import EuropeanFxDigitalOption
 from src.instruments.fx.options.barrier import EuropeanFxBarrierOption

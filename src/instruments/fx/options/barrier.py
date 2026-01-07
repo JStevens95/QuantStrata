@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.marketdata.ids import MarketId
+from src.marketdata.core.ids import MarketId
 from src.models.payoffs.types import OptionType, BarrierStyle, BarrierDirection
 
 

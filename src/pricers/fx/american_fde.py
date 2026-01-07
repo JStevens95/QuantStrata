@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Dict, Literal, Tuple
 
 from src.instruments.fx.options.vanilla import AmericanFxVanillaOption
-from src.marketdata.market import Market
+from src.marketdata.core.market import Market
 from src.models.numeric.finite_difference.boundaries import BoundaryPair, DirichletBC
 from src.models.numeric.finite_difference.grids import SpatialGrid1D, TimeGrid
 from src.models.numeric.finite_difference.schemes import ThetaScheme, solve_pde_theta_american

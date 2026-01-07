@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Literal
 
-from src.marketdata.market import Market
+from src.marketdata.core.market import Market
 from src.instruments.fx.linear.spot import FxSpot
 
 # Keep greek key names explicit and type-checked.

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.marketdata.ids import MarketId
+from src.marketdata.core.ids import MarketId
 from src.risk.attribution.report import AttributionReport, AttributionRow
 
 

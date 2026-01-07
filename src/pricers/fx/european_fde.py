@@ -8,7 +8,7 @@ from typing import Dict, Literal, Tuple
 # Project imports: instruments + market snapshot
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
 from src.instruments.fx.options.digital import EuropeanFxDigitalOption
-from src.marketdata.market import Market
+from src.marketdata.core.market import Market
 
 # Project imports: finite-difference engine building blocks
 from src.models.numeric.finite_difference.boundaries import BoundaryPair, DirichletBC

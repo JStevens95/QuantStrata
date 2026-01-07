@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Literal
 from dataclasses import dataclass
 
-from src.marketdata.ids import MarketId
+from src.marketdata.core.ids import MarketId
 
 # define parameters values.
 OptionType = Literal["call", "put"]

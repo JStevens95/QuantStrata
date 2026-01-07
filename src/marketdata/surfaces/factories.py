@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 from dataclasses import dataclass
 
-from src.marketdata.interfaces import VolSurface
+from src.marketdata.core.interfaces import VolSurface
 from src.marketdata.surfaces.vol_surface import FlatVolSurface, GridVolSurface
 
 
