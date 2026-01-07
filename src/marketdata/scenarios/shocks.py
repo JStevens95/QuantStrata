@@ -2,21 +2,18 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Literal
 
 from src.marketdata.core.ids import MarketId
-from src.marketdata.scenarios.base import MarketView
+from src.marketdata.core.interfaces import Curve, VolSurface
+from src.marketdata.scenarios.interfaces import MarketView
+
+BumpMode = Literal["relative", "absolute"]
 
 
 # =============================================================================
 # Market "views" (wrappers)
 # =============================================================================
-# These wrappers override ONE thing (quote / curve / vol surface) and delegate
-# everything else to the underlying base market.
-#
-# This avoids any dependence on Market's internal storage structure and keeps
-# shocks composable and safe.
-# =============================================================================
-
 
 @dataclass(frozen=True, slots=True)
 class MarketWithOverriddenQuote:
@@ -38,30 +35,42 @@ class MarketWithOverriddenQuote:
 
 
 @dataclass(frozen=True, slots=True)
-class CurveWithParallelRateShift:
+class CurveWithParallelRateShift(Curve):
     """
     Curve wrapper that applies a parallel shift to continuous rates.
 
     If base df(t) = exp(-r t), then shifting the rate by +dr implies:
         df_shocked(t) = df_base(t) * exp(-dr * t)
-
-    This works for ANY curve implementation as long as it provides df(t).
     """
-    base_curve: object
+    base_curve: Curve
     rate_shift: float
 
     def df(self, t: float) -> float:
+        t = float(t)
         if t < 0.0:
             raise ValueError("df(t) requires t >= 0.")
         base_df = float(self.base_curve.df(t))
-        return float(base_df * math.exp(-float(self.rate_shift) * float(t)))
+        return float(base_df * math.exp(-float(self.rate_shift) * t))
 
-    # Optional helper (nice for debugging / consistency with Curve Protocols).
     def zero_rate(self, t: float) -> float:
+        t = float(t)
         if t <= 0.0:
             return 0.0
         df_t = float(self.df(t))
         return float(-math.log(df_t) / t)
+
+    def forward_rate(self, t1: float, t2: float) -> float:
+        t1 = float(t1)
+        t2 = float(t2)
+        if t1 < 0.0 or t2 < 0.0:
+            raise ValueError("forward_rate(t1,t2) requires t1,t2 >= 0.")
+        if t2 <= t1:
+            raise ValueError("forward_rate(t1,t2) requires t2 > t1.")
+        return float(math.log(self.df(t1) / self.df(t2)) / (t2 - t1))
+
+    def __getattr__(self, name: str):
+        # Delegate any curve-specific helpers to the base curve.
+        return getattr(self.base_curve, name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,7 +78,7 @@ class MarketWithOverriddenCurve:
     """A MarketView that overrides curve() for a single MarketId."""
     base_market: MarketView
     curve_id: MarketId
-    overridden_curve: object
+    overridden_curve: Curve
 
     def quote(self, market_id: MarketId) -> float:
         return float(self.base_market.quote(market_id))
@@ -84,40 +93,20 @@ class MarketWithOverriddenCurve:
 
 
 @dataclass(frozen=True, slots=True)
-class VolSurfaceWithAdditiveBump:
-    """
-    VolSurface wrapper applying an additive bump to implied vol:
-        sigma_shocked = max(sigma_base + bump, floor)
-
-    Works for ANY surface implementing vol(expiry, strike).
-    """
-    base_surface: object
-    vol_bump: float
-    vol_floor: float = 1e-8
-
-    def vol(self, expiry: float, strike: float) -> float:
-        base_sigma = float(self.base_surface.vol(expiry, strike))
-        bumped_sigma = base_sigma + float(self.vol_bump)
-        return float(max(bumped_sigma, float(self.vol_floor)))
-
-
-@dataclass(frozen=True, slots=True)
-class VolSurfaceWithBump:
+class VolSurfaceWithBump(VolSurface):
     """
     VolSurface wrapper applying either an absolute or relative bump to implied vol.
 
     - absolute: sigma' = max(sigma + bump, floor)
     - relative: sigma' = max(sigma * (1 + bump), floor)
-
-    Works for ANY surface implementing vol(expiry, strike).
     """
-    base_surface: object
+    base_surface: VolSurface
     bump: float
-    bump_mode: str = "relative"  # "relative" or "absolute"
+    bump_mode: BumpMode = "relative"
     vol_floor: float = 1e-8
 
-    def vol(self, expiry: float, strike: float) -> float:
-        base_sigma = float(self.base_surface.vol(expiry, strike))
+    def implied_vol(self, expiry: float, strike: float) -> float:
+        base_sigma = float(self.base_surface.implied_vol(float(expiry), float(strike)))
 
         if self.bump_mode == "relative":
             shocked_sigma = base_sigma * (1.0 + float(self.bump))
@@ -128,13 +117,21 @@ class VolSurfaceWithBump:
 
         return float(max(float(self.vol_floor), shocked_sigma))
 
+    def vol(self, expiry: float, strike: float) -> float:
+        # Compatibility alias required by your VolSurface Protocol
+        return float(self.implied_vol(expiry, strike))
+
+    def __getattr__(self, name: str):
+        # Delegate any surface-specific helpers/metadata.
+        return getattr(self.base_surface, name)
+
 
 @dataclass(frozen=True, slots=True)
 class MarketWithOverriddenVolSurface:
     """A MarketView that overrides vol_surface() for a single MarketId."""
     base_market: MarketView
     vol_id: MarketId
-    overridden_vol_surface: object
+    overridden_vol_surface: VolSurface
 
     def quote(self, market_id: MarketId) -> float:
         return float(self.base_market.quote(market_id))
@@ -152,7 +149,6 @@ class MarketWithOverriddenVolSurface:
 # Scenario shocks
 # =============================================================================
 
-
 @dataclass(frozen=True, slots=True)
 class SpotShock:
     """
@@ -164,7 +160,7 @@ class SpotShock:
     name: str
     spot_id: MarketId
     bump: float
-    bump_mode: str = "relative"  # "relative" or "absolute"
+    bump_mode: BumpMode = "relative"
 
     def apply(self, base_market: MarketView) -> MarketView:
         base_spot = float(base_market.quote(self.spot_id))
@@ -184,34 +180,6 @@ class SpotShock:
 
 
 @dataclass(frozen=True, slots=True)
-class FlatVolShock:
-    """
-    Shock an implied vol surface by an additive bump in sigma.
-
-    Example: bump=+0.01 means 12% -> 13%.
-    """
-    name: str
-    vol_id: MarketId
-    vol_bump: float
-    vol_floor: float = 1e-8
-
-    def apply(self, base_market: MarketView) -> MarketView:
-        base_surface = base_market.vol_surface(self.vol_id)
-
-        shocked_surface = VolSurfaceWithAdditiveBump(
-            base_surface=base_surface,
-            vol_bump=float(self.vol_bump),
-            vol_floor=float(self.vol_floor),
-        )
-
-        return MarketWithOverriddenVolSurface(
-            base_market=base_market,
-            vol_id=self.vol_id,
-            overridden_vol_surface=shocked_surface,
-        )
-
-
-@dataclass(frozen=True, slots=True)
 class VolShock:
     """
     Shock an implied vol surface by either a relative or absolute bump.
@@ -224,10 +192,13 @@ class VolShock:
     name: str
     vol_id: MarketId
     bump: float
-    bump_mode: str = "relative"  # "relative" or "absolute"
+    bump_mode: BumpMode = "relative"
     vol_floor: float = 1e-8
 
     def apply(self, base_market: MarketView) -> MarketView:
+        if self.bump_mode not in ("relative", "absolute"):
+            raise ValueError("VolShock.bump_mode must be 'relative' or 'absolute'.")
+
         base_surface = base_market.vol_surface(self.vol_id)
 
         shocked_surface = VolSurfaceWithBump(
