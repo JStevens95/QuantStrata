@@ -72,6 +72,14 @@ class MarketDataset:
                     f"Quote panel must have ndim 1 or 2. Got ndim={p.data.ndim} for {mid.key()}."
                 )
 
+            # if quote panel is 2D, it MUST explicitly be [T,S] via axis_names
+            if p.data.ndim == 2:
+                if len(p.axis_names) < 2 or p.axis_names[1] != "scenario":
+                    raise ValueError(
+                        f"Quote panel with ndim=2 must declare axis_names[1]=='scenario' for {mid.key()} "
+                        f"(got axis_names={p.axis_names})."
+                    )
+
         # Curve and vol param panels can be block panels: [T,...] or [T,S,...]
         for mid, p in self.curve_params.items():
             _validate_panel_time_axis(panel=p, expected_t=n_t, mkt_id=mid)
@@ -165,16 +173,14 @@ def _slice_params(panel: Panel, time_idx: int, scenario_idx: int = 0) -> np.ndar
     """
     x = panel.data
 
-    # Case 1: [T]
+    # Case 1: [T]  -> return scalar param as 0-d array
     if x.ndim == 1:
-        return np.asarray(x[time_idx], dtype=float)
+        return np.array(float(x[time_idx]), dtype=float)
 
     # Case 2: [T,S] (scalar-by-scenario) OR [T,K] (block-by-time)
     if x.ndim == 2:
-        # If axis_names says second axis is scenario, interpret as [T,S].
         if len(panel.axis_names) >= 2 and panel.axis_names[1] == "scenario":
-            return np.asarray(x[time_idx, scenario_idx], dtype=float)
-        # Otherwise interpret as [T,K] (block parameters) and return the whole row.
+            return np.array(float(x[time_idx, scenario_idx]), dtype=float)
         return np.asarray(x[time_idx], dtype=float)
 
     # Case 3: ndim >= 3
