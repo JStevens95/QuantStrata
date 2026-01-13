@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from src.marketdata.core.ids import MarketId
-from src.marketdata.scenarios.base import MarketView
+from src.marketdata.scenarios.interfaces import MarketView
 from src.portfolio.core import Portfolio
 
 from src.marketdata.scenarios.shocks import SpotShock

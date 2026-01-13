@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Dict, Mapping, Optional, Sequence, Tuple, Union
 
 from src.marketdata.core.ids import MarketId
-from src.marketdata.scenarios.base import MarketView, ScenarioPack, ScenarioShock
+from src.marketdata.scenarios.interfaces import MarketView, ScenarioPack, ScenarioShock
 from src.portfolio.core import Portfolio
 from src.risk.attribution.report import AttributionReport, AttributionRow
 from src.risk.scenarios.runner import run_portfolio_scenarios

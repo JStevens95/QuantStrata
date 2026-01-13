@@ -5,7 +5,7 @@ import numpy as np
 
 from src.marketdata.integration.quantlib.adaptors.curves import curve_to_yts_handle
 from src.marketdata.integration.quantlib.context import QlContext, require_quantlib
-from src.marketdata.curves.term_structure import FlatDiscountCurve, ZeroRateDiscountCurve
+from src.marketdata.curves.term_structure import FlatZeroRateCurve, ZeroRateCurve
 
 
 def _has_quantlib() -> bool:
@@ -23,7 +23,7 @@ def test_flat_curve_to_yts_handle_discount_factor_is_reasonable() -> None:
     ql = require_quantlib()
     ctx = QlContext(asof="2025-12-29").with_defaults()
 
-    curve = FlatDiscountCurve(continuously_compounded_rate=0.02)
+    curve = FlatZeroRateCurve(continuously_compounded_rate=0.02)
     h = curve_to_yts_handle(curve, ctx=ctx)
 
     # check discount factor at ~1y > 0 and < 1
@@ -39,7 +39,7 @@ def test_zero_rate_curve_to_yts_handle_discount_factor_is_reasonable() -> None:
 
     tenors = np.array([0.5, 1.0, 2.0, 5.0])
     zeros = np.array([0.02, 0.021, 0.023, 0.025])
-    curve = ZeroRateDiscountCurve(tenors=tenors, zero_rates=zeros, extrapolation="flat")
+    curve = ZeroRateCurve(tenors=tenors, zero_rates=zeros, extrapolation="flat")
 
     h = curve_to_yts_handle(curve, ctx=ctx)
 

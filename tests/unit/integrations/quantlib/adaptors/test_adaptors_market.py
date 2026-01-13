@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from src.marketdata.integration.quantlib.adaptors.market import build_ql_fx_market_view
 from src.marketdata.integration.quantlib.context import QlContext, require_quantlib
-from src.marketdata.curves.term_structure import FlatDiscountCurve
+from src.marketdata.curves.term_structure import FlatZeroRateCurve
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.market import Market
 from src.marketdata.surfaces.vol_surface import FlatVolSurface
@@ -45,8 +45,8 @@ def test_build_ql_fx_market_view_smoke() -> None:
         asof="2025-12-29",
         quotes={spot_id: _Quote(value=1.10)},
         curves={
-            dom_id: FlatDiscountCurve(continuously_compounded_rate=0.02),
-            for_id: FlatDiscountCurve(continuously_compounded_rate=0.01),
+            dom_id: FlatZeroRateCurve(continuously_compounded_rate=0.02),
+            for_id: FlatZeroRateCurve(continuously_compounded_rate=0.01),
         },
         vols={vol_id: FlatVolSurface(sigma=0.12)},
         meta=None,

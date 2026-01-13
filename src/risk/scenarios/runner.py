@@ -4,7 +4,7 @@ import numpy as np
 from dataclasses import dataclass
 from typing import Dict, List, Sequence, Tuple, Union
 
-from src.marketdata.scenarios.base import MarketView, ScenarioPack, ScenarioShock
+from src.marketdata.scenarios.interfaces import MarketView, ScenarioPack, ScenarioShock
 from src.portfolio.core import Portfolio
 from src.portfolio.portfolio import PortfolioPricer
 

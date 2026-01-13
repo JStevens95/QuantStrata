@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from src.marketdata.core.ids import MarketId
-from src.marketdata.scenarios.base import MarketView, ScenarioPack, ScenarioShock
+from src.marketdata.scenarios.interfaces import MarketView, ScenarioPack, ScenarioShock
 
 
 # =============================================================================

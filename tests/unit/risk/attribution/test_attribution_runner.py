@@ -6,7 +6,7 @@ from src.instruments.fx.linear.forward import FxForward
 from src.instruments.fx.linear.spot import FxSpot
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.requests import MarketRequest, Universe
-from src.marketdata.scenarios.base import ScenarioPack
+from src.marketdata.scenarios.interfaces import ScenarioPack
 from src.marketdata.scenarios.shocks import ParallelRateShock, SpotShock
 from src.marketdata.providers.synthetic.provider import SyntheticProvider
 from src.portfolio.core import Portfolio, Position

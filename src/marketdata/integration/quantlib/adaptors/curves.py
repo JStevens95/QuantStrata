@@ -3,11 +3,11 @@ from __future__ import annotations
 import numpy as np
 from typing import Union
 
-from src.marketdata.curves.term_structure import FlatDiscountCurve, ZeroRateDiscountCurve
+from src.marketdata.curves.term_structure import FlatZeroRateCurve, ZeroRateCurve
 from src.marketdata.integration.quantlib.context import QlContext, require_quantlib, yearfrac_to_ql_date
 
 
-CurveLike = Union[FlatDiscountCurve, ZeroRateDiscountCurve]
+CurveLike = Union[FlatZeroRateCurve, ZeroRateCurve]
 
 
 def curve_to_yts_handle(curve: CurveLike, *, ctx: QlContext):
@@ -31,7 +31,7 @@ def curve_to_yts_handle(curve: CurveLike, *, ctx: QlContext):
     asof_date = ctx2.set_evaluation_date()
 
     # ---- Flat curve ----
-    if isinstance(curve, FlatDiscountCurve):
+    if isinstance(curve, FlatZeroRateCurve):
         r = float(curve.continuously_compounded_rate)
 
         # FlatForward builds a term structure with a single constant rate.
@@ -46,7 +46,7 @@ def curve_to_yts_handle(curve: CurveLike, *, ctx: QlContext):
         return ql.YieldTermStructureHandle(ts)
 
     # ---- Zero rate curve on a tenor grid ----
-    if isinstance(curve, ZeroRateDiscountCurve):
+    if isinstance(curve, ZeroRateCurve):
         tenors = np.asarray(curve.tenors, dtype=float).reshape(-1)
         zeros = np.asarray(curve.zero_rates, dtype=float).reshape(-1)
 

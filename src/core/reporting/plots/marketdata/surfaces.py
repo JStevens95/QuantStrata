@@ -3,16 +3,74 @@ from __future__ import annotations
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-from typing import Optional
+from typing import Optional, Tuple
 
 from src.marketdata.core.interfaces import VolSurface
 
 
+def _resolve_grid_axes(surface: VolSurface) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Resolve (expiries, strikes) for plotting.
+
+    Priority:
+    1) surface.expiries / surface.strikes (GridVolSurface)
+    2) surface.base_surface.expiries / strikes (scenario wrapper over grid)
+    3) raise with a clear message
+    """
+    if hasattr(surface, "expiries") and hasattr(surface, "strikes"):
+        expiries = np.asarray(getattr(surface, "expiries"), dtype=float).reshape(-1)
+        strikes = np.asarray(getattr(surface, "strikes"), dtype=float).reshape(-1)
+        return expiries, strikes
+
+    # Common for wrapper shocks: surface.base_surface is the real grid surface
+    base = getattr(surface, "base_surface", None)
+    if base is not None and hasattr(base, "expiries") and hasattr(base, "strikes"):
+        expiries = np.asarray(getattr(base, "expiries"), dtype=float).reshape(-1)
+        strikes = np.asarray(getattr(base, "strikes"), dtype=float).reshape(-1)
+        return expiries, strikes
+
+    raise AttributeError(
+        "Cannot infer plotting grid. Provide a GridVolSurface-like object "
+        "with `.expiries` and `.strikes`, or ensure your wrapper exposes "
+        "`base_surface.expiries/strikes`."
+    )
+
+
+def _sample_implied_vol(surface: VolSurface, expiry: float, strike: float) -> float:
+    """
+    Robust sampler for implied vol. Supports either:
+      - surface.implied_vol(T,K)
+      - surface.vol(T,K)  (alias)
+    """
+    if hasattr(surface, "implied_vol"):
+        return float(surface.implied_vol(float(expiry), float(strike)))
+    if hasattr(surface, "vol"):
+        return float(surface.vol(float(expiry), float(strike)))
+    raise AttributeError("VolSurface must implement implied_vol(T,K) or vol(T,K).")
+
+
+def _sample_vol_grid(surface: VolSurface, expiries: np.ndarray, strikes: np.ndarray) -> np.ndarray:
+    """
+    Build Z[T_i, K_j] by sampling the surface callable API.
+
+    This is critical for scenario wrappers: they change implied_vol(T,K) but not stored grids.
+    """
+    expiries = np.asarray(expiries, dtype=float).reshape(-1)
+    strikes = np.asarray(strikes, dtype=float).reshape(-1)
+
+    z = np.empty((expiries.size, strikes.size), dtype=float)
+    for i, t in enumerate(expiries):
+        for j, k in enumerate(strikes):
+            z[i, j] = _sample_implied_vol(surface, float(t), float(k))
+    return z
+
+
 def plot_vol_surface_heatmap(surface: VolSurface, title: str = "Vol surface") -> plt.Figure:
-    # assumes GridVolSurface-like attributes exist (expiries/strikes/implied_vols)
-    expiries = np.asarray(getattr(surface, "expiries"), dtype=float).reshape(-1)
-    strikes = np.asarray(getattr(surface, "strikes"), dtype=float).reshape(-1)
-    vols = np.asarray(getattr(surface, "implied_vols"), dtype=float)
+    """
+    Heatmap of σ(T,K) built by sampling implied_vol(T,K) on the surface's own grid.
+    """
+    expiries, strikes = _resolve_grid_axes(surface)
+    vols = _sample_vol_grid(surface, expiries, strikes)
 
     fig = plt.figure()
     ax = fig.add_subplot(111)
@@ -31,9 +89,14 @@ def plot_vol_surface_heatmap(surface: VolSurface, title: str = "Vol surface") ->
 
 
 def plot_vol_smile_slices(surface: VolSurface, title: str = "Smile slices") -> plt.Figure:
-    expiries = np.asarray(getattr(surface, "expiries"), dtype=float).reshape(-1)
-    strikes = np.asarray(getattr(surface, "strikes"), dtype=float).reshape(-1)
-    vols = np.asarray(getattr(surface, "implied_vols"), dtype=float)
+    """
+    Plot σ(T,K) vs K for each expiry T on the surface's grid.
+
+    Important:
+    - This samples implied_vol(T,K) so scenario wrappers plot correctly.
+    """
+    expiries, strikes = _resolve_grid_axes(surface)
+    vols = _sample_vol_grid(surface, expiries, strikes)
 
     fig = plt.figure()
     ax = fig.add_subplot(111)
@@ -49,7 +112,6 @@ def plot_vol_smile_slices(surface: VolSurface, title: str = "Smile slices") -> p
     return fig
 
 
-
 def plot_vol_surface(
     surface: VolSurface,
     *,
@@ -62,36 +124,25 @@ def plot_vol_surface(
     """
     Plot implied vol as a 3D surface σ(T,K).
 
-    Notes
-    -----
-    - If `surface` is a GridVolSurface-like object with `.expiries` and `.strikes`,
-      those are used by default.
-    - Otherwise, you must pass `expiries` and `strikes` explicitly (or it will
-      fall back to a generic demo grid).
+    - If the surface has a grid (expiries/strikes), we use it by default.
+    - Otherwise we fall back to a demo grid unless the caller provides grids.
     """
-    # Prefer using the surface's own grid if present
-    if expiries is None and hasattr(surface, "expiries"):
-        expiries = np.asarray(getattr(surface, "expiries"), dtype=float).reshape(-1)
-    if strikes is None and hasattr(surface, "strikes"):
-        strikes = np.asarray(getattr(surface, "strikes"), dtype=float).reshape(-1)
+    if expiries is None and strikes is None:
+        try:
+            expiries, strikes = _resolve_grid_axes(surface)
+        except Exception:
+            expiries = None
+            strikes = None
 
-    # Fallback demo grids (only if caller didn't provide anything)
     if expiries is None:
         expiries = np.linspace(0.1, 2.0, int(n_expiries), dtype=float)
     if strikes is None:
-        # sensible default range; caller should provide in real use
         strikes = np.linspace(0.8, 1.2, int(n_strikes), dtype=float)
 
     expiries = np.asarray(expiries, dtype=float).reshape(-1)
     strikes = np.asarray(strikes, dtype=float).reshape(-1)
 
-    # Build Z grid by sampling implied_vol(T,K)
-    Z = np.empty((expiries.size, strikes.size), dtype=float)
-    for i, t in enumerate(expiries):
-        for j, k in enumerate(strikes):
-            Z[i, j] = float(surface.implied_vol(float(t), float(k)))
-
-    # Mesh for plotting
+    Z = _sample_vol_grid(surface, expiries, strikes)
     T, K = np.meshgrid(expiries, strikes, indexing="ij")
 
     fig = plt.figure()
@@ -100,7 +151,7 @@ def plot_vol_surface(
 
     surf = ax.plot_surface(
         T, K, Z,
-        cmap="viridis",  # or "plasma", "inferno", "magma", etc.
+        cmap="viridis",
         norm=norm,
         linewidth=0.0,
         antialiased=True,

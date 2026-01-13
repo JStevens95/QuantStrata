@@ -6,7 +6,7 @@ from src.instruments.fx.linear.spot import FxSpot
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.requests import MarketRequest, Universe
-from src.marketdata.scenarios.base import ScenarioPack
+from src.marketdata.scenarios.interfaces import ScenarioPack
 from src.marketdata.scenarios.shocks import SpotShock
 from src.marketdata.providers.synthetic.provider import SyntheticProvider
 from src.portfolio.core import Portfolio, Position
