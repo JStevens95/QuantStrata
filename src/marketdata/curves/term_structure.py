@@ -55,7 +55,7 @@ def _interp_linear_extrap(*, x: np.ndarray, y: np.ndarray, xq: float) -> float:
 
 
 @dataclass(frozen=True, slots=True)
-class FlatDiscountCurve:
+class FlatZeroRateCurve:
     """
     Flat continuously-compounded discount curve.
 
@@ -77,7 +77,7 @@ class FlatDiscountCurve:
 
 
 @dataclass(frozen=True, slots=True)
-class ZeroRateDiscountCurve:
+class ZeroRateCurve:
     """
     Continuously-compounded zero rate discount curve defined on a tenor grid, with interpolation.
 
@@ -124,7 +124,6 @@ class ZeroRateDiscountCurve:
 
         if self.extrapolation == "flat":
             return float(_interp_flat(x=self.tenors, y=self.zero_rates, xq=float(t)))
-
         return float(_interp_linear_extrap(x=self.tenors, y=self.zero_rates, xq=float(t)))
 
     def forward_rate(self, t1: float, t2: float) -> float:

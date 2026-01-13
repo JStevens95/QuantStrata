@@ -5,7 +5,7 @@ import numpy as np
 
 from src.marketdata.integration.quantlib.adaptors.curves import curve_to_yts_handle
 from src.marketdata.integration.quantlib.context import QlContext, require_quantlib
-from src.marketdata.curves.discount import FlatDiscountCurve, ZeroRateDiscountCurve
+from src.marketdata.curves.term_structure import FlatDiscountCurve, ZeroRateDiscountCurve
 
 
 def _has_quantlib() -> bool:

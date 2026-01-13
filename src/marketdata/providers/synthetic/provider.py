@@ -14,7 +14,7 @@ from src.marketdata.core.panel import Panel
 from src.marketdata.core.requests import MarketRequest, TimeseriesRequest
 
 from src.marketdata.curves.bootstrapper import DepositQuote, ParSwapQuote, bootstrap_discount_curve
-from src.marketdata.curves.factories import ZeroCurveFactory
+from src.marketdata.curves.factories import ZeroRateCurveFactory
 from src.marketdata.surfaces.factories import GridVolFactory
 
 from src.marketdata.providers.synthetic.config import SyntheticProviderConfig
@@ -40,7 +40,7 @@ class _GenerationState:
     quote_panels: MutableMapping[MarketId, Panel]
 
     curve_param_panels: MutableMapping[MarketId, Panel]
-    curve_factories: MutableMapping[MarketId, ZeroCurveFactory]
+    curve_factories: MutableMapping[MarketId, ZeroRateCurveFactory]
 
     vol_param_panels: MutableMapping[MarketId, Panel]
     vol_factories: MutableMapping[MarketId, GridVolFactory]
@@ -129,7 +129,7 @@ class SyntheticProvider:
         quote_panels: Dict[MarketId, Panel] = {}
         curve_param_panels: Dict[MarketId, Panel] = {}
         vol_param_panels: Dict[MarketId, Panel] = {}
-        curve_factories: Dict[MarketId, ZeroCurveFactory] = {}
+        curve_factories: Dict[MarketId, ZeroRateCurveFactory] = {}
         vol_factories: Dict[MarketId, GridVolFactory] = {}
         spot_cache: Dict[MarketId, np.ndarray] = {}
 
@@ -225,7 +225,7 @@ class SyntheticProvider:
         )
 
         state.curve_param_panels[market_id] = Panel(data=params, axis_names=("time", "scenario", "tenor", "cols"))
-        state.curve_factories[market_id] = ZeroCurveFactory(extrapolation=str(spec.extrapolation))
+        state.curve_factories[market_id] = ZeroRateCurveFactory(extrapolation=str(spec.extrapolation))
 
     def _generate_bootstrapped_curve_params(self, market_id: MarketId, state: _GenerationState) -> None:
         """
@@ -248,7 +248,7 @@ class SyntheticProvider:
         )
 
         state.curve_param_panels[market_id] = Panel(data=params, axis_names=("time", "scenario", "tenor", "cols"))
-        state.curve_factories[market_id] = ZeroCurveFactory(extrapolation="flat")
+        state.curve_factories[market_id] = ZeroRateCurveFactory(extrapolation="flat")
 
     def _generate_grid_vol_params(self, market_id: MarketId, state: _GenerationState) -> None:
         rng = self._rng_for_id(market_id)

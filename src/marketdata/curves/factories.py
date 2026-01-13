@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from src.marketdata.core.types import ExtrapolationMode
-from src.marketdata.curves.discount import FlatDiscountCurve, ZeroRateDiscountCurve
+from src.marketdata.curves.term_structure import FlatZeroRateCurve, ZeroRateCurve
 
 
 def _parse_zero_curve_params(params: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -30,7 +30,7 @@ def _parse_zero_curve_params(params: np.ndarray) -> tuple[np.ndarray, np.ndarray
 
 
 @dataclass(frozen=True, slots=True)
-class FlatCurveFactory:
+class FlatRateCurveFactory:
     """
     Factory for FlatDiscountCurve.
 
@@ -38,7 +38,7 @@ class FlatCurveFactory:
     ---------------
     - scalar r, or shape [1] array-like, representing a continuously-compounded rate.
     """
-    def build(self, params: np.ndarray) -> FlatDiscountCurve:
+    def build(self, params: np.ndarray) -> FlatZeroRateCurve:
         x = np.asarray(params, dtype=float)
 
         if x.ndim == 0:
@@ -52,11 +52,11 @@ class FlatCurveFactory:
         if not np.isfinite(r):
             raise ValueError("Flat curve rate must be finite.")
 
-        return FlatDiscountCurve(continuously_compounded_rate=r)
+        return FlatZeroRateCurve(continuously_compounded_rate=r)
 
 
 @dataclass(frozen=True, slots=True)
-class ZeroCurveFactory:
+class ZeroRateCurveFactory:
     """
     Factory for ZeroRateDiscountCurve.
 
@@ -67,13 +67,13 @@ class ZeroCurveFactory:
     """
     extrapolation: ExtrapolationMode = "flat"
 
-    def build(self, params: np.ndarray) -> ZeroRateDiscountCurve:
+    def build(self, params: np.ndarray) -> ZeroRateCurve:
         tenors, zeros = _parse_zero_curve_params(params)
 
         if tenors.size == 0:
             raise ValueError("ZeroCurveFactory received empty tenor grid.")
 
-        return ZeroRateDiscountCurve(
+        return ZeroRateCurve(
             tenors=tenors,
             zero_rates=zeros,
             extrapolation=self.extrapolation,

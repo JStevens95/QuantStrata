@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from src.marketdata.integration.quantlib.adaptors.market import build_ql_fx_market_view
 from src.marketdata.integration.quantlib.context import QlContext, require_quantlib
-from src.marketdata.curves.discount import FlatDiscountCurve
+from src.marketdata.curves.term_structure import FlatDiscountCurve
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.market import Market
 from src.marketdata.surfaces.vol_surface import FlatVolSurface

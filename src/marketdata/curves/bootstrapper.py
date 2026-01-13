@@ -12,7 +12,7 @@ from src.marketdata.core.types import (
     ExtrapolationMode,
     InstrumentType,
 )
-from src.marketdata.curves.discount import ZeroRateDiscountCurve
+from src.marketdata.curves.term_structure import ZeroRateCurve
 from src.marketdata.integration.quantlib.context import (
     require_quantlib,
     to_ql_date,
@@ -128,7 +128,7 @@ class BootstrapResult:
     zero_rates:
         Continuous zero rates r(T) = -ln(DF)/T for T>0.
     """
-    curve: ZeroRateDiscountCurve
+    curve: ZeroRateCurve
     tenors: np.ndarray
     dfs: np.ndarray
     zero_rates: np.ndarray
@@ -144,11 +144,11 @@ def build_zero_curve_from_zero_rates(
     tenors: np.ndarray,
     zero_rates: np.ndarray,
     extrapolation: ExtrapolationMode = "flat",
-) -> ZeroRateDiscountCurve:
+) -> ZeroRateCurve:
     """
     Convenience wrapper: build a ZeroRateDiscountCurve directly from (T, r(T)).
     """
-    return ZeroRateDiscountCurve(
+    return ZeroRateCurve(
         tenors=np.asarray(tenors, dtype=float),
         zero_rates=np.asarray(zero_rates, dtype=float),
         extrapolation=extrapolation,
@@ -236,7 +236,7 @@ def _bootstrap_discount_curve_native(
         dtype=float,
     )
 
-    curve = ZeroRateDiscountCurve(tenors=tenors, zero_rates=zero_rates, extrapolation=extrapolation)
+    curve = ZeroRateCurve(tenors=tenors, zero_rates=zero_rates, extrapolation=extrapolation)
     return BootstrapResult(curve=curve, tenors=tenors, dfs=dfs, zero_rates=zero_rates)
 
 
@@ -495,7 +495,7 @@ def _bootstrap_discount_curve_quantlib(
 
     _validate_discount_factors(tenors=tenors, dfs=dfs, min_df=min_df)
 
-    curve_out = ZeroRateDiscountCurve(tenors=tenors, zero_rates=zero_rates, extrapolation=extrapolation)
+    curve_out = ZeroRateCurve(tenors=tenors, zero_rates=zero_rates, extrapolation=extrapolation)
     return BootstrapResult(curve=curve_out, tenors=tenors, dfs=dfs, zero_rates=zero_rates)
 
 

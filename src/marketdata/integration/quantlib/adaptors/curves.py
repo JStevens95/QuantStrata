@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 from typing import Union
 
-from src.marketdata.curves.discount import FlatDiscountCurve, ZeroRateDiscountCurve
+from src.marketdata.curves.term_structure import FlatDiscountCurve, ZeroRateDiscountCurve
 from src.marketdata.integration.quantlib.context import QlContext, require_quantlib, yearfrac_to_ql_date
 
 

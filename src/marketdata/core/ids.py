@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, List, Tuple
+from typing import Iterable, List, Mapping, Tuple, Union
 
 Qualifier = Tuple[str, str]
+QualifiersInput = Union[None, Mapping[str, str], Iterable[Qualifier]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,15 +25,14 @@ class MarketId:
     asset_class: str
     mkt_type: str
     name: str
-    qualifiers: Tuple[Qualifier, ...] = ()
+    qualifiers: QualifiersInput = None  # Option A: allow None / dict / iterable of pairs
 
     def __post_init__(self) -> None:
-        # Normalize canonical fields (this keeps keys stable across the library).
+        # Normalize canonical fields
         object.__setattr__(self, "asset_class", str(self.asset_class).strip().upper())
         object.__setattr__(self, "mkt_type", str(self.mkt_type).strip().upper())
         object.__setattr__(self, "name", str(self.name).strip())
 
-        # Validate required parts are non-empty.
         if not self.asset_class:
             raise ValueError("MarketId.asset_class must not be empty.")
         if not self.mkt_type:
@@ -40,37 +40,53 @@ class MarketId:
         if not self.name:
             raise ValueError("MarketId.name must not be empty.")
 
-        # Normalize and validate qualifiers (stable ordering is preserved as provided).
+        raw = self.qualifiers
+
+        # Guard against a common bug: passing a string (iterable of chars)
+        if isinstance(raw, str):
+            raise ValueError("MarketId.qualifiers must be None, a mapping, or an iterable of (k,v) pairs (not str).")
+
+        # Normalize qualifiers into an iterable of (k,v)
+        if raw is None:
+            items: Iterable[Qualifier] = ()
+        elif isinstance(raw, Mapping):
+            items = raw.items()
+        else:
+            items = raw
+
         normalized: List[Qualifier] = []
-        for k, v in self.qualifiers:  # <-- FIXED BUG (removed stray comma)
+        for item in items:
+            try:
+                k, v = item
+            except Exception as exc:
+                raise ValueError(
+                    "MarketId.qualifiers must be None, a mapping, or an iterable of (key,value) pairs."
+                ) from exc
+
             kk = str(k).strip()
             vv = str(v).strip()
             if not kk:
                 raise ValueError("MarketId qualifier key must be non-empty.")
             normalized.append((kk, vv))
 
+        # Internally store as a tuple for immutability + stable key() output
         object.__setattr__(self, "qualifiers", tuple(normalized))
 
     def key(self) -> str:
-        """Return canonical string key suitable for caching/logging/serialization."""
         base = f"{self.asset_class}.{self.mkt_type}.{self.name}"
-        if not self.qualifiers:
+        quals = self.qualifiers  # now guaranteed to be tuple[(k,v),...]
+        if not quals:
             return base
-        # Join qualifiers in the stored order for stable reproducibility.
-        qual = "|".join(f"{k}={v}" for k, v in self.qualifiers)
+        qual = "|".join(f"{k}={v}" for k, v in quals)
         return f"{base}|{qual}"
 
     @staticmethod
     def parse(text: str) -> "MarketId":
-        """Parse a canonical MarketId string back into a MarketId."""
         raw = str(text).strip()
         if not raw:
             raise ValueError("Cannot parse empty MarketId string.")
 
-        # Split base from qualifiers.
         base, *qual_parts = raw.split("|")
-
-        # Base must be exactly ASSET.TYPE.NAME (NAME may contain dots, so split max=2).
         parts = base.split(".", 2)
         if len(parts) != 3:
             raise ValueError(
@@ -90,15 +106,20 @@ class MarketId:
 
         return MarketId(asset_class=asset_class, mkt_type=mkt_type, name=name, qualifiers=tuple(qualifiers))
 
-    def with_qualifiers(self, qualifiers: Iterable[Qualifier]) -> "MarketId":
-        """Return a new MarketId with additional qualifiers appended (order preserved)."""
+    def with_qualifiers(self, qualifiers: QualifiersInput) -> "MarketId":
+        current = self.qualifiers  # tuple of pairs
+        if qualifiers is None:
+            extra: Tuple[Qualifier, ...] = ()
+        elif isinstance(qualifiers, Mapping):
+            extra = tuple((str(k), str(v)) for k, v in qualifiers.items())
+        else:
+            extra = tuple((str(k), str(v)) for k, v in qualifiers)
         return MarketId(
             asset_class=self.asset_class,
             mkt_type=self.mkt_type,
             name=self.name,
-            qualifiers=self.qualifiers + tuple(qualifiers),
+            qualifiers=current + extra,
         )
 
     def with_qualifier(self, key: str, value: str) -> "MarketId":
-        """Convenience helper for adding a single qualifier."""
         return self.with_qualifiers([(key, value)])

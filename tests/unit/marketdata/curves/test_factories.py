@@ -1,8 +1,8 @@
 import pytest
 import numpy as np
 
-from src.marketdata.curves.discount import ZeroRateDiscountCurve
-from src.marketdata.curves.factories import ZeroCurveFactory
+from src.marketdata.curves.term_structure import ZeroRateCurve
+from src.marketdata.curves.factories import ZeroRateCurveFactory
 
 
 def test_zero_curve_factory_builds_curve() -> None:
@@ -15,10 +15,10 @@ def test_zero_curve_factory_builds_curve() -> None:
         dtype=float,
     )
 
-    factory = ZeroCurveFactory(extrapolation="flat")
+    factory = ZeroRateCurveFactory(extrapolation="flat")
     curve = factory.build(params)
 
-    assert isinstance(curve, ZeroRateDiscountCurve)
+    assert isinstance(curve, ZeroRateCurve)
     assert curve.tenors.shape == (3,)
     assert curve.zero_rates.shape == (3,)
     assert curve.extrapolation == "flat"

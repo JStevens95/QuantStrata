@@ -3,11 +3,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.marketdata.curves.discount import FlatDiscountCurve, ZeroRateDiscountCurve
+from src.marketdata.curves.term_structure import FlatZeroRateCurve, ZeroRateCurve
 
 
 def test_flat_discount_curve_df_zero_forward() -> None:
-    curve = FlatDiscountCurve(continuously_compounded_rate=0.05)
+    curve = FlatZeroRateCurve(continuously_compounded_rate=0.05)
 
     assert curve.df(0.0) == 1.0
     assert curve.df(-1.0) == 1.0
@@ -22,16 +22,16 @@ def test_flat_discount_curve_df_zero_forward() -> None:
 
 def test_zero_rate_discount_curve_validates_inputs() -> None:
     with pytest.raises(ValueError, match="tenors must not be empty"):
-        _ = ZeroRateDiscountCurve(tenors=np.array([], float), zero_rates=np.array([], float))
+        _ = ZeroRateCurve(tenors=np.array([], float), zero_rates=np.array([], float))
 
     with pytest.raises(ValueError, match="same length"):
-        _ = ZeroRateDiscountCurve(tenors=np.array([0.5, 1.0], float), zero_rates=np.array([0.01], float))
+        _ = ZeroRateCurve(tenors=np.array([0.5, 1.0], float), zero_rates=np.array([0.01], float))
 
     with pytest.raises(ValueError, match="strictly increasing"):
-        _ = ZeroRateDiscountCurve(tenors=np.array([1.0, 1.0], float), zero_rates=np.array([0.01, 0.02], float))
+        _ = ZeroRateCurve(tenors=np.array([1.0, 1.0], float), zero_rates=np.array([0.01, 0.02], float))
 
     with pytest.raises(ValueError, match="extrapolation"):
-        _ = ZeroRateDiscountCurve(
+        _ = ZeroRateCurve(
             tenors=np.array([0.5, 1.0], float),
             zero_rates=np.array([0.01, 0.02], float),
             extrapolation="nonsense",  # type: ignore[arg-type]
@@ -42,7 +42,7 @@ def test_zero_rate_discount_curve_interp_and_flat_extrapolation() -> None:
     tenors = np.array([0.5, 1.0, 2.0], float)
     zeros = np.array([0.01, 0.02, 0.03], float)
 
-    curve = ZeroRateDiscountCurve(tenors=tenors, zero_rates=zeros, extrapolation="flat")
+    curve = ZeroRateCurve(tenors=tenors, zero_rates=zeros, extrapolation="flat")
 
     # inside grid -> linear interpolation
     r_075 = curve.zero_rate(0.75)
@@ -61,7 +61,7 @@ def test_zero_rate_discount_curve_interp_and_flat_extrapolation() -> None:
 def test_zero_rate_discount_curve_forward_rate_matches_df_definition() -> None:
     tenors = np.array([0.5, 1.0, 2.0], float)
     zeros = np.array([0.02, 0.02, 0.02], float)
-    curve = ZeroRateDiscountCurve(tenors=tenors, zero_rates=zeros, extrapolation="flat")
+    curve = ZeroRateCurve(tenors=tenors, zero_rates=zeros, extrapolation="flat")
 
     f = curve.forward_rate(0.5, 2.0)
     df1 = curve.df(0.5)
