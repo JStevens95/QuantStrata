@@ -30,3 +30,6 @@ BootstrapEngine = Literal["native", "quantlib"]
 
 # curve method for bootstrapping.
 CurveMethod = Literal["zeros", "bootstrap"]
+
+# define panel type.
+PanelKind = Literal["quote", "curve_params", "vol_params"]

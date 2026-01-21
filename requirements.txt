@@ -2,3 +2,4 @@ numpy == 2.4.0
 pytest == 9.0.2
 matplotlib == 3.10.8
 QuantLib == 1.40
+tensorflow == 2.20.0
