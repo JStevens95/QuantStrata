@@ -11,14 +11,15 @@ class StaticProviderConfig:
     Policies
     --------
     strict_freq:
-        If True, get_timeseries(...) requires request.freq to match dataset.meta["freq"] if present.
+        If True, get_timeseries(...) requires request.freq to match dataset.meta["freq"]
+        if present (case-insensitive).
 
     strict_date_coverage:
         If True, requested start/end must be fully covered by dataset.dates.
-        If False, we return the intersection (clipped range) as long as it's non-empty.
+        If False, return the intersection (clipped range) as long as it's non-empty.
 
     strict_scenario_coverage:
-        If True, request.scenarios must be <= dataset.n_scenarios (cannot ask for more).
+        If True, request.scenarios must be <= dataset.n_scenarios.
         If False, scenarios are clipped to dataset.n_scenarios.
 
     include_only_requested_ids:

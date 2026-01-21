@@ -101,7 +101,7 @@ def test_static_provider_raises_if_requested_scenarios_exceed_store() -> None:
         universe=_make_universe(),
         scenarios=999,
     )
-    with pytest.raises(ValueError, match="exceeds stored scenarios"):
+    with pytest.raises(ValueError, match=r"(?s)requested scenarios=.*stored scenarios="):
         provider.get_timeseries(req)
 
 
