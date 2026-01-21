@@ -3,10 +3,10 @@ from __future__ import annotations
 import numpy as np
 
 from src.marketdata.core.ids import MarketId
-from src.marketdata.synthetic.config import SyntheticProviderConfig
-from src.marketdata.synthetic.specs import CurveZeroSpec
-from src.marketdata.synthetic.context import SyntheticGenerationState
-from src.marketdata.synthetic.generators.interest_rate import _IrGenerators
+from src.marketdata.providers.synthetic.config import SyntheticProviderConfig
+from src.marketdata.providers.synthetic.specs import CurveZeroSpec
+from src.marketdata.providers.synthetic.context import SyntheticGenerationState
+from src.marketdata.providers.synthetic.generators.interest_rate import _IrGenerators
 
 
 def _make_state(*, n_time: int, n_scenarios: int) -> SyntheticGenerationState:

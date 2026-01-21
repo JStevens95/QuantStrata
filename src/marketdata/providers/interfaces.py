@@ -31,7 +31,9 @@ class MarketDataProvider(Protocol):
         * scenario engines and repricing pipelines
     """
 
-    name: str  # Human-friendly provider name for logging/provenance.
+    @property
+    def name(self) -> str:
+        ...
 
     def get_market(self, request: MarketRequest) -> Market:
         """

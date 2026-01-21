@@ -19,9 +19,9 @@ from src.core.reporting.plots.marketdata.surfaces import (
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.market import Market
 from src.marketdata.core.requests import TimeseriesRequest, Universe
-from src.marketdata.synthetic.config import SyntheticProviderConfig
+from src.marketdata.providers.synthetic.config import SyntheticProviderConfig
 from src.marketdata.providers.synthetic.provider import SyntheticProvider
-from src.marketdata.synthetic.specs import CurveZeroSpec, VolGridSmileSpec
+from src.marketdata.providers.synthetic.specs import CurveZeroSpec, VolGridSmileSpec
 
 
 # ======================================================================================

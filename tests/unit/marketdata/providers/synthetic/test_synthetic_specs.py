@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from src.marketdata.synthetic.specs import CurveZeroSpec, SpotGbmSpec, VolGridSmileSpec
+from src.marketdata.providers.synthetic.specs import CurveZeroSpec, SpotGbmSpec, VolGridSmileSpec
 
 
 def test_spot_gbm_spec_can_be_constructed() -> None:

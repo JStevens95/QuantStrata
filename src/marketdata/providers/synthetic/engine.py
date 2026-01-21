@@ -28,10 +28,10 @@ from src.marketdata.curves.factories import ZeroRateCurveFactory
 from src.marketdata.surfaces.factories import GridVolFactory
 
 # Shared mutable state passed to generators.
-from src.marketdata.synthetic.context import SyntheticGenerationState
+from src.marketdata.providers.synthetic.context import SyntheticGenerationState
 
 # Registry routes MarketId -> generator + prerequisites.
-from src.marketdata.synthetic.registry import SyntheticRegistry
+from src.marketdata.providers.synthetic.registry import SyntheticRegistry
 
 
 @dataclass(frozen=True, slots=True)

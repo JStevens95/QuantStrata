@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from src.marketdata.core.ids import MarketId
-from src.marketdata.synthetic.context import SyntheticGenerationState
-from src.marketdata.synthetic.schemas import MarketSchema
+from src.marketdata.providers.synthetic.context import SyntheticGenerationState
+from src.marketdata.providers.synthetic.schemas import MarketSchema
 
 
 class Generator(Protocol):

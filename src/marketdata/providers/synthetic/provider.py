@@ -8,11 +8,11 @@ from src.marketdata.core.requests import MarketRequest, TimeseriesRequest
 
 from src.marketdata.providers.interfaces import MarketDataProvider
 
-from src.marketdata.synthetic.config import SyntheticProviderConfig
-from src.marketdata.synthetic.engine import SyntheticMarketEngine
-from src.marketdata.synthetic.generators.foreign_exchange import register_fx_generators
-from src.marketdata.synthetic.generators.interest_rate import register_ir_generators
-from src.marketdata.synthetic.registry import SyntheticRegistry
+from src.marketdata.providers.synthetic.config import SyntheticProviderConfig
+from src.marketdata.providers.synthetic.engine import SyntheticMarketEngine
+from src.marketdata.providers.synthetic.generators.foreign_exchange import register_fx_generators
+from src.marketdata.providers.synthetic.generators.interest_rate import register_ir_generators
+from src.marketdata.providers.synthetic.registry import SyntheticRegistry
 
 
 @dataclass(frozen=True, slots=True)

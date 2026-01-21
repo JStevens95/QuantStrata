@@ -5,8 +5,8 @@ import numpy as np
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.panel import Panel
 from src.marketdata.core.requests import TimeseriesRequest, Universe
-from src.marketdata.synthetic.engine import SyntheticMarketEngine, _generate_dates, rng_for_market_id, stable_seed
-from src.marketdata.synthetic.registry import SyntheticRegistry
+from src.marketdata.providers.synthetic.engine import SyntheticMarketEngine, _generate_dates, rng_for_market_id, stable_seed
+from src.marketdata.providers.synthetic.registry import SyntheticRegistry
 from src.marketdata.surfaces.factories import GridVolFactory
 
 

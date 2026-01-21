@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.marketdata.synthetic.schemas import (
+from src.marketdata.providers.synthetic.schemas import (
     SyntheticSchemaRuntime,
     curve_params_schema,
     quote_ts_schema,

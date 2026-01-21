@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Protocol, Sequence
+from typing import Optional, Protocol
 
 from src.marketdata.core.dataset import MarketDataset
 from src.marketdata.core.market import Market
 from src.marketdata.core.requests import MarketRequest, TimeseriesRequest
-from src.marketdata.synthetic.engine import SyntheticMarketEngine
+from src.marketdata.providers.synthetic.engine import SyntheticMarketEngine
 
 
 class MarketDataProvider(Protocol):

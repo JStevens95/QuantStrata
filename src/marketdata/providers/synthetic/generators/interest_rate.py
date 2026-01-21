@@ -9,12 +9,12 @@ from src.marketdata.core.panel import Panel
 
 from src.marketdata.curves.factories import ZeroRateCurveFactory
 
-from src.marketdata.synthetic.config import SyntheticProviderConfig
-from src.marketdata.synthetic.specs import CurveBootstrapSpec, CurveZeroSpec
+from src.marketdata.providers.synthetic.config import SyntheticProviderConfig
+from src.marketdata.providers.synthetic.specs import CurveBootstrapSpec, CurveZeroSpec
 
-from src.marketdata.synthetic.context import SyntheticGenerationState
-from src.marketdata.synthetic.engine import rng_for_market_id
-from src.marketdata.synthetic.registry import SyntheticRegistry
+from src.marketdata.providers.synthetic.context import SyntheticGenerationState
+from src.marketdata.providers.synthetic.engine import rng_for_market_id
+from src.marketdata.providers.synthetic.registry import SyntheticRegistry
 
 
 def register_ir_generators(*, registry: SyntheticRegistry, base_seed: int, config: SyntheticProviderConfig) -> None:

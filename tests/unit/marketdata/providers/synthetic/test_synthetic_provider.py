@@ -4,7 +4,7 @@ import numpy as np
 
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.requests import TimeseriesRequest, Universe
-from src.marketdata.synthetic.config import SyntheticProviderConfig
+from src.marketdata.providers.synthetic.config import SyntheticProviderConfig
 from src.marketdata.providers.synthetic.provider import SyntheticProvider
 
 

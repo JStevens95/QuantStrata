@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from src.marketdata.synthetic.context import SyntheticGenerationState
+from src.marketdata.providers.synthetic.context import SyntheticGenerationState
 
 
 def test_generation_state_is_mutable_container() -> None:

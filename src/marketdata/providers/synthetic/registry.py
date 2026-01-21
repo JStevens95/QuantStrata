@@ -10,7 +10,7 @@ from typing import Callable, Dict, Optional, Tuple
 from src.marketdata.core.ids import MarketId
 
 # SyntheticGenerationState is the shared mutable state passed to generators.
-from src.marketdata.synthetic.context import SyntheticGenerationState
+from src.marketdata.providers.synthetic.context import SyntheticGenerationState
 
 # Generator signature used across the engine:
 # a generator consumes (MarketId, state) and mutates state in-place (adds panels/factories/etc.).

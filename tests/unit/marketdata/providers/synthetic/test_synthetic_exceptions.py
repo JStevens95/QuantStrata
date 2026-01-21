@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.marketdata.synthetic.exceptions import (
+from src.marketdata.providers.synthetic.exceptions import (
     InvalidPanelShapeError,
     MissingDependencyError,
     SyntheticMarketDataError,

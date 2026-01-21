@@ -6,7 +6,7 @@ from typing import Mapping
 
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.types import CurveMethod
-from src.marketdata.synthetic.specs import (
+from src.marketdata.providers.synthetic.specs import (
     SpotGbmSpec,
     CurveZeroSpec,
     CurveBootstrapSpec,

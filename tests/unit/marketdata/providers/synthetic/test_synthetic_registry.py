@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Tuple
 
 from src.marketdata.core.ids import MarketId
-from src.marketdata.synthetic.context import SyntheticGenerationState
-from src.marketdata.synthetic.registry import SyntheticRegistry
+from src.marketdata.providers.synthetic.context import SyntheticGenerationState
+from src.marketdata.providers.synthetic.registry import SyntheticRegistry
 
 
 def test_registry_register_and_lookup_is_case_insensitive() -> None:

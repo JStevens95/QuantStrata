@@ -16,20 +16,20 @@ from src.marketdata.core.ids import MarketId
 from src.marketdata.core.panel import Panel
 
 # Provider config + specs define how to parameterize synthetic generation.
-from src.marketdata.synthetic.config import SyntheticProviderConfig
-from src.marketdata.synthetic.specs import SpotGbmSpec, VolGridSmileSpec
+from src.marketdata.providers.synthetic.config import SyntheticProviderConfig
+from src.marketdata.providers.synthetic.specs import SpotGbmSpec, VolGridSmileSpec
 
 # GridVolFactory reconstructs a pricing vol surface at snapshot time.
 from src.marketdata.surfaces.factories import GridVolFactory
 
 # Generation state is the shared mutable state mutated by generators.
-from src.marketdata.synthetic.context import SyntheticGenerationState
+from src.marketdata.providers.synthetic.context import SyntheticGenerationState
 
 # rng_for_market_id derives deterministic RNG streams per MarketId.
-from src.marketdata.synthetic.engine import rng_for_market_id
+from src.marketdata.providers.synthetic.engine import rng_for_market_id
 
 # Registry is used to register these generators with the engine.
-from src.marketdata.synthetic.registry import SyntheticRegistry
+from src.marketdata.providers.synthetic.registry import SyntheticRegistry
 
 
 def register_fx_generators(*, registry: SyntheticRegistry, base_seed: int, config: SyntheticProviderConfig) -> None:

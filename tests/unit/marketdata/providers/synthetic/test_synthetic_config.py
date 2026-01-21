@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import numpy as np
 import pytest
 
 from src.marketdata.core.ids import MarketId
-from src.marketdata.synthetic.config import SyntheticProviderConfig
-from src.marketdata.synthetic.specs import CurveZeroSpec, SpotGbmSpec, VolGridSmileSpec
+from src.marketdata.providers.synthetic.config import SyntheticProviderConfig
+from src.marketdata.providers.synthetic.specs import CurveZeroSpec, SpotGbmSpec, VolGridSmileSpec
 
 
 def test_config_returns_defaults_when_no_overrides() -> None:
