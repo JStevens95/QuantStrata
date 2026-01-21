@@ -186,6 +186,31 @@ class SyntheticMarketEngine:
             self._generate_one(market_id=market_id, state=state)
 
         # Build and return the final MarketDataset (snapshot() will use factories).
+        meta_in = {}  # Reserved for future engine-level metadata composition if needed.
+        meta_out = {
+            **meta_in,
+            # Public-facing provenance:
+            "provider": "SyntheticProvider",
+            "provider_mode": "synthetic_generation",
+
+            # Determinism/debugging:
+            "seed": int(self.seed),
+
+            # Request provenance:
+            "freq": str(request.freq).strip().upper(),
+            "start": str(request.start),
+            "end": str(request.end),
+            "requested_scenarios": int(request.scenarios),
+
+            # Realized grid info:
+            "n_time": int(n_time),
+            "n_scenarios": int(n_scenarios),
+
+            # Useful for debugging dependency closure:
+            "n_requested_ids": int(len(requested_ids)),
+            "n_closed_ids": int(len(all_ids)),
+        }
+
         return MarketDataset(
             dates=list(dates),                   # Persist dates as list[str].
             n_scenarios=n_scenarios,             # Persist scenario count.
@@ -194,11 +219,7 @@ class SyntheticMarketEngine:
             curve_factories=curve_factories,     # Curve factories produced by generation.
             vol_params=vol_param_panels,         # Vol param panels produced by generation.
             vol_factories=vol_factories,         # Vol factories produced by generation.
-            meta={                               # Helpful metadata for debugging/traceability.
-                "provider": "SyntheticMarketEngine",
-                "seed": int(self.seed),
-                "freq": request.freq,
-            },
+            meta=meta_out,
         )
 
     # ---------------------------------------------------------------------

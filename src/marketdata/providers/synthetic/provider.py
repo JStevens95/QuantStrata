@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 from src.marketdata.core.dataset import MarketDataset
 from src.marketdata.core.market import Market
 from src.marketdata.core.requests import MarketRequest, TimeseriesRequest
-
 from src.marketdata.providers.interfaces import MarketDataProvider
 
 from src.marketdata.providers.synthetic.config import SyntheticProviderConfig
@@ -20,69 +19,40 @@ class SyntheticProvider(MarketDataProvider):
     """
     Synthetic market-data provider (Vn façade).
 
-    Why keep this class?
-    --------------------
-    - Your examples/tests already import and use SyntheticProvider.
-    - We want the public provider API stable.
-    - Internally we upgrade architecture to a registry + engine model.
-
     Responsibilities
     ---------------
-    - Construct a SyntheticRegistry (FX/IR/EQ/... generators registered here).
-    - Construct a SyntheticMarketEngine (core orchestration).
-    - Delegate get_market/get_timeseries to the engine.
+    - Build registry (generator coverage per asset class)
+    - Build engine (dependency closure + deterministic generation)
+    - Delegate get_market / get_timeseries
 
-    Non-responsibilities
-    --------------------
-    - This provider does not implement market generation logic.
-      That lives in: src/marketdata/synthetic/generators/<asset_class>.py
+    Notes
+    -----
+    - name is exposed as a read-only @property (Protocol-safe).
+    - Determinism is controlled by (seed, MarketId.key()) in the engine/generators.
     """
-    name: str = "SyntheticProvider"
     seed: int = 7
     config: SyntheticProviderConfig = SyntheticProviderConfig()
 
-    # Private engine instance (constructed in __post_init__).
+    _name: str = "SyntheticProvider"
     _engine: SyntheticMarketEngine = field(default=None, init=False, repr=False)  # type: ignore[assignment]
 
-    def __post_init__(self) -> None:
-        """
-        Construct the registry + engine.
+    @property
+    def name(self) -> str:
+        return str(self._name)
 
-        Notes
-        -----
-        We build the registry here so:
-        - provider instances are self-contained
-        - configuration is bound at construction time
-        - downstream calls are clean and fast
-        """
+    def __post_init__(self) -> None:
         registry = SyntheticRegistry()
 
         # Register asset-class generators (one module per asset class).
         register_fx_generators(registry=registry, base_seed=int(self.seed), config=self.config)
         register_ir_generators(registry=registry, base_seed=int(self.seed), config=self.config)
 
-        # Create the orchestration engine.
+        # Construct engine and store on frozen instance.
         engine = SyntheticMarketEngine(seed=int(self.seed), registry=registry)
-
-        # Store the engine on this frozen dataclass.
         object.__setattr__(self, "_engine", engine)
 
-    # ---------------------------------------------------------------------
-    # Public API (stable)
-    # ---------------------------------------------------------------------
-
     def get_market(self, request: MarketRequest) -> Market:
-        """
-        Return a single Market snapshot for request.asof.
-
-        Delegates to SyntheticMarketEngine.
-        """
         return self._engine.get_market(request)
 
     def get_timeseries(self, request: TimeseriesRequest) -> MarketDataset:
-        """
-        Return a MarketDataset across request.start..request.end and scenarios.
-
-        Delegates to SyntheticMarketEngine.
-        """
         return self._engine.get_timeseries(request)
