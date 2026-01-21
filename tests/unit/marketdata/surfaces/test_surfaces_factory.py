@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.marketdata.surfaces.factories import FlatVolFactory, GridVolFactory
+from src.marketdata.surfaces.factory import FlatVolFactory, GridVolFactory
 from src.marketdata.surfaces.vol_surface import FlatVolSurface, GridVolSurface
 
 

@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 
 from src.marketdata.core.interfaces import Quote
-from src.marketdata.quotes.factories import PositiveQuoteFactory, ScalarQuoteFactory
+from src.marketdata.quotes.factory import PositiveQuoteFactory, ScalarQuoteFactory
 
 
 def test_scalar_quote_factory_accepts_python_scalars() -> None:

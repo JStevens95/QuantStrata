@@ -9,8 +9,8 @@ from src.marketdata.core.artifacts import load_market_dataset, save_market_datas
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.requests import TimeseriesRequest, Universe
 from src.marketdata.providers.synthetic.provider import SyntheticProvider
-from src.marketdata.curves.factories import ZeroRateCurveFactory
-from src.marketdata.surfaces.factories import GridVolFactory
+from src.marketdata.curves.factory import ZeroRateCurveFactory
+from src.marketdata.surfaces.factory import GridVolFactory
 
 
 def test_market_dataset_artifact_roundtrip(tmp_path: Path) -> None:

@@ -7,7 +7,7 @@ from src.marketdata.core.panel import Panel
 from src.marketdata.core.requests import TimeseriesRequest, Universe
 from src.marketdata.providers.synthetic.engine import SyntheticMarketEngine, _generate_dates, rng_for_market_id, stable_seed
 from src.marketdata.providers.synthetic.registry import SyntheticRegistry
-from src.marketdata.surfaces.factories import GridVolFactory
+from src.marketdata.surfaces.factory import GridVolFactory
 
 
 def test_stable_seed_is_deterministic() -> None:

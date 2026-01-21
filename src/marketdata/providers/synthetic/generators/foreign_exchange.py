@@ -20,7 +20,7 @@ from src.marketdata.providers.synthetic.config import SyntheticProviderConfig
 from src.marketdata.providers.synthetic.specs import SpotGbmSpec, VolGridSmileSpec
 
 # GridVolFactory reconstructs a pricing vol surface at snapshot time.
-from src.marketdata.surfaces.factories import GridVolFactory
+from src.marketdata.surfaces.factory import GridVolFactory
 
 # Generation state is the shared mutable state mutated by generators.
 from src.marketdata.providers.synthetic.context import SyntheticGenerationState

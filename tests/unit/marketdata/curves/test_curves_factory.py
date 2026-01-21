@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 
 from src.marketdata.curves.term_structure import ZeroRateCurve
-from src.marketdata.curves.factories import ZeroRateCurveFactory
+from src.marketdata.curves.factory import ZeroRateCurveFactory
 
 
 def test_zero_curve_factory_builds_curve() -> None:

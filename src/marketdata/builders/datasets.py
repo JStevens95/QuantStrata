@@ -12,8 +12,8 @@ from src.marketdata.core.ids import MarketId
 from src.marketdata.core.panel import Panel
 
 # Factories are used to infer what storage layout we should validate against.
-from src.marketdata.curves.factories import ZeroRateCurveFactory
-from src.marketdata.surfaces.factories import GridVolFactory
+from src.marketdata.curves.factory import ZeroRateCurveFactory
+from src.marketdata.surfaces.factory import GridVolFactory
 
 
 def validate_dataset_layout(ds: MarketDataset, *, strict: bool = True) -> None:

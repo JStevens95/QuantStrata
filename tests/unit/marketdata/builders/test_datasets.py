@@ -11,8 +11,8 @@ from src.marketdata.builders.panels import (
     make_grid_vol_panel,
 )
 from src.marketdata.builders.datasets import build_marketdataset, validate_dataset_layout
-from src.marketdata.curves.factories import ZeroRateCurveFactory
-from src.marketdata.surfaces.factories import GridVolFactory
+from src.marketdata.curves.factory import ZeroRateCurveFactory
+from src.marketdata.surfaces.factory import GridVolFactory
 
 
 def _ids() -> dict[str, MarketId]:

@@ -20,42 +20,21 @@ class StaticProvider(MarketDataProvider):
     """
     Replay/frozen dataset provider.
 
-    Purpose
-    -------
-    - "Replays" an existing MarketDataset deterministically.
-    - Allows the rest of the stack to treat stored data like a live provider.
-
-    Behavior
-    --------
-    - get_timeseries slices the stored dataset to the requested (start,end,freq,scenarios).
-    - get_market returns a single Market snapshot via a one-date get_timeseries call.
-
-    Notes
-    -----
-    - Policies are controlled by StaticProviderConfig.
+    - Replays an existing MarketDataset deterministically.
+    - Enforces request policies via StaticProviderConfig.
     """
 
     dataset: MarketDataset
     config: StaticProviderConfig = field(default_factory=StaticProviderConfig)
-    _name: str = "StaticProvider"
 
-    @property
-    def name(self) -> str:
-        return str(self._name)
-
-    # ---------------------------------------------------------------------
-    # MarketDataProvider API
-    # ---------------------------------------------------------------------
+    # IMPORTANT: concrete field (not @property)
+    name: str = "StaticProvider"
 
     def get_market(self, request: MarketRequest) -> Market:
-        """
-        Return a single as-of Market snapshot from the stored dataset.
-        """
         scenario_idx = 0 if request.scenario is None else int(request.scenario)
         if scenario_idx < 0:
             raise ValueError("MarketRequest.scenario must be >= 0 when provided.")
 
-        # For single-snapshot, we must be able to address scenario_idx.
         if scenario_idx >= int(self.dataset.n_scenarios):
             raise ValueError(
                 f"Requested scenario_idx={scenario_idx} is not available in stored dataset "
@@ -68,15 +47,12 @@ class StaticProvider(MarketDataProvider):
                 end=request.asof,
                 freq="D",
                 universe=request.universe,
-                scenarios=scenario_idx + 1,  # ensure scenario_idx is in-range
+                scenarios=scenario_idx + 1,
             )
         )
         return ts.snapshot(time_idx=0, scenario_idx=scenario_idx)
 
     def get_timeseries(self, request: TimeseriesRequest) -> MarketDataset:
-        """
-        Slice the stored dataset to match the request, under StaticProviderConfig policies.
-        """
         # ---- freq policy ----
         req_freq = _norm_freq(request.freq)
         stored_freq = _norm_freq(str((self.dataset.meta or {}).get("freq", "") or ""))
@@ -125,7 +101,7 @@ class StaticProvider(MarketDataProvider):
             time_idx=time_idx,
             scenario_count=scenario_count,
             keep_ids=keep_ids,
-            provider_name=self.name,
+            provider_name=str(self.name),
             provider_mode="static_replay",
             freq=req_freq,
         )

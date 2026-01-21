@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.panel import Panel
 
-from src.marketdata.curves.factories import ZeroRateCurveFactory
+from src.marketdata.curves.factory import ZeroRateCurveFactory
 
 from src.marketdata.providers.synthetic.config import SyntheticProviderConfig
 from src.marketdata.providers.synthetic.specs import CurveBootstrapSpec, CurveZeroSpec

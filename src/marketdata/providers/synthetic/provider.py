@@ -16,51 +16,59 @@ from src.marketdata.providers.synthetic.registry import SyntheticRegistry
 @dataclass(frozen=True, slots=True)
 class SyntheticProvider(MarketDataProvider):
     """
-    Synthetic market-data provider (Vn public façade).
+    Synthetic market-data provider (public façade).
 
     Responsibilities
     ---------------
-    - Build a SyntheticRegistry (register FX/IR/... generators).
-    - Build a SyntheticMarketEngine (dependency closure + deterministic orchestration).
-    - Delegate get_market/get_timeseries to the engine.
+    - Register asset-class generators (FX/IR/...) into a SyntheticRegistry.
+    - Build a SyntheticMarketEngine that performs dependency closure + deterministic generation.
+    - Expose get_market/get_timeseries via the MarketDataProvider protocol.
 
     Notes
     -----
-    - Provider API stays stable; engine/generators can evolve behind it.
-    - Determinism is enforced by per-MarketId RNG substreams.
+    We store provider identification as a concrete *field* `name` (not a property),
+    to avoid accidental resolution to Protocol-level descriptors.
     """
 
     seed: int = 7
     config: SyntheticProviderConfig = field(default_factory=SyntheticProviderConfig)
-    _name: str = "SyntheticProvider"
+
+    # IMPORTANT: concrete field (not @property) to satisfy runtime expectations/tests.
+    name: str = "SyntheticProvider"
 
     _engine: SyntheticMarketEngine = field(default=None, init=False, repr=False)  # type: ignore[assignment]
 
-    @property
-    def name(self) -> str:
-        return str(self._name)
-
     def __post_init__(self) -> None:
+        """
+        Build the registry and engine once (frozen dataclass; use object.__setattr__).
+        """
         registry = SyntheticRegistry()
 
+        # Register generator families. Each generator should use deterministic substreams.
         register_fx_generators(registry=registry, base_seed=int(self.seed), config=self.config)
         register_ir_generators(registry=registry, base_seed=int(self.seed), config=self.config)
 
         engine = SyntheticMarketEngine(seed=int(self.seed), registry=registry)
         object.__setattr__(self, "_engine", engine)
 
+    # -------------------------------------------------------------------------
+    # MarketDataProvider API
+    # -------------------------------------------------------------------------
+
     def get_market(self, request: MarketRequest) -> Market:
         return self._engine.get_market(request)
 
     def get_timeseries(self, request: TimeseriesRequest) -> MarketDataset:
+        """
+        Delegate to the engine, then ensure provider meta is stamped consistently.
+        """
         ds = self._engine.get_timeseries(request)
 
-        # Non-breaking provenance improvement:
-        # ensure dataset.meta reflects the provider façade name, not the internal engine.
+        # Provider meta should reflect the façade name, not internal engine details.
         meta0 = dict(ds.meta or {})
         meta = {
             **meta0,
-            "provider": self.name,
+            "provider": str(self.name),
             "provider_mode": "synthetic_generation",
             "freq": str(meta0.get("freq", request.freq)).strip().upper(),
         }

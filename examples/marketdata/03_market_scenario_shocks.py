@@ -42,8 +42,8 @@ from src.marketdata.scenarios.interfaces import MarketView, ScenarioPack
 from src.marketdata.scenarios.runner import ScenarioRunner
 from src.marketdata.scenarios.shocks import ParallelRateShock, SpotShock, VolShock
 
-from src.marketdata.curves.factories import ZeroRateCurveFactory
-from src.marketdata.surfaces.factories import GridVolFactory
+from src.marketdata.curves.factory import ZeroRateCurveFactory
+from src.marketdata.surfaces.factory import GridVolFactory
 
 
 # ======================================================================================

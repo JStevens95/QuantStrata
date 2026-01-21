@@ -45,8 +45,8 @@ from src.marketdata.core.ids import MarketId
 from src.marketdata.core.market import Market
 from src.marketdata.core.panel import Panel
 
-from src.marketdata.curves.factories import ZeroRateCurveFactory
-from src.marketdata.surfaces.factories import GridVolFactory
+from src.marketdata.curves.factory import ZeroRateCurveFactory
+from src.marketdata.surfaces.factory import GridVolFactory
 
 
 # ======================================================================================

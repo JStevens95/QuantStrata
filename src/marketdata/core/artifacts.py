@@ -2,18 +2,18 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import asdict, is_dataclass
-from pathlib import Path
-from typing import Any, Dict, Mapping, Tuple
 
 import numpy as np
+from dataclasses import is_dataclass
+from pathlib import Path
+from typing import Any, Dict, Mapping
 
 from src.marketdata.core.dataset import MarketDataset
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.panel import Panel
 
-from src.marketdata.curves.factories import FlatRateCurveFactory, ZeroRateCurveFactory
-from src.marketdata.surfaces.factories import FlatVolFactory, GridVolFactory
+from src.marketdata.curves.factory import FlatRateCurveFactory, ZeroRateCurveFactory
+from src.marketdata.surfaces.factory import FlatVolFactory, GridVolFactory
 
 
 # =============================================================================
@@ -186,19 +186,22 @@ def load_market_dataset(path: str | Path) -> MarketDataset:
     # ---- Load quote panels ----
     for key, spec in (manifest.get("panels") or {}).items():
         mid = MarketId.parse(key)
-        arr = np.load(root / spec["file"], allow_pickle=False)
+        file_path = _resolve_artifact_file(root=root, rel=str(spec["file"]), expected_dir="panels")
+        arr = np.load(file_path, allow_pickle=False)
         panels[mid] = Panel(data=np.asarray(arr), axis_names=tuple(spec["axis_names"]))
 
     # ---- Load curve params ----
     for key, spec in (manifest.get("curve_params") or {}).items():
         mid = MarketId.parse(key)
-        arr = np.load(root / spec["file"], allow_pickle=False)
+        file_path = _resolve_artifact_file(root=root, rel=str(spec["file"]), expected_dir="curve_params")
+        arr = np.load(file_path, allow_pickle=False)
         curve_params[mid] = Panel(data=np.asarray(arr), axis_names=tuple(spec["axis_names"]))
 
     # ---- Load vol params ----
     for key, spec in (manifest.get("vol_params") or {}).items():
         mid = MarketId.parse(key)
-        arr = np.load(root / spec["file"], allow_pickle=False)
+        file_path = _resolve_artifact_file(root=root, rel=str(spec["file"]), expected_dir="vol_params")
+        arr = np.load(file_path, allow_pickle=False)
         vol_params[mid] = Panel(data=np.asarray(arr), axis_names=tuple(spec["axis_names"]))
 
     # ---- Load factories ----
@@ -312,6 +315,36 @@ def _deserialize_factory(payload: Mapping[str, Any]) -> object:
 # =============================================================================
 # Manifest validation + small utilities
 # =============================================================================
+def _resolve_artifact_file(*, root: Path, rel: str, expected_dir: str) -> Path:
+    """
+    Resolve a manifest-relative file path safely.
+
+    Security:
+    - Reject absolute paths.
+    - Reject '..' traversal.
+    - Enforce file is under <root>/<expected_dir>/...
+    """
+    p = Path(str(rel))
+
+    if p.is_absolute():
+        raise ValueError(f"Invalid artifact manifest: absolute path not allowed: {rel!r}")
+
+    # Normalize and ensure it's inside expected_dir
+    full = (root / p).resolve()
+    expected_root = (root / expected_dir).resolve()
+
+    # Must be under expected directory
+    if expected_root not in full.parents:
+        raise ValueError(
+            "Invalid artifact manifest: file path escapes expected directory.\n"
+            f"  rel={rel!r}\n"
+            f"  expected_dir={expected_dir!r}"
+        )
+
+    if not full.exists() or not full.is_file():
+        raise FileNotFoundError(f"Artifact file not found: {full}")
+
+    return full
 
 def _validate_manifest_header(manifest: Mapping[str, Any]) -> None:
     fmt = str(manifest.get("format", "")).strip()
