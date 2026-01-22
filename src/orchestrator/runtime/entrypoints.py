@@ -1,73 +1,70 @@
-"""
-Programmatic orchestrator entrypoints.
-
-This module provides:
-- run_pipeline_from_config(cfg)
-- run_pipeline_by_name(path)
-
-We do not force a CLI in V1; that can be layered later.
-"""
+# src/orchestrator/runtime/entrypoints.py
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional
 
 from src.orchestrator.artifacts.manifest import RunManifest
 from src.orchestrator.artifacts.store import ArtifactStore
-from src.orchestrator.config.loader import load_run_config
 from src.orchestrator.config.schemas import RunConfig
 from src.orchestrator.core.context import Context
 from src.orchestrator.core.pipeline import PipelineRunner
 from src.orchestrator.core.registry import PipelineRegistry
 from src.orchestrator.logging.setup import build_run_logger
-from src.orchestrator.runtime.discovery import register_builtin_pipelines
+
+# IMPORTANT: import the module, not the function, so tests can monkeypatch it reliably.
+from src.orchestrator.runtime import discovery
 
 
 def run_pipeline_from_config(cfg: RunConfig, *, run_id: Optional[str] = None) -> Context:
     """
-    Run a pipeline given a validated RunConfig.
+    Build and run a pipeline from a RunConfig.
 
     Parameters
     ----------
     cfg:
-        Typed run configuration.
+        Fully-validated run configuration.
     run_id:
-        Optional explicit run id. If omitted, a timestamp-based id is created.
+        Optional explicit run identifier. If not provided, a UTC timestamp-based id is used.
 
     Returns
     -------
     Context
-        Final run context.
+        Final context after pipeline execution (contains state, store, logger, etc.).
     """
-    # Create a stable run id (UTC timestamp) if not provided.
-    rid = str(run_id or f"run_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}")
+    # --- Resolve / generate a stable run id ---
+    resolved_run_id = str(run_id).strip() if run_id is not None else ""
+    if not resolved_run_id:
+        resolved_run_id = datetime.now(timezone.utc).strftime("run_%Y%m%d_%H%M%S")
 
-    # Create an artifact store for this run.
-    store = ArtifactStore(workdir=Path(cfg.io.workdir), run_id=rid,
-                          artifacts_dirname=cfg.io.artifacts_dir, logs_dirname=cfg.io.logs_dir)
+    # --- Capture run start timestamp (required by RunManifest) ---
+    started_at_utc = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    # --- Build artifact store and ensure directory layout exists on disk ---
+    store = ArtifactStore.from_config(cfg=cfg, run_id=resolved_run_id)
     store.ensure_layout()
 
-    # Create a run logger that logs to both console and file.
+    # --- Create a logger that writes both console + run log file ---
     logger = build_run_logger(
-        "QuantStrata.Orchestrator",
-        log_file=store.logs_path / "run.log",
+        logger_name="QuantStrata.Orchestrator",
+        log_file=store.logs_root / "run.log",
     )
 
-    # Build a registry and register built-in pipelines.
+    # --- Build pipeline registry and register built-ins (dynamic module call) ---
     registry = PipelineRegistry()
-    register_builtin_pipelines(registry)
+    discovery.register_builtin_pipelines(registry)
 
-    # Resolve pipeline builder by name.
+    # --- Resolve pipeline builder from registry ---
     builder = registry.get(cfg.pipeline)
 
-    # Build pipeline from config.
+    # --- Build pipeline from config (builder decides how to interpret cfg.params) ---
     pipeline = builder(cfg)
 
-    # Create context passed to steps.
+    # --- Create the base execution context ---
     ctx = Context(
-        run_id=rid,
+        run_id=resolved_run_id,
         cfg=cfg,
         logger=logger,
         artifact_store=store,
@@ -75,63 +72,26 @@ def run_pipeline_from_config(cfg: RunConfig, *, run_id: Optional[str] = None) ->
         state={},
     )
 
-    # Prepare runner options from config.
+    # --- Execute pipeline ---
     runner = PipelineRunner(
         only=set(cfg.only) if cfg.only else None,
         skip=set(cfg.skip) if cfg.skip else None,
         resume_from=cfg.resume_from,
         dry_run=bool(cfg.dry_run),
     )
-
-    # Record start time for manifest.
-    started_at_utc = datetime.now(timezone.utc).isoformat()
-
-    # Execute pipeline.
     ctx = runner.run(pipeline, ctx)
 
-    # Write a small manifest for reproducibility / audit.
+    # --- Capture run end timestamp (optional but useful) ---
+    finished_at_utc = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    # --- Write manifest at end (captures config + outputs) ---
     manifest = RunManifest(
-        run_id=rid,
+        run_id=resolved_run_id,
         pipeline=str(cfg.pipeline),
         started_at_utc=started_at_utc,
-        config={
-            "pipeline": cfg.pipeline,
-            "only": list(cfg.only) if cfg.only else None,
-            "skip": list(cfg.skip) if cfg.skip else None,
-            "resume_from": cfg.resume_from,
-            "dry_run": cfg.dry_run,
-            "io": {
-                "workdir": cfg.io.workdir,
-                "artifacts_dir": cfg.io.artifacts_dir,
-                "logs_dir": cfg.io.logs_dir,
-            },
-            "params": dict(cfg.params or {}),
-        },
-        outputs={
-            # Store just keys in V1 (avoid serializing large objects).
-            "state_keys": sorted(ctx.state.keys()),
-        },
+        config=asdict(cfg),
+        outputs={"state_keys": sorted(ctx.state.keys())},
     )
-    store.save_manifest(manifest)
+    store.write_manifest(manifest)
 
     return ctx
-
-
-def run_pipeline_by_name(config_path: str | Path, *, run_id: Optional[str] = None) -> Context:
-    """
-    Load a config file and run the pipeline.
-
-    Parameters
-    ----------
-    config_path:
-        Path to JSON/YAML run config.
-    run_id:
-        Optional explicit run id override.
-
-    Returns
-    -------
-    Context
-        Final run context.
-    """
-    cfg = load_run_config(config_path)
-    return run_pipeline_from_config(cfg, run_id=run_id)

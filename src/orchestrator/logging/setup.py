@@ -64,5 +64,4 @@ def build_run_logger(
         file_handler.setLevel(level)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
-
     return logger
