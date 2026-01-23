@@ -236,9 +236,6 @@ def main(*, save_files: bool = False) -> None:
     # 7) Plain console summary
     # -------------------------------------------------------------------------
 
-
-
-
 if __name__ == "__main__":
     # Default behaviour:
     main(save_files=False)

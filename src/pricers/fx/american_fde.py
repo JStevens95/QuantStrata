@@ -83,6 +83,8 @@ class FxAmericanVanillaFdPricer:
             return {"delta": 0.0, "gamma": 0.0, "vega": 0.0, "rho_domestic": 0.0, "rho_foreign": 0.0}
 
         pv0_per_unit, ctx = self._price_per_unit_and_context(trade, market)
+        if ctx.get("x_grid") is None or ctx.get("t_grid") is None:
+            return {"delta": 0.0, "gamma": 0.0, "vega": 0.0, "rho_domestic": 0.0, "rho_foreign": 0.0}
 
         x_grid = ctx["x_grid"]
         t_grid = ctx["t_grid"]

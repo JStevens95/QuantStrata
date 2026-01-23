@@ -1,13 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
 
 from src.marketdata.core.ids import MarketId
-
-# define parameters values.
-OptionType = Literal["call", "put"]
-DigitalPayoff = Literal["cash", "asset"]
+from src.models.payoffs.types import OptionType, DigitalPayoff
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +33,10 @@ class EuropeanFxDigitalOption:
 
     option_type: OptionType
     payoff: DigitalPayoff
-    payout_amount: float  # domestic amount if cash; foreign units if asset
+
+    # notional: float               # <- NOT REQUIRED FOR DIGITAL
+    payout_amount: float          # payoff per 1 unit notional
+
     strike: float
     expiry: float
     spot_id: MarketId

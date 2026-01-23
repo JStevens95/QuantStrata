@@ -15,7 +15,7 @@ from src.pricers.fx.european_fde import FxEuropeanVanillaFdPricer
 from src.pricers.fx.american_fde import FxAmericanVanillaFdPricer
 
 from src.models.numeric.finite_difference.diagnostics import FdDiagnostics
-from src.core.reporting.plots.finite_difference import (
+from src.core.reporting.plots.pricers.finite_difference import (
     plot_price_curve_fd_vs_reference,
     plot_error_curve,
     plot_delta_profile,

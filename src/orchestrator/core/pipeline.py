@@ -77,7 +77,8 @@ class PipelineRunner:
         # Select steps according to only/skip/resume rules.
         selected_steps = self._select_steps(all_steps)
 
-        ctx.logger.info("PIPELINE_START | %s | selected_steps=%d", pipeline.name, len(selected_steps))
+        if ctx.logger is not None:
+            ctx.logger.info("PIPELINE_START | %s | selected_steps=%d", pipeline.name, len(selected_steps))
 
         # Execute steps in order.
         for step in selected_steps:
@@ -85,7 +86,8 @@ class PipelineRunner:
 
             if self.dry_run:
                 # Dry-run means we do not execute, only log the intent.
-                ctx.logger.info("DRY_RUN | step=%s | skipped_execution=True", step.name)
+                if ctx.logger is not None:
+                    ctx.logger.info("DRY_RUN | step=%s | skipped_execution=True", step.name)
                 log_step_end(ctx.logger, step_name=step.name, ok=True)
                 continue
 
@@ -94,7 +96,8 @@ class PipelineRunner:
 
             log_step_end(ctx.logger, step_name=step.name, ok=True)
 
-        ctx.logger.info("PIPELINE_END   | %s", pipeline.name)
+        if ctx.logger is not None:
+            ctx.logger.info("PIPELINE_END   | %s", pipeline.name)
         return ctx
 
     def _select_steps(self, steps: List[Step]) -> List[Step]:

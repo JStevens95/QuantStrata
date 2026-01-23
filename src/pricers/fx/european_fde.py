@@ -132,6 +132,8 @@ class FxEuropeanVanillaFdPricer:
         # Base solve + context (grids + parameters)
         # -----------------------------
         pv0_per_unit, ctx = self._price_per_unit_and_context(trade, market)
+        if ctx.get("x_grid") is None or ctx.get("t_grid") is None:
+            return {"delta": 0.0, "gamma": 0.0, "vega": 0.0, "rho_domestic": 0.0, "rho_foreign": 0.0}
 
         # Extract the pieces we need so bumped re-solves reuse the same grids.
         x_grid: SpatialGrid1D = ctx["x_grid"]  # type: ignore[assignment]
@@ -742,6 +744,8 @@ class FxEuropeanDigitalFdPricer:
 
         # Base solve + context provides grids and parameters for bumped re-solves.
         pv0, ctx = self._price_and_context(trade, market)
+        if ctx.get("x_grid") is None or ctx.get("t_grid") is None:
+            return {"delta": 0.0, "gamma": 0.0, "vega": 0.0, "rho_domestic": 0.0, "rho_foreign": 0.0}
 
         x_grid: SpatialGrid1D = ctx["x_grid"]  # type: ignore[assignment]
         t_grid: TimeGrid = ctx["t_grid"]       # type: ignore[assignment]

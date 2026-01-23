@@ -21,3 +21,6 @@ BarrierStyle = Literal['knock_out', 'knock_in']
 
 # definition of rebate characteristic.
 RebateTiming = Literal["at_hit", "at_expiry"]
+
+# definition of digital option payoff
+DigitalPayoff = Literal["cash", "asset"]

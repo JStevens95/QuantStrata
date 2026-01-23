@@ -13,7 +13,7 @@ from src.pricers.fx.european_mc import FxEuropeanVanillaMcPricer, FxMcSimulation
 from src.models.numeric.monte_carlo.estimators import mean_stderr, mean_confidence_interval
 
 # plot utilities
-from src.core.reporting.plots.monte_carlo import (
+from src.core.reporting.plots.pricers.monte_carlo import (
     empirical_log_stats, gbm_terminal_lognormal_params, plot_terminal_spot_distribution,
     McConvergencePoint, plot_mc_convergence_vs_paths, plot_discounted_payoff_distribution, plot_simulated_paths,
     plot_qq_log_terminal_spots, plot_running_pv_estimate, plot_stderr_scaling_vs_paths

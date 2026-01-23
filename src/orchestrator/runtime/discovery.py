@@ -36,11 +36,17 @@ def register_builtin_pipelines(registry: PipelineRegistry) -> None:
     """
 
     # ---------------------------------------------------------------------
-    # Marketdata: build timeseries dataset (SyntheticProvider for now)
+    # Marketdata pipelines
     # ---------------------------------------------------------------------
-    # Import the builder function from the pipeline module.
-    # We keep the import local to prevent side effects at module import time.
-    from src.orchestrator.pipelines.marketdata.build_timeseries import build_pipeline
+    from src.orchestrator.pipelines.marketdata.build_timeseries import build_pipeline as md_build_timeseries
+    
+    # register marketdata pipelines
+    registry.register("marketdata.build_timeseries", md_build_timeseries)
 
-    # Register the stable, versioned pipeline name.
-    registry.register("marketdata.build_timeseries", build_pipeline)
+    # ---------------------------------------------------------------------
+    # Pricing pipelines
+    # ---------------------------------------------------------------------
+    from src.orchestrator.pipelines.pricing.price_portfolio import build_pipeline as px_price_portfolio
+
+    # register pricing pipelines
+    registry.register("pricing.price_portfolio", px_price_portfolio)

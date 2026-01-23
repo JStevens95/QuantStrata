@@ -7,16 +7,11 @@ from typing import Any, Mapping, Sequence, Tuple, Union
 import numpy as np
 
 from src.marketdata.core.types import (
-    BootstrapEngine,
-    DepositCompounding,
-    ExtrapolationMode,
-    InstrumentType,
+    BootstrapEngine, DepositCompounding, ExtrapolationMode, InstrumentType
 )
 from src.marketdata.curves.term_structure import ZeroRateCurve
 from src.marketdata.integration.quantlib.context import (
-    require_quantlib,
-    to_ql_date,
-    yearfrac_to_ql_date,
+    require_quantlib, to_ql_date, yearfrac_to_ql_date,
 )
 
 # -----------------------------------------------------------------------------

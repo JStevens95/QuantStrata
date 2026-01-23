@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-from typing import Literal
 from dataclasses import dataclass
 
 from src.marketdata.core.ids import MarketId
-
-# define parameters values.
-OptionType = Literal["call", "put"]
-
+from src.models.payoffs.types import OptionType
 
 @dataclass(frozen=True, slots=True)
 class EuropeanFxVanillaOption:

@@ -1,9 +1,7 @@
-# src/pricers/registry.py
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Mapping, MutableMapping, Optional, Protocol, Type
+from typing import Any, Mapping, MutableMapping, Optional, Protocol, Type
 
 # import instruments
 from src.instruments.fx.linear.spot import FxSpot
@@ -178,7 +176,7 @@ class PricerRegistry:
         for (registered_type, registered_pid), pricer in self._by_type_and_id.items():
             if registered_pid != pid:
                 continue
-            if isinstance(registered_type, type) and isinstance(instrument, registered_type):
+            if isinstance(instrument, registered_type):
                 self._cache[cache_key] = pricer
                 return pricer
 
@@ -198,16 +196,41 @@ class DefaultPricerRegistry:
 
     def build(self) -> PricerRegistry:
         reg = PricerRegistry()
-        # ----------------- register FX instruments + pricers ---------------------------- #
-        reg.register(FxSpot, FxSpotPricer())
-        reg.register(FxForward, FxForwardPricer())
-        reg.register(EuropeanFxDigitalOption, FxEuropeanDigitalBsmPricer())
-        reg.register(EuropeanFxVanillaOption, FxEuropeanVanillaBsmPricer())
-        reg.register(EuropeanFxBarrierOption, FxEuropeanBarrierMcPricer())
-        reg.register(AmericanFxVanillaOption, FxAmericanVanillaFdPricer())
 
-        reg.register(EuropeanFxVanillaOption, FxEuropeanVanillaMcPricer(), pricer_id='mc')
-        reg.register(EuropeanFxDigitalOption, FxEuropeanDigitalMcPricer(), pricer_id='mc')
-        reg.register(EuropeanFxVanillaOption, FxEuropeanVanillaFdPricer(), pricer_id='fd')
-        reg.register(EuropeanFxDigitalOption, FxEuropeanDigitalFdPricer(), pricer_id='fd')
+        # ---- instantiate once (so default + alias share the same config) ----
+        spot = FxSpotPricer()
+        fwd = FxForwardPricer()
+
+        # Analytic Black Scholes Merton Pricer.
+        eur_van_bsm = FxEuropeanVanillaBsmPricer()
+        eur_dig_bsm = FxEuropeanDigitalBsmPricer()
+
+        # Numerical Monte Carlo Pricer.
+        eur_van_mc = FxEuropeanVanillaMcPricer()
+        eur_dig_mc = FxEuropeanDigitalMcPricer()
+        eur_bar_mc = FxEuropeanBarrierMcPricer()
+
+        # Numerical Finite Difference Pricer.
+        eur_van_fd = FxEuropeanVanillaFdPricer()
+        eur_dig_fd = FxEuropeanDigitalFdPricer()
+
+        am_van_fd = FxAmericanVanillaFdPricer()
+
+        # ---- defaults ----
+        reg.register(FxSpot, spot)
+        reg.register(FxForward, fwd)
+        reg.register(EuropeanFxVanillaOption, eur_van_bsm)
+        reg.register(EuropeanFxDigitalOption, eur_dig_bsm)
+        reg.register(EuropeanFxBarrierOption, eur_bar_mc)
+        reg.register(AmericanFxVanillaOption, am_van_fd)
+
+        # ---- named aliases ----
+        reg.register(EuropeanFxVanillaOption, eur_van_mc, pricer_id="mc")
+        reg.register(EuropeanFxDigitalOption, eur_dig_mc, pricer_id="mc")
+        reg.register(EuropeanFxBarrierOption, eur_bar_mc, pricer_id="mc")
+
+        reg.register(EuropeanFxVanillaOption, eur_van_fd, pricer_id="fd")
+        reg.register(EuropeanFxDigitalOption, eur_dig_fd, pricer_id="fd")
+        reg.register(AmericanFxVanillaOption, am_van_fd, pricer_id="fd")
+
         return reg

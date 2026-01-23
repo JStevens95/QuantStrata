@@ -21,9 +21,6 @@ DeltaType = Literal["forward", "spot"]
 # ATM quote convention for FX vols (V1/V2: forward ATM).
 AtmType = Literal["forward"]
 
-# Vanilla option side.
-OptionType = Literal["call", "put"]
-
 # Which backend should perform heavy lifting for bootstrapping/calibration.
 # (Keep "native" as default so the library works without QuantLib installed.)
 BootstrapEngine = Literal["native", "quantlib"]

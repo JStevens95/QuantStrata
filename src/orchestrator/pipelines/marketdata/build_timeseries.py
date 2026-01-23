@@ -34,6 +34,9 @@ from src.marketdata.core.requests import TimeseriesRequest, Universe  # request 
 from src.marketdata.providers.synthetic.config import SyntheticProviderConfig  # synthetic provider config
 from src.marketdata.providers.synthetic.provider import SyntheticProvider  # synthetic provider implementation
 
+# --- State Keys imports ---
+from src.orchestrator.core.state_keys import StateKeys as Keys
+
 
 # =============================================================================
 # Config helpers (pure functions, easy to reuse/test)
@@ -198,9 +201,9 @@ class BuildMarketIdsStep(Step):
         id_strings = _require_str_list(md_cfg.get("ids"), key_name="marketdata.ids")  # validate list[str]
         market_ids = [MarketId.parse(s) for s in id_strings]  # parse each id string into a MarketId
 
-        ctx.put("market_id_strings", id_strings)  # store normalized id strings (useful for debugging)
-        ctx.put("market_ids", market_ids)  # store parsed MarketId objects (used by Universe)
-        ctx.put("market_ids_pretty", [str(mid) for mid in market_ids])  # store string representations for printing
+        ctx.put(Keys.MARKET_ID_STRINGS, id_strings)  # store normalized id strings (useful for debugging)
+        ctx.put(Keys.MARKET_IDS, market_ids)  # store parsed MarketId objects (used by Universe)
+        ctx.put(Keys.MARKET_IDS_PRETTY, [str(mid) for mid in market_ids])  # store string representations for printing
 
         return ctx  # return Context for downstream steps
 
@@ -218,9 +221,9 @@ class BuildUniverseStep(Step):
     """
 
     def run(self, ctx: Context) -> Context:
-        market_ids: List[MarketId] = ctx.get("market_ids")  # read MarketIds produced by previous step
+        market_ids: List[MarketId] = ctx.get(Keys.MARKET_IDS)  # read MarketIds produced by previous step
         universe = Universe(market_ids)  # Universe validates duplicates/empties internally
-        ctx.put("universe", universe)  # store Universe for request-building step
+        ctx.put(Keys.UNIVERSE, universe)  # store Universe for request-building step
         return ctx  # return Context for downstream steps
 
 
@@ -243,7 +246,7 @@ class BuildTimeseriesRequestStep(Step):
         freq = str(md_cfg.get("freq", "D")).strip() or "D"  # default daily frequency if missing/blank
         scenarios = _require_int(md_cfg.get("scenarios", 1), key_name="marketdata.scenarios", min_value=1)  # >=1
 
-        universe: Universe = ctx.get("universe")  # read Universe built by previous step
+        universe: Universe = ctx.get(Keys.UNIVERSE)  # read Universe built by previous step
 
         request = TimeseriesRequest(  # create provider request object
             universe=universe,  # market ids to include
@@ -253,9 +256,9 @@ class BuildTimeseriesRequestStep(Step):
             scenarios=scenarios,  # number of scenarios requested
         )
 
-        ctx.put("request", request)  # store request for dataset-building step
+        ctx.put(Keys.REQUEST, request)  # store request for dataset-building step
         ctx.put(  # store a lightweight summary for console output and tests
-            "request_summary",
+            Keys.REQUEST_SUMMARY,
             {
                 "start": start,  # echo back normalized start
                 "end": end,  # echo back normalized end
@@ -285,10 +288,10 @@ class BuildDatasetStep(Step):
         if ctx.provider is None:  # provider must exist
             raise RuntimeError("Context.provider is None (BuildProviderStep did not run).")  # fail fast
 
-        request: TimeseriesRequest = ctx.get("request")  # read request built earlier
+        request: TimeseriesRequest = ctx.get(Keys.REQUEST)  # read request built earlier
         dataset = ctx.provider.get_timeseries(request)  # ask provider to generate/fetch dataset
 
-        ctx.put("dataset", dataset)  # store dataset for snapshot/pricing steps downstream
+        ctx.put(Keys.DATASET, dataset)  # store dataset for snapshot/pricing steps downstream
         return ctx  # return Context for downstream steps
 
 
@@ -318,7 +321,7 @@ class BuildSnapshotStep(Step):
         if not isinstance(snapshot_cfg, dict):  # validate snapshot config is a dict
             raise TypeError("marketdata.snapshot must be a dict if provided")  # explicit error
 
-        dataset = ctx.get("dataset")  # read dataset built earlier
+        dataset = ctx.get(Keys.DATASET)  # read dataset built earlier
         time_spec: Union[str, int] = snapshot_cfg.get("time", "last")  # default snapshot time is last date
         scenario_idx = _require_int(  # parse scenario index
             snapshot_cfg.get("scenario_idx", 0),  # default base scenario
@@ -329,9 +332,9 @@ class BuildSnapshotStep(Step):
         time_idx = _resolve_snapshot_time_index(dataset, time_spec)  # convert spec -> explicit index
         market = dataset.snapshot(time_idx=time_idx, scenario_idx=scenario_idx)  # build Market snapshot
 
-        ctx.put("market", market)  # store Market for downstream pricing steps
+        ctx.put(Keys.MARKET, market)  # store Market for downstream pricing steps
         ctx.put(  # store a tiny summary for debugging/tests
-            "market_snapshot_summary",
+            Keys.MARKET_SNAPSHOT_SUMMARY,
             {
                 "time_idx": time_idx,  # explicit resolved time index
                 "scenario_idx": scenario_idx,  # scenario chosen

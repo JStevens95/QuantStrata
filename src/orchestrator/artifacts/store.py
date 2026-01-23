@@ -99,6 +99,9 @@ class ArtifactStore:
 
         This is safe to call multiple times.
         """
+        if self.workdir.exists() and not self.workdir.is_dir():
+            raise NotADirectoryError(f"ArtifactStore.workdir is not a directory: {self.workdir}")
+
         # Ensure run root exists.
         self.run_root.mkdir(parents=True, exist_ok=True)
 
@@ -118,13 +121,11 @@ class ArtifactStore:
         self.ensure_layout()
 
         # Convert manifest to a JSON-friendly dict.
-        payload: Dict[str, Any] = manifest.to_dict()  # preferred if you implemented it
-        if not payload:
-            # Fallback in case to_dict returns {} or isn't populated as expected.
-            payload = dict(manifest.__dict__)
-
+        try:
+            payload: Dict[str, Any] = manifest.to_dict()  # preferred if you implemented it
+        except AttributeError as exc:
+            raise TypeError("RunManifest must implement to_dict()") from exc
         tmp_path = self.manifest_path.with_suffix(".json.tmp")
         tmp_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
         tmp_path.replace(self.manifest_path)
-
         return self.manifest_path
