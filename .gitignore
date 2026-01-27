@@ -1,0 +1,95 @@
+cd /Users/joesstevens/PycharmProjects/QuantStrata && cat > .gitignore << 'EOF'
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.conda/
+
+# IDE - PyCharm
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# IDE - VS Code / Cursor
+.vscode/
+*.code-workspace
+
+# IDE - General
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+.hypothesis/
+.tox/
+.nox/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+*.whl
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Project specific outputs
+outputs/
+runs/
+*.log
+*.log.*
+
+# Data files (if you store large datasets locally)
+*.h5
+*.hdf5
+*.parquet
+*.feather
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# ML/AI specific
+*.ckpt
+*.pth
+*.pt
+models/checkpoints/
+wandb/
+
+# QuantStrata specific
+archive_delete_later/
+EOF

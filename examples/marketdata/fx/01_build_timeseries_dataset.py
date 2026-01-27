@@ -21,6 +21,7 @@ from src.marketdata.core.dataset import MarketDataset
 from src.marketdata.core.market import Market
 
 from src.marketdata.providers.factory import SyntheticProviderSpec, build_provider
+from src.marketdata.providers.interfaces import MarketDataProvider
 
 from src.core.reporting.plots.marketdata.quotes import plot_quotes
 from src.core.reporting.plots.marketdata.curves import (
@@ -148,7 +149,7 @@ def _resolve_index(idx: int, *, size: int, name: str) -> int:
     return i
 
 
-def _build_provider_with_realistic_overrides(*, vol_ids: Sequence[MarketId]) -> object:
+def _build_provider_with_realistic_overrides(*, vol_ids: Sequence[MarketId]) -> MarketDataProvider:
     """
     Build a SyntheticProvider with per-product overrides so the example looks “market-like”.
 
