@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import sys
 import logging
+import numpy as np
+import matplotlib.pyplot as plt
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Sequence, Tuple
 
-import numpy as np
-import matplotlib.pyplot as plt
+# Add project root to Python path (works in any IDE or command line)
+project_root = Path(__file__).resolve().parent.parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+    print(f"Added project root to Python path: {project_root}")
 
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.requests import TimeseriesRequest, Universe
