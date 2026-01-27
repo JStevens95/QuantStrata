@@ -5,11 +5,14 @@ import numpy as np  # NumPy for fast vectorized Monte Carlo operations.
 from dataclasses import dataclass  # Dataclasses for small immutable pricer/config objects.
 from typing import Literal, Optional  # Literal for payoff-type tags; Optional for seed/paths.
 
+from src.instruments.core.types import TouchStyle
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption  # FX vanilla instrument.
 from src.instruments.fx.options.digital import EuropeanFxDigitalOption  # FX digital instrument.
 from src.instruments.fx.options.barrier import EuropeanFxBarrierOption  # FX barrier instrument.
 from src.instruments.fx.options.asian import EuropeanFxAsianOption  # FX Asian instrument.
 from src.instruments.fx.options.lookback import EuropeanFxLookbackOption  # FX lookback instrument.
+from src.instruments.fx.options.double_barrier import EuropeanFxDoubleBarrierOption  # FX double barrier instrument.
+from src.instruments.fx.options.touch import EuropeanFxTouchOption  # FX touch instrument.
 
 from src.marketdata.core.market import Market  # Market snapshot interface.
 from src.models.numeric.monte_carlo.rng import NormalRng  # Reproducible normal RNG.
@@ -218,6 +221,173 @@ class FxLookbackMcSimulation:
     min_spots: np.ndarray  # Minimum spots over each path, shape (n_paths_effective,).
     discounted_payoffs: np.ndarray  # Discounted payoff samples, domestic, shape (n_paths_effective,).
     paths: Optional[np.ndarray] = None  # Optional stored paths, shape (n_kept, n_steps+1).
+
+
+@dataclass(frozen=True, slots=True)
+class FxDoubleBarrierMcSimulation:
+    """
+    Monte Carlo simulation artifact for a double barrier option.
+
+    This artifact captures all inputs, settings, and outputs from a simulation,
+    enabling post-hoc analysis without re-running the simulation.
+
+    Attributes
+    ----------
+    spot0 : float
+        Initial spot price S0.
+    strike : float
+        Strike price K.
+    lower_barrier : float
+        Lower barrier level L.
+    upper_barrier : float
+        Upper barrier level U.
+    barrier_style : BarrierStyle
+        "knock_out" or "knock_in".
+    rebate_amount : float
+        Rebate paid at expiry (domestic per unit notional).
+    maturity : float
+        Time to expiry T.
+    df_domestic : float
+        Domestic discount factor df_d(T).
+    drift : float
+        Domestic-measure drift (r_d - r_f).
+    sigma : float
+        Volatility.
+    option_type : OptionType
+        "call" or "put".
+    notional : float
+        Foreign notional scaling.
+    n_paths_requested : int
+        Requested number of paths.
+    n_paths_effective : int
+        Effective paths (may be doubled for antithetic).
+    n_steps : int
+        Number of time steps (monitoring points = n_steps + 1).
+    scheme : GbmScheme
+        GBM simulation scheme.
+    antithetic : bool
+        Whether antithetic variates were used.
+    seed : int or None
+        RNG seed.
+    terminal_spots : np.ndarray
+        Terminal spot prices S(T), shape (n_paths_effective,).
+    discounted_payoffs : np.ndarray
+        Discounted payoff samples (domestic), shape (n_paths_effective,).
+    min_spots : np.ndarray
+        Minimum spot per path, shape (n_paths_effective,).
+    max_spots : np.ndarray
+        Maximum spot per path, shape (n_paths_effective,).
+    exited_corridor : np.ndarray
+        Boolean array indicating if path exited corridor.
+    paths : np.ndarray or None
+        Optional stored paths, shape (n_kept, n_steps+1).
+    """
+
+    # --- Resolved inputs ---
+    spot0: float
+    strike: float
+    lower_barrier: float
+    upper_barrier: float
+    barrier_style: BarrierStyle
+    rebate_amount: float
+    maturity: float
+    df_domestic: float
+    drift: float
+    sigma: float
+    option_type: OptionType
+    notional: float
+
+    # --- Simulation settings ---
+    n_paths_requested: int
+    n_paths_effective: int
+    n_steps: int
+    scheme: GbmScheme
+    antithetic: bool
+    seed: Optional[int]
+
+    # --- Outputs ---
+    terminal_spots: np.ndarray      # S_T per path.
+    discounted_payoffs: np.ndarray  # Discounted payoffs (domestic).
+    min_spots: np.ndarray           # min(S_t) per path.
+    max_spots: np.ndarray           # max(S_t) per path.
+    exited_corridor: np.ndarray     # Boolean: did path exit corridor?
+    paths: Optional[np.ndarray] = None  # Optional stored paths.
+
+
+@dataclass(frozen=True, slots=True)
+class FxTouchMcSimulation:
+    """
+    Monte Carlo simulation artifact for a touch option.
+
+    Attributes
+    ----------
+    spot0 : float
+        Initial spot price S0.
+    barrier_level : float
+        Barrier level H.
+    barrier_direction : BarrierDirection
+        "up" or "down".
+    touch_style : TouchStyle
+        "one_touch" or "no_touch".
+    payout_amount : float
+        Fixed payout Q (per unit notional).
+    maturity : float
+        Time to expiry T.
+    df_domestic : float
+        Domestic discount factor df_d(T).
+    drift : float
+        Domestic-measure drift (r_d - r_f).
+    sigma : float
+        Volatility.
+    notional : float
+        Scaling factor.
+    n_paths_requested : int
+        Requested number of paths.
+    n_paths_effective : int
+        Effective paths (may be doubled for antithetic).
+    n_steps : int
+        Number of time steps.
+    scheme : GbmScheme
+        GBM simulation scheme.
+    antithetic : bool
+        Whether antithetic variates were used.
+    seed : int or None
+        RNG seed.
+    terminal_spots : np.ndarray
+        Terminal spot prices S(T), shape (n_paths_effective,).
+    discounted_payoffs : np.ndarray
+        Discounted payoff samples, shape (n_paths_effective,).
+    touched : np.ndarray
+        Boolean array indicating if barrier was touched.
+    paths : np.ndarray or None
+        Optional stored paths.
+    """
+
+    # Resolved inputs.
+    spot0: float
+    barrier_level: float
+    barrier_direction: BarrierDirection
+    touch_style: TouchStyle
+    payout_amount: float
+    maturity: float
+    df_domestic: float
+    drift: float
+    sigma: float
+    notional: float
+
+    # Simulation settings.
+    n_paths_requested: int
+    n_paths_effective: int
+    n_steps: int
+    scheme: GbmScheme
+    antithetic: bool
+    seed: Optional[int]
+
+    # Outputs.
+    terminal_spots: np.ndarray
+    discounted_payoffs: np.ndarray
+    touched: np.ndarray  # Boolean: did path touch barrier?
+    paths: Optional[np.ndarray] = None
 
 
 # ======================================================================================
@@ -1517,5 +1687,583 @@ class FxEuropeanLookbackMcPricer:
             max_spots=max_spots,
             min_spots=min_spots,
             discounted_payoffs=discounted_payoffs,
+            paths=kept_paths,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class FxEuropeanDoubleBarrierMcPricer:
+    """
+    Monte Carlo pricer for European FX double barrier options.
+
+    This pricer simulates GBM paths and evaluates whether the path stays within
+    the corridor [lower_barrier, upper_barrier]. The payoff is:
+        - Knock-out: vanilla if stayed in corridor, else rebate
+        - Knock-in:  vanilla if exited corridor, else rebate
+
+    Pricing Formula
+    ---------------
+    PV = notional * df_d(T) * E[Payoff(paths)]
+
+    where Payoff is computed using the payoff library's DoubleBarrierPayoff.
+
+    Parameters
+    ----------
+    n_paths : int
+        Number of Monte Carlo paths. Default 200,000.
+    seed : int or None
+        RNG seed for reproducibility. Default 7.
+    antithetic : bool
+        Whether to use antithetic variates. Default True.
+    n_steps : int
+        Number of time steps (monitoring points). Default 64.
+    scheme : GbmScheme
+        GBM simulation scheme. Default "exact".
+
+    Examples
+    --------
+    >>> from src.pricers.fx.double_barrier_mc import FxEuropeanDoubleBarrierMcPricer
+    >>> pricer = FxEuropeanDoubleBarrierMcPricer(n_paths=100_000)
+    >>> pv = pricer.price(trade, market)
+    """
+
+    # Monte Carlo configuration.
+    n_paths: int = 200_000                # Number of simulation paths.
+    seed: Optional[int] = 7               # RNG seed for reproducibility.
+    antithetic: bool = True               # Antithetic variates for variance reduction.
+
+    # Path simulation configuration.
+    n_steps: int = 64                     # Monitoring points for barrier checking.
+    scheme: GbmScheme = "exact"           # GBM scheme (exact per step).
+
+    def price(self, trade: EuropeanFxDoubleBarrierOption, market: Market) -> float:
+        """
+        Compute the present value of the double barrier option.
+
+        Parameters
+        ----------
+        trade : EuropeanFxDoubleBarrierOption
+            The double barrier option instrument.
+        market : Market
+            Market snapshot with spot, curves, and vol surface.
+
+        Returns
+        -------
+        float
+            Present value in domestic currency.
+        """
+        # Run simulation and return mean discounted payoff.
+        sim = self.run(trade, market, store_paths=False)
+        return float(sim.discounted_payoffs.mean())
+
+    def run(
+        self,
+        trade: EuropeanFxDoubleBarrierOption,
+        market: Market,
+        *,
+        store_paths: bool = False,
+        paths_keep: int = 0,
+    ) -> FxDoubleBarrierMcSimulation:
+        """
+        Run the full simulation and return artifact with all details.
+
+        Parameters
+        ----------
+        trade : EuropeanFxDoubleBarrierOption
+            The double barrier option instrument.
+        market : Market
+            Market snapshot.
+        store_paths : bool
+            Whether to store paths in the artifact. Default False.
+        paths_keep : int
+            Number of paths to keep if storing. 0 means keep all.
+
+        Returns
+        -------
+        FxDoubleBarrierMcSimulation
+            Simulation artifact with all inputs, settings, and outputs.
+        """
+        return self._run_simulation(trade, market, store_paths=store_paths, paths_keep=paths_keep)
+
+    def sample_terminal_spots(self, trade: EuropeanFxDoubleBarrierOption, market: Market) -> np.ndarray:
+        """Return terminal spots S(T) from simulation."""
+        return self.run(trade, market, store_paths=False).terminal_spots
+
+    def sample_discounted_payoffs(self, trade: EuropeanFxDoubleBarrierOption, market: Market) -> np.ndarray:
+        """Return discounted payoff samples from simulation."""
+        return self.run(trade, market, store_paths=False).discounted_payoffs
+
+    def _run_simulation(
+        self,
+        trade: EuropeanFxDoubleBarrierOption,
+        market: Market,
+        *,
+        store_paths: bool,
+        paths_keep: int,
+    ) -> FxDoubleBarrierMcSimulation:
+        """
+        Internal simulation implementation.
+
+        Steps
+        -----
+        1. Validate pricer configuration.
+        2. Read trade inputs from instrument.
+        3. Resolve market data (spot, curves, vol).
+        4. Build payoff function from payoff library.
+        5. Generate random normals.
+        6. Simulate GBM paths.
+        7. Compute payoffs using path-dependent payoff.
+        8. Package results into simulation artifact.
+        """
+        # -----------------------------
+        # Validate pricer configuration
+        # -----------------------------
+        if self.n_paths <= 0:
+            raise ValueError("n_paths must be positive.")
+        if self.n_steps <= 0:
+            raise ValueError("n_steps must be positive (barriers need monitoring points).")
+
+        # -----------------------------
+        # Read trade inputs
+        # -----------------------------
+        option_type: OptionType = trade.option_type
+        spot0 = float(market.quote(trade.spot_id))      # Initial spot S0.
+        strike = float(trade.strike)                    # Strike K.
+        maturity = float(trade.expiry)                  # Expiry T.
+        notional = float(trade.notional)                # Foreign notional.
+
+        lower_barrier = float(trade.lower_barrier)      # Lower barrier L.
+        upper_barrier = float(trade.upper_barrier)      # Upper barrier U.
+        barrier_style: BarrierStyle = trade.barrier_style  # type: ignore[assignment]
+        rebate_amount = float(trade.rebate_amount)      # Rebate at expiry.
+
+        # -----------------------------
+        # Validate inputs
+        # -----------------------------
+        if maturity < 0.0:
+            raise ValueError("expiry must be >= 0.")
+        if notional < 0.0:
+            raise ValueError("notional must be >= 0.")
+        if spot0 <= 0.0:
+            raise ValueError("spot must be > 0.")
+        if lower_barrier <= 0.0:
+            raise ValueError("lower_barrier must be > 0.")
+        if upper_barrier <= 0.0:
+            raise ValueError("upper_barrier must be > 0.")
+        if lower_barrier >= upper_barrier:
+            raise ValueError("lower_barrier must be < upper_barrier.")
+        if rebate_amount < 0.0:
+            raise ValueError("rebate_amount must be >= 0.")
+
+        # Validate spot is inside corridor (required for double barrier semantics).
+        if spot0 <= lower_barrier:
+            raise ValueError(f"spot ({spot0}) must be > lower_barrier ({lower_barrier}).")
+        if spot0 >= upper_barrier:
+            raise ValueError(f"spot ({spot0}) must be < upper_barrier ({upper_barrier}).")
+
+        # -----------------------------
+        # Resolve discount factors and rates
+        # -----------------------------
+        df_d = float(market.curve(trade.domestic_curve_id).df(maturity))  # Domestic DF.
+        df_f = float(market.curve(trade.foreign_curve_id).df(maturity))   # Foreign DF.
+
+        r_d = _rate_from_df(df=df_d, t=maturity)  # Domestic rate.
+        r_f = _rate_from_df(df=df_f, t=maturity)  # Foreign rate.
+
+        drift = float(r_d - r_f)  # Domestic-measure drift.
+
+        # -----------------------------
+        # Resolve implied volatility
+        # -----------------------------
+        sigma = float(market.vol_surface(trade.vol_id).vol(expiry=maturity, strike=strike))
+        if sigma < 0.0:
+            raise ValueError("Implied vol must be non-negative.")
+
+        # -----------------------------
+        # Build payoff from payoff library
+        # -----------------------------
+        payoff_fn = require_path_payoff(build_payoff_1d(trade))
+
+        # -----------------------------
+        # Handle deterministic expiry (T=0)
+        # -----------------------------
+        if maturity == 0.0:
+            # Single observation at S0.
+            paths = np.array([[spot0]], dtype=np.float64)
+            terminal_spots = np.array([spot0], dtype=np.float64)
+            min_spots = np.array([spot0], dtype=np.float64)
+            max_spots = np.array([spot0], dtype=np.float64)
+
+            # Check corridor exit (should be False if spot inside corridor).
+            exited = (spot0 <= lower_barrier) | (spot0 >= upper_barrier)
+            exited_corridor = np.array([exited], dtype=bool)
+
+            payoff = payoff_fn.terminal_from_paths(paths)
+            discounted_payoffs = (float(df_d) * payoff * notional).astype(np.float64, copy=False)
+
+            return FxDoubleBarrierMcSimulation(
+                spot0=spot0,
+                strike=strike,
+                lower_barrier=lower_barrier,
+                upper_barrier=upper_barrier,
+                barrier_style=barrier_style,
+                rebate_amount=rebate_amount,
+                maturity=maturity,
+                df_domestic=df_d,
+                drift=drift,
+                sigma=sigma,
+                option_type=option_type,
+                notional=notional,
+                n_paths_requested=self.n_paths,
+                n_paths_effective=1,
+                n_steps=0,
+                scheme=self.scheme,
+                antithetic=self.antithetic,
+                seed=self.seed,
+                terminal_spots=terminal_spots,
+                discounted_payoffs=discounted_payoffs,
+                min_spots=min_spots,
+                max_spots=max_spots,
+                exited_corridor=exited_corridor,
+                paths=paths.copy() if store_paths else None,
+            )
+
+        # -----------------------------
+        # Generate standard normals
+        # -----------------------------
+        rng = NormalRng(seed=self.seed)
+        normals = rng.standard_normals(
+            self.n_paths,
+            self.n_steps,
+            antithetic=self.antithetic,
+            dtype=np.float64,
+        )
+        n_paths_eff = int(normals.shape[0])
+
+        # -----------------------------
+        # Simulate GBM paths
+        # -----------------------------
+        simulator = GbmDynamicsSimulator(drift=drift, vol=sigma)
+        all_paths = simulator.simulate_paths(
+            spot0=spot0,
+            maturity=maturity,
+            n_steps=self.n_steps,
+            n_paths=n_paths_eff,
+            normals=normals,
+            scheme=self.scheme,
+            dtype=np.float64,
+        )
+
+        # -----------------------------
+        # Extract path statistics
+        # -----------------------------
+        terminal_spots = all_paths[:, -1].copy()        # S_T per path.
+        min_spots = np.min(all_paths, axis=1)           # min(S_t) per path.
+        max_spots = np.max(all_paths, axis=1)           # max(S_t) per path.
+
+        # Determine if corridor was exited.
+        hit_lower = (min_spots <= lower_barrier)
+        hit_upper = (max_spots >= upper_barrier)
+        exited_corridor = hit_lower | hit_upper
+
+        # -----------------------------
+        # Compute payoffs from full paths
+        # -----------------------------
+        payoff = payoff_fn.terminal_from_paths(all_paths)  # Per unit notional, domestic.
+
+        # Discount and scale by notional.
+        discounted_payoffs = (float(df_d) * payoff * notional).astype(np.float64, copy=False)
+
+        # -----------------------------
+        # Optionally retain paths for plotting
+        # -----------------------------
+        if not store_paths:
+            kept_paths = None
+        else:
+            if paths_keep < 0:
+                raise ValueError("paths_keep must be >= 0.")
+            if paths_keep == 0:
+                kept_paths = all_paths.copy()
+            else:
+                kept_paths = all_paths[: min(paths_keep, n_paths_eff), :].copy()
+
+        # -----------------------------
+        # Return simulation artifact
+        # -----------------------------
+        return FxDoubleBarrierMcSimulation(
+            spot0=spot0,
+            strike=strike,
+            lower_barrier=lower_barrier,
+            upper_barrier=upper_barrier,
+            barrier_style=barrier_style,
+            rebate_amount=rebate_amount,
+            maturity=maturity,
+            df_domestic=df_d,
+            drift=drift,
+            sigma=sigma,
+            option_type=option_type,
+            notional=notional,
+            n_paths_requested=self.n_paths,
+            n_paths_effective=n_paths_eff,
+            n_steps=self.n_steps,
+            scheme=self.scheme,
+            antithetic=self.antithetic,
+            seed=self.seed,
+            terminal_spots=terminal_spots,
+            discounted_payoffs=discounted_payoffs,
+            min_spots=min_spots,
+            max_spots=max_spots,
+            exited_corridor=exited_corridor,
+            paths=kept_paths,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class FxEuropeanTouchMcPricer:
+    """
+    Monte Carlo pricer for European FX touch options.
+
+    This pricer simulates GBM paths and evaluates whether the barrier is
+    touched, paying a fixed amount based on touch style.
+
+    Pricing Formula
+    ---------------
+    PV = notional * df_d(T) * E[Payoff]
+
+    where Payoff is computed using the TouchPayoff from the payoff library.
+
+    Parameters
+    ----------
+    n_paths : int
+        Number of Monte Carlo paths. Default 200,000.
+    seed : int or None
+        RNG seed for reproducibility. Default 7.
+    antithetic : bool
+        Whether to use antithetic variates. Default True.
+    n_steps : int
+        Number of time steps. Default 64.
+    scheme : GbmScheme
+        GBM simulation scheme. Default "exact".
+    """
+
+    n_paths: int = 200_000
+    seed: Optional[int] = 7
+    antithetic: bool = True
+    n_steps: int = 64
+    scheme: GbmScheme = "exact"
+
+    def price(self, trade: EuropeanFxTouchOption, market: Market) -> float:
+        """
+        Compute the present value of the touch option.
+
+        Parameters
+        ----------
+        trade : EuropeanFxTouchOption
+            The touch option instrument.
+        market : Market
+            Market snapshot.
+
+        Returns
+        -------
+        float
+            Present value in domestic currency.
+        """
+        sim = self.run(trade, market, store_paths=False)
+        return float(sim.discounted_payoffs.mean())
+
+    def run(
+        self,
+        trade: EuropeanFxTouchOption,
+        market: Market,
+        *,
+        store_paths: bool = False,
+        paths_keep: int = 0,
+    ) -> FxTouchMcSimulation:
+        """
+        Run the full simulation and return artifact with all details.
+
+        Parameters
+        ----------
+        trade : EuropeanFxTouchOption
+            The touch option instrument.
+        market : Market
+            Market snapshot.
+        store_paths : bool
+            Whether to store paths. Default False.
+        paths_keep : int
+            Number of paths to keep if storing. 0 = all.
+
+        Returns
+        -------
+        FxTouchMcSimulation
+            Simulation artifact.
+        """
+        return self._run_simulation(trade, market, store_paths=store_paths, paths_keep=paths_keep)
+
+    def sample_terminal_spots(self, trade: EuropeanFxTouchOption, market: Market) -> np.ndarray:
+        """Return terminal spots S(T)."""
+        return self.run(trade, market, store_paths=False).terminal_spots
+
+    def sample_discounted_payoffs(self, trade: EuropeanFxTouchOption, market: Market) -> np.ndarray:
+        """Return discounted payoff samples."""
+        return self.run(trade, market, store_paths=False).discounted_payoffs
+
+    def _run_simulation(
+        self,
+        trade: EuropeanFxTouchOption,
+        market: Market,
+        *,
+        store_paths: bool,
+        paths_keep: int,
+    ) -> FxTouchMcSimulation:
+        """Internal simulation implementation."""
+        # Validate pricer configuration.
+        if self.n_paths <= 0:
+            raise ValueError("n_paths must be positive.")
+        if self.n_steps <= 0:
+            raise ValueError("n_steps must be positive.")
+
+        # Read trade inputs.
+        spot0 = float(market.quote(trade.spot_id))
+        barrier_level = float(trade.barrier_level)
+        barrier_direction: BarrierDirection = trade.barrier_direction  # type: ignore[assignment]
+        touch_style: TouchStyle = trade.touch_style  # type: ignore[assignment]
+        payout_amount = float(trade.payout_amount)
+        maturity = float(trade.expiry)
+        notional = float(trade.notional)
+
+        # Validate inputs.
+        if maturity < 0.0:
+            raise ValueError("expiry must be >= 0.")
+        if notional < 0.0:
+            raise ValueError("notional must be >= 0.")
+        if spot0 <= 0.0:
+            raise ValueError("spot must be > 0.")
+        if barrier_level <= 0.0:
+            raise ValueError("barrier_level must be > 0.")
+        if payout_amount < 0.0:
+            raise ValueError("payout_amount must be >= 0.")
+
+        # Resolve discount factors.
+        df_d = float(market.curve(trade.domestic_curve_id).df(maturity))
+        df_f = float(market.curve(trade.foreign_curve_id).df(maturity))
+
+        r_d = _rate_from_df(df=df_d, t=maturity)
+        r_f = _rate_from_df(df=df_f, t=maturity)
+        drift = float(r_d - r_f)
+
+        # Resolve implied volatility (use barrier as strike for vol lookup).
+        sigma = float(market.vol_surface(trade.vol_id).vol(expiry=maturity, strike=barrier_level))
+        if sigma < 0.0:
+            raise ValueError("Implied vol must be non-negative.")
+
+        # Build payoff from payoff library.
+        payoff_fn = require_path_payoff(build_payoff_1d(trade))
+
+        # Handle deterministic expiry (T=0).
+        if maturity == 0.0:
+            paths = np.array([[spot0]], dtype=np.float64)
+            terminal_spots = np.array([spot0], dtype=np.float64)
+
+            # Check if barrier touched at T=0.
+            if barrier_direction == "up":
+                touched_val = (spot0 >= barrier_level)
+            else:
+                touched_val = (spot0 <= barrier_level)
+            touched = np.array([touched_val], dtype=bool)
+
+            payoff = payoff_fn.terminal_from_paths(paths)
+            discounted_payoffs = (float(df_d) * payoff * notional).astype(np.float64, copy=False)
+
+            return FxTouchMcSimulation(
+                spot0=spot0,
+                barrier_level=barrier_level,
+                barrier_direction=barrier_direction,
+                touch_style=touch_style,
+                payout_amount=payout_amount,
+                maturity=maturity,
+                df_domestic=df_d,
+                drift=drift,
+                sigma=sigma,
+                notional=notional,
+                n_paths_requested=self.n_paths,
+                n_paths_effective=1,
+                n_steps=0,
+                scheme=self.scheme,
+                antithetic=self.antithetic,
+                seed=self.seed,
+                terminal_spots=terminal_spots,
+                discounted_payoffs=discounted_payoffs,
+                touched=touched,
+                paths=paths.copy() if store_paths else None,
+            )
+
+        # Generate standard normals.
+        rng = NormalRng(seed=self.seed)
+        normals = rng.standard_normals(
+            self.n_paths,
+            self.n_steps,
+            antithetic=self.antithetic,
+            dtype=np.float64,
+        )
+        n_paths_eff = int(normals.shape[0])
+
+        # Simulate GBM paths.
+        simulator = GbmDynamicsSimulator(drift=drift, vol=sigma)
+        all_paths = simulator.simulate_paths(
+            spot0=spot0,
+            maturity=maturity,
+            n_steps=self.n_steps,
+            n_paths=n_paths_eff,
+            normals=normals,
+            scheme=self.scheme,
+            dtype=np.float64,
+        )
+
+        # Extract terminal spots and touch status.
+        terminal_spots = all_paths[:, -1].copy()
+
+        if barrier_direction == "up":
+            max_s = np.max(all_paths, axis=1)
+            touched = (max_s >= barrier_level)
+        else:
+            min_s = np.min(all_paths, axis=1)
+            touched = (min_s <= barrier_level)
+
+        # Compute payoffs.
+        payoff = payoff_fn.terminal_from_paths(all_paths)
+        discounted_payoffs = (float(df_d) * payoff * notional).astype(np.float64, copy=False)
+
+        # Store paths if requested.
+        if not store_paths:
+            kept_paths = None
+        else:
+            if paths_keep < 0:
+                raise ValueError("paths_keep must be >= 0.")
+            if paths_keep == 0:
+                kept_paths = all_paths.copy()
+            else:
+                kept_paths = all_paths[: min(paths_keep, n_paths_eff), :].copy()
+
+        return FxTouchMcSimulation(
+            spot0=spot0,
+            barrier_level=barrier_level,
+            barrier_direction=barrier_direction,
+            touch_style=touch_style,
+            payout_amount=payout_amount,
+            maturity=maturity,
+            df_domestic=df_d,
+            drift=drift,
+            sigma=sigma,
+            notional=notional,
+            n_paths_requested=self.n_paths,
+            n_paths_effective=n_paths_eff,
+            n_steps=self.n_steps,
+            scheme=self.scheme,
+            antithetic=self.antithetic,
+            seed=self.seed,
+            terminal_spots=terminal_spots,
+            discounted_payoffs=discounted_payoffs,
+            touched=touched,
             paths=kept_paths,
         )

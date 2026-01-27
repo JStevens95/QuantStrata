@@ -1,7 +1,89 @@
 # Phase 1.1 Implementation Progress
 
 **Last Updated:** January 27, 2026  
-**Status:** Asian Options ✅ | Lookback Options ✅ | Enhanced Documentation ✅
+**Status:** Asian Options ✅ | Lookback Options ✅ | Double Barrier Options ✅ | Touch Options ✅ | Enhanced Documentation ✅
+
+---
+
+## Completed: FX Touch Options
+
+### Implementation Summary
+
+We have successfully implemented **Touch Options** (binary barrier options) for FX derivatives.
+
+### Files Created/Modified
+
+#### Core Implementation
+1. **Instrument:** `src/instruments/fx/options/touch.py`
+   - `EuropeanFxTouchOption` dataclass
+   - Supports one-touch and no-touch styles
+   - Up and down barrier directions
+   - Full validation
+
+2. **Payoff:** `src/models/payoffs/touch.py`
+   - `TouchPayoff` class (path-dependent)
+   - Binary payout based on barrier touch
+   - One-touch: pays if touched
+   - No-touch: pays if NOT touched
+
+3. **Pricer:** `src/pricers/fx/touch_mc.py`
+   - `FxEuropeanTouchMcPricer` class
+   - Monte Carlo pricing
+   - Rich simulation artifact
+
+#### Integration
+4. **Factory:** `src/models/payoffs/factory.py`
+   - Added routing for `EuropeanFxTouchOption` → `TouchPayoff`
+
+5. **Registry:** `src/pricers/registry.py`
+   - Registered `EuropeanFxTouchOption` → `FxEuropeanTouchMcPricer`
+
+#### Tests
+6. **Payoff Tests:** `tests/unit/models/payoffs/test_touch_payoff.py`
+   - One-touch up/down tests
+   - No-touch up/down tests
+   - Touch parity verification
+   - Vectorization tests
+
+---
+
+## Completed: FX Double Barrier Options
+
+### Implementation Summary
+
+We have successfully implemented **Double Barrier Options** for FX derivatives.
+
+### Files Created/Modified
+
+#### Core Implementation
+1. **Instrument:** `src/instruments/fx/options/double_barrier.py`
+   - `EuropeanFxDoubleBarrierOption` dataclass
+   - Upper and lower barrier specification
+   - Knock-out and knock-in styles
+
+2. **Payoff:** `src/models/payoffs/double_barrier.py`
+   - `DoubleBarrierPayoff` class (path-dependent)
+   - Corridor monitoring (both barriers)
+   - In-Out parity verified
+
+3. **Pricer:** `src/pricers/fx/double_barrier_mc.py`
+   - `FxEuropeanDoubleBarrierMcPricer` class
+   - Monte Carlo pricing
+   - Rich simulation artifact
+
+#### Integration
+4. **Factory:** `src/models/payoffs/factory.py`
+   - Added routing for `EuropeanFxDoubleBarrierOption` → `DoubleBarrierPayoff`
+
+5. **Registry:** `src/pricers/registry.py`
+   - Registered `EuropeanFxDoubleBarrierOption` → `FxEuropeanDoubleBarrierMcPricer`
+
+#### Tests
+6. **Payoff Tests:** `tests/unit/models/payoffs/test_double_barrier_payoff.py`
+   - Knock-out/knock-in tests
+   - Call/put tests
+   - In-Out parity tests
+   - Vectorization tests
 
 ---
 

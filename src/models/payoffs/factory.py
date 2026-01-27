@@ -7,15 +7,19 @@ from src.models.payoffs.base import BasePayoff1D, BasePathPayoff1D
 from src.models.payoffs.vanilla import VanillaPayoff
 from src.models.payoffs.digital import DigitalCashPayoff, DigitalAssetPayoff
 from src.models.payoffs.barrier import SingleBarrierPayoff
+from src.models.payoffs.double_barrier import DoubleBarrierPayoff
 from src.models.payoffs.asian import AsianPayoff
 from src.models.payoffs.lookback import LookbackPayoff
+from src.models.payoffs.touch import TouchPayoff
 
 # Instruments
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
 from src.instruments.fx.options.digital import EuropeanFxDigitalOption
 from src.instruments.fx.options.barrier import EuropeanFxBarrierOption
+from src.instruments.fx.options.double_barrier import EuropeanFxDoubleBarrierOption
 from src.instruments.fx.options.asian import EuropeanFxAsianOption
 from src.instruments.fx.options.lookback import EuropeanFxLookbackOption
+from src.instruments.fx.options.touch import EuropeanFxTouchOption
 
 from src.models.payoffs.types import OptionType
 
@@ -98,6 +102,20 @@ class PayoffFactory:
             )
 
         # ---------------------------
+        # FX European Double Barrier (corridor option, path-dependent, MC)
+        # ---------------------------
+        if isinstance(instrument, EuropeanFxDoubleBarrierOption):
+            opt: OptionType = instrument.option_type
+            return DoubleBarrierPayoff(
+                option_type=opt,
+                strike=float(instrument.strike),
+                barrier_style=instrument.barrier_style,  # type: ignore[arg-type]
+                lower_barrier=float(instrument.lower_barrier),
+                upper_barrier=float(instrument.upper_barrier),
+                rebate_amount=float(instrument.rebate_amount),
+            )
+
+        # ---------------------------
         # FX European Asian (average price option, path-dependent, MC)
         # ---------------------------
         if isinstance(instrument, EuropeanFxAsianOption):
@@ -117,6 +135,17 @@ class PayoffFactory:
                 option_type=opt,
                 lookback_type=instrument.lookback_type,  # type: ignore[arg-type]
                 strike=float(instrument.strike),
+            )
+
+        # ---------------------------
+        # FX European Touch (binary barrier option, path-dependent, MC)
+        # ---------------------------
+        if isinstance(instrument, EuropeanFxTouchOption):
+            return TouchPayoff(
+                touch_style=instrument.touch_style,  # type: ignore[arg-type]
+                barrier_direction=instrument.barrier_direction,  # type: ignore[arg-type]
+                barrier_level=float(instrument.barrier_level),
+                payout_amount=float(instrument.payout_amount),
             )
 
         # ---------------------------
