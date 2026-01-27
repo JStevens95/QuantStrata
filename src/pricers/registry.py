@@ -9,14 +9,16 @@ from src.instruments.fx.linear.forward import FxForward
 from src.instruments.fx.options.digital import EuropeanFxDigitalOption
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
 from src.instruments.fx.options.barrier import EuropeanFxBarrierOption
+from src.instruments.fx.options.asian import EuropeanFxAsianOption
 from src.instruments.fx.options.vanilla import AmericanFxVanillaOption
+
 
 # import pricer (linear + non-linear)
 from src.pricers.fx.spot import FxSpotPricer
 from src.pricers.fx.forward import FxForwardPricer
 from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer
 from src.pricers.fx.european_bsm import FxEuropeanDigitalBsmPricer
-from src.pricers.fx.european_mc import FxEuropeanBarrierMcPricer, FxEuropeanVanillaMcPricer, FxEuropeanDigitalMcPricer
+from src.pricers.fx.european_mc import FxEuropeanBarrierMcPricer, FxEuropeanVanillaMcPricer, FxEuropeanDigitalMcPricer, FxEuropeanAsianMcPricer
 from src.pricers.fx.european_fde import FxEuropeanVanillaFdPricer, FxEuropeanDigitalFdPricer
 from src.pricers.fx.american_fde import FxAmericanVanillaFdPricer
 
@@ -209,6 +211,7 @@ class DefaultPricerRegistry:
         eur_van_mc = FxEuropeanVanillaMcPricer()
         eur_dig_mc = FxEuropeanDigitalMcPricer()
         eur_bar_mc = FxEuropeanBarrierMcPricer()
+        eur_asian_mc = FxEuropeanAsianMcPricer()
 
         # Numerical Finite Difference Pricer.
         eur_van_fd = FxEuropeanVanillaFdPricer()
@@ -223,11 +226,13 @@ class DefaultPricerRegistry:
         reg.register(EuropeanFxDigitalOption, eur_dig_bsm)
         reg.register(EuropeanFxBarrierOption, eur_bar_mc)
         reg.register(AmericanFxVanillaOption, am_van_fd)
+        reg.register(EuropeanFxAsianOption, eur_asian_mc)
 
         # ---- named aliases ----
         reg.register(EuropeanFxVanillaOption, eur_van_mc, pricer_id="mc")
         reg.register(EuropeanFxDigitalOption, eur_dig_mc, pricer_id="mc")
         reg.register(EuropeanFxBarrierOption, eur_bar_mc, pricer_id="mc")
+        reg.register(EuropeanFxAsianOption, eur_asian_mc, pricer_id="mc")
 
         reg.register(EuropeanFxVanillaOption, eur_van_fd, pricer_id="fd")
         reg.register(EuropeanFxDigitalOption, eur_dig_fd, pricer_id="fd")
