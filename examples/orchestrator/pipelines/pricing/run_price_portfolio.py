@@ -407,9 +407,8 @@ def main(*, save_files: bool = False) -> None:
         run_id=run_id,
         artifacts_dirname=str(md_cfg.io.artifacts_dir),
         logs_dirname=str(md_cfg.io.logs_dir),
+        enable_save=save_files,
     )
-    if save_files:
-        store.ensure_layout()
 
     # ----------------- Logger (console always; file only if save_files=True) -----------------
     logger = build_run_logger(

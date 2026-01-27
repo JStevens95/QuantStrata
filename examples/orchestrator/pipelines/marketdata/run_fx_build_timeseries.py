@@ -173,11 +173,8 @@ def main(*, save_files: bool = False) -> None:
         run_id=run_id,
         artifacts_dirname=str(cfg.io.artifacts_dir),
         logs_dirname=str(cfg.io.logs_dir),
+        enable_save=save_files
     )
-
-    # If save_files=False, the run remains "pure in-memory" from a filesystem standpoint.
-    if save_files:
-        store.ensure_layout()
 
     # -------------------------------------------------------------------------
     # 4) Logger setup (console always; file only if save_files=True)

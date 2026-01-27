@@ -50,3 +50,11 @@ def register_builtin_pipelines(registry: PipelineRegistry) -> None:
 
     # register pricing pipelines
     registry.register("pricing.price_portfolio", px_price_portfolio)
+
+    # ---------------------------------------------------------------------
+    # Risk pipelines
+    # ---------------------------------------------------------------------
+    from src.orchestrator.pipelines.risk.run_scenarios import build_pipeline as rsk_build_scenarios
+
+    # register risk pipelines
+    registry.register("risk.run_scenarios", rsk_build_scenarios)

@@ -9,6 +9,7 @@ def test_artifact_store_creates_layout(tmp_path) -> None:
         run_id="run_001",
         artifacts_dirname="artifacts",
         logs_dirname="logs",
+        enable_save=False
     )
 
     store.ensure_layout()
