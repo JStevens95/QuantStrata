@@ -7,11 +7,13 @@ from src.models.payoffs.base import BasePayoff1D, BasePathPayoff1D
 from src.models.payoffs.vanilla import VanillaPayoff
 from src.models.payoffs.digital import DigitalCashPayoff, DigitalAssetPayoff
 from src.models.payoffs.barrier import SingleBarrierPayoff
+from src.models.payoffs.asian import AsianPayoff
 
 # Instruments
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
 from src.instruments.fx.options.digital import EuropeanFxDigitalOption
 from src.instruments.fx.options.barrier import EuropeanFxBarrierOption
+from src.instruments.fx.options.asian import EuropeanFxAsianOption
 
 from src.models.payoffs.types import OptionType
 
@@ -91,6 +93,17 @@ class PayoffFactory:
                 barrier_style=instrument.barrier_style,          # type: ignore[arg-type]
                 barrier_level=float(instrument.barrier_level),
                 rebate_amount=float(instrument.rebate_amount),
+            )
+
+                # ---------------------------
+        # FX European Asian (average price option, path-dependent, MC)
+        # ---------------------------
+        if isinstance(instrument, EuropeanFxAsianOption):
+            opt: OptionType = instrument.option_type
+            return AsianPayoff(
+                option_type=opt,
+                strike=float(instrument.strike),
+                averaging_type=instrument.averaging_type,  # type: ignore[arg-type]
             )
 
         # ---------------------------
