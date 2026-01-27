@@ -67,8 +67,8 @@ class AsianPayoff(BasePathPayoff1D):
         _validate_option_type(self.option_type)
 
         # Validate strike: must be positive
-        if float(self.strike) <= 0.0:
-            raise ValueError("strike must be > 0.")
+        if float(self.strike) < 0.0:
+            raise ValueError("strike must be >= 0.")
 
         # Validate averaging type: must be "arithmetic" or "geometric"
         if self.averaging_type not in ("arithmetic", "geometric"):

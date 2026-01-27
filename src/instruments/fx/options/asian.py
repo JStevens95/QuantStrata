@@ -42,13 +42,13 @@ class EuropeanFxAsianOption:
     strike: float  # Strike price K
     expiry: float  # Year fraction to expiry T
 
-    averaging_type: AsianAveragingType = "arithmetic"  # "arithmetic" or "geometric"
-
     # Market identifiers
     spot_id: MarketId  # FX spot rate identifier
     vol_id: MarketId  # Volatility surface identifier
     domestic_curve_id: MarketId  # Domestic interest rate curve
     foreign_curve_id: MarketId  # Foreign interest rate curve
+
+    averaging_type: AsianAveragingType = "arithmetic"  # "arithmetic" or "geometric"
 
     def __post_init__(self) -> None:
         """
