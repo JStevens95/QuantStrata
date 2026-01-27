@@ -46,15 +46,15 @@ This roadmap follows a **phased, incremental approach** that:
   - Pricer: MC (required)
   - Use case: Binary barrier products
 
-### 1.2 Advanced FX Models
-- [ ] **Local Volatility Model**
-  - Implement: `LocalVolSurface` (σ(S, t))
+### 1.2 Advanced FX Models ✅
+- [x] **Local Volatility Model**
+  - Implemented: `LocalVolSurface` (σ(S, t))
   - FD pricer: Update PDE coefficients for local vol
   - Calibration: Dupire's formula from market prices
   - Use case: Demonstrates volatility modeling beyond constant vol
 
-- [ ] **Stochastic Volatility (Heston Model)**
-  - Implement: `HestonDynamics` (2D SDE)
+- [x] **Stochastic Volatility (Heston Model)**
+  - Implemented: `HestonDynamics` (2D SDE)
   - MC pricer: Simulate (S, V) joint process
   - FD pricer: 2D PDE solver (optional, advanced)
   - Use case: Demonstrates multi-factor models
