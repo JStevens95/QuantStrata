@@ -155,8 +155,8 @@ class TestAsianPayoffGeometric:
 
         This is a fundamental property: geometric mean <= arithmetic mean (Jensen's inequality).
         """
-        call_arithmetic = AsianPayoff(option_type="call", strike=0.0, averaging_type="arithmetic")
-        call_geometric = AsianPayoff(option_type="call", strike=0.0, averaging_type="geometric")
+        call_arithmetic = AsianPayoff(option_type="call", strike=1.0, averaging_type="arithmetic")
+        call_geometric = AsianPayoff(option_type="call", strike=1.0, averaging_type="geometric")
 
         # Path with varying values
         paths = np.array([
