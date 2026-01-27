@@ -1,7 +1,88 @@
 # Phase 1.1 Implementation Progress
 
 **Last Updated:** January 27, 2026  
-**Status:** Asian Options Complete ✅
+**Status:** Asian Options ✅ | Lookback Options ✅
+
+---
+
+## Completed: Lookback Options
+
+### Implementation Summary
+
+We have successfully implemented **Lookback Options** for FX derivatives, following all coding standards and best practices.
+
+### Files Created/Modified
+
+#### Core Implementation
+1. **Instrument:** `src/instruments/fx/options/lookback.py`
+   - `EuropeanFxLookbackOption` dataclass
+   - Supports floating strike and fixed strike variants
+   - Full validation and type hints
+
+2. **Payoff:** `src/models/payoffs/lookback.py`
+   - `LookbackPayoff` class (path-dependent)
+   - Floating strike (always ITM) and fixed strike
+   - Vectorized implementation with path extrema computation
+
+3. **Pricer:** `src/pricers/fx/lookback_mc.py`
+   - `FxEuropeanLookbackMcPricer` class
+   - Monte Carlo pricing with full simulation artifact
+   - Captures max/min spots for diagnostics
+
+#### Integration
+4. **Factory:** `src/models/payoffs/factory.py`
+   - Added routing for `EuropeanFxLookbackOption` → `LookbackPayoff`
+
+5. **Registry:** `src/pricers/registry.py`
+   - Registered `EuropeanFxLookbackOption` → `FxEuropeanLookbackMcPricer`
+
+#### Tests
+6. **Payoff Tests:** `tests/unit/models/payoffs/test_lookback_payoff.py`
+   - Floating strike call/put tests
+   - Fixed strike call/put tests
+   - Key property: floating strike always ITM
+   - Comparison: lookback >= vanilla
+
+7. **Pricer Tests:** Added to `tests/unit/pricers/fx/test_fx_european_mc_pricer.py`
+   - Basic pricing tests
+   - Reproducibility tests
+   - Comparison with vanilla (lookback more expensive)
+   - Edge cases and simulation artifact validation
+
+#### Documentation
+8. **Technical Documentation:** `docs/mathematics/lookback_options.md`
+   - Complete mathematical foundations
+   - Floating vs fixed strike comparison
+   - Goldman-Sosin-Gatto formula (continuous monitoring)
+   - Reflection principle explanation
+   - Key interview points and formulas
+
+### Key Features Implemented
+
+✅ **Floating Strike Lookback**
+- Call: S_T - min(S_t) (always >= 0)
+- Put: max(S_t) - S_T (always >= 0)
+- Always in-the-money property
+
+✅ **Fixed Strike Lookback**
+- Call: max(max(S_t) - K, 0)
+- Put: max(K - min(S_t), 0)
+- Option on path extremum
+
+✅ **Monte Carlo Pricing**
+- Full path simulation
+- Path extrema computation (max/min)
+- Simulation artifact with max_spots/min_spots
+
+✅ **Comprehensive Testing**
+- Unit tests for payoff (floating/fixed, call/put)
+- Unit tests for pricer (pricing, reproducibility)
+- Comparison tests (lookback > vanilla)
+
+✅ **Professional Documentation**
+- Goldman-Sosin-Gatto formula
+- Reflection principle
+- Interview preparation content
 
 ---
 

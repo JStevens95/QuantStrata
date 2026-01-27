@@ -10,6 +10,7 @@ from src.instruments.fx.options.digital import EuropeanFxDigitalOption
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
 from src.instruments.fx.options.barrier import EuropeanFxBarrierOption
 from src.instruments.fx.options.asian import EuropeanFxAsianOption
+from src.instruments.fx.options.lookback import EuropeanFxLookbackOption
 from src.instruments.fx.options.vanilla import AmericanFxVanillaOption
 
 
@@ -18,7 +19,7 @@ from src.pricers.fx.spot import FxSpotPricer
 from src.pricers.fx.forward import FxForwardPricer
 from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer
 from src.pricers.fx.european_bsm import FxEuropeanDigitalBsmPricer
-from src.pricers.fx.european_mc import FxEuropeanBarrierMcPricer, FxEuropeanVanillaMcPricer, FxEuropeanDigitalMcPricer, FxEuropeanAsianMcPricer
+from src.pricers.fx.european_mc import FxEuropeanBarrierMcPricer, FxEuropeanVanillaMcPricer, FxEuropeanDigitalMcPricer, FxEuropeanAsianMcPricer, FxEuropeanLookbackMcPricer
 from src.pricers.fx.european_fde import FxEuropeanVanillaFdPricer, FxEuropeanDigitalFdPricer
 from src.pricers.fx.american_fde import FxAmericanVanillaFdPricer
 
@@ -203,21 +204,27 @@ class DefaultPricerRegistry:
         spot = FxSpotPricer()
         fwd = FxForwardPricer()
 
-        # Analytic Black Scholes Merton Pricer.
+        # Analytic Black Scholes Merton Pricer - European.
         eur_van_bsm = FxEuropeanVanillaBsmPricer()
         eur_dig_bsm = FxEuropeanDigitalBsmPricer()
 
-        # Numerical Monte Carlo Pricer.
+        # Numerical Monte Carlo Pricer - European.
         eur_van_mc = FxEuropeanVanillaMcPricer()
         eur_dig_mc = FxEuropeanDigitalMcPricer()
         eur_bar_mc = FxEuropeanBarrierMcPricer()
-        eur_asian_mc = FxEuropeanAsianMcPricer()
 
-        # Numerical Finite Difference Pricer.
+        # Path-dependent Monte Carlo Pricers - European.
+        eur_asian_mc = FxEuropeanAsianMcPricer()
+        eur_lookback_mc = FxEuropeanLookbackMcPricer()
+
+        # Numerical Finite Difference Pricer - European.
         eur_van_fd = FxEuropeanVanillaFdPricer()
         eur_dig_fd = FxEuropeanDigitalFdPricer()
 
+        # Numerical Finite Difference Pricer - American.
         am_van_fd = FxAmericanVanillaFdPricer()
+
+
 
         # ---- defaults ----
         reg.register(FxSpot, spot)
@@ -227,12 +234,14 @@ class DefaultPricerRegistry:
         reg.register(EuropeanFxBarrierOption, eur_bar_mc)
         reg.register(AmericanFxVanillaOption, am_van_fd)
         reg.register(EuropeanFxAsianOption, eur_asian_mc)
+        reg.register(EuropeanFxLookbackOption, eur_lookback_mc)
 
         # ---- named aliases ----
         reg.register(EuropeanFxVanillaOption, eur_van_mc, pricer_id="mc")
         reg.register(EuropeanFxDigitalOption, eur_dig_mc, pricer_id="mc")
         reg.register(EuropeanFxBarrierOption, eur_bar_mc, pricer_id="mc")
         reg.register(EuropeanFxAsianOption, eur_asian_mc, pricer_id="mc")
+        reg.register(EuropeanFxLookbackOption, eur_lookback_mc, pricer_id="mc")
 
         reg.register(EuropeanFxVanillaOption, eur_van_fd, pricer_id="fd")
         reg.register(EuropeanFxDigitalOption, eur_dig_fd, pricer_id="fd")

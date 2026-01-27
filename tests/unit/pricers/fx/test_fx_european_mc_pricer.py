@@ -12,6 +12,7 @@ from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
 from src.instruments.fx.options.digital import EuropeanFxDigitalOption
 from src.instruments.fx.options.barrier import EuropeanFxBarrierOption
 from src.instruments.fx.options.asian import EuropeanFxAsianOption
+from src.instruments.fx.options.lookback import EuropeanFxLookbackOption
 
 from src.pricers.fx.european_bsm import (
     FxEuropeanVanillaBsmPricer,
@@ -23,6 +24,7 @@ from src.pricers.fx.european_mc import (
     FxEuropeanDigitalMcPricer,
     FxEuropeanBarrierMcPricer,
     FxEuropeanAsianMcPricer,
+    FxEuropeanLookbackMcPricer,
 )
 
 from src.models.payoffs.barrier import SingleBarrierPayoff
@@ -1249,3 +1251,361 @@ def test_fx_asian_mc_simulation_artifact_has_correct_structure(
         path = sim.paths[i, :]
         expected_avg = np.mean(path)
         assert sim.average_spots[i] == pytest.approx(expected_avg, abs=1e-10)
+
+
+# =============================================================================
+# Lookback MC tests (floating strike + fixed strike)
+# =============================================================================
+
+@pytest.mark.parametrize("option_type", ["call", "put"])
+@pytest.mark.parametrize("lookback_type", ["floating_strike", "fixed_strike"])
+def test_fx_lookback_mc_price_is_positive(
+    ids: Dict[str, MarketId],
+    base_params: Dict[str, float],
+    market: _DummyMarket,
+    option_type: str,
+    lookback_type: str,
+) -> None:
+    """
+    Test that lookback option prices are non-negative.
+
+    This is a basic sanity check: option prices should never be negative.
+    """
+    # For fixed strike, use a strike price; for floating, use 0 (ignored)
+    strike = float(base_params["strike"]) if lookback_type == "fixed_strike" else 0.0
+
+    trade = EuropeanFxLookbackOption(
+        option_type=option_type,  # type: ignore[arg-type]
+        notional=float(base_params["notional"]),
+        expiry=float(base_params["t"]),
+        lookback_type=lookback_type,  # type: ignore[arg-type]
+        strike=strike,
+        spot_id=ids["spot"],
+        vol_id=ids["vol"],
+        domestic_curve_id=ids["rd"],
+        foreign_curve_id=ids["rf"],
+    )
+
+    pricer = FxEuropeanLookbackMcPricer(n_paths=50_000, seed=7, antithetic=True, n_steps=64)
+    pv = float(pricer.price(trade, market))
+
+    assert pv >= 0.0
+
+
+@pytest.mark.parametrize("option_type", ["call", "put"])
+def test_fx_lookback_mc_is_reproducible_for_same_seed(
+    ids: Dict[str, MarketId],
+    base_params: Dict[str, float],
+    market: _DummyMarket,
+    option_type: str,
+) -> None:
+    """
+    Test that lookback pricer is reproducible with same seed.
+
+    This ensures deterministic behavior for testing and debugging.
+    """
+    trade = EuropeanFxLookbackOption(
+        option_type=option_type,  # type: ignore[arg-type]
+        notional=float(base_params["notional"]),
+        expiry=float(base_params["t"]),
+        lookback_type="floating_strike",
+        spot_id=ids["spot"],
+        vol_id=ids["vol"],
+        domestic_curve_id=ids["rd"],
+        foreign_curve_id=ids["rf"],
+    )
+
+    pricer_a = FxEuropeanLookbackMcPricer(n_paths=50_000, seed=999, antithetic=True, n_steps=64)
+    pricer_b = FxEuropeanLookbackMcPricer(n_paths=50_000, seed=999, antithetic=True, n_steps=64)
+
+    pv_a = float(pricer_a.price(trade, market))
+    pv_b = float(pricer_b.price(trade, market))
+
+    # With same seed, results should be identical
+    assert pv_a == pytest.approx(pv_b, rel=0.0, abs=0.0)
+
+
+def test_fx_lookback_mc_scales_linearly_with_notional(
+    ids: Dict[str, MarketId],
+    base_params: Dict[str, float],
+    market: _DummyMarket,
+) -> None:
+    """
+    Test that lookback option price scales linearly with notional.
+
+    This is a fundamental property: doubling notional should double PV.
+    """
+    notional_1 = float(base_params["notional"])
+    notional_2 = 2.0 * notional_1
+
+    trade_1 = EuropeanFxLookbackOption(
+        option_type="call",
+        notional=notional_1,
+        expiry=float(base_params["t"]),
+        lookback_type="floating_strike",
+        spot_id=ids["spot"],
+        vol_id=ids["vol"],
+        domestic_curve_id=ids["rd"],
+        foreign_curve_id=ids["rf"],
+    )
+    trade_2 = EuropeanFxLookbackOption(
+        option_type="call",
+        notional=notional_2,
+        expiry=float(base_params["t"]),
+        lookback_type="floating_strike",
+        spot_id=ids["spot"],
+        vol_id=ids["vol"],
+        domestic_curve_id=ids["rd"],
+        foreign_curve_id=ids["rf"],
+    )
+
+    pricer = FxEuropeanLookbackMcPricer(n_paths=80_000, seed=11, antithetic=True, n_steps=64)
+    pv_1 = float(pricer.price(trade_1, market))
+    pv_2 = float(pricer.price(trade_2, market))
+
+    assert pv_2 == pytest.approx(2.0 * pv_1, rel=1e-12, abs=1e-6)
+
+
+# =============================================================================
+# Lookback: Comparison with vanilla options
+# =============================================================================
+
+@pytest.mark.parametrize("option_type", ["call", "put"])
+def test_fx_lookback_is_more_expensive_than_vanilla(
+    ids: Dict[str, MarketId],
+    base_params: Dict[str, float],
+    market: _DummyMarket,
+    option_type: str,
+) -> None:
+    """
+    Test that lookback options are more expensive than vanilla options.
+
+    This is a fundamental property: lookback captures optimal timing,
+    so it must be worth at least as much as vanilla.
+    """
+    lookback_trade = EuropeanFxLookbackOption(
+        option_type=option_type,  # type: ignore[arg-type]
+        notional=float(base_params["notional"]),
+        expiry=float(base_params["t"]),
+        lookback_type="fixed_strike",
+        strike=float(base_params["strike"]),
+        spot_id=ids["spot"],
+        vol_id=ids["vol"],
+        domestic_curve_id=ids["rd"],
+        foreign_curve_id=ids["rf"],
+    )
+
+    vanilla_trade = EuropeanFxVanillaOption(
+        option_type=option_type,  # type: ignore[arg-type]
+        notional=float(base_params["notional"]),
+        strike=float(base_params["strike"]),
+        expiry=float(base_params["t"]),
+        spot_id=ids["spot"],
+        vol_id=ids["vol"],
+        domestic_curve_id=ids["rd"],
+        foreign_curve_id=ids["rf"],
+    )
+
+    lookback_pricer = FxEuropeanLookbackMcPricer(n_paths=100_000, seed=7, antithetic=True, n_steps=64)
+    vanilla_pricer = FxEuropeanVanillaMcPricer(n_paths=100_000, seed=7, antithetic=True)
+
+    pv_lookback = float(lookback_pricer.price(lookback_trade, market))
+    pv_vanilla = float(vanilla_pricer.price(vanilla_trade, market))
+
+    # Lookback should be more expensive (or equal in degenerate cases)
+    assert pv_lookback >= pv_vanilla * 0.99  # Allow small numerical error
+
+
+def test_fx_lookback_floating_strike_is_more_expensive_than_fixed(
+    ids: Dict[str, MarketId],
+    base_params: Dict[str, float],
+    market: _DummyMarket,
+) -> None:
+    """
+    Test that floating strike lookback is generally more expensive than fixed strike ATM.
+
+    Floating strike is always ITM, so typically more expensive.
+    """
+    floating_trade = EuropeanFxLookbackOption(
+        option_type="call",
+        notional=float(base_params["notional"]),
+        expiry=float(base_params["t"]),
+        lookback_type="floating_strike",
+        spot_id=ids["spot"],
+        vol_id=ids["vol"],
+        domestic_curve_id=ids["rd"],
+        foreign_curve_id=ids["rf"],
+    )
+
+    fixed_trade = EuropeanFxLookbackOption(
+        option_type="call",
+        notional=float(base_params["notional"]),
+        expiry=float(base_params["t"]),
+        lookback_type="fixed_strike",
+        strike=float(base_params["strike"]),  # ATM
+        spot_id=ids["spot"],
+        vol_id=ids["vol"],
+        domestic_curve_id=ids["rd"],
+        foreign_curve_id=ids["rf"],
+    )
+
+    pricer = FxEuropeanLookbackMcPricer(n_paths=100_000, seed=7, antithetic=True, n_steps=64)
+    pv_floating = float(pricer.price(floating_trade, market))
+    pv_fixed = float(pricer.price(fixed_trade, market))
+
+    # Floating strike should be more expensive (always ITM)
+    assert pv_floating >= pv_fixed * 0.99
+
+
+# =============================================================================
+# Lookback: Edge cases
+# =============================================================================
+
+def test_fx_lookback_mc_price_at_expiry_is_deterministic(
+    ids: Dict[str, MarketId],
+    base_params: Dict[str, float],
+    market: _DummyMarket,
+) -> None:
+    """
+    Test that lookback option at expiry gives deterministic payoff.
+
+    At expiry (T=0), the path contains only S0, so max = min = S0 = S_T.
+    """
+    trade = EuropeanFxLookbackOption(
+        option_type="call",
+        notional=float(base_params["notional"]),
+        expiry=0.0,  # At expiry
+        lookback_type="floating_strike",
+        spot_id=ids["spot"],
+        vol_id=ids["vol"],
+        domestic_curve_id=ids["rd"],
+        foreign_curve_id=ids["rf"],
+    )
+
+    pricer = FxEuropeanLookbackMcPricer(n_paths=10_000, seed=7, antithetic=True, n_steps=1)
+    pv = float(pricer.price(trade, market))
+
+    # At expiry, for floating strike call: S_T - min(S_t) = S0 - S0 = 0
+    expected_pv = 0.0
+    assert pv == pytest.approx(expected_pv, abs=1e-10)
+
+
+def test_fx_lookback_mc_price_at_expiry_fixed_strike_in_the_money(
+    ids: Dict[str, MarketId],
+    market: _DummyMarket,
+) -> None:
+    """Test fixed strike lookback at expiry when in-the-money."""
+    trade = EuropeanFxLookbackOption(
+        option_type="call",
+        notional=1_000_000.0,
+        expiry=0.0,  # At expiry
+        lookback_type="fixed_strike",
+        strike=1.20,  # Below spot (1.25), so in-the-money
+        spot_id=ids["spot"],
+        vol_id=ids["vol"],
+        domestic_curve_id=ids["rd"],
+        foreign_curve_id=ids["rf"],
+    )
+
+    pricer = FxEuropeanLookbackMcPricer(n_paths=10_000, seed=7, antithetic=True, n_steps=1)
+    pv = float(pricer.price(trade, market))
+
+    # At expiry, max(S_t) = S0 = 1.25, so payoff = max(1.25 - 1.20, 0) = 0.05
+    # PV = notional * df_d(0) * 0.05 = 1_000_000 * 1.0 * 0.05 = 50_000
+    expected_pv = 1_000_000.0 * 0.05
+    assert pv == pytest.approx(expected_pv, abs=1e-6)
+
+
+def test_fx_lookback_mc_invalid_n_paths(
+    ids: Dict[str, MarketId],
+    market: _DummyMarket,
+) -> None:
+    """Test that invalid n_paths raises ValueError."""
+    pricer = FxEuropeanLookbackMcPricer(n_paths=0, seed=7)
+    trade = EuropeanFxLookbackOption(
+        option_type="call",
+        notional=1_000_000.0,
+        expiry=1.0,
+        lookback_type="floating_strike",
+        spot_id=ids["spot"],
+        vol_id=ids["vol"],
+        domestic_curve_id=ids["rd"],
+        foreign_curve_id=ids["rf"],
+    )
+
+    with pytest.raises(ValueError, match="n_paths must be positive"):
+        pricer.price(trade, market)
+
+
+def test_fx_lookback_mc_invalid_n_steps(
+    ids: Dict[str, MarketId],
+    market: _DummyMarket,
+) -> None:
+    """Test that invalid n_steps raises ValueError."""
+    pricer = FxEuropeanLookbackMcPricer(n_paths=10_000, seed=7, n_steps=0)
+    trade = EuropeanFxLookbackOption(
+        option_type="call",
+        notional=1_000_000.0,
+        expiry=1.0,
+        lookback_type="floating_strike",
+        spot_id=ids["spot"],
+        vol_id=ids["vol"],
+        domestic_curve_id=ids["rd"],
+        foreign_curve_id=ids["rf"],
+    )
+
+    with pytest.raises(ValueError, match="n_steps must be positive"):
+        pricer.price(trade, market)
+
+
+# =============================================================================
+# Lookback: Simulation artifact tests
+# =============================================================================
+
+def test_fx_lookback_mc_simulation_artifact_has_correct_structure(
+    ids: Dict[str, MarketId],
+    base_params: Dict[str, float],
+    market: _DummyMarket,
+) -> None:
+    """Test that simulation artifact has correct structure and fields."""
+    trade = EuropeanFxLookbackOption(
+        option_type="call",
+        notional=float(base_params["notional"]),
+        expiry=float(base_params["t"]),
+        lookback_type="floating_strike",
+        spot_id=ids["spot"],
+        vol_id=ids["vol"],
+        domestic_curve_id=ids["rd"],
+        foreign_curve_id=ids["rf"],
+    )
+
+    pricer = FxEuropeanLookbackMcPricer(n_paths=10_000, seed=7, antithetic=True, n_steps=64)
+    sim = pricer.run(trade, market, store_paths=True, paths_keep=100)
+
+    # Verify all required fields exist
+    assert hasattr(sim, "spot0")
+    assert hasattr(sim, "strike")
+    assert hasattr(sim, "maturity")
+    assert hasattr(sim, "terminal_spots")
+    assert hasattr(sim, "max_spots")
+    assert hasattr(sim, "min_spots")
+    assert hasattr(sim, "discounted_payoffs")
+    assert hasattr(sim, "paths")
+
+    # Verify shapes
+    assert sim.terminal_spots.shape == (sim.n_paths_effective,)
+    assert sim.max_spots.shape == (sim.n_paths_effective,)
+    assert sim.min_spots.shape == (sim.n_paths_effective,)
+    assert sim.discounted_payoffs.shape == (sim.n_paths_effective,)
+    assert sim.paths is not None
+    assert sim.paths.shape[0] == min(100, sim.n_paths_effective)
+    assert sim.paths.shape[1] == sim.n_steps + 1
+
+    # Verify that max_spots and min_spots are computed correctly
+    for i in range(min(10, sim.n_paths_effective)):  # Check first 10 paths
+        path = sim.paths[i, :]
+        expected_max = np.max(path)
+        expected_min = np.min(path)
+        assert sim.max_spots[i] == pytest.approx(expected_max, abs=1e-10)
+        assert sim.min_spots[i] == pytest.approx(expected_min, abs=1e-10)
+

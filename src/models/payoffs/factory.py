@@ -8,12 +8,14 @@ from src.models.payoffs.vanilla import VanillaPayoff
 from src.models.payoffs.digital import DigitalCashPayoff, DigitalAssetPayoff
 from src.models.payoffs.barrier import SingleBarrierPayoff
 from src.models.payoffs.asian import AsianPayoff
+from src.models.payoffs.lookback import LookbackPayoff
 
 # Instruments
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
 from src.instruments.fx.options.digital import EuropeanFxDigitalOption
 from src.instruments.fx.options.barrier import EuropeanFxBarrierOption
 from src.instruments.fx.options.asian import EuropeanFxAsianOption
+from src.instruments.fx.options.lookback import EuropeanFxLookbackOption
 
 from src.models.payoffs.types import OptionType
 
@@ -95,7 +97,7 @@ class PayoffFactory:
                 rebate_amount=float(instrument.rebate_amount),
             )
 
-                # ---------------------------
+        # ---------------------------
         # FX European Asian (average price option, path-dependent, MC)
         # ---------------------------
         if isinstance(instrument, EuropeanFxAsianOption):
@@ -104,6 +106,17 @@ class PayoffFactory:
                 option_type=opt,
                 strike=float(instrument.strike),
                 averaging_type=instrument.averaging_type,  # type: ignore[arg-type]
+            )
+
+        # ---------------------------
+        # FX European Lookback (path extremum option, path-dependent, MC)
+        # ---------------------------
+        if isinstance(instrument, EuropeanFxLookbackOption):
+            opt: OptionType = instrument.option_type
+            return LookbackPayoff(
+                option_type=opt,
+                lookback_type=instrument.lookback_type,  # type: ignore[arg-type]
+                strike=float(instrument.strike),
             )
 
         # ---------------------------

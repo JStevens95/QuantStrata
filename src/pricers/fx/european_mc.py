@@ -9,6 +9,7 @@ from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption  # FX van
 from src.instruments.fx.options.digital import EuropeanFxDigitalOption  # FX digital instrument.
 from src.instruments.fx.options.barrier import EuropeanFxBarrierOption  # FX barrier instrument.
 from src.instruments.fx.options.asian import EuropeanFxAsianOption  # FX Asian instrument.
+from src.instruments.fx.options.lookback import EuropeanFxLookbackOption  # FX lookback instrument.
 
 from src.marketdata.core.market import Market  # Market snapshot interface.
 from src.models.numeric.monte_carlo.rng import NormalRng  # Reproducible normal RNG.
@@ -17,8 +18,6 @@ from src.pricers.fx.european_bsm import _rate_from_df  # DF -> continuous rate h
 
 from src.models.payoffs.types import OptionType, BarrierDirection, BarrierStyle, DigitalPayoff   # Canonical option type ("call"/"put").
 from src.models.payoffs.factory import build_payoff_1d, require_terminal_payoff, require_path_payoff
-
-
 
 
 
@@ -175,6 +174,48 @@ class FxAsianMcSimulation:
     # --- Outputs ---
     terminal_spots: np.ndarray  # Terminal spots S(T), shape (n_paths_effective,).
     average_spots: np.ndarray  # Average spots over each path, shape (n_paths_effective,).
+    discounted_payoffs: np.ndarray  # Discounted payoff samples, domestic, shape (n_paths_effective,).
+    paths: Optional[np.ndarray] = None  # Optional stored paths, shape (n_kept, n_steps+1).
+
+
+@dataclass(frozen=True, slots=True)
+class FxLookbackMcSimulation:
+    """
+    Reusable Monte Carlo simulation artifact for a single lookback option trade.
+
+    This dataclass stores all inputs and outputs from a Monte Carlo simulation,
+    allowing callers to analyze results without re-running the simulation.
+
+    Notes
+    -----
+    - discounted_payoffs are in *domestic currency* and already scaled by trade.notional.
+    - paths are optional and can be very large; prefer storing only a small subset.
+    - max_spots and min_spots store the computed extrema for each path (useful for diagnostics).
+    """
+
+    # --- Resolved inputs (useful for reporting) ---
+    spot0: float  # Initial spot S0.
+    strike: float  # Strike price K (0 for floating strike).
+    maturity: float  # Expiry T (year fraction).
+    df_domestic: float  # Domestic discount factor df_d(T).
+    drift: float  # Domestic-measure drift (r_d - r_f).
+    sigma: float  # Volatility.
+    option_type: OptionType  # "call" or "put".
+    lookback_type: str  # "floating_strike" or "fixed_strike".
+    notional: float  # Foreign notional scaling.
+
+    # --- Simulation settings ---
+    n_paths_requested: int  # Requested number of paths.
+    n_paths_effective: int  # Effective paths (may be rounded up for antithetic).
+    n_steps: int  # Number of time steps (monitoring points = n_steps + 1 including S0).
+    scheme: GbmScheme  # GBM scheme ("exact" or "euler").
+    antithetic: bool  # Antithetic variates flag.
+    seed: Optional[int]  # RNG seed for reproducibility.
+
+    # --- Outputs ---
+    terminal_spots: np.ndarray  # Terminal spots S(T), shape (n_paths_effective,).
+    max_spots: np.ndarray  # Maximum spots over each path, shape (n_paths_effective,).
+    min_spots: np.ndarray  # Minimum spots over each path, shape (n_paths_effective,).
     discounted_payoffs: np.ndarray  # Discounted payoff samples, domestic, shape (n_paths_effective,).
     paths: Optional[np.ndarray] = None  # Optional stored paths, shape (n_kept, n_steps+1).
 
@@ -1099,6 +1140,382 @@ class FxEuropeanAsianMcPricer:
             seed=self.seed,
             terminal_spots=terminal_spots,
             average_spots=average_spots,
+            discounted_payoffs=discounted_payoffs,
+            paths=kept_paths,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class FxEuropeanLookbackMcPricer:
+    """
+    Monte Carlo pricer for European FX Lookback options under Garman–Kohlhagen.
+
+    Lookback options pay based on the maximum or minimum price over the option's
+    life, providing "perfect hindsight" for optimal entry/exit timing.
+
+    Pricing Method
+    --------------
+    - Simulate GBM paths with discrete monitoring points
+    - Compute path extrema (max and min) for each path
+    - Apply lookback payoff formula (floating or fixed strike)
+    - Discount and take expectation
+
+    Mathematical Formula
+    --------------------
+    Floating strike:
+        PV = notional * df_d(T) * E[ S_T - min(S_t) ]  (call)
+        PV = notional * df_d(T) * E[ max(S_t) - S_T ]  (put)
+
+    Fixed strike:
+        PV = notional * df_d(T) * E[ max(max(S_t) - K, 0) ]  (call)
+        PV = notional * df_d(T) * E[ max(K - min(S_t), 0) ]  (put)
+
+    Where:
+    - E[...] is the risk-neutral expectation
+    - df_d(T) is the domestic discount factor
+    - M_T = max(S_t) and m_T = min(S_t) over monitoring points
+
+    Mapping
+    -------
+    - r_d = -ln(df_d)/T  (domestic rate)
+    - r_f = -ln(df_f)/T  (foreign rate)
+    - drift = r_d - r_f  (domestic measure)
+    - PV = notional * df_d(T) * E[ payoff(paths) ]
+
+    Notes
+    -----
+    - Path-dependent: requires full simulated paths (not just terminal spots).
+    - Floating strike lookbacks are always ITM (payoff >= 0).
+    - More monitoring points (n_steps) give better approximation to continuous.
+    - Lookback options are always >= vanilla options (captures optimal timing).
+    """
+
+    n_paths: int = 200_000  # Number of Monte Carlo paths (higher = more accurate but slower).
+    seed: Optional[int] = 7  # RNG seed for reproducibility (set to None for random).
+    antithetic: bool = True  # Use antithetic variates to reduce variance (recommended).
+
+    n_steps: int = 64  # Number of time steps (more steps = better extremum approximation).
+    scheme: GbmScheme = "exact"  # GBM scheme ("exact" recommended for GBM).
+
+    def price(self, trade: EuropeanFxLookbackOption, market: Market) -> float:
+        """
+        Price a lookback option using Monte Carlo simulation.
+
+        This is the main pricing method that returns the present value (PV) of the option.
+
+        Parameters
+        ----------
+        trade : EuropeanFxLookbackOption
+            The lookback option instrument to price.
+        market : Market
+            Market snapshot containing spot, vol, and curves.
+
+        Returns
+        -------
+        float
+            Present value in domestic currency.
+        """
+        # Run simulation without storing paths (faster for pricing only)
+        sim = self.run(trade, market, store_paths=False)
+        # PV is the sample mean of discounted payoffs
+        return float(sim.discounted_payoffs.mean())
+
+    def run(
+        self,
+        trade: EuropeanFxLookbackOption,
+        market: Market,
+        *,
+        store_paths: bool = False,
+        paths_keep: int = 0,
+    ) -> FxLookbackMcSimulation:
+        """
+        Run Monte Carlo simulation and return full simulation artifact.
+
+        This method performs the full simulation and returns a dataclass containing
+        all inputs and outputs, useful for diagnostics, plotting, and analysis.
+
+        Parameters
+        ----------
+        trade : EuropeanFxLookbackOption
+            The lookback option instrument to simulate.
+        market : Market
+            Market snapshot containing spot, vol, and curves.
+        store_paths : bool, optional
+            If True, store simulated paths in the returned artifact (default: False).
+        paths_keep : int, optional
+            Number of paths to keep if store_paths=True (0 = keep all, default: 0).
+
+        Returns
+        -------
+        FxLookbackMcSimulation
+            Complete simulation artifact with inputs and outputs.
+        """
+        return self._run_simulation(trade, market, store_paths=store_paths, paths_keep=paths_keep)
+
+    def sample_terminal_spots(self, trade: EuropeanFxLookbackOption, market: Market) -> np.ndarray:
+        """
+        Sample terminal spot prices from the simulation.
+
+        Parameters
+        ----------
+        trade : EuropeanFxLookbackOption
+            The lookback option instrument.
+        market : Market
+            Market snapshot.
+
+        Returns
+        -------
+        np.ndarray
+            Terminal spot prices, shape (n_paths_effective,).
+        """
+        return self.run(trade, market, store_paths=False).terminal_spots
+
+    def sample_max_spots(self, trade: EuropeanFxLookbackOption, market: Market) -> np.ndarray:
+        """
+        Sample maximum spot prices from the simulation.
+
+        Parameters
+        ----------
+        trade : EuropeanFxLookbackOption
+            The lookback option instrument.
+        market : Market
+            Market snapshot.
+
+        Returns
+        -------
+        np.ndarray
+            Maximum spot prices over each path, shape (n_paths_effective,).
+        """
+        return self.run(trade, market, store_paths=False).max_spots
+
+    def sample_min_spots(self, trade: EuropeanFxLookbackOption, market: Market) -> np.ndarray:
+        """
+        Sample minimum spot prices from the simulation.
+
+        Parameters
+        ----------
+        trade : EuropeanFxLookbackOption
+            The lookback option instrument.
+        market : Market
+            Market snapshot.
+
+        Returns
+        -------
+        np.ndarray
+            Minimum spot prices over each path, shape (n_paths_effective,).
+        """
+        return self.run(trade, market, store_paths=False).min_spots
+
+    def sample_discounted_payoffs(self, trade: EuropeanFxLookbackOption, market: Market) -> np.ndarray:
+        """
+        Sample discounted payoffs from the simulation.
+
+        Parameters
+        ----------
+        trade : EuropeanFxLookbackOption
+            The lookback option instrument.
+        market : Market
+            Market snapshot.
+
+        Returns
+        -------
+        np.ndarray
+            Discounted payoffs, shape (n_paths_effective,).
+        """
+        return self.run(trade, market, store_paths=False).discounted_payoffs
+
+    def _run_simulation(
+        self,
+        trade: EuropeanFxLookbackOption,
+        market: Market,
+        *,
+        store_paths: bool,
+        paths_keep: int,
+    ) -> FxLookbackMcSimulation:
+        """
+        Internal method that performs the actual Monte Carlo simulation.
+
+        This is the single source of truth for simulation logic. All public methods
+        delegate to this method to ensure consistency.
+
+        Parameters
+        ----------
+        trade : EuropeanFxLookbackOption
+            The lookback option instrument to simulate.
+        market : Market
+            Market snapshot.
+        store_paths : bool
+            Whether to store paths in the returned artifact.
+        paths_keep : int
+            Number of paths to keep if storing (0 = all).
+
+        Returns
+        -------
+        FxLookbackMcSimulation
+            Complete simulation artifact.
+        """
+        # -----------------------------
+        # Validate pricer configuration
+        # -----------------------------
+        if self.n_paths <= 0:
+            raise ValueError("n_paths must be positive.")
+        if self.n_steps <= 0:
+            raise ValueError("n_steps must be positive (lookback options need monitoring points).")
+
+        # -----------------------------
+        # Read trade inputs
+        # -----------------------------
+        option_type: OptionType = trade.option_type
+        spot0 = float(market.quote(trade.spot_id))
+        strike = float(trade.strike)  # 0 for floating strike
+        maturity = float(trade.expiry)
+        notional = float(trade.notional)
+        lookback_type = str(trade.lookback_type)
+
+        # Validate inputs
+        if maturity < 0.0:
+            raise ValueError("expiry must be >= 0.")
+        if notional < 0.0:
+            raise ValueError("notional must be >= 0.")
+        if spot0 <= 0.0:
+            raise ValueError("spot must be > 0.")
+
+        # -----------------------------
+        # Resolve discount factors and rates
+        # -----------------------------
+        df_d = float(market.curve(trade.domestic_curve_id).df(maturity))
+        df_f = float(market.curve(trade.foreign_curve_id).df(maturity))
+
+        r_d = _rate_from_df(df=df_d, t=maturity)
+        r_f = _rate_from_df(df=df_f, t=maturity)
+
+        drift = float(r_d - r_f)
+
+        # -----------------------------
+        # Resolve implied volatility
+        # -----------------------------
+        # For lookbacks, use ATM vol or strike-based vol for fixed strike
+        vol_strike = strike if lookback_type == "fixed_strike" and strike > 0 else spot0
+        sigma = float(market.vol_surface(trade.vol_id).vol(expiry=maturity, strike=vol_strike))
+        if sigma < 0.0:
+            raise ValueError("Implied vol must be non-negative.")
+
+        # -----------------------------
+        # Build payoff from payoff library
+        # -----------------------------
+        payoff_fn = require_path_payoff(build_payoff_1d(trade))
+
+        # -----------------------------
+        # Deterministic expiry handling
+        # -----------------------------
+        if maturity == 0.0:
+            # At expiry, the "path" contains only S0 (which equals S_T)
+            # For lookback: max = min = S0 = S_T
+            paths = np.array([[spot0]], dtype=np.float64)
+            terminal_spots = np.array([spot0], dtype=np.float64)
+            max_spots = np.array([spot0], dtype=np.float64)
+            min_spots = np.array([spot0], dtype=np.float64)
+
+            # Compute payoff from paths
+            payoff = payoff_fn.terminal_from_paths(paths)
+            discounted_payoffs = (float(df_d) * payoff * notional).astype(np.float64, copy=False)
+
+            return FxLookbackMcSimulation(
+                spot0=spot0,
+                strike=strike,
+                maturity=maturity,
+                df_domestic=df_d,
+                drift=drift,
+                sigma=sigma,
+                option_type=option_type,
+                lookback_type=lookback_type,
+                notional=notional,
+                n_paths_requested=self.n_paths,
+                n_paths_effective=1,
+                n_steps=0,
+                scheme=self.scheme,
+                antithetic=self.antithetic,
+                seed=self.seed,
+                terminal_spots=terminal_spots,
+                max_spots=max_spots,
+                min_spots=min_spots,
+                discounted_payoffs=discounted_payoffs,
+                paths=paths.copy() if store_paths else None,
+            )
+
+        # -----------------------------
+        # Generate standard normals
+        # -----------------------------
+        rng = NormalRng(seed=self.seed)
+        normals = rng.standard_normals(
+            self.n_paths,
+            self.n_steps,
+            antithetic=self.antithetic,
+            dtype=np.float64,
+        )
+        n_paths_eff = int(normals.shape[0])
+
+        # -----------------------------
+        # Simulate GBM paths
+        # -----------------------------
+        simulator = GbmDynamicsSimulator(drift=drift, vol=sigma)
+        all_paths = simulator.simulate_paths(
+            spot0=spot0,
+            maturity=maturity,
+            n_steps=self.n_steps,
+            n_paths=n_paths_eff,
+            normals=normals,
+            scheme=self.scheme,
+            dtype=np.float64,
+        )
+
+        # Extract terminal spots (last column)
+        terminal_spots = all_paths[:, -1].copy()
+
+        # Compute path extrema for diagnostics
+        max_spots = np.max(all_paths, axis=1)
+        min_spots = np.min(all_paths, axis=1)
+
+        # -----------------------------
+        # Compute payoff from full path
+        # -----------------------------
+        payoff = payoff_fn.terminal_from_paths(all_paths)
+
+        # Discount domestically and scale by notional
+        discounted_payoffs = (float(df_d) * payoff * notional).astype(np.float64, copy=False)
+
+        # -----------------------------
+        # Optionally retain paths
+        # -----------------------------
+        if not store_paths:
+            kept_paths = None
+        else:
+            if paths_keep < 0:
+                raise ValueError("paths_keep must be >= 0.")
+            if paths_keep == 0:
+                kept_paths = all_paths.copy()
+            else:
+                kept_paths = all_paths[: min(paths_keep, n_paths_eff), :].copy()
+
+        return FxLookbackMcSimulation(
+            spot0=spot0,
+            strike=strike,
+            maturity=maturity,
+            df_domestic=df_d,
+            drift=drift,
+            sigma=sigma,
+            option_type=option_type,
+            lookback_type=lookback_type,
+            notional=notional,
+            n_paths_requested=self.n_paths,
+            n_paths_effective=n_paths_eff,
+            n_steps=self.n_steps,
+            scheme=self.scheme,
+            antithetic=self.antithetic,
+            seed=self.seed,
+            terminal_spots=terminal_spots,
+            max_spots=max_spots,
+            min_spots=min_spots,
             discounted_payoffs=discounted_payoffs,
             paths=kept_paths,
         )
