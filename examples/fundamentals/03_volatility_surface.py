@@ -19,7 +19,6 @@ sys.path.insert(0, '../..')
 
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.interfaces import Quote
@@ -34,6 +33,9 @@ plt.rcParams.update({
     'axes.titlesize': 13,
     'lines.linewidth': 2,
 })
+
+# save figures
+SAVE_FIGURES = False
 
 # =============================================================================
 # 1. What is Implied Volatility?
@@ -67,7 +69,7 @@ print("=" * 70)
 
 # Create a flat vol surface (same vol everywhere)
 flat_vol = 0.15  # 15% volatility
-flat_surface = FlatVolSurface(vol=flat_vol)
+flat_surface = FlatVolSurface(sigma=flat_vol)
 
 print(f"\nFlat volatility surface at {flat_vol:.1%}:")
 print(f"{'Expiry':<10} {'Strike':<10} {'Implied Vol':<12}")
@@ -127,7 +129,7 @@ for i, exp in enumerate(expiries):
 smile_surface = GridVolSurface(
     expiries=expiries,
     strikes=strikes,
-    vols=vol_grid,
+    implied_vols=vol_grid,
 )
 
 print(f"\nSmile surface at various points:")
@@ -195,7 +197,8 @@ ax3.set_title('3D Volatility Surface')
 ax3.view_init(elev=25, azim=45)
 
 plt.tight_layout()
-plt.savefig('volatility_surface.png', dpi=150, bbox_inches='tight')
+if SAVE_FIGURES:
+    plt.savefig('volatility_surface.png', dpi=150, bbox_inches='tight')
 plt.show()
 
 print("\nPlot saved to volatility_surface.png")
@@ -209,8 +212,8 @@ print("5. Using Vol Surfaces in a Market Object")
 print("=" * 70)
 
 # Create market IDs
-eurusd_spot_id = MarketId(asset_class="FX", data_type="SPOT", name="EURUSD")
-eurusd_vol_id = MarketId(asset_class="FX", data_type="VOL", name="EURUSD")
+eurusd_spot_id = MarketId(asset_class="FX", mkt_type="SPOT", name="EURUSD")
+eurusd_vol_id = MarketId(asset_class="FX", mkt_type="VOL", name="EURUSD")
 
 # Create market with vol surface
 # Scale strikes to FX level (spot around 1.08)
@@ -226,7 +229,7 @@ for i, exp in enumerate(expiries):
 fx_vol_surface = GridVolSurface(
     expiries=expiries,
     strikes=fx_strikes,
-    vols=fx_vol_grid,
+    implied_vols=fx_vol_grid,
 )
 
 market = Market(

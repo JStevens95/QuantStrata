@@ -36,9 +36,9 @@ print("=" * 70)
 #   - name: A specific identifier (e.g., "EURUSD", "USD_LIBOR_3M")
 
 # Create MarketIds for FX spot rates
-eurusd_spot_id = MarketId(asset_class="FX", data_type="SPOT", name="EURUSD")
-gbpusd_spot_id = MarketId(asset_class="FX", data_type="SPOT", name="GBPUSD")
-usdjpy_spot_id = MarketId(asset_class="FX", data_type="SPOT", name="USDJPY")
+eurusd_spot_id = MarketId(asset_class="FX", mkt_type="SPOT", name="EURUSD")
+gbpusd_spot_id = MarketId(asset_class="FX", mkt_type="SPOT", name="GBPUSD")
+usdjpy_spot_id = MarketId(asset_class="FX", mkt_type="SPOT", name="USDJPY")
 
 print(f"\nFX Spot MarketIds:")
 print(f"  EUR/USD: {eurusd_spot_id}")
@@ -58,12 +58,12 @@ market_id_dict = {
 print(f"\nUsing MarketId as dict key: {market_id_dict[eurusd_spot_id]}")
 
 # Create MarketIds for volatility surfaces
-eurusd_vol_id = MarketId(asset_class="FX", data_type="VOL", name="EURUSD")
+eurusd_vol_id = MarketId(asset_class="FX", mkt_type="VOL", name="EURUSD")
 print(f"\nVolatility surface MarketId: {eurusd_vol_id}")
 
 # Create MarketIds for discount curves
-usd_curve_id = MarketId(asset_class="IR", data_type="CURVE", name="USD_OIS")
-eur_curve_id = MarketId(asset_class="IR", data_type="CURVE", name="EUR_OIS")
+usd_curve_id = MarketId(asset_class="IR", mkt_type="CURVE", name="USD_OIS")
+eur_curve_id = MarketId(asset_class="IR", mkt_type="CURVE", name="EUR_OIS")
 print(f"\nCurve MarketIds:")
 print(f"  USD OIS: {usd_curve_id}")
 print(f"  EUR OIS: {eur_curve_id}")
@@ -183,12 +183,12 @@ print("=" * 70)
 
 # Define all market IDs
 fx_pairs = {
-    "EURUSD": MarketId(asset_class="FX", data_type="SPOT", name="EURUSD"),
-    "GBPUSD": MarketId(asset_class="FX", data_type="SPOT", name="GBPUSD"),
-    "USDJPY": MarketId(asset_class="FX", data_type="SPOT", name="USDJPY"),
-    "AUDUSD": MarketId(asset_class="FX", data_type="SPOT", name="AUDUSD"),
-    "USDCAD": MarketId(asset_class="FX", data_type="SPOT", name="USDCAD"),
-    "USDCHF": MarketId(asset_class="FX", data_type="SPOT", name="USDCHF"),
+    "EURUSD": MarketId(asset_class="FX", mkt_type="SPOT", name="EURUSD"),
+    "GBPUSD": MarketId(asset_class="FX", mkt_type="SPOT", name="GBPUSD"),
+    "USDJPY": MarketId(asset_class="FX", mkt_type="SPOT", name="USDJPY"),
+    "AUDUSD": MarketId(asset_class="FX", mkt_type="SPOT", name="AUDUSD"),
+    "USDCAD": MarketId(asset_class="FX", mkt_type="SPOT", name="USDCAD"),
+    "USDCHF": MarketId(asset_class="FX", mkt_type="SPOT", name="USDCHF"),
 }
 
 # Current spot rates (illustrative)

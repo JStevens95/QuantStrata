@@ -23,7 +23,10 @@ import matplotlib.pyplot as plt
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.interfaces import Quote
 from src.marketdata.core.market import Market
-from src.marketdata.curves.term_structure import FlatCurve, ZeroRateCurve
+from src.marketdata.curves.term_structure import FlatZeroRateCurve, ZeroRateCurve
+
+# save figures
+SAVE_FIGURES = False
 
 # Plot configuration
 plt.style.use('seaborn-v0_8-whitegrid')
@@ -55,7 +58,7 @@ Example: If df(1) = 0.95, then $1 in 1 year is worth $0.95 today.
 
 # Create a simple flat curve (constant rate)
 flat_rate = 0.05  # 5% annual rate
-flat_curve = FlatCurve(rate=flat_rate)
+flat_curve = FlatZeroRateCurve(continuously_compounded_rate=flat_rate)
 
 # Examine discount factors at various tenors
 tenors = [0.0, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0]
@@ -153,8 +156,9 @@ ax.set_title('Forward Rate Curve')
 ax.grid(True, alpha=0.3)
 
 plt.tight_layout()
-plt.savefig('term_structure.png', dpi=150, bbox_inches='tight')
-plt.show()
+if SAVE_FIGURES:
+    plt.savefig('term_structure.png', dpi=150, bbox_inches='tight')
+plt.show(block=True)
 
 print("\nPlot saved to term_structure.png")
 
@@ -167,8 +171,8 @@ print("4. Using Curves in a Market Object")
 print("=" * 70)
 
 # Create market IDs for curves
-usd_curve_id = MarketId(asset_class="IR", data_type="CURVE", name="USD_OIS")
-eur_curve_id = MarketId(asset_class="IR", data_type="CURVE", name="EUR_OIS")
+usd_curve_id = MarketId(asset_class="IR", mkt_type="CURVE", name="USD_OIS")
+eur_curve_id = MarketId(asset_class="IR", mkt_type="CURVE", name="EUR_OIS")
 
 # Create two different curves
 usd_tenors = np.array([0.25, 0.5, 1.0, 2.0, 5.0, 10.0])
@@ -180,7 +184,7 @@ eur_rates = np.array([0.035, 0.036, 0.038, 0.040, 0.042, 0.044])
 eur_curve = ZeroRateCurve(tenors=eur_tenors, zero_rates=eur_rates)
 
 # Also add spot quote
-eurusd_spot_id = MarketId(asset_class="FX", data_type="SPOT", name="EURUSD")
+eurusd_spot_id = MarketId(asset_class="FX", mkt_type="SPOT", name="EURUSD")
 
 # Create market with curves
 market = Market(
@@ -282,8 +286,9 @@ ax.legend()
 ax.grid(True, alpha=0.3)
 
 plt.tight_layout()
-plt.savefig('curve_comparison.png', dpi=150, bbox_inches='tight')
-plt.show()
+if SAVE_FIGURES:
+    plt.savefig('curve_comparison.png', dpi=150, bbox_inches='tight')
+plt.show(block=True)
 
 print("\nPlot saved to curve_comparison.png")
 

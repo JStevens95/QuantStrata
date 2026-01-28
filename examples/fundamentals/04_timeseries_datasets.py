@@ -38,6 +38,9 @@ plt.rcParams.update({
 # 1. Understanding MarketDataset
 # =============================================================================
 
+# save figures
+SAVE_FIGURES = False
+
 print("=" * 70)
 print("1. Understanding MarketDataset")
 print("=" * 70)
@@ -126,7 +129,7 @@ print("3. Building a Simple MarketDataset")
 print("=" * 70)
 
 # Define market IDs
-eurusd_spot_id = MarketId(asset_class="FX", data_type="SPOT", name="EURUSD")
+eurusd_spot_id = MarketId(asset_class="FX", mkt_type="SPOT", name="EURUSD")
 
 # For simplicity, we'll use just quote panels (no curves/vols for now)
 dataset_simple = MarketDataset(
@@ -182,7 +185,7 @@ for t in range(n_dates):
         curve_params[t, s, :, 0] = tenors
         curve_params[t, s, :, 1] = rates
 
-usd_curve_id = MarketId(asset_class="IR", data_type="CURVE", name="USD_OIS")
+usd_curve_id = MarketId(asset_class="IR", mkt_type="CURVE", name="USD_OIS")
 
 curve_panel = Panel(
     data=curve_params,
@@ -246,7 +249,7 @@ for t in range(n_dates):
         vol_shock = np.random.randn() * 0.005  # ±0.5% vol shock
         vol_params[t, s, :, :] = base_vols + vol_shock
 
-eurusd_vol_id = MarketId(asset_class="FX", data_type="VOL", name="EURUSD")
+eurusd_vol_id = MarketId(asset_class="FX", mkt_type="VOL", name="EURUSD")
 
 vol_panel = Panel(
     data=vol_params,
@@ -347,7 +350,8 @@ ax.legend()
 ax.grid(True, alpha=0.3)
 
 plt.tight_layout()
-plt.savefig('dataset_visualization.png', dpi=150, bbox_inches='tight')
+if SAVE_FIGURES:
+    plt.savefig('dataset_visualization.png', dpi=150, bbox_inches='tight')
 plt.show()
 
 print("\nPlot saved to dataset_visualization.png")
