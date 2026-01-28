@@ -18,7 +18,7 @@ from src.marketdata.curves.bootstrapper import (
     FraQuote,
     bootstrap_discount_curve,
 )
-from src.marketdata.quotes.rates import ParSwapRateQuote
+from src.marketdata.quotes.rates import ParSwapQuote
 
 
 # =============================================================================
@@ -72,7 +72,7 @@ class TestParSwapQuote:
         """Test annual swap bootstrapping."""
         # First need a deposit to bootstrap DF(1.0)
         dep = DepositQuote(label="DEP 6M", t=0.5, rate=0.05, compounding="simple")
-        swap = ParSwapRateQuote(label="SWAP 1Y", kind="IRS", maturity_t=1.0, par_rate=0.05, fixed_freq="1Y")
+        swap = ParSwapQuote(label="SWAP 1Y", kind="IRS", maturity_t=1.0, par_rate=0.05, fixed_freq="1Y")
 
         result = bootstrap_discount_curve(instruments=[dep, swap], engine="native")
 
@@ -86,7 +86,7 @@ class TestParSwapQuote:
         # Need deposits at all payment dates.
         dep1 = DepositQuote(label="DEP 3M", t=0.25, rate=0.05, compounding="simple")
         dep2 = DepositQuote(label="DEP 6M", t=0.5, rate=0.05, compounding="simple")
-        swap = ParSwapRateQuote(label="SWAP 1Y", kind="IRS", maturity_t=1.0, par_rate=0.05, fixed_freq="6M")
+        swap = ParSwapQuote(label="SWAP 1Y", kind="IRS", maturity_t=1.0, par_rate=0.05, fixed_freq="6M")
 
         result = bootstrap_discount_curve(instruments=[dep1, dep2, swap], engine="native")
 
@@ -98,7 +98,7 @@ class TestParSwapQuote:
         # Need deposits at all payment dates.
         dep1 = DepositQuote(label="DEP 3M", t=0.25, rate=0.05, compounding="simple")
         dep2 = DepositQuote(label="DEP 6M", t=0.5, rate=0.05, compounding="simple")
-        swap = ParSwapRateQuote(
+        swap = ParSwapQuote(
             label="SWAP 1Y",
             kind="IRS",
             maturity_t=1.0,
@@ -184,7 +184,7 @@ class TestCombinedBootstrapping:
             DepositQuote(label="DEP 3M", t=0.25, rate=0.05, compounding="simple"),
             FraQuote(label="FRA 3x6", t_start=0.25, t_end=0.5, forward_rate=0.05),
             FraQuote(label="FRA 6x9", t_start=0.5, t_end=0.75, forward_rate=0.05),
-            ParSwapRateQuote(label="SWAP 1Y", kind="IRS", maturity_t=1.0, par_rate=0.05, fixed_freq="6M"),
+            ParSwapQuote(label="SWAP 1Y", kind="IRS", maturity_t=1.0, par_rate=0.05, fixed_freq="6M"),
         ]
 
         result = bootstrap_discount_curve(instruments=instruments, engine="native")
@@ -261,7 +261,7 @@ class TestBootstrapIntegration:
         instruments = [
             DepositQuote(label="DEP 3M", t=0.25, rate=0.05, compounding="simple"),
             DepositQuote(label="DEP 6M", t=0.5, rate=0.05, compounding="simple"),
-            ParSwapRateQuote(label="SWAP 1Y", kind="IRS", maturity_t=1.0, par_rate=0.05, fixed_freq="6M"),
+            ParSwapQuote(label="SWAP 1Y", kind="IRS", maturity_t=1.0, par_rate=0.05, fixed_freq="6M"),
         ]
 
         try:

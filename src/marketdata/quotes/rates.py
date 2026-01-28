@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterable, List, Literal, Optional, Sequence, Tuple
 
 from src.marketdata.core.types import DepositCompounding
@@ -61,7 +61,7 @@ class RateQuote:
 
     Builders/bootstrappers will take a list of these quotes and produce a Curve.
     """
-    label: str  # human readable (e.g. "DEP 3M", "OIS 5Y", "FRA 3x6"), optional for bootstrapper compatibility
+    label: str = field(default="", kw_only=True) # (e.g. "DEP 3M", "OIS 5Y", "FRA 3x6"), optional for bootstrapper compatibility
 
     @property
     def maturity(self) -> float:
@@ -92,7 +92,6 @@ class DepositQuote(RateQuote):
     """
     t: float
     rate: float
-
     day_count: DayCount = "ACT/365F"
     compounding: DepositCompounding = "simple"
 
@@ -132,7 +131,6 @@ class FraQuote(RateQuote):
     t_end: float
     forward_rate: float
     day_count: DayCount = "ACT/365F"
-    label: str = ""  # Must come after fields with defaults
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "t_start", _require_non_negative("t_start", self.t_start))
@@ -198,8 +196,6 @@ class FuturesQuote(RateQuote):
     t_end: float
     price: float
     fut_type: FuturesType = "STIR"
-    label: str = ""  # Must come after fields with defaults
-
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "t_start", _require_non_negative("t_start", self.t_start))
@@ -245,7 +241,6 @@ class ParSwapQuote(RateQuote):
     fixed_day_count: DayCount = "30/360"
     index: Optional[str] = None  # e.g. "SOFR-OIS", "USD-LIBOR-3M" (for routing)
     schedule: Optional[Tuple[float, ...]] = None  # Optional explicit payment schedule
-    label: str = ""  # Must come after fields with defaults
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "maturity_t", _require_positive("maturity_t", self.maturity_t))
@@ -310,7 +305,6 @@ class BasisSwapSpreadQuote(RateQuote):
     spread: float
     leg_a: str
     leg_b: str
-    label: str = ""  # Must come after fields with defaults
 
 
     def __post_init__(self) -> None:
