@@ -4,6 +4,8 @@ import math
 from dataclasses import dataclass
 from typing import Iterable, List, Literal, Optional, Sequence, Tuple
 
+from src.marketdata.core.types import DepositCompounding
+
 
 # =============================================================================
 # Helpers
@@ -59,8 +61,9 @@ class RateQuote:
 
     Builders/bootstrappers will take a list of these quotes and produce a Curve.
     """
-    label: str  # human readable (e.g. "DEP 3M", "OIS 5Y", "FRA 3x6")
+    label: str = ""  # human readable (e.g. "DEP 3M", "OIS 5Y", "FRA 3x6"), optional for bootstrapper compatibility
 
+    @property
     def maturity(self) -> float:
         """Return a representative maturity time in years (for sorting/grouping)."""
         raise NotImplementedError
@@ -80,19 +83,27 @@ class DepositQuote(RateQuote):
     t:
         Maturity in years (year fraction).
     rate:
-        Simple annualized deposit rate (builder decides compounding convention).
+        Annualized deposit rate.
     day_count:
         Day-count basis metadata (builder uses this if needed).
+    compounding:
+        Compounding convention: "simple" (DF = 1/(1+r*T)) or "continuous" (DF = exp(-r*T)).
+        Defaults to "simple" for backward compatibility.
     """
     t: float
     rate: float
     day_count: DayCount = "ACT/365F"
+    compounding: DepositCompounding = "simple"
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "t", _require_positive("t", self.t))
         object.__setattr__(self, "rate", _require_finite("rate", self.rate))
+        if self.compounding not in ("simple", "continuous"):
+            raise ValueError(f"DepositQuote.compounding must be 'simple' or 'continuous'. Got {self.compounding!r}.")
 
+    @property
     def maturity(self) -> float:
+        """Maturity in years (alias for t for bootstrapper compatibility)."""
         return float(self.t)
 
 
@@ -113,11 +124,14 @@ class FraQuote(RateQuote):
         Annualized forward rate over the interval.
     day_count:
         Day-count basis metadata.
+    label:
+        Human-readable label (e.g. "FRA 3x6"). Optional, defaults to empty string.
     """
     t_start: float
     t_end: float
     forward_rate: float
     day_count: DayCount = "ACT/365F"
+    label: str = ""  # Must come after fields with defaults
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "t_start", _require_non_negative("t_start", self.t_start))
@@ -126,8 +140,30 @@ class FraQuote(RateQuote):
             raise ValueError(f"Require t_end > t_start. Got {self.t_start} -> {self.t_end}.")
         object.__setattr__(self, "forward_rate", _require_finite("forward_rate", self.forward_rate))
 
+    @property
     def maturity(self) -> float:
+        """Maturity is the end date (when FRA settles)."""
         return float(self.t_end)
+
+    @property
+    def start_date(self) -> float:
+        """Alias for t_start for bootstrapper compatibility."""
+        return float(self.t_start)
+
+    @property
+    def end_date(self) -> float:
+        """Alias for t_end for bootstrapper compatibility."""
+        return float(self.t_end)
+
+    @property
+    def fixed_rate(self) -> float:
+        """Alias for forward_rate for bootstrapper compatibility."""
+        return float(self.forward_rate)
+
+    @property
+    def day_count_fraction(self) -> float:
+        """Day count fraction (accrual period) computed from t_start and t_end."""
+        return float(self.t_end - self.t_start)
 
 
 # =============================================================================
@@ -154,11 +190,15 @@ class FuturesQuote(RateQuote):
         Exchange-style price (e.g. 99.25).
     fut_type:
         Type tag for builder selection.
+    label:
+        Human-readable label (e.g. "EDM4"). Optional, defaults to empty string.
     """
     t_start: float
     t_end: float
     price: float
     fut_type: FuturesType = "STIR"
+    label: str = ""  # Must come after fields with defaults
+
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "t_start", _require_non_negative("t_start", self.t_start))
@@ -174,6 +214,7 @@ class FuturesQuote(RateQuote):
         """Simple implied forward rate (no convexity adj): r = (100 - price) / 100."""
         return float((100.0 - float(self.price)) / 100.0)
 
+    @property
     def maturity(self) -> float:
         return float(self.t_end)
 
@@ -186,7 +227,7 @@ SwapKind = Literal["OIS", "IRS"]
 
 
 @dataclass(frozen=True, slots=True)
-class ParSwapRateQuote(RateQuote):
+class ParSwapQuote(RateQuote):
     """
     Par swap rate quote.
 
@@ -202,13 +243,40 @@ class ParSwapRateQuote(RateQuote):
     fixed_freq: FixedFreq = "1Y"
     fixed_day_count: DayCount = "30/360"
     index: Optional[str] = None  # e.g. "SOFR-OIS", "USD-LIBOR-3M" (for routing)
+    schedule: Optional[Tuple[float, ...]] = None  # Optional explicit payment schedule
+    label: str = ""  # Must come after fields with defaults
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "maturity_t", _require_positive("maturity_t", self.maturity_t))
         object.__setattr__(self, "par_rate", _require_finite("par_rate", self.par_rate))
 
+        # Validate schedule if provided
+        if self.schedule is not None:
+            sched = tuple(float(x) for x in self.schedule)
+            if len(sched) == 0:
+                raise ValueError("ParSwapRateQuote.schedule must be non-empty when provided.")
+            if any((not _is_finite(x) or x <= 0.0) for x in sched):
+                raise ValueError("ParSwapRateQuote.schedule entries must be finite and > 0.")
+            if any(b <= a for a, b in zip(sched, sched[1:])):
+                raise ValueError("ParSwapRateQuote.schedule must be strictly increasing.")
+            if abs(sched[-1] - float(self.maturity_t)) > 1e-12:
+                raise ValueError("ParSwapRateQuote.schedule[-1] must equal maturity_t.")
+
+    @property
     def maturity(self) -> float:
+        """Maturity in years (alias for maturity_t for bootstrapper compatibility)."""
         return float(self.maturity_t)
+
+    @property
+    def fixed_rate(self) -> float:
+        """Alias for par_rate for bootstrapper compatibility."""
+        return float(self.par_rate)
+
+    @property
+    def pay_freq(self) -> int:
+        """Payment frequency as integer (1=annual, 2=semi, 4=quarterly, 12=monthly)."""
+        freq_map = {"1Y": 1, "6M": 2, "3M": 4, "1M": 12}
+        return freq_map.get(self.fixed_freq, 1)
 
 
 # =============================================================================
@@ -234,11 +302,15 @@ class BasisSwapSpreadQuote(RateQuote):
         Quoted spread (typically added to one leg) as an annualized rate.
     leg_a, leg_b:
         Identifiers for the two floating indices (routing metadata).
+    label:
+        Human-readable label. Optional, defaults to empty string.
     """
     maturity_t: float
     spread: float
     leg_a: str
     leg_b: str
+    label: str = ""  # Must come after fields with defaults
+
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "maturity_t", _require_positive("maturity_t", self.maturity_t))
@@ -246,6 +318,7 @@ class BasisSwapSpreadQuote(RateQuote):
         if not self.leg_a or not self.leg_b:
             raise ValueError("leg_a and leg_b must be non-empty strings.")
 
+    @property
     def maturity(self) -> float:
         return float(self.maturity_t)
 
