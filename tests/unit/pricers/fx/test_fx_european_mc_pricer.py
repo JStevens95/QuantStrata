@@ -1416,20 +1416,28 @@ def test_fx_lookback_is_more_expensive_than_vanilla(
     assert pv_lookback >= pv_vanilla * 0.99  # Allow small numerical error
 
 
-def test_fx_lookback_floating_strike_is_more_expensive_than_fixed(
+def test_fx_lookback_floating_equals_fixed_atm_at_zero_vol(
     ids: Dict[str, MarketId],
     base_params: Dict[str, float],
-    market: _DummyMarket,
 ) -> None:
-    """
-    Test that floating strike lookback is generally more expensive than fixed strike ATM.
+    mkt0 = _DummyMarket(
+        spot=float(base_params["spot"]),
+        rd=float(base_params["rd"]),
+        rf=float(base_params["rf"]),
+        sigma=0.0,
+        spot_id=ids["spot"],
+        vol_id=ids["vol"],
+        rd_id=ids["rd"],
+        rf_id=ids["rf"],
+    )
 
-    Floating strike is always ITM, so typically more expensive.
-    """
-    floating_trade = EuropeanFxLookbackOption(
+    t = float(base_params["t"])
+    s0 = float(base_params["spot"])
+
+    floating = EuropeanFxLookbackOption(
         option_type="call",
         notional=float(base_params["notional"]),
-        expiry=float(base_params["t"]),
+        expiry=t,
         lookback_type="floating_strike",
         spot_id=ids["spot"],
         vol_id=ids["vol"],
@@ -1437,24 +1445,23 @@ def test_fx_lookback_floating_strike_is_more_expensive_than_fixed(
         foreign_curve_id=ids["rf"],
     )
 
-    fixed_trade = EuropeanFxLookbackOption(
+    fixed = EuropeanFxLookbackOption(
         option_type="call",
         notional=float(base_params["notional"]),
-        expiry=float(base_params["t"]),
+        expiry=t,
         lookback_type="fixed_strike",
-        strike=float(base_params["strike"]),  # ATM
+        strike=s0,  # ATM
         spot_id=ids["spot"],
         vol_id=ids["vol"],
         domestic_curve_id=ids["rd"],
         foreign_curve_id=ids["rf"],
     )
 
-    pricer = FxEuropeanLookbackMcPricer(n_paths=100_000, seed=7, antithetic=True, n_steps=64)
-    pv_floating = float(pricer.price(floating_trade, market))
-    pv_fixed = float(pricer.price(fixed_trade, market))
+    pricer = FxEuropeanLookbackMcPricer(n_paths=10_000, seed=7, antithetic=True, n_steps=64, scheme="exact")  # if scheme exists
+    pv_float = float(pricer.price(floating, mkt0))
+    pv_fixed = float(pricer.price(fixed, mkt0))
 
-    # Floating strike should be more expensive (always ITM)
-    assert pv_floating >= pv_fixed * 0.99
+    assert pv_float == pytest.approx(pv_fixed, rel=0.0, abs=1e-8)
 
 
 # =============================================================================

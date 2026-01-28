@@ -12,7 +12,7 @@ Tests cover:
 import numpy as np
 import pytest
 
-from src.calibration.local_volatility.dupire import (
+from src.calibration.volatility_surface.dupire import (
     DupireConfig,
     DupireCalibrator,
     calibrate_local_vol_from_implied,

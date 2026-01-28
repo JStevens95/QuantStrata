@@ -61,7 +61,7 @@ class RateQuote:
 
     Builders/bootstrappers will take a list of these quotes and produce a Curve.
     """
-    label: str = ""  # human readable (e.g. "DEP 3M", "OIS 5Y", "FRA 3x6"), optional for bootstrapper compatibility
+    label: str  # human readable (e.g. "DEP 3M", "OIS 5Y", "FRA 3x6"), optional for bootstrapper compatibility
 
     @property
     def maturity(self) -> float:
@@ -92,6 +92,7 @@ class DepositQuote(RateQuote):
     """
     t: float
     rate: float
+
     day_count: DayCount = "ACT/365F"
     compounding: DepositCompounding = "simple"
 
@@ -388,10 +389,10 @@ def example_usd_ois_input_quotes() -> RateQuotes:
         DepositQuote(label="DEP 1W", t=7.0 / 365.0, rate=0.0480),
         DepositQuote(label="DEP 1M", t=1.0 / 12.0, rate=0.0485),
         DepositQuote(label="DEP 3M", t=0.25, rate=0.0490),
-        ParSwapRateQuote(label="OIS 1Y", kind="OIS", maturity_t=1.0, par_rate=0.0488, index="SOFR-OIS"),
-        ParSwapRateQuote(label="OIS 2Y", kind="OIS", maturity_t=2.0, par_rate=0.0465, index="SOFR-OIS"),
-        ParSwapRateQuote(label="OIS 5Y", kind="OIS", maturity_t=5.0, par_rate=0.0430, index="SOFR-OIS"),
-        ParSwapRateQuote(label="OIS 10Y", kind="OIS", maturity_t=10.0, par_rate=0.0410, index="SOFR-OIS"),
+        ParSwapQuote(label="OIS 1Y", kind="OIS", maturity_t=1.0, par_rate=0.0488, index="SOFR-OIS"),
+        ParSwapQuote(label="OIS 2Y", kind="OIS", maturity_t=2.0, par_rate=0.0465, index="SOFR-OIS"),
+        ParSwapQuote(label="OIS 5Y", kind="OIS", maturity_t=5.0, par_rate=0.0430, index="SOFR-OIS"),
+        ParSwapQuote(label="OIS 10Y", kind="OIS", maturity_t=10.0, par_rate=0.0410, index="SOFR-OIS"),
     ]
     return RateQuotes(quotes=tuple(qs)).sorted()
 
