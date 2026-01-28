@@ -14,10 +14,10 @@ def test_bootstrap_discount_curve_quantlib_engine_runs_or_skips() -> None:
         pytest.skip("QuantLib not installed; skipping quantlib bootstrap engine test.")
 
     instruments = [
-        DepositQuote(maturity=0.25, rate=0.02, compounding="simple"),
-        DepositQuote(maturity=0.50, rate=0.021, compounding="simple"),
-        ParSwapQuote(maturity=1.0, fixed_rate=0.022, pay_freq=2),
-        ParSwapQuote(maturity=2.0, fixed_rate=0.024, pay_freq=2),
+        DepositQuote(label="DEP 3M", t=0.25, rate=0.02, compounding="simple"),
+        DepositQuote(label="DEP 6M", t=0.50, rate=0.021, compounding="simple"),
+        ParSwapQuote(label="SWAP 1Y", kind="IRS", maturity_t=1.0, par_rate=0.022, fixed_freq="6M"),
+        ParSwapQuote(label="SWAP 2Y", kind="IRS", maturity_t=2.0, par_rate=0.024, fixed_freq="6M"),
     ]
 
     res = bootstrap_discount_curve(

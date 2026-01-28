@@ -6,100 +6,20 @@ from typing import Any, Mapping, Sequence, Tuple, Union
 
 import numpy as np
 
-from src.marketdata.core.types import (
-    BootstrapEngine, DepositCompounding, ExtrapolationMode, InstrumentType
-)
+from src.marketdata.core.types import BootstrapEngine, ExtrapolationMode
 from src.marketdata.curves.term_structure import ZeroRateCurve
 from src.marketdata.integration.quantlib.context import (
     require_quantlib, to_ql_date, yearfrac_to_ql_date,
 )
-
-# -----------------------------------------------------------------------------
-# Quotes / instruments (V2-lite)
-# -----------------------------------------------------------------------------
-
-
-@dataclass(frozen=True, slots=True)
-class DepositQuote:
-    """
-    Deposit quote for the short end of a discount curve.
-
-    Parameters
-    ----------
-    maturity:
-        Year-fraction maturity T (> 0).
-    rate:
-        Quoted annualized rate r.
-    compounding:
-        - "simple"     : DF(T) = 1 / (1 + r*T)
-        - "continuous" : DF(T) = exp(-r*T)
-    """
-    maturity: float
-    rate: float
-    compounding: DepositCompounding = "simple"
-
-    @property
-    def instrument_type(self) -> InstrumentType:
-        return "deposit"
-
-    def __post_init__(self) -> None:
-        t = float(self.maturity)
-        if not np.isfinite(t) or t <= 0.0:
-            raise ValueError("DepositQuote.maturity must be finite and > 0.")
-        if not np.isfinite(float(self.rate)):
-            raise ValueError("DepositQuote.rate must be finite.")
-        if self.compounding not in ("simple", "continuous"):
-            raise ValueError("DepositQuote.compounding must be 'simple' or 'continuous'.")
-
-
-@dataclass(frozen=True, slots=True)
-class ParSwapQuote:
-    """
-    Par swap quote (single-curve identity) for curve bootstrapping.
-
-    Parameters
-    ----------
-    maturity:
-        Final maturity T (> 0).
-    fixed_rate:
-        Par fixed rate R.
-    pay_freq:
-        Fixed leg payments per year (1=annual, 2=semi, 4=quarterly).
-    schedule:
-        Optional explicit payment times in year-fractions. If provided, overrides pay_freq.
-    """
-    maturity: float
-    fixed_rate: float
-    pay_freq: int = 1
-    schedule: Tuple[float, ...] | None = None
-
-    @property
-    def instrument_type(self) -> InstrumentType:
-        return "swap"
-
-    def __post_init__(self) -> None:
-        t = float(self.maturity)
-        if not np.isfinite(t) or t <= 0.0:
-            raise ValueError("ParSwapQuote.maturity must be finite and > 0.")
-        if not np.isfinite(float(self.fixed_rate)):
-            raise ValueError("ParSwapQuote.fixed_rate must be finite.")
-        if int(self.pay_freq) < 1:
-            raise ValueError("ParSwapQuote.pay_freq must be >= 1.")
-
-        if self.schedule is not None:
-            sched = tuple(float(x) for x in self.schedule)
-            if len(sched) == 0:
-                raise ValueError("ParSwapQuote.schedule must be non-empty when provided.")
-            if any((not np.isfinite(x) or x <= 0.0) for x in sched):
-                raise ValueError("ParSwapQuote.schedule entries must be finite and > 0.")
-            if any(b <= a for a, b in zip(sched, sched[1:])):
-                raise ValueError("ParSwapQuote.schedule must be strictly increasing.")
-            if abs(sched[-1] - t) > 1e-12:
-                raise ValueError("ParSwapQuote.schedule[-1] must equal maturity.")
+from src.marketdata.quotes.rates import (
+    DepositQuote,
+    FraQuote,
+    ParSwapQuote,
+)
 
 
 # list of curve instruments for bootstrapping.
-CurveInstrument = Union[DepositQuote, ParSwapQuote]
+CurveInstrument = Union[DepositQuote, ParSwapQuote, FraQuote]
 
 
 # -----------------------------------------------------------------------------
@@ -218,6 +138,13 @@ def _bootstrap_discount_curve_native(
                 df_by_t=df_by_t,
             )
             continue
+        
+        if isinstance(inst, FraQuote):
+            df_by_t[t] = _df_from_fra(
+                fra=inst,
+                df_by_t=df_by_t,
+            )
+            continue
 
         raise TypeError(f"Unsupported instrument type: {type(inst).__name__}")
 
@@ -235,8 +162,85 @@ def _bootstrap_discount_curve_native(
     return BootstrapResult(curve=curve, tenors=tenors, dfs=dfs, zero_rates=zero_rates)
 
 
+def _df_from_fra(
+    *,
+    fra: FraQuote,
+    df_by_t: Mapping[float, float],
+) -> float:
+    """
+    Bootstrap discount factor from FRA quote.
+
+    FRA par condition:
+        DF(T_start) - DF(T_end) × (1 + R × α) = 0
+
+    Solving for DF(T_end):
+        DF(T_end) = DF(T_start) / (1 + R × α)
+
+    Parameters
+    ----------
+    fra:
+        FRA quote (from rates.py).
+    df_by_t:
+        Dictionary of known discount factors (must contain T_start).
+
+    Returns
+    -------
+    float
+        Discount factor DF(T_end).
+
+    Raises
+    ------
+    ValueError
+        If DF(T_start) is missing or if computed DF(T_end) is invalid.
+    """
+    t_start = float(fra.t_start)  # Use t_start from rates.py FraQuote
+    t_end = float(fra.t_end)  # Use t_end from rates.py FraQuote
+    r = float(fra.forward_rate)  # Use forward_rate from rates.py FraQuote
+    alpha = float(fra.day_count_fraction)  # Use computed property
+
+    # Check that DF(T_start) exists.
+    if t_start not in df_by_t:
+        raise ValueError(
+            "Cannot bootstrap FRA because start date DF is missing.\n"
+            f"  Missing DF at t={t_start}\n"
+            f"  FRA end date T={t_end}\n"
+            "  Tip: include deposits / earlier instruments so DF(T_start) is bootstrapped first."
+        )
+
+    df_start = float(df_by_t[t_start])
+    if df_start <= 0.0 or not np.isfinite(df_start):
+        raise ValueError(f"Invalid DF at FRA start date t={t_start}: df={df_start}")
+
+    # FRA par condition: DF(T_start) = DF(T_end) × (1 + R × α)
+    denom = 1.0 + r * alpha
+    if denom <= 0.0:
+        raise ValueError(
+            "FRA bootstrap failed: denominator (1 + R*α) <= 0.\n"
+            f"  R={r}, α={alpha}, denom={denom}"
+        )
+
+    df_end = df_start / denom
+
+    if not np.isfinite(df_end) or df_end <= 0.0:
+        raise ValueError(
+            "FRA bootstrap produced invalid DF(T_end).\n"
+            f"  T_start={t_start}, T_end={t_end}, DF(T_start)={df_start}, "
+            f"R={r}, α={alpha}, DF(T_end)={df_end}"
+        )
+
+    # Sanity check: DF(T_end) should be <= DF(T_start) for positive rates.
+    if df_end > df_start + 1e-6:
+        raise ValueError(
+            "FRA bootstrap produced increasing discount factor (implies negative forward rate).\n"
+            f"  DF(T_start)={df_start}, DF(T_end)={df_end}\n"
+            "  If you expect negative rates, relax/remove this check."
+        )
+
+    return float(df_end)
+
+
 def _df_from_deposit(dep: DepositQuote) -> float:
-    t = float(dep.maturity)
+    t = float(dep.t) # Use t from DepositQuote
     r = float(dep.rate)
 
     if dep.compounding == "continuous":
@@ -256,12 +260,12 @@ def _df_from_deposit(dep: DepositQuote) -> float:
 
 
 def _swap_schedule_and_accruals(swp: ParSwapQuote) -> tuple[np.ndarray, np.ndarray]:
-    t = float(swp.maturity)
+    t = float(swp.maturity) # Use maturity from ParSwapQuote
 
     if swp.schedule is not None:
         times = np.asarray(list(swp.schedule), dtype=float).reshape(-1)
     else:
-        f = int(swp.pay_freq)
+        f = int(swp.pay_freq)  # Use pay_freq property (converts FixedFreq to int)
         step = 1.0 / float(f)
 
         times = np.arange(step, t + 1e-12, step, dtype=float)
@@ -289,7 +293,7 @@ def _df_from_par_swap(
     df_by_t: Mapping[float, float],
 ) -> float:
     t = float(maturity)
-    r = float(fixed_rate)
+    r = float(fixed_rate)  # Use fixed_rate property (aliases par_rate)
 
     if not np.isfinite(r):
         raise ValueError("ParSwapQuote.fixed_rate must be finite.")
@@ -429,7 +433,7 @@ def _bootstrap_discount_curve_quantlib(
 
     for inst in instruments:
         if isinstance(inst, DepositQuote):
-            tenor = _yearfrac_to_ql_period(ql, float(inst.maturity))
+            tenor = _yearfrac_to_ql_period(ql, float(inst.t))  # Use t field from rates.py
             quote = ql.QuoteHandle(ql.SimpleQuote(float(inst.rate)))
 
             helpers.append(
@@ -458,6 +462,22 @@ def _bootstrap_discount_curve_quantlib(
                     fixed_freq,
                     bdc,
                     day_count,
+                    ibor_index,
+                )
+            )
+            continue
+
+        if isinstance(inst, FraQuote):
+            # FRA: map start/end dates to QuantLib dates
+            start_date = yearfrac_to_ql_date(asof=asof_date, yearfrac=float(inst.t_start))
+            end_date = yearfrac_to_ql_date(asof=asof_date, yearfrac=float(inst.t_end))
+            quote = ql.QuoteHandle(ql.SimpleQuote(float(inst.forward_rate)))
+
+            helpers.append(
+                ql.FraRateHelper(
+                    quote,
+                    start_date,
+                    end_date,
                     ibor_index,
                 )
             )
@@ -547,6 +567,9 @@ def _default_sampling_grid_from_instruments(instruments: Sequence[CurveInstrumen
 
     for inst in instruments:
         tenors.append(float(inst.maturity))
+
+        if isinstance(inst, FraQuote):
+            tenors.append(float(inst.t_start))  # Use t_start from rates.py
 
         if isinstance(inst, ParSwapQuote):
             if inst.schedule is not None:
