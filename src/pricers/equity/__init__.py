@@ -12,8 +12,8 @@ Author: QuantStrata Team
 
 from src.pricers.equity.european_bsm import EquityEuropeanVanillaBsmPricer
 from src.pricers.equity.european_mc import EquityEuropeanVanillaMcPricer
-from src.pricers.equity.european_fd import EquityEuropeanVanillaFdPricer
-from src.pricers.equity.american_fd import EquityAmericanVanillaFdPricer
+from src.pricers.equity.european_fde import EquityEuropeanVanillaFdPricer
+from src.pricers.equity.american_fde import EquityAmericanVanillaFdPricer
 from src.pricers.equity.forward import EquityForwardPricer
 from src.pricers.equity.spot import EquitySpotPricer
 

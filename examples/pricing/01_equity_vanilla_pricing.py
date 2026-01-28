@@ -373,7 +373,7 @@ ax4.legend()
 ax4.grid(True, alpha=0.3)
 
 plt.tight_layout()
-plt.savefig('equity_vanilla_analysis.png', dpi=150, bbox_inches='tight')
+# plt.savefig('equity_vanilla_analysis.png', dpi=150, bbox_inches='tight')
 plt.show()
 
 print("\n" + "=" * 70)

@@ -5,18 +5,16 @@ Tests early exercise premium, put-call asymmetry, and convergence.
 
 Author: QuantStrata Team
 """
+from __future__ import annotations
 
-import math
 import pytest
-import numpy as np
 
 from src.instruments.equity.options.vanilla import (
     EuropeanEquityVanillaOption,
     AmericanEquityVanillaOption,
 )
-from src.pricers.equity.american_fd import EquityAmericanVanillaFdPricer
-from src.pricers.equity.european_fd import EquityEuropeanVanillaFdPricer
-from src.pricers.equity.european_bsm import EquityEuropeanVanillaBsmPricer
+from src.pricers.equity.american_fde import EquityAmericanVanillaFdPricer
+from src.pricers.equity.european_fde import EquityEuropeanVanillaFdPricer
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.interfaces import Quote
 from src.marketdata.core.market import Market
