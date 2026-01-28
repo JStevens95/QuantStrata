@@ -15,7 +15,7 @@ from src.models.analytic.black_scholes_merton.base import (  # Import shared hel
     validate_bsm_inputs,
 )
 
-GreekName = Literal["delta", "gamma", "vega", "rho_discount", "rho_carry"]  # Keep the greek set explicit.
+GreekName = Literal["delta", "gamma", "vega", "theta", "rho_discount", "rho_carry"]  # Keep the greek set explicit.
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +91,7 @@ class BlackScholesMertonVanilla:
                 "delta": 0.0,
                 "gamma": 0.0,
                 "vega": 0.0,
+                "theta": 0.0,
                 "rho_discount": 0.0,
                 "rho_carry": 0.0,
             }
@@ -145,10 +146,31 @@ class BlackScholesMertonVanilla:
         else:  # Put rho_carry.
             rho_carry = -t * (s * terms.fwd_factor * std_norm_cdf(-d1))
 
+        # Theta (dPV/dT, time decay) - negative for long options (value decays as time passes).
+        # Formula with cost-of-carry b:
+        #   Theta_call = -S*fwd_factor*n(d1)*σ/(2√T) - r*K*df*N(d2) + (r-b)*S*fwd_factor*N(d1)
+        #   Theta_put  = -S*fwd_factor*n(d1)*σ/(2√T) + r*K*df*N(-d2) - (r-b)*S*fwd_factor*N(-d1)
+        # Where (r-b) is effectively the dividend yield q for equities.
+        r = float(discount_rate)
+        b = float(carry)
+        q_eff = r - b  # Effective dividend yield (q for equity, r_f for FX)
+
+        # Common term: diffusion decay (always negative, reduces option value)
+        diffusion_decay = -s * terms.fwd_factor * n_d1 * sig / (2.0 * sqrt_t)
+
+        if option_type == "call":
+            # Rate effect (negative: discounting reduces strike PV)
+            # Dividend effect (positive: dividends reduce spot drift, helping call holder via forward)
+            theta = diffusion_decay - r * k * terms.df * std_norm_cdf(d2) + q_eff * s * terms.fwd_factor * N_d1
+        else:
+            # For puts, signs flip on the rate and dividend components
+            theta = diffusion_decay + r * k * terms.df * std_norm_cdf(-d2) - q_eff * s * terms.fwd_factor * std_norm_cdf(-d1)
+
         return {  # Return greeks in a stable dict ordering.
             "delta": float(delta),
             "gamma": float(gamma),
             "vega": float(vega),
+            "theta": float(theta),
             "rho_discount": float(rho_discount),
             "rho_carry": float(rho_carry),
         }

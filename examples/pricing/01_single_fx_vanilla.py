@@ -23,13 +23,13 @@ from dataclasses import dataclass
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.interfaces import Quote
 from src.marketdata.core.market import Market
-from src.marketdata.curves.term_structure import FlatCurve
+from src.marketdata.curves.term_structure import FlatZeroRateCurve
 from src.marketdata.surfaces.vol_surface import FlatVolSurface
 
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
-from src.pricers.fx.european_bsm import EuropeanFxVanillaBsmPricer
-from src.pricers.fx.european_mc import EuropeanFxVanillaMcPricer
-from src.pricers.fx.european_fde import EuropeanFxVanillaFdePricer
+from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer
+from src.pricers.fx.european_mc import FxEuropeanVanillaMcPricer
+from src.pricers.fx.european_fde import FxEuropeanVanillaFdPricer
 
 # Plot configuration
 plt.style.use('seaborn-v0_8-whitegrid')
@@ -55,10 +55,10 @@ print("1. Setup: Option and Market")
 print("=" * 70)
 
 # Market IDs
-EURUSD_SPOT = MarketId(asset_class="FX", data_type="SPOT", name="EURUSD")
-USD_CURVE = MarketId(asset_class="IR", data_type="CURVE", name="USD_OIS")
-EUR_CURVE = MarketId(asset_class="IR", data_type="CURVE", name="EUR_OIS")
-EURUSD_VOL = MarketId(asset_class="FX", data_type="VOL", name="EURUSD")
+EURUSD_SPOT = MarketId(asset_class="FX", mkt_type="SPOT", name="EURUSD")
+USD_CURVE = MarketId(asset_class="IR", mkt_type="CURVE", name="USD_OIS")
+EUR_CURVE = MarketId(asset_class="IR", mkt_type="CURVE", name="EUR_OIS")
+EURUSD_VOL = MarketId(asset_class="FX", mkt_type="VOL", name="EURUSD")
 
 # Market data
 spot = 1.0850
@@ -71,10 +71,10 @@ market = Market(
     asof="2026-01-28",
     quotes={EURUSD_SPOT: Quote(value=spot)},
     curves={
-        USD_CURVE: FlatCurve(rate=r_usd),
-        EUR_CURVE: FlatCurve(rate=r_eur),
+        USD_CURVE: FlatZeroRateCurve(continuously_compounded_rate=r_usd),
+        EUR_CURVE: FlatZeroRateCurve(continuously_compounded_rate=r_eur),
     },
-    vols={EURUSD_VOL: FlatVolSurface(vol=vol)},
+    vols={EURUSD_VOL: FlatVolSurface(sigma=vol)},
 )
 
 # Define the option
@@ -120,7 +120,7 @@ print("\n" + "=" * 70)
 print("2. Pricing with Black-Scholes-Merton (Analytical)")
 print("=" * 70)
 
-bsm_pricer = EuropeanFxVanillaBsmPricer()
+bsm_pricer = FxEuropeanVanillaBsmPricer()
 bsm_price = bsm_pricer.price(option, market)
 bsm_greeks = bsm_pricer.greeks(option, market)
 
@@ -145,7 +145,7 @@ print("3. Pricing with Monte Carlo")
 print("=" * 70)
 
 # Standard MC pricer
-mc_pricer = EuropeanFxVanillaMcPricer(n_paths=100_000, seed=42)
+mc_pricer = FxEuropeanVanillaMcPricer(n_paths=100_000, seed=42)
 mc_price = mc_pricer.price(option, market)
 
 print(f"\nMonte Carlo Results (100,000 paths):")
@@ -162,7 +162,7 @@ path_counts = [1_000, 10_000, 50_000, 100_000, 500_000]
 mc_prices = []
 
 for n_paths in path_counts:
-    pricer = EuropeanFxVanillaMcPricer(n_paths=n_paths, seed=42)
+    pricer = FxEuropeanVanillaMcPricer(n_paths=n_paths, seed=42)
     price = pricer.price(option, market)
     mc_prices.append(price)
     error = abs(price - bsm_price)
@@ -176,7 +176,7 @@ print("\n" + "=" * 70)
 print("4. Pricing with Finite Difference (PDE)")
 print("=" * 70)
 
-fd_pricer = EuropeanFxVanillaFdePricer(n_spot=200, n_time=100)
+fd_pricer = FxEuropeanVanillaFdPricer(n_spot=200, n_time=100)
 fd_price = fd_pricer.price(option, market)
 
 print(f"\nFinite Difference Results (200×100 grid):")
@@ -193,7 +193,7 @@ grid_sizes = [(50, 25), (100, 50), (200, 100), (400, 200)]
 fd_prices = []
 
 for n_spot, n_time in grid_sizes:
-    pricer = EuropeanFxVanillaFdePricer(n_spot=n_spot, n_time=n_time)
+    pricer = FxEuropeanVanillaFdPricer(n_spot=n_spot, n_time=n_time)
     price = pricer.price(option, market)
     fd_prices.append(price)
     error = abs(price - bsm_price)

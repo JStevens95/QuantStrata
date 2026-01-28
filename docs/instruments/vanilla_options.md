@@ -18,9 +18,10 @@
 7. [Put-Call Parity and Relationships](#7-put-call-parity-and-relationships)
 8. [Numerical Methods](#8-numerical-methods)
 9. [Risk Management](#9-risk-management)
-10. [Model Extensions](#10-model-extensions)
-11. [Key Interview Points](#11-key-interview-points)
-12. [References](#12-references)
+10. [Asset Class Specifics: FX vs Equity](#10-asset-class-specifics-fx-vs-equity)
+11. [Model Extensions](#11-model-extensions)
+12. [Key Interview Points](#12-key-interview-points)
+13. [References](#13-references)
 
 ---
 
@@ -570,9 +571,204 @@ d\Pi \approx \frac{1}{2}\Gamma(dS)^2 + \Theta \, dt + \nu \, d\sigma
 
 ---
 
-## 10. Model Extensions
+## 10. Asset Class Specifics: FX vs Equity
 
-### 10.1 Beyond Black-Scholes
+The BSM framework applies to both FX and Equity options through the **cost-of-carry** parameter \(b\). This section details the key differences in interpretation, implementation, and risk management.
+
+### 10.1 Parameter Mapping
+
+| Parameter | FX Interpretation | Equity Interpretation |
+|-----------|-------------------|----------------------|
+| \(S\) | Spot exchange rate (DOM/FOR) | Stock price |
+| \(r\) | Domestic risk-free rate \(r_d\) | Risk-free rate |
+| \(q\) | Foreign risk-free rate \(r_f\) | Continuous dividend yield |
+| \(b = r - q\) | Interest rate differential \(r_d - r_f\) | Cost-of-carry \(r - q\) |
+
+### 10.2 FX Options: Two-Currency Framework
+
+#### Market Convention
+
+FX options are quoted in the **DOM/FOR** convention:
+- **Domestic (DOM)**: Currency in which the option premium is paid
+- **Foreign (FOR)**: Currency being bought/sold (the underlying)
+
+**Example:** EURUSD = 1.0850 means 1 EUR = 1.0850 USD
+- DOM = USD, FOR = EUR
+- A call option gives the right to **buy EUR** (pay USD)
+
+#### FX Forward Price
+
+\[
+F_{FX} = S_0 \cdot \exp\left[(r_d - r_f) \cdot T\right]
+\]
+
+#### FX Put-Call Parity
+
+\[
+\boxed{C - P = S_0 e^{-r_f T} - K e^{-r_d T}}
+\]
+
+#### FX Greeks: Dual Rho Decomposition
+
+For FX options, interest rate sensitivity splits into two components:
+
+**Rho Domestic** (sensitivity to \(r_d\)):
+\[
+\rho_d = \frac{\partial V}{\partial r_d} = KT e^{-r_d T} N(\pm d_2) \quad \text{(call: +, put: -)}
+\]
+
+**Rho Foreign** (sensitivity to \(r_f\)):
+\[
+\rho_f = \frac{\partial V}{\partial r_f} = -S_0 T e^{-r_f T} N(\pm d_1) \quad \text{(call: +, put: -)}
+\]
+
+**Key Insight:** \(\rho_f\) has the opposite sign to \(\rho_d\) because:
+- Higher \(r_d\) → Lower PV of strike → Higher call value
+- Higher \(r_f\) → Lower PV of spot (via forward) → Lower call value
+
+### 10.3 Equity Options: Single-Curve with Dividends
+
+#### Continuous Dividend Yield
+
+For stocks paying continuous dividends at yield \(q\):
+
+\[
+F_{EQ} = S_0 \cdot \exp\left[(r - q) \cdot T\right]
+\]
+
+#### Equity Put-Call Parity
+
+\[
+\boxed{C - P = S_0 e^{-qT} - K e^{-rT}}
+\]
+
+#### Equity Greeks: Single Rho
+
+For equity options with a single rate \(r\):
+
+\[
+\rho_{EQ} = \rho_{discount} + \rho_{carry}
+\]
+
+Where:
+- \(\rho_{discount}\): Sensitivity to discounting of strike
+- \(\rho_{carry}\): Sensitivity to drift (affects forward price)
+
+**Combined effect:** Higher \(r\) generally increases call values (lower PV of strike, higher forward price).
+
+### 10.4 Dividend Impact on Equity Options
+
+#### Effect on Option Values
+
+| Option | Dividend Effect | Reason |
+|--------|-----------------|--------|
+| Call | **Decreases** value | Stock drops on ex-dividend, forward price lower |
+| Put | **Increases** value | Lower forward price benefits put holder |
+
+#### Quantitative Impact
+
+For a small change in dividend yield \(\Delta q\):
+
+\[
+\Delta C \approx -S_0 T e^{-qT} N(d_1) \cdot \Delta q
+\]
+
+\[
+\Delta P \approx S_0 T e^{-qT} N(-d_1) \cdot \Delta q
+\]
+
+### 10.5 Early Exercise: FX vs Equity
+
+#### FX American Options
+
+| Scenario | Early Exercise? | Reason |
+|----------|-----------------|--------|
+| Call, \(r_d > r_f\) | Rarely | Time value from discounting dominates |
+| Call, \(r_d < r_f\) | Possible | May capture interest rate advantage |
+| Put | Possible | Receive domestic currency earlier |
+
+**FX Intuition:** Early exercise trades optionality for immediate currency exchange and interest accrual in the stronger-rate currency.
+
+#### Equity American Options
+
+| Scenario | Early Exercise? | Reason |
+|----------|-----------------|--------|
+| Call, no dividends | **Never** | Time value always positive |
+| Call, with dividends | **Just before ex-div** | Capture dividend by owning stock |
+| Put | **Deep ITM** | Receive \(K\) now, invest at rate \(r\) |
+
+**Equity Dividend Rule:** Exercise an American call just before an ex-dividend date if:
+
+\[
+\text{Dividend} > K \left(1 - e^{-r \cdot \Delta t}\right) \approx K \cdot r \cdot \Delta t
+\]
+
+where \(\Delta t\) is the time until next opportunity to exercise (or expiry).
+
+### 10.6 Implementation in QuantStrata
+
+#### FX Vanilla Pricing
+
+```python
+from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer
+from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
+
+# FX option uses TWO curves (domestic and foreign)
+option = EuropeanFxVanillaOption(
+    option_type="call",
+    strike=1.10,
+    expiry=1.0,
+    notional=1_000_000,
+    spot_id=EURUSD_SPOT,
+    vol_id=EURUSD_VOL,
+    domestic_curve_id=USD_CURVE,  # r_d
+    foreign_curve_id=EUR_CURVE,   # r_f (acts like dividend yield)
+)
+
+pricer = FxEuropeanVanillaBsmPricer()
+greeks = pricer.greeks(option, market)
+# Returns: delta, gamma, vega, theta, rho_domestic, rho_foreign
+```
+
+#### Equity Vanilla Pricing
+
+```python
+from src.pricers.equity.european_bsm import EquityEuropeanVanillaBsmPricer
+from src.instruments.equity.options.vanilla import EuropeanEquityVanillaOption
+
+# Equity option uses ONE curve plus dividend yield
+option = EuropeanEquityVanillaOption(
+    ticker="AAPL",
+    option_type="call",
+    strike=150.0,
+    expiry=1.0,
+    notional=100,
+    dividend_yield=0.02,  # 2% continuous yield
+    spot_id=AAPL_SPOT,
+    vol_id=AAPL_VOL,
+    curve_id=USD_CURVE,   # Single rate r
+)
+
+pricer = EquityEuropeanVanillaBsmPricer()
+greeks = pricer.greeks(option, market)
+# Returns: delta, gamma, vega, theta, rho (combined)
+```
+
+### 10.7 Summary: Key Differences
+
+| Aspect | FX | Equity |
+|--------|-----|--------|
+| **Curves** | Two (\(r_d\), \(r_f\)) | One (\(r\)) + dividend \(q\) |
+| **Rho** | Split: \(\rho_d\), \(\rho_f\) | Combined: single \(\rho\) |
+| **Carry** | \(b = r_d - r_f\) | \(b = r - q\) |
+| **Early exercise driver** | Interest rate differential | Dividends |
+| **Put-call parity** | \(C - P = Se^{-r_f T} - Ke^{-r_d T}\) | \(C - P = Se^{-qT} - Ke^{-rT}\) |
+
+---
+
+## 11. Model Extensions
+
+### 11.1 Beyond Black-Scholes
 
 | Assumption | Reality | Extension |
 |------------|---------|-----------|
@@ -582,13 +778,13 @@ d\Pi \approx \frac{1}{2}\Gamma(dS)^2 + \Theta \, dt + \nu \, d\sigma
 | Lognormal | Fat tails | Levy processes |
 | Constant rates | Term structure | Stochastic rates |
 
-### 10.2 Local Volatility (Dupire)
+### 11.2 Local Volatility (Dupire)
 
 \[
 \sigma_{\text{loc}}(K, T) = \sqrt{\frac{\frac{\partial C}{\partial T} + (r-q)K\frac{\partial C}{\partial K} + qC}{\frac{1}{2}K^2 \frac{\partial^2 C}{\partial K^2}}}
 \]
 
-### 10.3 Stochastic Volatility (Heston)
+### 11.3 Stochastic Volatility (Heston)
 
 \[
 dS_t = (r-q)S_t dt + \sqrt{v_t} S_t dW_t^S
@@ -597,7 +793,7 @@ dS_t = (r-q)S_t dt + \sqrt{v_t} S_t dW_t^S
 dv_t = \kappa(\theta - v_t) dt + \xi \sqrt{v_t} dW_t^v
 \]
 
-### 10.4 Jump-Diffusion (Merton)
+### 11.4 Jump-Diffusion (Merton)
 
 \[
 dS_t = (r - q - \lambda \bar{k}) S_t dt + \sigma S_t dW_t + (J - 1) S_{t-} dN_t
@@ -605,9 +801,9 @@ dS_t = (r - q - \lambda \bar{k}) S_t dt + \sigma S_t dW_t + (J - 1) S_{t-} dN_t
 
 ---
 
-## 11. Key Interview Points
+## 12. Key Interview Points
 
-### 11.1 Must-Know Facts
+### 12.1 Must-Know Facts
 
 1. **BSM assumptions:** GBM, constant vol, no arbitrage, continuous trading
 2. **\(N(d_2)\):** Risk-neutral probability of expiring ITM
@@ -617,7 +813,7 @@ dS_t = (r - q - \lambda \bar{k}) S_t dt + \sigma S_t dW_t + (J - 1) S_{t-} dN_t
 6. **American put:** May exercise early (deep ITM)
 7. **Gamma risk:** Maximum at ATM, increases near expiry
 
-### 11.2 Common Interview Questions
+### 12.2 Common Interview Questions
 
 **Q: Why is an American call on a non-dividend stock never exercised early?**
 
@@ -653,7 +849,7 @@ A:
 - ITM/OTM: Gamma → 0
 - This creates "gamma scalping" opportunities
 
-### 11.3 Quick Formulas
+### 12.3 Quick Formulas
 
 | Formula | Expression |
 |---------|------------|
@@ -669,7 +865,7 @@ A:
 
 ---
 
-## 12. References
+## 13. References
 
 ### Original Papers
 

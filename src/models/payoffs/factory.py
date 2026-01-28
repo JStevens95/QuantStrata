@@ -12,14 +12,17 @@ from src.models.payoffs.asian import AsianPayoff
 from src.models.payoffs.lookback import LookbackPayoff
 from src.models.payoffs.touch import TouchPayoff
 
-# Instruments
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
+# FX Instruments
+from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption, AmericanFxVanillaOption
 from src.instruments.fx.options.digital import EuropeanFxDigitalOption
 from src.instruments.fx.options.barrier import EuropeanFxBarrierOption
 from src.instruments.fx.options.double_barrier import EuropeanFxDoubleBarrierOption
 from src.instruments.fx.options.asian import EuropeanFxAsianOption
 from src.instruments.fx.options.lookback import EuropeanFxLookbackOption
 from src.instruments.fx.options.touch import EuropeanFxTouchOption
+
+# Equity Instruments
+from src.instruments.equity.options.vanilla import EuropeanEquityVanillaOption, AmericanEquityVanillaOption
 
 from src.models.payoffs.types import OptionType
 
@@ -69,6 +72,13 @@ class PayoffFactory:
         # FX European Vanilla
         # ---------------------------
         if isinstance(instrument, EuropeanFxVanillaOption):
+            opt: OptionType = instrument.option_type
+            return VanillaPayoff(option_type=opt, strike=float(instrument.strike))
+
+        # ---------------------------
+        # FX American Vanilla
+        # ---------------------------
+        if isinstance(instrument, AmericanFxVanillaOption):
             opt: OptionType = instrument.option_type
             return VanillaPayoff(option_type=opt, strike=float(instrument.strike))
 
@@ -147,6 +157,20 @@ class PayoffFactory:
                 barrier_level=float(instrument.barrier_level),
                 payout_amount=float(instrument.payout_amount),
             )
+
+        # ---------------------------
+        # Equity European Vanilla
+        # ---------------------------
+        if isinstance(instrument, EuropeanEquityVanillaOption):
+            opt: OptionType = instrument.option_type
+            return VanillaPayoff(option_type=opt, strike=float(instrument.strike))
+
+        # ---------------------------
+        # Equity American Vanilla
+        # ---------------------------
+        if isinstance(instrument, AmericanEquityVanillaOption):
+            opt: OptionType = instrument.option_type
+            return VanillaPayoff(option_type=opt, strike=float(instrument.strike))
 
         # ---------------------------
         # Not supported yet

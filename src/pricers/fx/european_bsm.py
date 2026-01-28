@@ -25,6 +25,7 @@ GreekName = Literal[
     "delta",
     "gamma",
     "vega",
+    "theta",
     "rho_domestic",
     "rho_foreign",
 ]
@@ -161,6 +162,7 @@ class FxEuropeanVanillaBsmPricer:
                 "delta": 0.0,
                 "gamma": 0.0,
                 "vega": 0.0,
+                "theta": 0.0,
                 "rho_domestic": 0.0,
                 "rho_foreign": 0.0,
             }
@@ -193,6 +195,7 @@ class FxEuropeanVanillaBsmPricer:
         delta = notional * float(g["delta"])
         gamma = notional * float(g["gamma"])
         vega = notional * float(g["vega"])
+        theta = notional * float(g["theta"])
 
         rho_r = notional * float(g["rho_discount"])
         rho_carry = notional * float(g["rho_carry"])
@@ -204,6 +207,7 @@ class FxEuropeanVanillaBsmPricer:
             "delta": float(delta),
             "gamma": float(gamma),
             "vega": float(vega),
+            "theta": float(theta),
             "rho_domestic": float(rho_domestic),
             "rho_foreign": float(rho_foreign),
         }

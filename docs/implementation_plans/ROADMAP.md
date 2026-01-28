@@ -117,24 +117,29 @@ This roadmap follows a **phased, incremental approach** that:
 
 **Goal:** Add equity asset class with similar depth to FX
 
-### 2.1 Equity Instruments
-- [ ] **Equity Spot & Forward**
-  - Implement: `EquitySpot`, `EquityForward`
-  - Pricer: Spot = market quote, Forward = S * exp((r-q)T)
+### 2.1 Equity Core Instruments ✅
+- [x] **Equity Spot & Forward**
+  - Implemented: `EquitySpot`, `EquityForward`
+  - Pricers: `EquitySpotPricer`, `EquityForwardPricer`
+  - Forward = S * exp((r-q)T) with dividend yield
   - Use case: Foundation for equity options
 
-- [ ] **European Equity Options**
-  - Implement: `EuropeanEquityVanillaOption`
-  - Payoff: Same as FX (reuse `VanillaPayoff`)
-  - Pricer: BSM with `b = r - q` (dividend yield)
+- [x] **European Equity Options**
+  - Implemented: `EuropeanEquityVanillaOption`
+  - Payoff: Reuses `VanillaPayoff` (integrated in payoff factory)
+  - Pricers: `EquityEuropeanVanillaBsmPricer`, `EquityEuropeanVanillaMcPricer`, `EquityEuropeanVanillaFdPricer`
+  - BSM with `b = r - q` (dividend yield)
+  - Put-call parity verified: C - P = S*exp(-qT) - K*exp(-rT)
   - Use case: Most common equity derivative
 
-- [ ] **American Equity Options**
-  - Implement: `AmericanEquityVanillaOption`
-  - Pricer: FD with PSOR (reuse existing)
+- [x] **American Equity Options**
+  - Implemented: `AmericanEquityVanillaOption`
+  - Pricer: `EquityAmericanVanillaFdPricer` (FD with PSOR)
+  - Early exercise premium: American ≥ European
+  - Tests verify intrinsic value floor
   - Use case: Early exercise for dividend-paying stocks
 
-- [ ] **Equity Barrier Options**
+- [ ] **Equity Barrier Options** (Phase 2.2)
   - Implement: `EuropeanEquityBarrierOption`
   - Pricer: MC (reuse existing barrier pricer)
   - Use case: Structured products component

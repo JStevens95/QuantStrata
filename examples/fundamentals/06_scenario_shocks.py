@@ -24,10 +24,9 @@ from src.marketdata.core.ids import MarketId
 from src.marketdata.core.interfaces import Quote
 from src.marketdata.core.market import Market
 from src.marketdata.curves.term_structure import ZeroRateCurve
-from src.marketdata.surfaces.vol_surface import FlatVolSurface, GridVolSurface
+from src.marketdata.surfaces.vol_surface import GridVolSurface
 from src.marketdata.scenarios.shocks import (
-    SpotShock, VolShock, ParallelRateShock,
-    MarketWithOverriddenQuote, MarketWithOverriddenCurve, MarketWithOverriddenVolSurface,
+    SpotShock, VolShock, ParallelRateShock
 )
 
 # Plot configuration
@@ -39,6 +38,9 @@ plt.rcParams.update({
     'lines.linewidth': 2,
 })
 
+# save figures
+SAVE_FIGURES = False
+
 # =============================================================================
 # Setup: Create a Base Market
 # =============================================================================
@@ -48,10 +50,10 @@ print("Setup: Creating Base Market")
 print("=" * 70)
 
 # Define market IDs
-EURUSD_SPOT = MarketId(asset_class="FX", data_type="SPOT", name="EURUSD")
-USD_CURVE = MarketId(asset_class="IR", data_type="CURVE", name="USD_OIS")
-EUR_CURVE = MarketId(asset_class="IR", data_type="CURVE", name="EUR_OIS")
-EURUSD_VOL = MarketId(asset_class="FX", data_type="VOL", name="EURUSD")
+EURUSD_SPOT = MarketId(asset_class="FX", mkt_type="SPOT", name="EURUSD")
+USD_CURVE = MarketId(asset_class="IR", mkt_type="CURVE", name="USD_OIS")
+EUR_CURVE = MarketId(asset_class="IR", mkt_type="CURVE", name="EUR_OIS")
+EURUSD_VOL = MarketId(asset_class="FX", mkt_type="VOL", name="EURUSD")
 
 # Create curves
 tenors = np.array([0.25, 0.5, 1.0, 2.0, 5.0, 10.0])
@@ -73,7 +75,7 @@ for i, exp in enumerate(vol_expiries):
         moneyness = np.log(k / 1.085)
         vol_grid[i, j] = base_vol - 0.15 * moneyness + 0.10 * moneyness**2
 
-eurusd_vol = GridVolSurface(expiries=vol_expiries, strikes=vol_strikes, vols=vol_grid)
+eurusd_vol = GridVolSurface(expiries=vol_expiries, strikes=vol_strikes, implied_vols=vol_grid)
 
 # Create base market
 base_market = Market(
@@ -388,7 +390,8 @@ ax.legend()
 ax.grid(True, alpha=0.3)
 
 plt.tight_layout()
-plt.savefig('scenario_shocks.png', dpi=150, bbox_inches='tight')
+if SAVE_FIGURES:
+    plt.savefig('scenario_shocks.png', dpi=150, bbox_inches='tight')
 plt.show()
 
 print("\nPlot saved to scenario_shocks.png")

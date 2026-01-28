@@ -22,7 +22,6 @@ from typing import List
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.panel import Panel
 from src.marketdata.core.dataset import MarketDataset
-from src.marketdata.core.market import Market
 from src.marketdata.curves.factory import ZeroRateCurveFactory
 from src.marketdata.surfaces.factory import GridVolFactory
 
@@ -35,6 +34,9 @@ plt.rcParams.update({
     'lines.linewidth': 2,
 })
 
+# save figures
+SAVE_FIGURES = False
+
 # =============================================================================
 # Helper: Create a sample dataset
 # =============================================================================
@@ -46,9 +48,9 @@ def create_sample_dataset(n_dates: int = 10, n_scenarios: int = 50) -> MarketDat
     dates = [f"2026-01-{20+i:02d}" for i in range(n_dates)]
     
     # Market IDs
-    eurusd_spot_id = MarketId(asset_class="FX", data_type="SPOT", name="EURUSD")
-    usd_curve_id = MarketId(asset_class="IR", data_type="CURVE", name="USD_OIS")
-    eurusd_vol_id = MarketId(asset_class="FX", data_type="VOL", name="EURUSD")
+    eurusd_spot_id = MarketId(asset_class="FX", mkt_type="SPOT", name="EURUSD")
+    usd_curve_id = MarketId(asset_class="IR", mkt_type="CURVE", name="USD_OIS")
+    eurusd_vol_id = MarketId(asset_class="FX", mkt_type="VOL", name="EURUSD")
     
     np.random.seed(42)
     
@@ -67,7 +69,7 @@ def create_sample_dataset(n_dates: int = 10, n_scenarios: int = 50) -> MarketDat
             curve_params[t, s, :, 0] = tenors
             curve_params[t, s, :, 1] = base_rates + rate_shock
     curve_panel = Panel(data=curve_params, axis_names=("time", "scenario", "tenor", "cols"))
-    curve_factory = ZeroRateCurveFactory(tenors=tenors)
+    curve_factory = ZeroRateCurveFactory()
     
     # Vol panel [T, S, n_exp, n_k]
     vol_expiries = np.array([0.25, 0.5, 1.0])
@@ -95,9 +97,9 @@ def create_sample_dataset(n_dates: int = 10, n_scenarios: int = 50) -> MarketDat
 dataset = create_sample_dataset(n_dates=10, n_scenarios=50)
 
 # Market IDs for access
-EURUSD_SPOT = MarketId(asset_class="FX", data_type="SPOT", name="EURUSD")
-USD_CURVE = MarketId(asset_class="IR", data_type="CURVE", name="USD_OIS")
-EURUSD_VOL = MarketId(asset_class="FX", data_type="VOL", name="EURUSD")
+EURUSD_SPOT = MarketId(asset_class="FX", mkt_type="SPOT", name="EURUSD")
+USD_CURVE = MarketId(asset_class="IR", mkt_type="CURVE", name="USD_OIS")
+EURUSD_VOL = MarketId(asset_class="FX", mkt_type="VOL", name="EURUSD")
 
 # =============================================================================
 # 1. Basic Snapshot Extraction
@@ -299,7 +301,8 @@ ax.legend()
 ax.grid(True, alpha=0.3)
 
 plt.tight_layout()
-plt.savefig('snapshot_analysis.png', dpi=150, bbox_inches='tight')
+if SAVE_FIGURES:
+    plt.savefig('snapshot_analysis.png', dpi=150, bbox_inches='tight')
 plt.show()
 
 print("\nPlot saved to snapshot_analysis.png")

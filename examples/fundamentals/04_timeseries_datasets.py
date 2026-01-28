@@ -193,7 +193,7 @@ curve_panel = Panel(
 )
 
 # Create factory for reconstructing curves
-curve_factory = ZeroRateCurveFactory(tenors=tenors)
+curve_factory = ZeroRateCurveFactory()
 
 print(f"\nCurve panel created:")
 print(f"  Shape: {curve_panel.data.shape}")
