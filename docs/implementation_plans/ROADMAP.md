@@ -22,25 +22,25 @@ This roadmap follows a **phased, incremental approach** that:
 **Goal:** Complete FX derivatives coverage and add missing functionality
 
 ### 1.1 Additional FX Products
-- [ ] **Asian Options** (average price/rate options)
+- [x] **Asian Options** (average price/rate options)
   - Payoff: `max(avg(S_t) - K, 0)` for call
   - Implement: `AsianPayoff` (path-dependent)
   - Pricers: MC (required), FD (optional, 2D PDE)
   - Use case: Demonstrates path-dependent pricing
 
-- [ ] **Lookback Options** (floating strike)
+- [x] **Lookback Options** (floating strike)
   - Payoff: `max(S_T - min(S_t), 0)` for call
   - Implement: `LookbackPayoff` (path-dependent)
   - Pricer: MC (required)
   - Use case: Demonstrates extreme value statistics
 
-- [ ] **Double Barrier Options**
+- [x] **Double Barrier Options**
   - Payoff: Vanilla with upper and lower barriers
   - Implement: `DoubleBarrierPayoff` (path-dependent)
   - Pricer: MC (required), FD (optional, absorbing boundaries)
   - Use case: More complex barrier structures
 
-- [ ] **FX Touch Options** (one-touch, no-touch)
+- [x] **FX Touch Options** (one-touch, no-touch)
   - Payoff: Binary payout if barrier touched/not touched
   - Implement: `TouchPayoff` (path-dependent)
   - Pricer: MC (required)
@@ -59,18 +59,27 @@ This roadmap follows a **phased, incremental approach** that:
   - FD pricer: 2D PDE solver (optional, advanced)
   - Use case: Demonstrates multi-factor models
 
-### 1.3 FX Calibration Infrastructure
-- [ ] **Volatility Surface Calibration**
+### 1.3 FX Calibration Infrastructure ✅
+- [x] **Volatility Surface Calibration**
   - Complete: `src/marketdata/surfaces/fx/calibration.py`
-  - Implement: Smile calibration from market quotes
+  - Implemented: SABR parametric fitting (`src/calibration/volatility_surface/sabr.py`)
+  - Implemented: Dupire local vol extraction (`src/calibration/volatility_surface/dupire.py`)
   - Support: Delta-based strikes, term structure fitting
+  - QuantLib backend: Validation implementations available
   - Use case: Production-ready calibration
 
-- [ ] **Curve Bootstrapping**
-  - Enhance: `src/marketdata/curves/bootstrapper.py`
+- [x] **Curve Bootstrapping**
+  - Enhanced: `src/marketdata/curves/bootstrapper.py`
   - Support: Multiple quote types (deposits, swaps, FRAs)
+  - New: `src/marketdata/curves/interpolation.py` (log-linear, cubic spline)
   - Validation: Arbitrage checks
+  - QuantLib backend: Alternative implementation
   - Use case: Real-world curve construction
+
+- [x] **Mathematical Documentation**
+  - `docs/mathematics/volatility_calibration.md` - SABR and Dupire theory
+  - `docs/mathematics/curve_bootstrapping.md` - Curve construction theory
+  - `docs/notebooks/calibration_*.ipynb` - Interactive tutorials
 
 ### 1.4 Performance Optimization
 - [ ] **Numba Backend for MC**
