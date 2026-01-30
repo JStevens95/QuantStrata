@@ -1,13 +1,11 @@
+# src/pricers/equity/european_bsm.py
 """
-Equity European BSM Pricers
+Equity European BSM Pricers.
 
-Black-Scholes-Merton pricers for European equity options:
-- Vanilla (call/put)
-- Digital (cash-or-nothing, asset-or-nothing)
+Adapter pricers that map equity instruments to the generic BSM model.
 
 Author: QuantStrata Team
 """
-
 from __future__ import annotations
 
 import math
@@ -15,17 +13,25 @@ from dataclasses import dataclass
 from typing import Dict, Literal
 
 import numpy as np
-from scipy.stats import norm
 
 from src.marketdata.core.market import Market
 from src.instruments.equity.options.vanilla import EuropeanEquityVanillaOption
 from src.instruments.equity.options.digital import EuropeanEquityDigitalOption
-from src.models.analytic.black_scholes_merton.vanilla import BlackScholesMertonVanilla
+
+# Import pure functions from the generic BSM model.
+from src.models.analytic.black_scholes_merton.base import (
+    vanilla_price,
+    vanilla_greeks,
+    digital_cash_price,
+    digital_cash_greeks,
+    digital_asset_price,
+    digital_asset_greeks,
+    GreekName
+)
+
+# Payoff library: single source of truth for terminal condition + payout semantics.
 from src.models.payoffs.factory import build_payoff_1d, require_terminal_payoff
 from src.models.payoffs.base import BasePayoff1D
-
-# Greek names consistent with equity conventions (single rho, not domestic/foreign)
-GreekName = Literal["delta", "gamma", "vega", "rho", "theta"]
 
 
 def _rate_from_df(*, df: float, t: float) -> float:
@@ -75,41 +81,20 @@ def _terminal_value(payoff: BasePayoff1D, spot: float) -> float:
 @dataclass(frozen=True, slots=True)
 class EquityEuropeanVanillaBsmPricer:
     """
-    Black-Scholes-Merton pricer for European equity vanilla options.
+    Adapter pricer: EuropeanEquityVanillaOption -> BSM vanilla formulas.
 
-    Model
-    -----
-    Under risk-neutral measure with continuous dividend yield:
-
-        dS = (r - q) S dt + σ S dW
-
-    Where:
-    - r = risk-free rate
-    - q = continuous dividend yield
-    - σ = volatility
-
-    Cost-of-Carry
-    -------------
-    For equities: b = r - q
-
-    This is different from FX where b = r_d - r_f (two separate curves).
-    For equities, we have a single risk-free curve plus a dividend yield.
-
-    Pricing
-    -------
-    PV = notional × BSM(S, K, T, r, b=r-q, σ)
+    Equity Mapping
+    --------------
+    - discount_rate = r (risk-free rate)
+    - carry = r - q (cost-of-carry with dividend yield q)
+    - PV per unit notional, scaled by notional
 
     Greeks Mapping
     --------------
-    The generic BSM engine returns rho_discount and rho_carry.
+    The generic model returns rho_discount and rho_carry.
     For equity with b = r - q:
-
-        d(PV)/dr = rho_discount + rho_carry  (total rho)
-
-    We return a single "rho" which is the total sensitivity to the risk-free rate.
+    - rho = rho_discount + rho_carry (total rate sensitivity)
     """
-
-    engine: BlackScholesMertonVanilla = BlackScholesMertonVanilla()
 
     def price(self, trade: EuropeanEquityVanillaOption, market: Market) -> float:
         """
@@ -127,14 +112,14 @@ class EquityEuropeanVanillaBsmPricer:
         float
             Present value in currency units
         """
-        # Read market inputs
+        # Read market inputs.
         S = float(market.quote(trade.spot_id))
         K = float(trade.strike)
         T = float(trade.expiry)
         q = float(trade.dividend_yield)
         notional = float(trade.notional)
 
-        # Validate inputs
+        # Validate.
         if T < 0.0:
             raise ValueError("expiry must be >= 0.")
         if S <= 0.0:
@@ -142,42 +127,41 @@ class EquityEuropeanVanillaBsmPricer:
         if notional == 0.0:
             return 0.0
 
-        # Build terminal payoff from payoff library (single source of truth)
+        # Build terminal payoff (single source of truth).
         payoff = require_terminal_payoff(build_payoff_1d(trade))
 
-        # At expiry: PV = payoff(S) with no discounting
+        # Handle T=0: immediate payoff, no discounting.
         if T == 0.0:
             return notional * _terminal_value(payoff, S)
 
-        # Get discount factor and risk-free rate
+        # Get discount factor and risk-free rate.
         df = float(market.curve(trade.curve_id).df(T))
         r = _rate_from_df(df=df, t=T)
 
-        # Cost-of-carry for equity: b = r - q
+        # Equity cost-of-carry: b = r - q.
         b = float(r - q)
 
-        # Get implied volatility
+        # Get implied vol.
         sigma = float(market.vol_surface(trade.vol_id).vol(expiry=T, strike=K))
         if sigma < 0.0:
             raise ValueError("Implied vol must be non-negative.")
 
-        # Zero-vol shortcut: deterministic forward
+        # Handle σ=0: deterministic forward.
         if sigma == 0.0:
-            F = S * math.exp(b * T)  # Forward price
+            F = S * math.exp(b * T)
             disc = math.exp(-r * T)
             return float(notional * disc * _terminal_value(payoff, F))
 
-        # Call BSM engine
-        pv_per_unit = self.engine.price(
+        # Call generic BSM formula.
+        pv_per_unit = vanilla_price(
             option_type=trade.option_type,
             spot=S,
             strike=K,
-            time_to_expiry=T,
+            expiry=T,
             discount_rate=r,
             carry=b,
-            sigma=sigma,
+            vol=sigma,
         )
-
         return float(notional) * float(pv_per_unit)
 
     def greeks(self, trade: EuropeanEquityVanillaOption, market: Market) -> Dict[GreekName, float]:
@@ -196,20 +180,20 @@ class EquityEuropeanVanillaBsmPricer:
         Dict[GreekName, float]
             Greeks dictionary with delta, gamma, vega, rho, theta
         """
-        # Read market inputs
+        # Read market inputs.
         S = float(market.quote(trade.spot_id))
         K = float(trade.strike)
         T = float(trade.expiry)
         q = float(trade.dividend_yield)
         notional = float(trade.notional)
 
-        # Validate
+        # Validate.
         if T < 0.0:
             raise ValueError("expiry must be >= 0.")
         if S <= 0.0:
             raise ValueError("spot must be > 0.")
 
-        # At expiry, greeks are unstable (discontinuity at strike)
+        # Handle T=0: return stable zeros.
         if T == 0.0:
             return {
                 "delta": 0.0,
@@ -219,7 +203,7 @@ class EquityEuropeanVanillaBsmPricer:
                 "theta": 0.0,
             }
 
-        # Get rate and vol
+        # Get rate and vol.
         df = float(market.curve(trade.curve_id).df(T))
         r = _rate_from_df(df=df, t=T)
         b = float(r - q)
@@ -228,25 +212,24 @@ class EquityEuropeanVanillaBsmPricer:
         if sigma < 0.0:
             raise ValueError("Implied vol must be non-negative.")
 
-        # Get greeks from engine
-        g = self.engine.greeks(
+        # Call generic BSM Greeks.
+        g = vanilla_greeks(
             option_type=trade.option_type,
             spot=S,
             strike=K,
-            time_to_expiry=T,
+            expiry=T,
             discount_rate=r,
             carry=b,
-            sigma=sigma,
+            vol=sigma,
         )
 
-        # Scale by notional
+        # Scale by notional.
         delta = notional * float(g["delta"])
         gamma = notional * float(g["gamma"])
         vega = notional * float(g["vega"])
         theta = notional * float(g["theta"])
 
-        # For equity: total rho = rho_discount + rho_carry
-        # (both r effects combined since we only have one rate)
+        # Map generic rhos to equity rho (combined).
         rho = notional * (float(g["rho_discount"]) + float(g["rho_carry"]))
 
         return {
@@ -258,52 +241,12 @@ class EquityEuropeanVanillaBsmPricer:
         }
 
 
-# =============================================================================
-# Digital Option Pricer
-# =============================================================================
-
-
 @dataclass(frozen=True, slots=True)
 class EquityEuropeanDigitalBsmPricer:
     """
-    BSM analytic pricer for European equity digital options.
+    Adapter pricer: EuropeanEquityDigitalOption -> BSM digital formulas.
 
-    Payoff Types
-    ------------
-    **Cash-or-Nothing:**
-    - Call: Pays `payout` if S_T > K, else 0
-    - Put: Pays `payout` if S_T < K, else 0
-
-    **Asset-or-Nothing:**
-    - Call: Pays S_T if S_T > K, else 0
-    - Put: Pays S_T if S_T < K, else 0
-
-    Pricing Formulas
-    ----------------
-    Cash-or-Nothing Call:
-        V = payout × exp(-rT) × N(d2)
-
-    Cash-or-Nothing Put:
-        V = payout × exp(-rT) × N(-d2)
-
-    Asset-or-Nothing Call:
-        V = S × exp(-qT) × N(d1)
-
-    Asset-or-Nothing Put:
-        V = S × exp(-qT) × N(-d1)
-
-    Where:
-        d1 = (ln(S/K) + (r-q+σ²/2)T) / (σ√T)
-        d2 = d1 - σ√T
-        q = dividend yield
-        r = risk-free rate
-
-    Greeks
-    ------
-    Digital options have discontinuous payoffs, leading to:
-    - Very high gamma/vega near strike (delta spike)
-    - Pin risk at expiry
-    - Greeks may be unstable near ATM
+    Routes to cash-or-nothing or asset-or-nothing based on digital_type.
     """
 
     def price(self, trade: EuropeanEquityDigitalOption, market: Market) -> float:
@@ -322,7 +265,7 @@ class EquityEuropeanDigitalBsmPricer:
         float
             Present value in currency units
         """
-        # Read market data
+        # Read market data.
         S = float(market.quote(trade.spot_id))
         K = float(trade.strike)
         T = float(trade.expiry)
@@ -330,13 +273,13 @@ class EquityEuropeanDigitalBsmPricer:
         notional = float(trade.notional)
         payout = float(trade.payout)
 
-        # Validate
+        # Validate.
         if S <= 0.0:
             raise ValueError("Spot must be > 0.")
         if T < 0.0:
             raise ValueError("Expiry must be >= 0.")
 
-        # At expiry (T=0): return intrinsic value
+        # Handle T=0: immediate payoff.
         if T == 0.0:
             if trade.option_type == "call":
                 itm = S > K
@@ -348,46 +291,48 @@ class EquityEuropeanDigitalBsmPricer:
                     return notional * payout
                 else:  # asset
                     return notional * S
-            else:
-                return 0.0
+            return 0.0
 
-        # Get rate from discount factor
+        # Get rate and vol.
         df = float(market.curve(trade.curve_id).df(T))
         r = _rate_from_df(df=df, t=T)
+        b = float(r - q)
 
-        # Get implied vol
         sigma = float(market.vol_surface(trade.vol_id).vol(expiry=T, strike=K))
         if sigma <= 0.0:
             raise ValueError("Implied vol must be > 0 for digital pricing.")
 
-        # Compute d1 and d2
-        sqrt_T = math.sqrt(T)
-        d1 = (math.log(S / K) + (r - q + 0.5 * sigma**2) * T) / (sigma * sqrt_T)
-        d2 = d1 - sigma * sqrt_T
-
-        # Price based on digital type
+        # Route to appropriate formula.
         if trade.digital_type == "cash":
-            # Cash-or-nothing
-            if trade.option_type == "call":
-                pv_per_unit = payout * math.exp(-r * T) * norm.cdf(d2)
-            else:  # put
-                pv_per_unit = payout * math.exp(-r * T) * norm.cdf(-d2)
-        else:
-            # Asset-or-nothing
-            if trade.option_type == "call":
-                pv_per_unit = S * math.exp(-q * T) * norm.cdf(d1)
-            else:  # put
-                pv_per_unit = S * math.exp(-q * T) * norm.cdf(-d1)
+            pv_per_unit = digital_cash_price(
+                option_type=trade.option_type,
+                spot=S,
+                strike=K,
+                expiry=T,
+                discount_rate=r,
+                carry=b,
+                vol=sigma,
+                cash=payout,
+            )
+            return float(notional * pv_per_unit)
 
-        return notional * pv_per_unit
+        # Asset-or-nothing.
+        pv_per_unit = digital_asset_price(
+            option_type=trade.option_type,
+            spot=S,
+            strike=K,
+            expiry=T,
+            discount_rate=r,
+            carry=b,
+            vol=sigma,
+        )
+        return float(notional * pv_per_unit)
 
     def greeks(
         self, trade: EuropeanEquityDigitalOption, market: Market
     ) -> Dict[GreekName, float]:
         """
         Calculate Greeks for equity digital option.
-
-        Note: Digital Greeks are discontinuous near strike and can be large.
 
         Parameters
         ----------
@@ -401,7 +346,7 @@ class EquityEuropeanDigitalBsmPricer:
         Dict[GreekName, float]
             Greeks dictionary
         """
-        # Read market data
+        # Read market data.
         S = float(market.quote(trade.spot_id))
         K = float(trade.strike)
         T = float(trade.expiry)
@@ -409,7 +354,7 @@ class EquityEuropeanDigitalBsmPricer:
         notional = float(trade.notional)
         payout = float(trade.payout)
 
-        # At expiry: Greeks are discontinuous
+        # Handle T=0: return stable zeros.
         if T == 0.0:
             return {
                 "delta": 0.0,
@@ -419,11 +364,12 @@ class EquityEuropeanDigitalBsmPricer:
                 "theta": 0.0,
             }
 
-        # Get rate and vol
+        # Get rate and vol.
         df = float(market.curve(trade.curve_id).df(T))
         r = _rate_from_df(df=df, t=T)
-        sigma = float(market.vol_surface(trade.vol_id).vol(expiry=T, strike=K))
+        b = float(r - q)
 
+        sigma = float(market.vol_surface(trade.vol_id).vol(expiry=T, strike=K))
         if sigma <= 0.0:
             return {
                 "delta": 0.0,
@@ -433,58 +379,42 @@ class EquityEuropeanDigitalBsmPricer:
                 "theta": 0.0,
             }
 
-        # Compute d1 and d2
-        sqrt_T = math.sqrt(T)
-        d1 = (math.log(S / K) + (r - q + 0.5 * sigma**2) * T) / (sigma * sqrt_T)
-        d2 = d1 - sigma * sqrt_T
-
-        # Standard normal PDF
-        n_d2 = norm.pdf(d2)
-        n_d1 = norm.pdf(d1)
-
-        # Delta for cash-or-nothing (most common)
+        # Route to appropriate Greeks function.
         if trade.digital_type == "cash":
-            if trade.option_type == "call":
-                # Delta = payout × exp(-rT) × n(d2) / (S × σ × √T)
-                delta_per_unit = payout * math.exp(-r * T) * n_d2 / (S * sigma * sqrt_T)
-            else:
-                delta_per_unit = -payout * math.exp(-r * T) * n_d2 / (S * sigma * sqrt_T)
+            g = digital_cash_greeks(
+                option_type=trade.option_type,
+                spot=S,
+                strike=K,
+                expiry=T,
+                discount_rate=r,
+                carry=b,
+                vol=sigma,
+                cash=payout,
+            )
         else:
-            # Asset-or-nothing delta
-            N_d1 = norm.cdf(d1) if trade.option_type == "call" else norm.cdf(-d1)
-            if trade.option_type == "call":
-                delta_per_unit = math.exp(-q * T) * (N_d1 + n_d1 / (sigma * sqrt_T))
-            else:
-                delta_per_unit = math.exp(-q * T) * (-norm.cdf(-d1) + n_d1 / (sigma * sqrt_T))
+            g = digital_asset_greeks(
+                option_type=trade.option_type,
+                spot=S,
+                strike=K,
+                expiry=T,
+                discount_rate=r,
+                carry=b,
+                vol=sigma,
+            )
 
-        # Gamma (very high near strike for digitals)
-        if trade.digital_type == "cash":
-            if trade.option_type == "call":
-                gamma_per_unit = (
-                    -payout * math.exp(-r * T) * n_d2 * d1 / (S**2 * sigma**2 * T)
-                )
-            else:
-                gamma_per_unit = (
-                    payout * math.exp(-r * T) * n_d2 * d1 / (S**2 * sigma**2 * T)
-                )
-        else:
-            # Asset digital gamma is more complex
-            gamma_per_unit = 0.0  # Simplified
+        # Scale by notional.
+        delta = notional * float(g["delta"])
+        gamma = notional * float(g["gamma"])
+        vega = notional * float(g["vega"])
+        theta = notional * float(g["theta"])
 
-        # Vega
-        if trade.digital_type == "cash":
-            if trade.option_type == "call":
-                vega_per_unit = -payout * math.exp(-r * T) * n_d2 * d1 / sigma
-            else:
-                vega_per_unit = payout * math.exp(-r * T) * n_d2 * d1 / sigma
-        else:
-            vega_per_unit = 0.0  # Simplified
+        # Map generic rhos to equity rho (combined).
+        rho = notional * (float(g["rho_discount"]) + float(g["rho_carry"]))
 
-        # Scale by notional
         return {
-            "delta": float(notional * delta_per_unit),
-            "gamma": float(notional * gamma_per_unit),
-            "vega": float(notional * vega_per_unit),
-            "rho": 0.0,  # Simplified
-            "theta": 0.0,  # Simplified
+            "delta": float(delta),
+            "gamma": float(gamma),
+            "vega": float(vega),
+            "rho": float(rho),
+            "theta": float(theta),
         }

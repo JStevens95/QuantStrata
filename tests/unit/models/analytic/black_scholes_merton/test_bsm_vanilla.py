@@ -1,3 +1,10 @@
+"""
+Unit tests for Black-Scholes-Merton vanilla option formulas.
+
+Tests pricing identities and Greeks against finite differences.
+
+Author: QuantStrata Team
+"""
 from __future__ import annotations
 
 import math
@@ -5,7 +12,10 @@ import pytest
 from dataclasses import dataclass
 from typing import Callable
 
-from src.models.analytic.black_scholes_merton.vanilla import BlackScholesMertonVanilla
+from src.models.analytic.black_scholes_merton import (
+    vanilla_price,
+    vanilla_greeks,
+)
 
 
 # ======================================================================================
@@ -45,13 +55,8 @@ class _Params:
 
 
 @pytest.fixture(scope="module")
-def engine() -> BlackScholesMertonVanilla:
-    return BlackScholesMertonVanilla()
-
-
-@pytest.fixture(scope="module")
 def params() -> _Params:
-    # Use a stable “typical” parameter set.
+    # Use a stable "typical" parameter set.
     return _Params(
         spot=1.25,
         strike=1.20,
@@ -67,16 +72,16 @@ def params() -> _Params:
 # ======================================================================================
 
 @pytest.mark.parametrize("option_type", ["call", "put"])
-def test_vanilla_price_is_intrinsic_at_expiry(engine: BlackScholesMertonVanilla, params: _Params, option_type: str) -> None:
-    """At T=0, vanilla price should equal intrinsic (per engine contract)."""
-    pv = engine.price(
+def test_vanilla_price_is_intrinsic_at_expiry(params: _Params, option_type: str) -> None:
+    """At T=0, vanilla price should equal intrinsic."""
+    pv = vanilla_price(
         option_type=option_type,  # type: ignore[arg-type]
         spot=params.spot,
         strike=params.strike,
-        time_to_expiry=0.0,
+        expiry=0.0,
         discount_rate=params.r,
         carry=params.b,
-        sigma=params.sigma,
+        vol=params.sigma,
     )
 
     if option_type == "call":
@@ -87,31 +92,31 @@ def test_vanilla_price_is_intrinsic_at_expiry(engine: BlackScholesMertonVanilla,
     _assert_close(pv, expected, rtol=0.0, atol=0.0, msg="Expiry intrinsic mismatch")
 
 
-def test_vanilla_put_call_parity(engine: BlackScholesMertonVanilla, params: _Params) -> None:
+def test_vanilla_put_call_parity(params: _Params) -> None:
     """
     Put-call parity under generic carry:
 
       C - P = S*exp((b-r)T) - K*exp(-rT)
 
-    This should hold for the engine's parameterisation.
+    This should hold for the model's parameterisation.
     """
-    c = engine.price(
+    c = vanilla_price(
         option_type="call",
         spot=params.spot,
         strike=params.strike,
-        time_to_expiry=params.t,
+        expiry=params.t,
         discount_rate=params.r,
         carry=params.b,
-        sigma=params.sigma,
+        vol=params.sigma,
     )
-    p = engine.price(
+    p = vanilla_price(
         option_type="put",
         spot=params.spot,
         strike=params.strike,
-        time_to_expiry=params.t,
+        expiry=params.t,
         discount_rate=params.r,
         carry=params.b,
-        sigma=params.sigma,
+        vol=params.sigma,
     )
 
     df = math.exp(-params.r * params.t)
@@ -125,49 +130,49 @@ def test_vanilla_put_call_parity(engine: BlackScholesMertonVanilla, params: _Par
 # Tests: greek sanity identities
 # ======================================================================================
 
-def test_vanilla_gamma_is_same_for_call_and_put(engine: BlackScholesMertonVanilla, params: _Params) -> None:
+def test_vanilla_gamma_is_same_for_call_and_put(params: _Params) -> None:
     """Gamma for vanilla is identical for calls and puts under BSM."""
-    g_call = engine.greeks(
+    g_call = vanilla_greeks(
         option_type="call",
         spot=params.spot,
         strike=params.strike,
-        time_to_expiry=params.t,
+        expiry=params.t,
         discount_rate=params.r,
         carry=params.b,
-        sigma=params.sigma,
+        vol=params.sigma,
     )["gamma"]
-    g_put = engine.greeks(
+    g_put = vanilla_greeks(
         option_type="put",
         spot=params.spot,
         strike=params.strike,
-        time_to_expiry=params.t,
+        expiry=params.t,
         discount_rate=params.r,
         carry=params.b,
-        sigma=params.sigma,
+        vol=params.sigma,
     )["gamma"]
 
     _assert_close(g_call, g_put, rtol=1e-12, atol=1e-12, msg="Gamma call/put mismatch")
 
 
-def test_vanilla_vega_is_same_for_call_and_put(engine: BlackScholesMertonVanilla, params: _Params) -> None:
+def test_vanilla_vega_is_same_for_call_and_put(params: _Params) -> None:
     """Vega for vanilla is identical for calls and puts under BSM."""
-    v_call = engine.greeks(
+    v_call = vanilla_greeks(
         option_type="call",
         spot=params.spot,
         strike=params.strike,
-        time_to_expiry=params.t,
+        expiry=params.t,
         discount_rate=params.r,
         carry=params.b,
-        sigma=params.sigma,
+        vol=params.sigma,
     )["vega"]
-    v_put = engine.greeks(
+    v_put = vanilla_greeks(
         option_type="put",
         spot=params.spot,
         strike=params.strike,
-        time_to_expiry=params.t,
+        expiry=params.t,
         discount_rate=params.r,
         carry=params.b,
-        sigma=params.sigma,
+        vol=params.sigma,
     )["vega"]
 
     _assert_close(v_call, v_put, rtol=1e-12, atol=1e-12, msg="Vega call/put mismatch")
@@ -178,165 +183,189 @@ def test_vanilla_vega_is_same_for_call_and_put(engine: BlackScholesMertonVanilla
 # ======================================================================================
 
 @pytest.mark.parametrize("option_type", ["call", "put"])
-def test_vanilla_delta_matches_finite_difference(engine: BlackScholesMertonVanilla, params: _Params, option_type: str) -> None:
+def test_vanilla_delta_matches_finite_difference(params: _Params, option_type: str) -> None:
     """Delta should match a central-difference bump on spot."""
     eps_rel = 1e-5
     s0 = params.spot
     h = s0 * eps_rel
 
     def f(s: float) -> float:
-        return engine.price(
+        return vanilla_price(
             option_type=option_type,  # type: ignore[arg-type]
             spot=s,
             strike=params.strike,
-            time_to_expiry=params.t,
+            expiry=params.t,
             discount_rate=params.r,
             carry=params.b,
-            sigma=params.sigma,
+            vol=params.sigma,
         )
 
     fd = _central_diff_1(f, s0, h)
-    ana = engine.greeks(
+    ana = vanilla_greeks(
         option_type=option_type,  # type: ignore[arg-type]
         spot=s0,
         strike=params.strike,
-        time_to_expiry=params.t,
+        expiry=params.t,
         discount_rate=params.r,
         carry=params.b,
-        sigma=params.sigma,
+        vol=params.sigma,
     )["delta"]
 
     _assert_close(ana, fd, rtol=5e-7, atol=5e-9, msg=f"Delta FD mismatch ({option_type})")
 
 
 @pytest.mark.parametrize("option_type", ["call", "put"])
-def test_vanilla_gamma_matches_finite_difference(engine: BlackScholesMertonVanilla, params: _Params, option_type: str) -> None:
+def test_vanilla_gamma_matches_finite_difference(params: _Params, option_type: str) -> None:
     """Gamma should match a second central-difference bump on spot."""
     eps_rel = 5e-5
     s0 = params.spot
     h = s0 * eps_rel
 
     def f(s: float) -> float:
-        return engine.price(
+        return vanilla_price(
             option_type=option_type,  # type: ignore[arg-type]
             spot=s,
             strike=params.strike,
-            time_to_expiry=params.t,
+            expiry=params.t,
             discount_rate=params.r,
             carry=params.b,
-            sigma=params.sigma,
+            vol=params.sigma,
         )
 
     fd = _central_diff_2(f, s0, h)
-    ana = engine.greeks(
+    ana = vanilla_greeks(
         option_type=option_type,  # type: ignore[arg-type]
         spot=s0,
         strike=params.strike,
-        time_to_expiry=params.t,
+        expiry=params.t,
         discount_rate=params.r,
         carry=params.b,
-        sigma=params.sigma,
+        vol=params.sigma,
     )["gamma"]
 
     _assert_close(ana, fd, rtol=2e-5, atol=1e-7, msg=f"Gamma FD mismatch ({option_type})")
 
 
 @pytest.mark.parametrize("option_type", ["call", "put"])
-def test_vanilla_vega_matches_finite_difference(engine: BlackScholesMertonVanilla, params: _Params, option_type: str) -> None:
+def test_vanilla_vega_matches_finite_difference(params: _Params, option_type: str) -> None:
     """Vega should match a central-difference bump on sigma (per +1.00 vol)."""
     h = 1e-5
     sig0 = params.sigma
 
     def f(sig: float) -> float:
-        return engine.price(
+        return vanilla_price(
             option_type=option_type,  # type: ignore[arg-type]
             spot=params.spot,
             strike=params.strike,
-            time_to_expiry=params.t,
+            expiry=params.t,
             discount_rate=params.r,
             carry=params.b,
-            sigma=sig,
+            vol=sig,
         )
 
     fd = _central_diff_1(f, sig0, h)
-    ana = engine.greeks(
+    ana = vanilla_greeks(
         option_type=option_type,  # type: ignore[arg-type]
         spot=params.spot,
         strike=params.strike,
-        time_to_expiry=params.t,
+        expiry=params.t,
         discount_rate=params.r,
         carry=params.b,
-        sigma=sig0,
+        vol=sig0,
     )["vega"]
 
     _assert_close(ana, fd, rtol=5e-6, atol=5e-8, msg=f"Vega FD mismatch ({option_type})")
 
 
 @pytest.mark.parametrize("option_type", ["call", "put"])
-def test_vanilla_rho_discount_matches_finite_difference(engine: BlackScholesMertonVanilla, params: _Params, option_type: str) -> None:
+def test_vanilla_theta_matches_finite_difference(params: _Params, option_type: str) -> None:
+    """Theta should match a central-difference bump on expiry."""
+    h = 1e-5
+    t0 = params.t
+
+    def f(t: float) -> float:
+        return vanilla_price(
+            option_type=option_type,  # type: ignore[arg-type]
+            spot=params.spot,
+            strike=params.strike,
+            expiry=t,
+            discount_rate=params.r,
+            carry=params.b,
+            vol=params.sigma,
+        )
+
+    # Theta = -dPV/dt, so dPV/dT = -Theta
+    fd = -_central_diff_1(f, t0, h)
+    ana = vanilla_greeks(
+        option_type=option_type,  # type: ignore[arg-type]
+        spot=params.spot,
+        strike=params.strike,
+        expiry=t0,
+        discount_rate=params.r,
+        carry=params.b,
+        vol=params.sigma,
+    )["theta"]
+
+    _assert_close(ana, fd, rtol=5e-5, atol=5e-6, msg=f"Theta FD mismatch ({option_type})")
+
+
+@pytest.mark.parametrize("option_type", ["call", "put"])
+def test_vanilla_rho_discount_matches_finite_difference(params: _Params, option_type: str) -> None:
     """rho_discount = dPV/d(discount_rate) holding carry fixed."""
     h = 1e-6
     r0 = params.r
 
     def f(r: float) -> float:
-        return engine.price(
+        return vanilla_price(
             option_type=option_type,  # type: ignore[arg-type]
             spot=params.spot,
             strike=params.strike,
-            time_to_expiry=params.t,
+            expiry=params.t,
             discount_rate=r,
             carry=params.b,  # carry held fixed by definition
-            sigma=params.sigma,
+            vol=params.sigma,
         )
 
     fd = _central_diff_1(f, r0, h)
-    ana = engine.greeks(
+    ana = vanilla_greeks(
         option_type=option_type,  # type: ignore[arg-type]
         spot=params.spot,
         strike=params.strike,
-        time_to_expiry=params.t,
+        expiry=params.t,
         discount_rate=r0,
         carry=params.b,
-        sigma=params.sigma,
+        vol=params.sigma,
     )["rho_discount"]
 
     _assert_close(ana, fd, rtol=2e-6, atol=5e-7, msg=f"rho_discount FD mismatch ({option_type})")
 
 
-# --------------------------------------------------------------------------------------
-# Optional: enforce “true” rho_carry via finite difference.
-# Your current vanilla.py implements a simplified rho_carry that ignores carry-dependence
-# inside d1/d2. If you *want* to enforce the full derivative, keep this test and fix
-# rho_carry accordingly. If not, delete this test (or mark it xfail permanently).
-# --------------------------------------------------------------------------------------
-
-@pytest.mark.xfail(reason="vanilla.rho_carry currently ignores carry-dependence in d1/d2; enable after updating rho_carry definition")
 @pytest.mark.parametrize("option_type", ["call", "put"])
-def test_vanilla_rho_carry_matches_finite_difference(engine: BlackScholesMertonVanilla, params: _Params, option_type: str) -> None:
+def test_vanilla_rho_carry_matches_finite_difference(params: _Params, option_type: str) -> None:
     """rho_carry = dPV/d(carry) holding discount_rate fixed."""
     h = 1e-6
     b0 = params.b
 
     def f(b: float) -> float:
-        return engine.price(
+        return vanilla_price(
             option_type=option_type,  # type: ignore[arg-type]
             spot=params.spot,
             strike=params.strike,
-            time_to_expiry=params.t,
+            expiry=params.t,
             discount_rate=params.r,  # discount held fixed by definition
             carry=b,
-            sigma=params.sigma,
+            vol=params.sigma,
         )
 
     fd = _central_diff_1(f, b0, h)
-    ana = engine.greeks(
+    ana = vanilla_greeks(
         option_type=option_type,  # type: ignore[arg-type]
         spot=params.spot,
         strike=params.strike,
-        time_to_expiry=params.t,
+        expiry=params.t,
         discount_rate=params.r,
         carry=b0,
-        sigma=params.sigma,
+        vol=params.sigma,
     )["rho_carry"]
 
     _assert_close(ana, fd, rtol=2e-6, atol=5e-7, msg=f"rho_carry FD mismatch ({option_type})")

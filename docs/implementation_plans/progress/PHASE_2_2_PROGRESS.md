@@ -239,20 +239,6 @@ tests/unit/pricers/equity/
   - `TestLookbackMcSimulationArtifact` - lookback simulation artifact tests
 - Next: Add unit tests for digital BSM pricer
 
-### January 28, 2026 (Later)
-- **Updated PayoffFactory** with equity exotic routing:
-  - `EuropeanEquityDigitalOption` → `DigitalCashPayoff` / `DigitalAssetPayoff`
-  - `EuropeanEquityBarrierOption` → `SingleBarrierPayoff`
-  - `EuropeanEquityAsianOption` → `AsianPayoff`
-  - `EuropeanEquityLookbackOption` → `LookbackPayoff`
-- **Registry** already complete (verified)
-- **Reviewed BSM model structure** (`src/models/analytic/black_scholes_merton/`):
-  - `base.py` - **KEEP** - Core helpers (`d1_d2`, `CarryDiscountTerms`, `validate_bsm_inputs`)
-  - `vanilla.py` - **KEEP** - `BlackScholesMertonVanilla` used by FX and Equity pricers
-  - `digital.py` - **KEEP** - `BlackScholesMertonDigitalCash/Asset` used by FX pricer
-  - `barrier.py` - **DELETED** - Was empty file
-- **Updated ROADMAP** with new Phase 2.3 for Black76 and Bachelier models
-
 ---
 
 *This document is updated as implementation progresses.*

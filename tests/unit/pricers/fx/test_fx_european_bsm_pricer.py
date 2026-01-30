@@ -7,7 +7,7 @@ from typing import Callable, Dict
 import pytest
 
 from src.marketdata.core.ids import MarketId
-from src.models.analytic.black_scholes_merton.vanilla import BlackScholesMertonVanilla
+from src.models.analytic.black_scholes_merton import vanilla_price
 from src.models.common.normal import std_norm_cdf
 
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
@@ -193,20 +193,19 @@ def test_fx_vanilla_price_matches_engine_scaled(
 
     pv = vanilla_pricer.price(trade, market)
 
-    # Build the *expected* PV from the pure engine, using the same mapping.
+    # Build the *expected* PV from the pure function, using the same mapping.
     rd = float(base_params["rd"])
     rf = float(base_params["rf"])
     carry = rd - rf
 
-    engine = BlackScholesMertonVanilla()
-    pv_per_unit = engine.price(
+    pv_per_unit = vanilla_price(
         option_type=option_type,  # type: ignore[arg-type]
         spot=float(base_params["spot"]),
         strike=float(base_params["strike"]),
-        time_to_expiry=float(base_params["t"]),
+        expiry=float(base_params["t"]),
         discount_rate=rd,
         carry=carry,
-        sigma=float(base_params["sigma"]),
+        vol=float(base_params["sigma"]),
     )
     expected = float(base_params["notional"]) * float(pv_per_unit)
 
