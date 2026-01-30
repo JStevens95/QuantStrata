@@ -160,7 +160,71 @@ This roadmap follows a **phased, incremental approach** that:
   - Payoff: Reuse `LookbackPayoff`
   - Use case: Path-dependent exotic
 
-### 2.3 Equity Market Data
+### 2.3 Alternative Pricing Models (Black76 & Bachelier)
+
+**Goal:** Extend the model library with Black76 (log-normal forward) and Bachelier (normal) models.
+
+#### 2.3.1 Black76 Model (Forward-Based Pricing)
+- [ ] **Black76 Model Engine**
+  - Implement: `src/models/analytic/black76/base.py`
+  - Core formulas: d1, d2 using forward price F instead of spot
+  - Price: C = DF × [F×N(d1) - K×N(d2)]
+  - Greeks: Delta, Gamma, Vega, Theta, Rho
+  - Use case: Options on futures/forwards
+
+- [ ] **FX Forward Options (Black76)**
+  - Implement: `EuropeanFxForwardOption`
+  - Pricer: `FxForwardOptionBlack76Pricer`
+  - Model: F = S × exp((r_d - r_f)×T), then Black76
+  - Use case: OTC FX forward options
+
+- [ ] **Equity Index Futures Options (Black76)**
+  - Implement: `EuropeanEquityFuturesOption`
+  - Pricer: `EquityFuturesOptionBlack76Pricer`
+  - Model: F = S × exp((r - q)×T), then Black76
+  - Use case: S&P 500 futures options, index derivatives
+
+- [ ] **Interest Rate Caps/Floors (Black76)**
+  - Implement: `InterestRateCap`, `InterestRateFloor`
+  - Pricer: Sum of caplets using Black76 on forward rates
+  - Use case: Interest rate hedging (foundation for Phase 3)
+
+#### 2.3.2 Bachelier Model (Normal Distribution)
+- [ ] **Bachelier Model Engine**
+  - Implement: `src/models/analytic/bachelier/base.py`
+  - Normal dynamics: dS = σ dW (absolute volatility)
+  - Price: C = DF × [d×N(d) + σ√T×n(d)] where d = (F-K)/(σ√T)
+  - Greeks: Delta, Gamma, Vega, Theta, Rho
+  - Use case: Negative rates, spread options
+
+- [ ] **FX Spread Options (Bachelier)**
+  - Implement: `EuropeanFxSpreadOption`
+  - Pricer: `FxSpreadOptionBachelierPricer`
+  - Use case: Cross-currency basis trading
+
+- [ ] **Equity Spread Options (Bachelier)**
+  - Implement: `EuropeanEquitySpreadOption`
+  - Pricer: `EquitySpreadOptionBachelierPricer`
+  - Use case: Pairs trading, relative value
+
+- [ ] **Swaptions (Bachelier)**
+  - Implement: `Swaption` with Bachelier pricing
+  - Use case: Negative rate environments (foundation for Phase 3)
+
+#### 2.3.3 Model Documentation
+- [ ] **Black76 Technical Documentation**
+  - Mathematical derivation from BSM
+  - Forward measure vs spot measure
+  - When to use Black76 vs BSM
+  - Greeks comparison and interpretation
+
+- [ ] **Bachelier Technical Documentation**
+  - Normal vs log-normal dynamics
+  - Volatility quoting conventions (bp vol vs % vol)
+  - Negative underlying handling
+  - Use cases and limitations
+
+### 2.4 Equity Market Data
 - [ ] **Equity Market Provider**
   - Extend: `SyntheticProvider` for equity
   - Generate: Stock prices (GBM with dividends)
@@ -173,7 +237,7 @@ This roadmap follows a **phased, incremental approach** that:
   - Calibration: From option market prices
   - Use case: Real-world equity vol modeling
 
-### 2.4 Equity Models
+### 2.5 Equity Models
 - [ ] **Dividend Models**
   - Implement: Continuous dividend yield (already in BSM)
   - Implement: Discrete dividends (adjust spot)
@@ -186,11 +250,13 @@ This roadmap follows a **phased, incremental approach** that:
 
 ### Deliverables:
 - ✅ Complete equity derivatives suite (7+ products)
+- ✅ Black76 model with FX/Equity futures options
+- ✅ Bachelier model with spread options
 - ✅ Equity market data infrastructure
 - ✅ Equity vol calibration
 - ✅ Examples and tests
 
-**Impact:** Demonstrates breadth across asset classes while maintaining architectural coherence.
+**Impact:** Demonstrates breadth across asset classes and alternative pricing models while maintaining architectural coherence.
 
 ---
 
