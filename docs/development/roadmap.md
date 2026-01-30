@@ -1,6 +1,6 @@
 # QuantStrata Development Roadmap
 
-**Last Updated:** January 27, 2026 (Phase 2 Locked)  
+**Last Updated:** January 27, 2026 (Phase 3.1 Complete)  
 **Current Version:** V1 (FX Derivatives Foundation)  
 **Target:** Comprehensive Professional Quant Library
 
@@ -262,26 +262,34 @@ This roadmap follows a **phased, incremental approach** that:
 
 **Goal:** Add rates asset class and complete Black76/Bachelier pricers from Phase 2.3 model foundation.
 
-### 3.1 Black76 Pricers (Uses Phase 2.3 Model Foundation)
+### 3.1 Black76 Pricers (Uses Phase 2.3 Model Foundation) ✅
 
 **FX/Equity Forward Options:**
-- [ ] **FX Forward Options (Black76)**
-  - Instrument: `EuropeanFxForwardOption`
-  - Pricer: `FxForwardOptionBlack76Pricer`
+- [x] **FX Forward Options (Black76)**
+  - Instrument: `EuropeanFxForwardOption`, `EuropeanFxForwardOptionSimple`
+  - Pricer: `FxForwardOptionBlack76Pricer`, `FxForwardOptionBlack76PricerSimple`
   - Model: F = S × exp((r_d - r_f)×T), then Black76
-  - Use case: OTC FX forward options
+  - Greeks: delta_forward, delta_spot, gamma, vega, theta, rho_domestic, rho_foreign
+  - Documentation: `docs/guides/instruments/forward_options.md`
+  - Tutorial: `docs/tutorials/instruments/forward_options.ipynb`
 
-- [ ] **Equity Index Futures Options (Black76)**
-  - Instrument: `EuropeanEquityFuturesOption`
-  - Pricer: `EquityFuturesOptionBlack76Pricer`
+- [x] **Equity Index Futures Options (Black76)**
+  - Instrument: `EuropeanEquityFuturesOption`, `EuropeanEquityFuturesOptionSimple`
+  - Pricer: `EquityFuturesOptionBlack76Pricer`, `EquityFuturesOptionBlack76PricerSimple`
   - Model: F = S × exp((r - q)×T), then Black76
-  - Use case: S&P 500 futures options, index derivatives
+  - Greeks: delta_futures, delta_spot, gamma, vega, theta, rho
+  - Documentation: `docs/guides/instruments/futures_options.md`
+  - Tutorial: `docs/tutorials/instruments/futures_options.ipynb`
 
 **Interest Rate Options (Black76):**
-- [ ] **Caps & Floors**
-  - Instruments: `InterestRateCap`, `InterestRateFloor`, `Caplet`, `Floorlet`
-  - Pricer: Sum of caplets/floorlets using Black76 on forward rates
-  - Use case: Interest rate protection, hedging
+- [x] **Caps & Floors**
+  - Instruments: `Cap`, `CapSimple`, `Floor`, `FloorSimple`, `Caplet`, `CapletSimple`, `Floorlet`, `FloorletSimple`
+  - Pricers: `CapBlack76Pricer`, `FloorBlack76Pricer`, `CapletBlack76Pricer`, `FloorletBlack76Pricer`
+  - Day count conventions: ACT/360, ACT/365, 30/360
+  - Auto-generation of caplets/floorlets from cap/floor schedule
+  - Tests: 29 unit tests passing
+
+**Status:** Phase 3.1 COMPLETE. See `docs/development/progress/phase_3_1_black76_pricers.md` for details.
 
 ### 3.2 Bachelier Pricers (Uses Phase 2.3 Model Foundation)
 
@@ -350,7 +358,7 @@ This roadmap follows a **phased, incremental approach** that:
   - Use case: Production curve construction
 
 ### Deliverables:
-- [ ] Complete Black76 pricers (FX forward options, futures options, caps/floors)
+- [x] Complete Black76 pricers (FX forward options, futures options, caps/floors)
 - [ ] Complete Bachelier pricers (swaptions, spread options)
 - [ ] Core rate instruments (FRA, IRS)
 - [ ] Hull-White model with calibration
