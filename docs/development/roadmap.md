@@ -1,6 +1,6 @@
 # QuantStrata Development Roadmap
 
-**Last Updated:** January 27, 2026 (Phase 3.1 Complete)  
+**Last Updated:** January 27, 2026 (Phase 3.2 Complete - Linear IR)  
 **Current Version:** V1 (FX Derivatives Foundation)  
 **Target:** Comprehensive Professional Quant Library
 
@@ -291,11 +291,38 @@ This roadmap follows a **phased, incremental approach** that:
 
 **Status:** Phase 3.1 COMPLETE. See `docs/development/progress/phase_3_1_black76_pricers.md` for details.
 
-### 3.2 Bachelier Pricers (Uses Phase 2.3 Model Foundation)
+### 3.2 Linear IR Instruments (FRAs & IRS) ✅
+
+**Rationale:** FRAs and IRS are the IR equivalent of FX/Equity Spot and Forward - foundational 
+linear products that should be implemented before options on them (swaptions).
+
+- [x] **Forward Rate Agreements (FRA)**
+  - Instruments: `ForwardRateAgreement`, `ForwardRateAgreementSimple`
+  - Pricers: `FRAPricer`, `FRAPricerSimple`
+  - Formula: PV = N × τ × DF(T_pay) × (F - K)
+  - Greeks: delta, DV01, PV01
+  - Features: Payer/receiver direction, par rate, ITM detection, tenor description
+  - Tests: 16 unit tests
+
+- [x] **Interest Rate Swaps (IRS)**
+  - Instruments: `InterestRateSwap`, `InterestRateSwapSimple`
+  - Leg types: `FixedLeg`, `FloatingLeg`, `SwapLeg`
+  - Pricers: `IRSwapPricer`, `IRSwapPricerSimple`
+  - Formula: PV = N × Σ[τ_i × DF_i × (K - F_i)] (for fixed receiver)
+  - Greeks: delta, DV01, PV01, annuity
+  - Features: Configurable frequencies, day counts, floating spread
+  - Tests: 20 unit tests
+
+**Status:** Phase 3.2 COMPLETE. See `docs/development/progress/phase_3_2_linear_ir.md` for details.
+
+### 3.3 Bachelier Pricers (Uses Phase 2.3 Model Foundation)
+
+**Rationale:** Swaptions require IRS as underlying, hence 3.3 comes after 3.2.
 
 - [ ] **Swaptions (Bachelier)**
   - Instrument: `Swaption` (option on swap)
   - Pricer: `SwaptionBachelierPricer`
+  - Requires: IRS instrument from 3.2
   - Use case: Negative rate environments, volatility trading in rates
 
 - [ ] **Spread Options (Bachelier)**
@@ -303,31 +330,21 @@ This roadmap follows a **phased, incremental approach** that:
   - Pricers: `FxSpreadOptionBachelierPricer`, `EquitySpreadOptionBachelierPricer`
   - Use case: Cross-currency basis trading, pairs trading, relative value
 
-### 3.3 Core Rate Instruments
-
-- [ ] **Forward Rate Agreements (FRA)**
-  - Implement: `ForwardRateAgreement`
-  - Pricer: PV = DF(T) × (F(T1,T2) - K) × τ × notional
-  - Use case: Building block for swaps, simplest IR derivative
-
-- [ ] **Interest Rate Swaps (IRS)**
-  - Implement: `InterestRateSwap`
-  - Pricer: PV = Σ(DF_i × (fixed_rate - forward_rate_i) × τ_i × notional)
-  - Use case: Most common rate derivative
+### 3.4 Bond Instruments
 
 - [ ] **Bond Options**
   - Implement: `BondOption`
   - Pricer: Black76 on bond forward price
   - Use case: Fixed income options
 
-### 3.4 Rate Models
+### 3.5 Rate Models
 
 - [ ] **Hull-White Model**
   - Implement: `HullWhiteDynamics` (1F short rate model)
   - MC pricer: Simulate short rate paths
   - FD pricer: 1D PDE in short rate
   - Calibration: To cap/swaption prices
-  - Use case: Demonstrates short rate modeling
+  - Use case: Demonstrates short rate modeling, enables IR MC/FD
 
 - [ ] **Black-Karasinski Model** (Optional)
   - Implement: `BlackKarasinskiDynamics` (log-normal short rate)
@@ -339,7 +356,7 @@ This roadmap follows a **phased, incremental approach** that:
   - MC pricer: Simulate forward rates
   - Use case: Industry-standard rates model
 
-### 3.5 Rate Market Data & Infrastructure
+### 3.6 Rate Market Data & Infrastructure
 
 - [ ] **Day Count Conventions**
   - Implement: ACT/360, ACT/365, 30/360, ACT/ACT
@@ -359,9 +376,10 @@ This roadmap follows a **phased, incremental approach** that:
 
 ### Deliverables:
 - [x] Complete Black76 pricers (FX forward options, futures options, caps/floors)
+- [x] Linear IR instruments (FRA, IRS) - 36 tests passing
 - [ ] Complete Bachelier pricers (swaptions, spread options)
-- [ ] Core rate instruments (FRA, IRS)
-- [ ] Hull-White model with calibration
+- [ ] Bond instruments and options
+- [ ] Hull-White model with calibration (enables IR MC/FD)
 - [ ] Rate market data infrastructure
 - [ ] Examples, tests, and documentation
 

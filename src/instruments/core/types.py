@@ -19,3 +19,9 @@ DigitalType = Literal["cash", "asset"]
 
 # Day count convention type.
 DayCountConvention = Literal["ACT/360", "ACT/365", "30/360"]
+
+# Type for FRA direction.
+FRADirection = Literal["payer", "receiver"]
+
+# Type for swap direction.
+SwapDirection = Literal["payer", "receiver"]
