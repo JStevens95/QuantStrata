@@ -8,6 +8,7 @@ from src.marketdata.core.requests import MarketRequest, TimeseriesRequest
 from src.marketdata.providers.interfaces import MarketDataProvider
 from src.marketdata.providers.synthetic.config import SyntheticProviderConfig
 from src.marketdata.providers.synthetic.engine import SyntheticMarketEngine
+from src.marketdata.providers.synthetic.generators.equity import register_equity_generators
 from src.marketdata.providers.synthetic.generators.foreign_exchange import register_fx_generators
 from src.marketdata.providers.synthetic.generators.interest_rate import register_ir_generators
 from src.marketdata.providers.synthetic.registry import SyntheticRegistry
@@ -47,6 +48,7 @@ class SyntheticProvider(MarketDataProvider):
         # Register generator families. Each generator should use deterministic substreams.
         register_fx_generators(registry=registry, base_seed=int(self.seed), config=self.config)
         register_ir_generators(registry=registry, base_seed=int(self.seed), config=self.config)
+        register_equity_generators(registry=registry, base_seed=int(self.seed), config=self.config)
 
         engine = SyntheticMarketEngine(seed=int(self.seed), registry=registry)
         object.__setattr__(self, "_engine", engine)

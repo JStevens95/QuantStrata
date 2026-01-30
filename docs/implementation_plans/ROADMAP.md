@@ -202,105 +202,104 @@ This roadmap follows a **phased, incremental approach** that:
   - Use cases and limitations
   - Interview key points
 
-#### 2.3.4 Deferred to Phase 3: Black76/Bachelier Pricers & Instruments
-
-The following pricers and instruments are deferred to Phase 3 (Interest Rate Derivatives):
-
-**Black76 Pricers (Phase 3.1):**
-- [ ] **FX Forward Options**
-  - Instrument: `EuropeanFxForwardOption`
-  - Pricer: `FxForwardOptionBlack76Pricer`
-  - Use case: OTC FX forward options
-
-- [ ] **Equity Index Futures Options**
-  - Instrument: `EuropeanEquityFuturesOption`
-  - Pricer: `EquityFuturesOptionBlack76Pricer`
-  - Use case: S&P 500 futures options, index derivatives
-
-- [ ] **Interest Rate Caps/Floors**
-  - Instruments: `InterestRateCap`, `InterestRateFloor`, `Caplet`, `Floorlet`
-  - Pricer: Sum of caplets using Black76 on forward rates
-  - Use case: Interest rate hedging
-
-**Bachelier Pricers (Phase 3.2):**
-- [ ] **Swaptions (Bachelier)**
-  - Instrument: `Swaption`
-  - Pricer: `SwaptionBachelierPricer`
-  - Use case: Negative rate environments
-
-- [ ] **Spread Options**
-  - Instruments: `EuropeanFxSpreadOption`, `EuropeanEquitySpreadOption`
-  - Pricers: `FxSpreadOptionBachelierPricer`, `EquitySpreadOptionBachelierPricer`
-  - Use case: Cross-currency basis, pairs trading
-
-### 2.4 Equity Market Data
-- [ ] **Equity Market Provider**
-  - Extend: `SyntheticProvider` for equity
-  - Generate: Stock prices (GBM with dividends)
-  - Generate: Equity vol surfaces (similar to FX)
+### 2.4 Equity Market Data ✅
+- [x] **Equity Market Provider**
+  - Implemented: `src/marketdata/providers/synthetic/generators/equity.py`
+  - Registered: `register_equity_generators()` in SyntheticProvider
+  - Generates: Stock prices (GBM with dividends)
+  - Generates: Equity vol surfaces (strike-based)
   - Use case: Testing and examples
 
-- [ ] **Equity Volatility Surfaces**
-  - Implement: `EquityVolSurface`
-  - Support: Strike-based (not delta-based like FX)
-  - Calibration: From option market prices
+- [x] **Equity Volatility Surfaces**
+  - Implemented: Strike-based vol generation in equity generator
+  - Reuses: `GridVolSurface` with `strike_space="absolute"`
+  - Features: Skew parameterization (negative skew for equity)
   - Use case: Real-world equity vol modeling
 
-### 2.5 Equity Models
-- [ ] **Dividend Models**
-  - Implement: Continuous dividend yield (already in BSM)
-  - Implement: Discrete dividends (adjust spot)
-  - Use case: Realistic equity modeling
+### 2.5 Equity Models ✅
+- [x] **Dividend Models**
+  - Implemented: Continuous dividend yield (in BSM and equity generator drift)
+  - Implemented: Discrete dividends - `adjust_spot_for_discrete_dividend()`
+  - Implemented: Combined forward calculation - `compute_forward_with_dividends()`
+  - Use case: Realistic equity modeling with both continuous and discrete dividends
 
-- [ ] **Equity Local Volatility**
-  - Reuse: Local vol infrastructure from FX
-  - Adapt: Strike-based (not delta-based)
+- [x] **Equity Local Volatility**
+  - Reused: `LocalVolSurface` from FX (generic spot × time grid)
+  - Reused: `DupireCalibrator` (works with r, q for equity)
+  - Verified: Unit tests with equity parameters (dividend yields, skew patterns)
   - Use case: Equity vol surface modeling
 
 ### Deliverables:
 - ✅ Complete equity derivatives suite (7+ products)
-- ✅ Black76 model with FX/Equity futures options
-- ✅ Bachelier model with spread options
-- ✅ Equity market data infrastructure
-- ✅ Equity vol calibration
-- ✅ Examples and tests
+- ✅ Black76 model engine (pure functions)
+- ✅ Bachelier model engine (pure functions)
+- ✅ Technical documentation (Black76, Bachelier)
+- ✅ Equity market data infrastructure (2.4)
+- ✅ Equity local volatility adaptation (2.5)
+- ✅ Unit tests for equity generators and local vol
+
+**Status:** Phase 2 COMPLETE.
 
 **Impact:** Demonstrates breadth across asset classes and alternative pricing models while maintaining architectural coherence.
 
 ---
 
-## Phase 3: Interest Rate Derivatives (Weeks 11-18)
+## Phase 3: Interest Rate Derivatives & Black76/Bachelier Pricers (Weeks 11-18)
 
-**Goal:** Add rates asset class (more complex, higher value)
+**Goal:** Add rates asset class and complete Black76/Bachelier pricers from Phase 2.3 model foundation.
 
-### 3.1 Rate Instruments
-- [ ] **Interest Rate Swaps (IRS)**
-  - Implement: `InterestRateSwap`
-  - Pricer: PV = Σ(DF_i * (fixed_rate - float_rate_i) * notional)
-  - Use case: Most common rate derivative
+### 3.1 Black76 Pricers (Uses Phase 2.3 Model Foundation)
+
+**FX/Equity Forward Options:**
+- [ ] **FX Forward Options (Black76)**
+  - Instrument: `EuropeanFxForwardOption`
+  - Pricer: `FxForwardOptionBlack76Pricer`
+  - Model: F = S × exp((r_d - r_f)×T), then Black76
+  - Use case: OTC FX forward options
+
+- [ ] **Equity Index Futures Options (Black76)**
+  - Instrument: `EuropeanEquityFuturesOption`
+  - Pricer: `EquityFuturesOptionBlack76Pricer`
+  - Model: F = S × exp((r - q)×T), then Black76
+  - Use case: S&P 500 futures options, index derivatives
+
+**Interest Rate Options (Black76):**
+- [ ] **Caps & Floors**
+  - Instruments: `InterestRateCap`, `InterestRateFloor`, `Caplet`, `Floorlet`
+  - Pricer: Sum of caplets/floorlets using Black76 on forward rates
+  - Use case: Interest rate protection, hedging
+
+### 3.2 Bachelier Pricers (Uses Phase 2.3 Model Foundation)
+
+- [ ] **Swaptions (Bachelier)**
+  - Instrument: `Swaption` (option on swap)
+  - Pricer: `SwaptionBachelierPricer`
+  - Use case: Negative rate environments, volatility trading in rates
+
+- [ ] **Spread Options (Bachelier)**
+  - Instruments: `EuropeanFxSpreadOption`, `EuropeanEquitySpreadOption`
+  - Pricers: `FxSpreadOptionBachelierPricer`, `EquitySpreadOptionBachelierPricer`
+  - Use case: Cross-currency basis trading, pairs trading, relative value
+
+### 3.3 Core Rate Instruments
 
 - [ ] **Forward Rate Agreements (FRA)**
   - Implement: `ForwardRateAgreement`
-  - Pricer: PV = DF(T) * (F(T1,T2) - K) * notional
-  - Use case: Building block for swaps
+  - Pricer: PV = DF(T) × (F(T1,T2) - K) × τ × notional
+  - Use case: Building block for swaps, simplest IR derivative
 
-- [ ] **Swaptions**
-  - Implement: `Swaption` (option on swap)
-  - Pricer: BSM on swap rate (simplified), or MC
-  - Use case: Volatility trading in rates
-
-### 3.2 Rate Options
-- [ ] **Caps & Floors**
-  - Implement: `InterestRateCap`, `InterestRateFloor`
-  - Pricer: Sum of caplets/floorlets (BSM on forward rates)
-  - Use case: Interest rate protection
+- [ ] **Interest Rate Swaps (IRS)**
+  - Implement: `InterestRateSwap`
+  - Pricer: PV = Σ(DF_i × (fixed_rate - forward_rate_i) × τ_i × notional)
+  - Use case: Most common rate derivative
 
 - [ ] **Bond Options**
   - Implement: `BondOption`
-  - Pricer: BSM on bond price (simplified)
+  - Pricer: Black76 on bond forward price
   - Use case: Fixed income options
 
-### 3.3 Rate Models
+### 3.4 Rate Models
+
 - [ ] **Hull-White Model**
   - Implement: `HullWhiteDynamics` (1F short rate model)
   - MC pricer: Simulate short rate paths
@@ -308,34 +307,41 @@ The following pricers and instruments are deferred to Phase 3 (Interest Rate Der
   - Calibration: To cap/swaption prices
   - Use case: Demonstrates short rate modeling
 
-- [ ] **Black-Karasinski Model**
+- [ ] **Black-Karasinski Model** (Optional)
   - Implement: `BlackKarasinskiDynamics` (log-normal short rate)
   - MC pricer: Simulate log-rate paths
-  - Use case: Alternative short rate model
+  - Use case: Alternative short rate model (positive rates only)
 
-- [ ] **LIBOR Market Model (LMM)** (Advanced)
+- [ ] **LIBOR Market Model (LMM)** (Advanced, Optional)
   - Implement: `LiborMarketModel` (multi-factor)
-  - MC pricer: Simulate forward LIBOR rates
+  - MC pricer: Simulate forward rates
   - Use case: Industry-standard rates model
 
-### 3.4 Rate Market Data
+### 3.5 Rate Market Data & Infrastructure
+
+- [ ] **Day Count Conventions**
+  - Implement: ACT/360, ACT/365, 30/360, ACT/ACT
+  - Use case: Required for proper IR pricing
+
 - [ ] **Rate Curve Provider**
   - Extend: `SyntheticProvider` for rates
-  - Generate: Yield curves (various shapes)
-  - Generate: Vol surfaces for rates (swaption vol)
+  - Generate: Yield curves (various shapes: flat, upward, inverted)
+  - Generate: Swaption vol surfaces (normal vol)
   - Use case: Testing and examples
 
-- [ ] **Rate Curve Bootstrapping**
+- [ ] **Enhanced Rate Curve Bootstrapping**
   - Enhance: Multi-instrument bootstrapping
   - Support: Deposits, FRAs, swaps, OIS
   - Validation: Smoothness, arbitrage checks
   - Use case: Production curve construction
 
 ### Deliverables:
-- ✅ Complete rates derivatives suite (6+ products)
-- ✅ 2-3 rate models (Hull-White, LMM)
-- ✅ Rate market data infrastructure
-- ✅ Examples and tests
+- [ ] Complete Black76 pricers (FX forward options, futures options, caps/floors)
+- [ ] Complete Bachelier pricers (swaptions, spread options)
+- [ ] Core rate instruments (FRA, IRS)
+- [ ] Hull-White model with calibration
+- [ ] Rate market data infrastructure
+- [ ] Examples, tests, and documentation
 
 **Impact:** Demonstrates ability to handle complex, multi-factor models. Rates are a key differentiator for quant libraries.
 
