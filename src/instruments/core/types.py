@@ -13,3 +13,6 @@ LookbackType = Literal["floating_strike", "fixed_strike"]
 
 # Touch style: one-touch pays if hit, no-touch pays if NOT hit.
 TouchStyle = Literal["one_touch", "no_touch"]
+
+# Digital option payout type
+DigitalType = Literal["cash", "asset"]
