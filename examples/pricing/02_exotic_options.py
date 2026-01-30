@@ -22,7 +22,7 @@ from typing import Tuple
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.interfaces import Quote
 from src.marketdata.core.market import Market
-from src.marketdata.curves.term_structure import FlatCurve
+from src.marketdata.curves.term_structure import FlatZeroRateCurve
 from src.marketdata.surfaces.vol_surface import FlatVolSurface
 
 # Plot configuration
@@ -58,16 +58,19 @@ vol = 0.20
 T = 1.0
 
 # Market IDs
-SPOT_ID = MarketId(asset_class="FX", data_type="SPOT", name="TEST")
-DOM_CURVE = MarketId(asset_class="IR", data_type="CURVE", name="DOM")
-FOR_CURVE = MarketId(asset_class="IR", data_type="CURVE", name="FOR")
-VOL_ID = MarketId(asset_class="FX", data_type="VOL", name="TEST")
+SPOT_ID = MarketId(asset_class="FX", mkt_type="SPOT", name="TEST")
+DOM_CURVE = MarketId(asset_class="IR", mkt_type="CURVE", name="DOM")
+FOR_CURVE = MarketId(asset_class="IR", mkt_type="CURVE", name="FOR")
+VOL_ID = MarketId(asset_class="FX", mkt_type="VOL", name="TEST")
 
 market = Market(
     asof="2026-01-28",
     quotes={SPOT_ID: Quote(value=spot)},
-    curves={DOM_CURVE: FlatCurve(rate=r_dom), FOR_CURVE: FlatCurve(rate=r_for)},
-    vols={VOL_ID: FlatVolSurface(vol=vol)},
+    curves={
+        DOM_CURVE: FlatZeroRateCurve(continuously_compounded_rate=r_dom),
+        FOR_CURVE: FlatZeroRateCurve(continuously_compounded_rate=r_for)
+    },
+    vols={VOL_ID: FlatVolSurface(sigma=vol)},
 )
 
 print(f"\nMarket parameters:")
@@ -244,7 +247,7 @@ print("\n" + "=" * 70)
 print("4. Lookback Options")
 print("=" * 70)
 
-def price_lookback(paths: np.ndarray, K: float, r: float, T: float,
+def price_lookback(paths: np.ndarray, k: float, r: float, t: float,
                    option_type: str = 'call',
                    lookback_type: str = 'floating') -> Tuple[float, float]:
     terminal = paths[-1, :]
@@ -259,12 +262,12 @@ def price_lookback(paths: np.ndarray, K: float, r: float, T: float,
     else:
         if option_type == 'call':
             max_S = np.max(paths, axis=0)
-            payoffs = np.maximum(max_S - K, 0)
+            payoffs = np.maximum(max_S - k, 0)
         else:
             min_S = np.min(paths, axis=0)
-            payoffs = np.maximum(K - min_S, 0)
+            payoffs = np.maximum(k - min_S, 0)
     
-    disc_payoffs = np.exp(-r * T) * payoffs
+    disc_payoffs = np.exp(-r * t) * payoffs
     price = np.mean(disc_payoffs)
     stderr = np.std(disc_payoffs) / np.sqrt(len(disc_payoffs))
     return price, stderr
@@ -423,7 +426,7 @@ ax.legend()
 ax.grid(True, alpha=0.3)
 
 plt.tight_layout()
-plt.savefig('exotic_options_pricing.png', dpi=150, bbox_inches='tight')
+# plt.savefig('exotic_options_pricing.png', dpi=150, bbox_inches='tight')
 plt.show()
 
 print("\nPlot saved to exotic_options_pricing.png")
