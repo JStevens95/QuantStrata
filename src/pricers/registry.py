@@ -3,38 +3,56 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping, MutableMapping, Optional, Protocol, Type
 
-# import instruments
+# --- import FX instruments ---
 from src.instruments.fx.linear.spot import FxSpot
 from src.instruments.fx.linear.forward import FxForward
 from src.instruments.fx.options.digital import EuropeanFxDigitalOption
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
+from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption, AmericanFxVanillaOption
 from src.instruments.fx.options.barrier import EuropeanFxBarrierOption
 from src.instruments.fx.options.double_barrier import EuropeanFxDoubleBarrierOption
 from src.instruments.fx.options.asian import EuropeanFxAsianOption
 from src.instruments.fx.options.lookback import EuropeanFxLookbackOption
 from src.instruments.fx.options.touch import EuropeanFxTouchOption
-from src.instruments.fx.options.vanilla import AmericanFxVanillaOption
+
+# --- import equity instruments ---
+from src.instruments.equity.linear.spot import EquitySpot
+from src.instruments.equity.linear.forward import EquityForward
+from src.instruments.equity.options.vanilla import EuropeanEquityVanillaOption, AmericanEquityVanillaOption
+from src.instruments.equity.options.digital import EuropeanEquityDigitalOption
+from src.instruments.equity.options.barrier import EuropeanEquityBarrierOption
+from src.instruments.equity.options.asian import EuropeanEquityAsianOption
+from src.instruments.equity.options.lookback import EuropeanEquityLookbackOption
 
 
-# import pricer (linear + non-linear)
+# --- import FX analytic pricers (linear + non-linear) ---
 from src.pricers.fx.spot import FxSpotPricer
 from src.pricers.fx.forward import FxForwardPricer
-from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer
-from src.pricers.fx.european_bsm import FxEuropeanDigitalBsmPricer
+from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer, FxEuropeanDigitalBsmPricer
+
+# --- import Equity analytic pricers (linear + non-linear) ---
+from src.pricers.equity.spot import EquitySpotPricer
+from src.pricers.equity.forward import EquityForwardPricer
+from src.pricers.equity.european_bsm import EquityEuropeanVanillaBsmPricer, EquityEuropeanDigitalBsmPricer
+
+# --- import FX numerical pricers ---
 from src.pricers.fx.european_mc import (
-    FxEuropeanBarrierMcPricer, 
-    FxEuropeanVanillaMcPricer, 
-    FxEuropeanDigitalMcPricer, 
-    FxEuropeanAsianMcPricer, 
-    FxEuropeanLookbackMcPricer, 
-    FxEuropeanDoubleBarrierMcPricer,
-    FxEuropeanTouchMcPricer
+    FxEuropeanBarrierMcPricer, FxEuropeanVanillaMcPricer, FxEuropeanDigitalMcPricer, FxEuropeanAsianMcPricer,
+    FxEuropeanLookbackMcPricer, FxEuropeanDoubleBarrierMcPricer, FxEuropeanTouchMcPricer
     )
 from src.pricers.fx.european_fde import (
-    FxEuropeanVanillaFdPricer, 
-    FxEuropeanDigitalFdPricer
+    FxEuropeanVanillaFdPricer, FxEuropeanDigitalFdPricer
     )
 from src.pricers.fx.american_fde import FxAmericanVanillaFdPricer
+
+# --- import Equity numerical pricers ---
+from src.pricers.equity.european_mc import (
+    EquityEuropeanVanillaMcPricer, EquityEuropeanAsianMcPricer, EquityEuropeanBarrierMcPricer,
+    EquityEuropeanLookbackMcPricer
+)
+from src.pricers.equity.european_fde import (
+    EquityEuropeanVanillaFdPricer
+)
+from src.pricers.equity.american_fde import EquityAmericanVanillaFdPricer
 
 
 class InstrumentPricer(Protocol):
@@ -213,57 +231,118 @@ class DefaultPricerRegistry:
     def build(self) -> PricerRegistry:
         reg = PricerRegistry()
 
-        # ---- instantiate once (so default + alias share the same config) ----
-        spot = FxSpotPricer()
-        fwd = FxForwardPricer()
+        # ==== 1. FX pricers instantiate once (so default + alias share the same config) ====
 
-        # Analytic Black Scholes Merton Pricer - European.
-        eur_van_bsm = FxEuropeanVanillaBsmPricer()
-        eur_dig_bsm = FxEuropeanDigitalBsmPricer()
+        # ---- 1.1. linear pricers ----
+        fx_spot = FxSpotPricer()
+        fx_fwd = FxForwardPricer()
 
-        # Numerical Monte Carlo Pricer - European.
-        eur_van_mc = FxEuropeanVanillaMcPricer()
-        eur_dig_mc = FxEuropeanDigitalMcPricer()
-        
-        # Path-dependent Monte Carlo Pricers - European.
-        eur_asian_mc = FxEuropeanAsianMcPricer()
-        eur_lookback_mc = FxEuropeanLookbackMcPricer()
-        eur_bar_mc = FxEuropeanBarrierMcPricer()
-        eur_double_barrier_mc = FxEuropeanDoubleBarrierMcPricer()
-        eur_touch_mc = FxEuropeanTouchMcPricer()
+        # ---- 1.2. non-linear analytic pricers ----
+        fx_eur_van_bsm = FxEuropeanVanillaBsmPricer()
+        fx_eur_dig_bsm = FxEuropeanDigitalBsmPricer()
 
-        # Numerical Finite Difference Pricer - European.
-        eur_van_fd = FxEuropeanVanillaFdPricer()
-        eur_dig_fd = FxEuropeanDigitalFdPricer()
+        # ---- 1.3 non-linear numerical pricers - Monte Carlo. ----
+        # non-path dependent instruments.
+        fx_eur_van_mc = FxEuropeanVanillaMcPricer()
+        fx_eur_dig_mc = FxEuropeanDigitalMcPricer()
 
-        # Numerical Finite Difference Pricer - American.
-        am_van_fd = FxAmericanVanillaFdPricer()
+        # path dependent instruments.
+        fx_eur_asian_mc = FxEuropeanAsianMcPricer()
+        fx_eur_lookback_mc = FxEuropeanLookbackMcPricer()
+        fx_eur_bar_mc = FxEuropeanBarrierMcPricer()
+        fx_eur_double_barrier_mc = FxEuropeanDoubleBarrierMcPricer()
+        fx_eur_touch_mc = FxEuropeanTouchMcPricer()
 
+        # ---- 1.4 non-linear numerical pricers - Finite Difference. ----
+        # non-path dependent instruments.
+        fx_eur_van_fd = FxEuropeanVanillaFdPricer()
+        fx_eur_dig_fd = FxEuropeanDigitalFdPricer()
 
+        # path dependent instruments.
+        fx_am_van_fd = FxAmericanVanillaFdPricer()
 
-        # ---- defaults ----
-        reg.register(FxSpot, spot)
-        reg.register(FxForward, fwd)
-        reg.register(EuropeanFxVanillaOption, eur_van_bsm)
-        reg.register(EuropeanFxDigitalOption, eur_dig_bsm)
-        reg.register(EuropeanFxBarrierOption, eur_bar_mc)
-        reg.register(AmericanFxVanillaOption, am_van_fd)
-        reg.register(EuropeanFxAsianOption, eur_asian_mc)
-        reg.register(EuropeanFxLookbackOption, eur_lookback_mc)
-        reg.register(EuropeanFxDoubleBarrierOption, eur_double_barrier_mc)
-        reg.register(EuropeanFxTouchOption, eur_touch_mc)
+        # ==== 2. Equity pricers instantiate once (so default + alias share the same config) ====
 
-        # ---- named aliases ----
-        reg.register(EuropeanFxVanillaOption, eur_van_mc, pricer_id="mc")
-        reg.register(EuropeanFxDigitalOption, eur_dig_mc, pricer_id="mc")
-        reg.register(EuropeanFxBarrierOption, eur_bar_mc, pricer_id="mc")
-        reg.register(EuropeanFxAsianOption, eur_asian_mc, pricer_id="mc")
-        reg.register(EuropeanFxLookbackOption, eur_lookback_mc, pricer_id="mc")
-        reg.register(EuropeanFxDoubleBarrierOption, eur_double_barrier_mc, pricer_id="mc")
-        reg.register(EuropeanFxTouchOption, eur_touch_mc, pricer_id="mc")
-        
-        reg.register(EuropeanFxVanillaOption, eur_van_fd, pricer_id="fd")
-        reg.register(EuropeanFxDigitalOption, eur_dig_fd, pricer_id="fd")
-        reg.register(AmericanFxVanillaOption, am_van_fd, pricer_id="fd")
+        # ---- 2.1. linear pricers ----
+        eq_spot = EquitySpotPricer()
+        eq_fwd = EquityForwardPricer()
+
+        # ---- 2.2. non-linear analytic pricers ----
+        eq_eur_van_bsm = EquityEuropeanVanillaBsmPricer()
+        eq_eur_dig_bsm = EquityEuropeanDigitalBsmPricer()
+
+        # ---- 2.3 non-linear numerical pricers - Monte Carlo. ----
+        # non-path dependent instruments.
+        eq_eur_van_mc = EquityEuropeanVanillaMcPricer()
+        # eq_eur_dig_mc = EquityEuropeanDigitalMcPricer() <--- TODO: need to implement digital mc pricer.
+
+        # path dependent instruments.
+        eq_eur_asian_mc = EquityEuropeanAsianMcPricer()
+        eq_eur_lookback_mc = EquityEuropeanLookbackMcPricer()
+        eq_eur_bar_mc = EquityEuropeanBarrierMcPricer()
+        # eq_eur_double_barrier_mc = EquityEuropeanDoubleBarrierMcPricer()  <--- TODO: need to implement in mc pricer.
+        # eq_eur_touch_mc = EquityEuropeanTouchMcPricer()   <--- TODO: need to implement in mc pricer.
+
+        # ---- 2.4 non-linear numerical pricers - Finite Difference. ----
+        # non-path dependent instruments.
+        eq_eur_van_fd = EquityEuropeanVanillaFdPricer()
+        # eq_eur_dig_fd = EquityEuropeanDigitalFdPricer()   <--- TODO: need to implement in fd pricer.
+
+        # path dependent instruments.
+        eq_am_van_fd = EquityAmericanVanillaFdPricer()
+
+        # ============================================================================================================ #
+        # ============================================================================================================ #
+        # ============================================================================================================ #
+
+        # ---- Register FX defaults ----
+        reg.register(FxSpot, fx_spot)
+        reg.register(FxForward, fx_fwd)
+        reg.register(EuropeanFxVanillaOption, fx_eur_van_bsm)
+        reg.register(EuropeanFxDigitalOption, fx_eur_dig_bsm)
+        reg.register(EuropeanFxBarrierOption, fx_eur_bar_mc)
+        reg.register(AmericanFxVanillaOption, fx_am_van_fd)
+        reg.register(EuropeanFxAsianOption, fx_eur_asian_mc)
+        reg.register(EuropeanFxLookbackOption, fx_eur_lookback_mc)
+        reg.register(EuropeanFxDoubleBarrierOption, fx_eur_double_barrier_mc)
+        reg.register(EuropeanFxTouchOption, fx_eur_touch_mc)
+
+        # ---- Register Equity defaults ----
+        reg.register(EquitySpot, eq_spot)
+        reg.register(EquityForward, eq_fwd)
+        reg.register(EuropeanEquityVanillaOption, eq_eur_van_bsm)
+        reg.register(EuropeanEquityDigitalOption, eq_eur_dig_bsm)
+        reg.register(EuropeanEquityBarrierOption, eq_eur_bar_mc)
+        reg.register(AmericanEquityVanillaOption, eq_am_van_fd)
+        reg.register(EuropeanEquityAsianOption, eq_eur_asian_mc)
+        reg.register(EuropeanEquityLookbackOption, eq_eur_lookback_mc)
+
+        # ============================================================================================================ #
+        # ============================================================================================================ #
+        # ============================================================================================================ #
+
+        # ---- named aliases - FX ----
+        reg.register(EuropeanFxVanillaOption, fx_eur_van_mc, pricer_id="mc")
+        reg.register(EuropeanFxDigitalOption, fx_eur_dig_mc, pricer_id="mc")
+        reg.register(EuropeanFxBarrierOption, fx_eur_bar_mc, pricer_id="mc")
+        reg.register(EuropeanFxAsianOption, fx_eur_asian_mc, pricer_id="mc")
+        reg.register(EuropeanFxLookbackOption, fx_eur_lookback_mc, pricer_id="mc")
+        reg.register(EuropeanFxDoubleBarrierOption, fx_eur_double_barrier_mc, pricer_id="mc")
+        reg.register(EuropeanFxTouchOption, fx_eur_touch_mc, pricer_id="mc")
+
+        reg.register(EuropeanFxVanillaOption, fx_eur_van_fd, pricer_id="fd")
+        reg.register(EuropeanFxDigitalOption, fx_eur_dig_fd, pricer_id="fd")
+        reg.register(AmericanFxVanillaOption, fx_am_van_fd, pricer_id="fd")
+
+        # ---- named aliases - Equity ----
+        reg.register(EuropeanEquityVanillaOption, eq_eur_van_mc, pricer_id="mc")
+        # reg.register(EuropeanEquityDigitalOption, fx_eur_dig_mc, pricer_id="mc") <--- TODO: need to implement in mc pricer.
+        reg.register(EuropeanEquityBarrierOption, eq_eur_bar_mc, pricer_id="mc")
+        reg.register(EuropeanEquityAsianOption, eq_eur_asian_mc, pricer_id="mc")
+        reg.register(EuropeanEquityLookbackOption, eq_eur_lookback_mc, pricer_id="mc")
+
+        reg.register(EuropeanEquityVanillaOption, eq_eur_van_fd, pricer_id="fd")
+        # reg.register(EuropeanEquityDigitalOption, fx_eur_dig_fd, pricer_id="fd") <--- TODO: need to implement in fd pricer.
+        reg.register(AmericanEquityVanillaOption, eq_am_van_fd, pricer_id="fd")
 
         return reg

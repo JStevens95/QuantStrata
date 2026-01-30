@@ -139,23 +139,23 @@ This roadmap follows a **phased, incremental approach** that:
   - Tests verify intrinsic value floor
   - Use case: Early exercise for dividend-paying stocks
 
-- [ ] **Equity Barrier Options** (Phase 2.2)
+- [x] **Equity Barrier Options** (Phase 2.2)
   - Implement: `EuropeanEquityBarrierOption`
   - Pricer: MC (reuse existing barrier pricer)
   - Use case: Structured products component
 
-### 2.2 Equity-Specific Products
-- [ ] **Equity Digital Options**
+### 2.2 Equity-Specific Products ✅
+- [x] **Equity Digital Options**
   - Implement: `EuropeanEquityDigitalOption`
   - Payoff: Cash-or-asset (reuse existing)
   - Use case: Binary payouts
 
-- [ ] **Equity Asian Options**
+- [x] **Equity Asian Options**
   - Implement: `AsianEquityOption` (average price)
   - Payoff: Reuse `AsianPayoff`
   - Use case: Employee stock options, structured products
 
-- [ ] **Equity Lookback Options**
+- [x] **Equity Lookback Options**
   - Implement: `LookbackEquityOption`
   - Payoff: Reuse `LookbackPayoff`
   - Use case: Path-dependent exotic

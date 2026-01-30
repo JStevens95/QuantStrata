@@ -23,6 +23,10 @@ from src.instruments.fx.options.touch import EuropeanFxTouchOption
 
 # Equity Instruments
 from src.instruments.equity.options.vanilla import EuropeanEquityVanillaOption, AmericanEquityVanillaOption
+from src.instruments.equity.options.digital import EuropeanEquityDigitalOption
+from src.instruments.equity.options.barrier import EuropeanEquityBarrierOption
+from src.instruments.equity.options.asian import EuropeanEquityAsianOption
+from src.instruments.equity.options.lookback import EuropeanEquityLookbackOption
 
 from src.models.payoffs.types import OptionType
 
@@ -171,6 +175,57 @@ class PayoffFactory:
         if isinstance(instrument, AmericanEquityVanillaOption):
             opt: OptionType = instrument.option_type
             return VanillaPayoff(option_type=opt, strike=float(instrument.strike))
+
+        # ---------------------------
+        # Equity European Digital
+        # ---------------------------
+        if isinstance(instrument, EuropeanEquityDigitalOption):
+            opt: OptionType = instrument.option_type
+            k = float(instrument.strike)
+            payout = float(instrument.payout)
+
+            if instrument.digital_type == "cash":
+                return DigitalCashPayoff(option_type=opt, strike=k, cash=payout)
+            if instrument.digital_type == "asset":
+                return DigitalAssetPayoff(option_type=opt, strike=k, asset_units=payout)
+
+            raise ValueError(f"Unsupported digital payoff style: {instrument.digital_type!r}")
+
+        # ---------------------------
+        # Equity European Single Barrier (discrete monitoring, MC)
+        # ---------------------------
+        if isinstance(instrument, EuropeanEquityBarrierOption):
+            opt: OptionType = instrument.option_type
+            return SingleBarrierPayoff(
+                option_type=opt,
+                strike=float(instrument.strike),
+                barrier_direction=instrument.barrier_direction,  # type: ignore[arg-type]
+                barrier_style=instrument.barrier_style,          # type: ignore[arg-type]
+                barrier_level=float(instrument.barrier_level),
+                rebate_amount=float(instrument.rebate_amount),
+            )
+
+        # ---------------------------
+        # Equity European Asian (average price option, path-dependent, MC)
+        # ---------------------------
+        if isinstance(instrument, EuropeanEquityAsianOption):
+            opt: OptionType = instrument.option_type
+            return AsianPayoff(
+                option_type=opt,
+                strike=float(instrument.strike),
+                averaging_type=instrument.averaging_type,  # type: ignore[arg-type]
+            )
+
+        # ---------------------------
+        # Equity European Lookback (path extremum option, path-dependent, MC)
+        # ---------------------------
+        if isinstance(instrument, EuropeanEquityLookbackOption):
+            opt: OptionType = instrument.option_type
+            return LookbackPayoff(
+                option_type=opt,
+                lookback_type=instrument.lookback_type,  # type: ignore[arg-type]
+                strike=float(instrument.strike),
+            )
 
         # ---------------------------
         # Not supported yet
