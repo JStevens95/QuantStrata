@@ -16,3 +16,6 @@ TouchStyle = Literal["one_touch", "no_touch"]
 
 # Digital option payout type
 DigitalType = Literal["cash", "asset"]
+
+# Day count convention type.
+DayCountConvention = Literal["ACT/360", "ACT/365", "30/360"]
