@@ -21,7 +21,7 @@ This roadmap follows a **phased, incremental approach** that:
 
 **Goal:** Complete FX derivatives coverage and add missing functionality
 
-### 1.1 Additional FX Products
+### 1.1 Additional FX Products ✅
 - [x] **Asian Options** (average price/rate options)
   - Payoff: `max(avg(S_t) - K, 0)` for call
   - Implement: `AsianPayoff` (path-dependent)
