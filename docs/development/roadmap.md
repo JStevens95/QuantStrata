@@ -1,6 +1,6 @@
 # QuantStrata Development Roadmap
 
-**Last Updated:** January 27, 2026  
+**Last Updated:** January 27, 2026 (Phase 2 Locked)  
 **Current Version:** V1 (FX Derivatives Foundation)  
 **Target:** Comprehensive Professional Quant Library
 
@@ -237,6 +237,20 @@ This roadmap follows a **phased, incremental approach** that:
 - ✅ Equity market data infrastructure (2.4)
 - ✅ Equity local volatility adaptation (2.5)
 - ✅ Unit tests for equity generators and local vol
+
+### 2.6 Documentation & Tutorials ✅
+- [x] **Documentation Reorganization**
+  - Professional structure: `guides/`, `reference/`, `tutorials/`, `development/`
+  - Market data guides: Architecture, synthetic generators, volatility surfaces
+  - Instrument guides: All product specifications
+  - Model references: BSM, Black76, Bachelier, local vol, etc.
+  - Development docs: Roadmap, progress reports
+
+- [x] **Jupyter Notebooks**
+  - Implemented: `tutorials/market-data/synthetic_data_generation.ipynb`
+  - Implemented: `tutorials/pricing/equity_options_pricing.ipynb`
+  - Verified: All notebook imports working correctly
+  - Topics: Synthetic data for FX/IR/Equity, equity pricing with BSM/MC/FDE
 
 **Status:** Phase 2 COMPLETE.
 
