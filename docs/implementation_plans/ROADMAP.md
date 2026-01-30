@@ -160,69 +160,78 @@ This roadmap follows a **phased, incremental approach** that:
   - Payoff: Reuse `LookbackPayoff`
   - Use case: Path-dependent exotic
 
-### 2.3 Alternative Pricing Models (Black76 & Bachelier)
+### 2.3 Alternative Pricing Models (Black76 & Bachelier) ✅
 
 **Goal:** Extend the model library with Black76 (log-normal forward) and Bachelier (normal) models.
 
-#### 2.3.1 Black76 Model (Forward-Based Pricing)
-- [ ] **Black76 Model Engine**
-  - Implement: `src/models/analytic/black76/base.py`
+**Status:** Model foundation complete. Pricers/instruments deferred to Phase 3.
+
+#### 2.3.1 Black76 Model (Forward-Based Pricing) ✅
+- [x] **Black76 Model Engine**
+  - Implemented: `src/models/analytic/black76/base.py`
   - Core formulas: d1, d2 using forward price F instead of spot
   - Price: C = DF × [F×N(d1) - K×N(d2)]
-  - Greeks: Delta, Gamma, Vega, Theta, Rho
+  - Greeks: Delta, Gamma, Vega, Theta, Rho (all implemented)
+  - Unit tests: `tests/unit/models/analytic/black76/test_black76_vanilla.py`
   - Use case: Options on futures/forwards
 
-- [ ] **FX Forward Options (Black76)**
-  - Implement: `EuropeanFxForwardOption`
-  - Pricer: `FxForwardOptionBlack76Pricer`
-  - Model: F = S × exp((r_d - r_f)×T), then Black76
-  - Use case: OTC FX forward options
-
-- [ ] **Equity Index Futures Options (Black76)**
-  - Implement: `EuropeanEquityFuturesOption`
-  - Pricer: `EquityFuturesOptionBlack76Pricer`
-  - Model: F = S × exp((r - q)×T), then Black76
-  - Use case: S&P 500 futures options, index derivatives
-
-- [ ] **Interest Rate Caps/Floors (Black76)**
-  - Implement: `InterestRateCap`, `InterestRateFloor`
-  - Pricer: Sum of caplets using Black76 on forward rates
-  - Use case: Interest rate hedging (foundation for Phase 3)
-
-#### 2.3.2 Bachelier Model (Normal Distribution)
-- [ ] **Bachelier Model Engine**
-  - Implement: `src/models/analytic/bachelier/base.py`
-  - Normal dynamics: dS = σ dW (absolute volatility)
-  - Price: C = DF × [d×N(d) + σ√T×n(d)] where d = (F-K)/(σ√T)
-  - Greeks: Delta, Gamma, Vega, Theta, Rho
+#### 2.3.2 Bachelier Model (Normal Distribution) ✅
+- [x] **Bachelier Model Engine**
+  - Implemented: `src/models/analytic/bachelier/base.py`
+  - Normal dynamics: dF = σ dW (absolute volatility)
+  - Price: C = DF × [(F-K)N(d) + σ√T×n(d)] where d = (F-K)/(σ√T)
+  - Greeks: Delta, Gamma, Vega, Theta, Rho (all implemented)
+  - Key feature: Supports negative forward/strike (negative rates)
+  - Unit tests: `tests/unit/models/analytic/bachelier/test_bachelier_vanilla.py`
   - Use case: Negative rates, spread options
 
-- [ ] **FX Spread Options (Bachelier)**
-  - Implement: `EuropeanFxSpreadOption`
-  - Pricer: `FxSpreadOptionBachelierPricer`
-  - Use case: Cross-currency basis trading
-
-- [ ] **Equity Spread Options (Bachelier)**
-  - Implement: `EuropeanEquitySpreadOption`
-  - Pricer: `EquitySpreadOptionBachelierPricer`
-  - Use case: Pairs trading, relative value
-
-- [ ] **Swaptions (Bachelier)**
-  - Implement: `Swaption` with Bachelier pricing
-  - Use case: Negative rate environments (foundation for Phase 3)
-
-#### 2.3.3 Model Documentation
-- [ ] **Black76 Technical Documentation**
+#### 2.3.3 Model Documentation ✅
+- [x] **Black76 Technical Documentation**
+  - Complete: `docs/mathematics/black76.md`
   - Mathematical derivation from BSM
   - Forward measure vs spot measure
   - When to use Black76 vs BSM
   - Greeks comparison and interpretation
+  - Interview key points
 
-- [ ] **Bachelier Technical Documentation**
+- [x] **Bachelier Technical Documentation**
+  - Complete: `docs/mathematics/bachelier.md`
   - Normal vs log-normal dynamics
   - Volatility quoting conventions (bp vol vs % vol)
   - Negative underlying handling
   - Use cases and limitations
+  - Interview key points
+
+#### 2.3.4 Deferred to Phase 3: Black76/Bachelier Pricers & Instruments
+
+The following pricers and instruments are deferred to Phase 3 (Interest Rate Derivatives):
+
+**Black76 Pricers (Phase 3.1):**
+- [ ] **FX Forward Options**
+  - Instrument: `EuropeanFxForwardOption`
+  - Pricer: `FxForwardOptionBlack76Pricer`
+  - Use case: OTC FX forward options
+
+- [ ] **Equity Index Futures Options**
+  - Instrument: `EuropeanEquityFuturesOption`
+  - Pricer: `EquityFuturesOptionBlack76Pricer`
+  - Use case: S&P 500 futures options, index derivatives
+
+- [ ] **Interest Rate Caps/Floors**
+  - Instruments: `InterestRateCap`, `InterestRateFloor`, `Caplet`, `Floorlet`
+  - Pricer: Sum of caplets using Black76 on forward rates
+  - Use case: Interest rate hedging
+
+**Bachelier Pricers (Phase 3.2):**
+- [ ] **Swaptions (Bachelier)**
+  - Instrument: `Swaption`
+  - Pricer: `SwaptionBachelierPricer`
+  - Use case: Negative rate environments
+
+- [ ] **Spread Options**
+  - Instruments: `EuropeanFxSpreadOption`, `EuropeanEquitySpreadOption`
+  - Pricers: `FxSpreadOptionBachelierPricer`, `EquitySpreadOptionBachelierPricer`
+  - Use case: Cross-currency basis, pairs trading
 
 ### 2.4 Equity Market Data
 - [ ] **Equity Market Provider**
