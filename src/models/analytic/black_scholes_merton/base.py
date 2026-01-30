@@ -511,8 +511,14 @@ def vanilla_rho_discount(
     """
     Vanilla option rho w.r.t. discount rate: dPV/dr (holding carry fixed).
 
-    ρ_r_call = -T × [-S exp((b-r)T) N(d₁) + K exp(-rT) N(d₂)]
-    ρ_r_put  = -T × [S exp((b-r)T) N(-d₁) - K exp(-rT) N(-d₂)]
+    Derivation: C = S×exp((b-r)T)×N(d₁) - K×exp(-rT)×N(d₂)
+    
+    Since d₁,d₂ don't depend on r (when b is held fixed):
+      ∂C/∂r = S×(-T)×ff×N(d₁) - K×(-T)×df×N(d₂)
+            = T × [K×df×N(d₂) - S×ff×N(d₁)]
+
+    For put: P = K×df×N(-d₂) - S×ff×N(-d₁)
+      ∂P/∂r = T × [S×ff×N(-d₁) - K×df×N(-d₂)]
 
     Parameters
     ----------
@@ -535,6 +541,7 @@ def vanilla_rho_discount(
     if t == 0.0:
         return 0.0
     if sigma == 0.0:
+        # Zero-vol limit: price is discounted intrinsic, dPV/dr = -T × PV
         pv = vanilla_price(option_type=option_type, spot=s, strike=k, expiry=t,
                            discount_rate=r, carry=b, vol=sigma)
         return -t * pv
@@ -544,8 +551,10 @@ def vanilla_rho_discount(
     ff = forward_factor(carry=b, discount_rate=r, expiry=t)
 
     if option_type == "call":
-        return -t * (-s * ff * std_norm_cdf(d1) + k * df * std_norm_cdf(d2))
-    return -t * (s * ff * std_norm_cdf(-d1) - k * df * std_norm_cdf(-d2))
+        # ∂C/∂r = T × [K×df×N(d₂) - S×ff×N(d₁)]
+        return t * (k * df * std_norm_cdf(d2) - s * ff * std_norm_cdf(d1))
+    # ∂P/∂r = T × [S×ff×N(-d₁) - K×df×N(-d₂)]
+    return t * (s * ff * std_norm_cdf(-d1) - k * df * std_norm_cdf(-d2))
 
 
 def vanilla_rho_carry(
