@@ -229,7 +229,7 @@ class IrEuropeanCapletB76PricerSimple:
 
 
 @dataclass(frozen=True, slots=True)
-class IrFloorletB76PricerSimple:
+class IrEuropeanFloorletB76PricerSimple:
     """
     Black76 pricer for a single floorlet with direct parameters.
     
@@ -313,7 +313,7 @@ class IrFloorletB76PricerSimple:
 
 
 @dataclass(frozen=True, slots=True)
-class CapBlack76PricerSimple:
+class IrEuropeanCapB76PricerSimple:
     """
     Black76 pricer for a cap with direct parameters.
     
@@ -357,7 +357,7 @@ class CapBlack76PricerSimple:
 
 
 @dataclass(frozen=True, slots=True)
-class FloorBlack76PricerSimple:
+class IrEuropeanFloorB76PricerSimple:
     """
     Black76 pricer for a floor with direct parameters.
     
@@ -366,7 +366,7 @@ class FloorBlack76PricerSimple:
     
     def price(self, trade: FloorSimple) -> float:
         """Price a floor as sum of floorlets."""
-        floorlet_pricer = IrFloorletB76PricerSimple()
+        floorlet_pricer = IrEuropeanFloorletB76PricerSimple()
         total_pv = 0.0
         
         for floorlet in trade.floorlets:
@@ -376,7 +376,7 @@ class FloorBlack76PricerSimple:
     
     def greeks(self, trade: FloorSimple) -> Dict[GreekName, float]:
         """Compute aggregate Greeks for a floor."""
-        floorlet_pricer = IrFloorletB76PricerSimple()
+        floorlet_pricer = IrEuropeanFloorletB76PricerSimple()
         
         total_greeks = {"delta": 0.0, "gamma": 0.0, "vega": 0.0, "theta": 0.0, "rho": 0.0}
         
@@ -394,7 +394,7 @@ class FloorBlack76PricerSimple:
 
 
 @dataclass(frozen=True, slots=True)
-class IrCapletB76Pricer:
+class IrEuropeanCapletB76Pricer:
     """
     Black76 pricer for a single caplet with market data lookup.
     """
@@ -483,7 +483,7 @@ class IrCapletB76Pricer:
 
 
 @dataclass(frozen=True, slots=True)
-class IrFloorletB76Pricer:
+class IrEuropeanFloorletB76Pricer:
     """
     Black76 pricer for a single floorlet with market data lookup.
     """
@@ -517,7 +517,7 @@ class IrFloorletB76Pricer:
             discount_factor=df_end,
         )
         
-        return IrFloorletB76PricerSimple().price(simple)
+        return IrEuropeanFloorletB76PricerSimple().price(simple)
     
     def greeks(self, trade: Floorlet, market: Market) -> Dict[GreekName, float]:
         """Compute Greeks for a floorlet with market data."""
@@ -548,11 +548,11 @@ class IrFloorletB76Pricer:
             discount_factor=df_end,
         )
         
-        return IrFloorletB76PricerSimple().greeks(simple)
+        return IrEuropeanFloorletB76PricerSimple().greeks(simple)
 
 
 @dataclass(frozen=True, slots=True)
-class IrCapB76Pricer:
+class IrEuropeanCapB76Pricer:
     """
     Black76 pricer for a cap with market data lookup.
     
@@ -585,7 +585,7 @@ class IrCapB76Pricer:
             caplets=tuple(caplets),
         )
         
-        return CapBlack76PricerSimple().price(simple_cap)
+        return IrEuropeanCapB76PricerSimple().price(simple_cap)
     
     def greeks(self, trade: Cap, market: Market) -> Dict[GreekName, float]:
         """Compute aggregate Greeks for a cap."""
@@ -597,7 +597,7 @@ class IrCapB76Pricer:
             caplets=tuple(caplets),
         )
         
-        return CapBlack76PricerSimple().greeks(simple_cap)
+        return IrEuropeanCapB76PricerSimple().greeks(simple_cap)
     
     def _generate_caplets(self, trade: Cap, market: Market) -> List[CapletSimple]:
         """Generate caplets for each reset period."""
@@ -652,7 +652,7 @@ class IrCapB76Pricer:
 
 
 @dataclass(frozen=True, slots=True)
-class IrFloorB76Pricer:
+class IrEuropeanFloorB76Pricer:
     """
     Black76 pricer for a floor with market data lookup.
     """
@@ -667,7 +667,7 @@ class IrFloorB76Pricer:
             floorlets=tuple(floorlets),
         )
         
-        return FloorBlack76PricerSimple().price(simple_floor)
+        return IrEuropeanFloorB76PricerSimple().price(simple_floor)
     
     def greeks(self, trade: Floor, market: Market) -> Dict[GreekName, float]:
         """Compute aggregate Greeks for a floor."""
@@ -679,7 +679,7 @@ class IrFloorB76Pricer:
             floorlets=tuple(floorlets),
         )
         
-        return FloorBlack76PricerSimple().greeks(simple_floor)
+        return IrEuropeanFloorB76PricerSimple().greeks(simple_floor)
     
     def _generate_floorlets(self, trade: Floor, market: Market) -> List[FloorletSimple]:
         """Generate floorlets for each reset period."""
@@ -731,12 +731,12 @@ class IrFloorB76Pricer:
 __all__ = [
     # Simple pricers
     "IrEuropeanCapletB76PricerSimple",
-    "IrFloorletB76PricerSimple",
-    "IrCapB76PricerSimple",
-    "IrFloorB76PricerSimple",
+    "IrEuropeanFloorletB76PricerSimple",
+    "IrEuropeanCapB76PricerSimple",
+    "IrEuropeanFloorB76PricerSimple",
     # Market data pricers
-    "IrCapletB76Pricer",
-    "IrFloorletB76Pricer",
-    "IrCapB76Pricer",
-    "IrFloorB76Pricer",
+    "IrEuropeanCapletB76Pricer",
+    "IrEuropeanFloorletB76Pricer",
+    "IrEuropeanCapB76Pricer",
+    "IrEuropeanFloorB76Pricer",
 ]

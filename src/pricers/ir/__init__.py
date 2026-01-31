@@ -16,14 +16,14 @@ from src.pricers.ir.linear import (
 from src.pricers.ir.european_b76 import (
     # Simple pricers (actual class names from european_b76.py)
     IrEuropeanCapletB76PricerSimple,
-    IrFloorletB76PricerSimple,
-    CapBlack76PricerSimple,
-    FloorBlack76PricerSimple,
+    IrEuropeanFloorletB76PricerSimple,
+    IrEuropeanCapB76PricerSimple,
+    IrEuropeanFloorB76PricerSimple,
     # Market data pricers
-    IrCapletB76Pricer,
-    IrFloorletB76Pricer,
-    IrCapB76Pricer,
-    IrFloorB76Pricer,
+    IrEuropeanCapletB76Pricer,
+    IrEuropeanFloorletB76Pricer,
+    IrEuropeanCapB76Pricer,
+    IrEuropeanFloorB76Pricer,
 )
 from src.pricers.ir.european_bch import (
     IrEuropeanSwaptionBchPricer,
@@ -38,13 +38,13 @@ __all__ = [
     "IRSwapPricerSimple",
     # Black76 pricers
     "IrEuropeanCapletB76PricerSimple",
-    "IrFloorletB76PricerSimple",
-    "CapBlack76PricerSimple",
-    "FloorBlack76PricerSimple",
-    "IrCapletB76Pricer",
-    "IrFloorletB76Pricer",
-    "IrCapB76Pricer",
-    "IrFloorB76Pricer",
+    "IrEuropeanFloorletB76PricerSimple",
+    "IrEuropeanCapB76PricerSimple",
+    "IrEuropeanFloorB76PricerSimple",
+    "IrEuropeanCapletB76Pricer",
+    "IrEuropeanFloorletB76Pricer",
+    "IrEuropeanCapB76Pricer",
+    "IrEuropeanFloorB76Pricer",
     # Bachelier pricers
     "IrEuropeanSwaptionBchPricer",
     "IrEuropeanSwaptionBchPricerSimple",

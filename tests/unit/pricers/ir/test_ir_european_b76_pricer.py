@@ -14,9 +14,7 @@ Author: QuantStrata Team
 """
 from __future__ import annotations
 
-import math
 import pytest
-import numpy as np
 
 from src.instruments.ir.options.capfloor import (
     CapletSimple,
@@ -24,24 +22,19 @@ from src.instruments.ir.options.capfloor import (
     CapSimple,
     FloorSimple,
     Cap,
-    Floor,
     Caplet,
-    Floorlet,
     compute_accrual_factor,
 )
 from src.pricers.ir.european_b76 import (
     IrEuropeanCapletB76PricerSimple,
-    IrFloorletB76PricerSimple,
-    CapBlack76PricerSimple,
-    FloorBlack76PricerSimple,
-    IrCapletB76Pricer,
-    IrFloorletB76Pricer,
-    IrCapB76Pricer,
-    IrFloorB76Pricer,
+    IrEuropeanFloorletB76PricerSimple,
+    IrEuropeanCapB76PricerSimple,
+    IrEuropeanFloorB76PricerSimple,
+    IrEuropeanCapletB76Pricer,
+    IrEuropeanCapB76Pricer,
 )
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.market import Market
-from src.marketdata.core.interfaces import Quote
 from src.marketdata.curves.term_structure import FlatZeroRateCurve
 from src.marketdata.surfaces.vol_surface import FlatVolSurface
 
@@ -204,13 +197,13 @@ class TestFloorletPricing:
     
     def test_floorlet_price_positive(self, floorlet):
         """Floorlet price should be positive."""
-        pricer = IrFloorletB76PricerSimple()
+        pricer = IrEuropeanFloorletB76PricerSimple()
         pv = pricer.price(floorlet)
         assert pv > 0
     
     def test_itm_floorlet_higher_than_otm(self, base_params):
         """ITM floorlet should be more valuable than OTM."""
-        pricer = IrFloorletB76PricerSimple()
+        pricer = IrEuropeanFloorletB76PricerSimple()
         
         # ITM: forward < strike
         itm_params = {**base_params, "forward_rate": 0.03, "strike": 0.05}
@@ -241,7 +234,7 @@ class TestPutCallParity:
         floorlet = FloorletSimple(**base_params)
         
         caplet_pricer = IrEuropeanCapletB76PricerSimple()
-        floorlet_pricer = IrFloorletB76PricerSimple()
+        floorlet_pricer = IrEuropeanFloorletB76PricerSimple()
         
         caplet_pv = caplet_pricer.price(caplet)
         floorlet_pv = floorlet_pricer.price(floorlet)
@@ -303,7 +296,7 @@ class TestFloorletGreeks:
     
     def test_put_delta_negative(self, floorlet):
         """Floorlet delta should be negative (put on forward)."""
-        pricer = IrFloorletB76PricerSimple()
+        pricer = IrEuropeanFloorletB76PricerSimple()
         greeks = pricer.greeks(floorlet)
         assert greeks["delta"] < 0
 
@@ -396,7 +389,7 @@ class TestCapPricing:
         
         # Price.
         caplet_pricer = IrEuropeanCapletB76PricerSimple()
-        cap_pricer = CapBlack76PricerSimple()
+        cap_pricer = IrEuropeanCapB76PricerSimple()
         
         caplet1_pv = caplet_pricer.price(caplet1)
         caplet2_pv = caplet_pricer.price(caplet2)
@@ -421,8 +414,8 @@ class TestFloorPricing:
             floorlets=(floorlet1, floorlet2),
         )
         
-        floorlet_pricer = IrFloorletB76PricerSimple()
-        floor_pricer = FloorBlack76PricerSimple()
+        floorlet_pricer = IrEuropeanFloorletB76PricerSimple()
+        floor_pricer = IrEuropeanFloorB76PricerSimple()
         
         expected = floorlet_pricer.price(floorlet1) + floorlet_pricer.price(floorlet2)
         actual = floor_pricer.price(floor)
@@ -450,7 +443,7 @@ class TestMarketDataPricers:
             vol_id=vol_id,
         )
         
-        pricer = IrCapletB76Pricer()
+        pricer = IrEuropeanCapletB76Pricer()
         pv = pricer.price(caplet, market)
         
         assert pv > 0
@@ -469,7 +462,7 @@ class TestMarketDataPricers:
             vol_id=vol_id,
         )
         
-        pricer = IrCapB76Pricer()
+        pricer = IrEuropeanCapB76Pricer()
         pv = pricer.price(cap, market)
         
         assert pv > 0
