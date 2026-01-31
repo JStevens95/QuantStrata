@@ -119,7 +119,7 @@ def _forward_rate_from_dfs(
 
 
 @dataclass(frozen=True, slots=True)
-class CapletBlack76PricerSimple:
+class IrEuropeanCapletB76PricerSimple:
     """
     Black76 pricer for a single caplet with direct parameters.
     
@@ -229,7 +229,7 @@ class CapletBlack76PricerSimple:
 
 
 @dataclass(frozen=True, slots=True)
-class FloorletBlack76PricerSimple:
+class IrFloorletB76PricerSimple:
     """
     Black76 pricer for a single floorlet with direct parameters.
     
@@ -334,7 +334,7 @@ class CapBlack76PricerSimple:
         float
             Present value of the cap.
         """
-        caplet_pricer = CapletBlack76PricerSimple()
+        caplet_pricer = IrEuropeanCapletB76PricerSimple()
         total_pv = 0.0
         
         for caplet in trade.caplets:
@@ -344,7 +344,7 @@ class CapBlack76PricerSimple:
     
     def greeks(self, trade: CapSimple) -> Dict[GreekName, float]:
         """Compute aggregate Greeks for a cap."""
-        caplet_pricer = CapletBlack76PricerSimple()
+        caplet_pricer = IrEuropeanCapletB76PricerSimple()
         
         total_greeks = {"delta": 0.0, "gamma": 0.0, "vega": 0.0, "theta": 0.0, "rho": 0.0}
         
@@ -366,7 +366,7 @@ class FloorBlack76PricerSimple:
     
     def price(self, trade: FloorSimple) -> float:
         """Price a floor as sum of floorlets."""
-        floorlet_pricer = FloorletBlack76PricerSimple()
+        floorlet_pricer = IrFloorletB76PricerSimple()
         total_pv = 0.0
         
         for floorlet in trade.floorlets:
@@ -376,7 +376,7 @@ class FloorBlack76PricerSimple:
     
     def greeks(self, trade: FloorSimple) -> Dict[GreekName, float]:
         """Compute aggregate Greeks for a floor."""
-        floorlet_pricer = FloorletBlack76PricerSimple()
+        floorlet_pricer = IrFloorletB76PricerSimple()
         
         total_greeks = {"delta": 0.0, "gamma": 0.0, "vega": 0.0, "theta": 0.0, "rho": 0.0}
         
@@ -394,7 +394,7 @@ class FloorBlack76PricerSimple:
 
 
 @dataclass(frozen=True, slots=True)
-class CapletBlack76Pricer:
+class IrCapletB76Pricer:
     """
     Black76 pricer for a single caplet with market data lookup.
     """
@@ -448,7 +448,7 @@ class CapletBlack76Pricer:
             discount_factor=df_end,
         )
         
-        return CapletBlack76PricerSimple().price(simple)
+        return IrEuropeanCapletB76PricerSimple().price(simple)
     
     def greeks(self, trade: Caplet, market: Market) -> Dict[GreekName, float]:
         """Compute Greeks for a caplet with market data."""
@@ -479,11 +479,11 @@ class CapletBlack76Pricer:
             discount_factor=df_end,
         )
         
-        return CapletBlack76PricerSimple().greeks(simple)
+        return IrEuropeanCapletB76PricerSimple().greeks(simple)
 
 
 @dataclass(frozen=True, slots=True)
-class FloorletBlack76Pricer:
+class IrFloorletB76Pricer:
     """
     Black76 pricer for a single floorlet with market data lookup.
     """
@@ -517,7 +517,7 @@ class FloorletBlack76Pricer:
             discount_factor=df_end,
         )
         
-        return FloorletBlack76PricerSimple().price(simple)
+        return IrFloorletB76PricerSimple().price(simple)
     
     def greeks(self, trade: Floorlet, market: Market) -> Dict[GreekName, float]:
         """Compute Greeks for a floorlet with market data."""
@@ -548,11 +548,11 @@ class FloorletBlack76Pricer:
             discount_factor=df_end,
         )
         
-        return FloorletBlack76PricerSimple().greeks(simple)
+        return IrFloorletB76PricerSimple().greeks(simple)
 
 
 @dataclass(frozen=True, slots=True)
-class CapBlack76Pricer:
+class IrCapB76Pricer:
     """
     Black76 pricer for a cap with market data lookup.
     
@@ -652,7 +652,7 @@ class CapBlack76Pricer:
 
 
 @dataclass(frozen=True, slots=True)
-class FloorBlack76Pricer:
+class IrFloorB76Pricer:
     """
     Black76 pricer for a floor with market data lookup.
     """
@@ -730,13 +730,13 @@ class FloorBlack76Pricer:
 
 __all__ = [
     # Simple pricers
-    "CapletBlack76PricerSimple",
-    "FloorletBlack76PricerSimple",
-    "CapBlack76PricerSimple",
-    "FloorBlack76PricerSimple",
+    "IrEuropeanCapletB76PricerSimple",
+    "IrFloorletB76PricerSimple",
+    "IrCapB76PricerSimple",
+    "IrFloorB76PricerSimple",
     # Market data pricers
-    "CapletBlack76Pricer",
-    "FloorletBlack76Pricer",
-    "CapBlack76Pricer",
-    "FloorBlack76Pricer",
+    "IrCapletB76Pricer",
+    "IrFloorletB76Pricer",
+    "IrCapB76Pricer",
+    "IrFloorB76Pricer",
 ]

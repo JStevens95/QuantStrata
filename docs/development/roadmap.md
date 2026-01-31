@@ -1,6 +1,6 @@
 # QuantStrata Development Roadmap
 
-**Last Updated:** January 27, 2026 (Phase 3.2 Complete - Linear IR)  
+**Last Updated:** January 27, 2026 (Phase 3.3 Complete - Bachelier Pricers)  
 **Current Version:** V1 (FX Derivatives Foundation)  
 **Target:** Comprehensive Professional Quant Library
 
@@ -315,20 +315,30 @@ linear products that should be implemented before options on them (swaptions).
 
 **Status:** Phase 3.2 COMPLETE. See `docs/development/progress/phase_3_2_linear_ir.md` for details.
 
-### 3.3 Bachelier Pricers (Uses Phase 2.3 Model Foundation)
+### 3.3 Bachelier Pricers (Uses Phase 2.3 Model Foundation) ✅
 
 **Rationale:** Swaptions require IRS as underlying, hence 3.3 comes after 3.2.
 
-- [ ] **Swaptions (Bachelier)**
-  - Instrument: `Swaption` (option on swap)
-  - Pricer: `SwaptionBachelierPricer`
-  - Requires: IRS instrument from 3.2
-  - Use case: Negative rate environments, volatility trading in rates
+- [x] **Swaptions (Bachelier)**
+  - Instruments: `Swaption`, `SwaptionSimple`
+  - Pricers: `SwaptionBachelierPricer`, `SwaptionBachelierPricerSimple`
+  - Features: Payer/receiver, cash/physical settlement, tenor description
+  - Greeks: delta, gamma, vega, theta, rho, vega_bp
+  - Documentation: `docs/guides/instruments/swaptions.md`
+  - Tests: 24 unit tests
 
-- [ ] **Spread Options (Bachelier)**
-  - Instruments: `EuropeanFxSpreadOption`, `EuropeanEquitySpreadOption`
-  - Pricers: `FxSpreadOptionBachelierPricer`, `EquitySpreadOptionBachelierPricer`
-  - Use case: Cross-currency basis trading, pairs trading, relative value
+- [x] **Spread Options (Bachelier)**
+  - FX: `EuropeanFxSpreadOption`, `EuropeanFxSpreadOptionSimple`
+  - FX Pricer: `FxSpreadOptionBachelierPricer`, `FxSpreadOptionBachelierPricerSimple`
+  - Equity: `EuropeanEquitySpreadOption`, `EuropeanEquitySpreadOptionSimple`
+  - Equity Pricer: `EquitySpreadOptionBachelierPricer`, `EquitySpreadOptionBachelierPricerSimple`
+  - Tests: 21 unit tests
+
+- [x] **Tutorial Notebook**
+  - `docs/tutorials/pricing/ir_instruments_pricing.ipynb`
+  - Covers: FRAs, IRS, Caps/Floors, Swaptions, Model comparison
+
+**Status:** Phase 3.3 COMPLETE. See `docs/development/progress/phase_3_3_bachelier_pricers.md` for details.
 
 ### 3.4 Bond Instruments
 
@@ -377,7 +387,7 @@ linear products that should be implemented before options on them (swaptions).
 ### Deliverables:
 - [x] Complete Black76 pricers (FX forward options, futures options, caps/floors)
 - [x] Linear IR instruments (FRA, IRS) - 36 tests passing
-- [ ] Complete Bachelier pricers (swaptions, spread options)
+- [x] Complete Bachelier pricers (swaptions, spread options) - 45 tests passing
 - [ ] Bond instruments and options
 - [ ] Hull-White model with calibration (enables IR MC/FD)
 - [ ] Rate market data infrastructure

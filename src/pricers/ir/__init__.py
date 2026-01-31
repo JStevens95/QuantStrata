@@ -5,6 +5,7 @@ Interest Rate Pricers.
 This module contains pricers for interest rate derivatives:
 - FRA and IRS linear pricers
 - Cap/Floor Black76 pricers
+- Swaption Bachelier pricers
 """
 from src.pricers.ir.linear import (
     FRAPricer,
@@ -13,14 +14,20 @@ from src.pricers.ir.linear import (
     IRSwapPricerSimple,
 )
 from src.pricers.ir.european_b76 import (
-    CapletBlack76Pricer,
-    CapletBlack76PricerSimple,
-    FloorletBlack76Pricer,
-    FloorletBlack76PricerSimple,
-    CapBlack76Pricer,
+    # Simple pricers (actual class names from european_b76.py)
+    IrEuropeanCapletB76PricerSimple,
+    IrFloorletB76PricerSimple,
     CapBlack76PricerSimple,
-    FloorBlack76Pricer,
     FloorBlack76PricerSimple,
+    # Market data pricers
+    IrCapletB76Pricer,
+    IrFloorletB76Pricer,
+    IrCapB76Pricer,
+    IrFloorB76Pricer,
+)
+from src.pricers.ir.european_bch import (
+    IrEuropeanSwaptionBchPricer,
+    IrEuropeanSwaptionBchPricerSimple,
 )
 
 __all__ = [
@@ -29,13 +36,16 @@ __all__ = [
     "FRAPricerSimple",
     "IRSwapPricer",
     "IRSwapPricerSimple",
-    # Option pricers
-    "CapletBlack76Pricer",
-    "CapletBlack76PricerSimple",
-    "FloorletBlack76Pricer",
-    "FloorletBlack76PricerSimple",
-    "CapBlack76Pricer",
+    # Black76 pricers
+    "IrEuropeanCapletB76PricerSimple",
+    "IrFloorletB76PricerSimple",
     "CapBlack76PricerSimple",
-    "FloorBlack76Pricer",
     "FloorBlack76PricerSimple",
+    "IrCapletB76Pricer",
+    "IrFloorletB76Pricer",
+    "IrCapB76Pricer",
+    "IrFloorB76Pricer",
+    # Bachelier pricers
+    "IrEuropeanSwaptionBchPricer",
+    "IrEuropeanSwaptionBchPricerSimple",
 ]

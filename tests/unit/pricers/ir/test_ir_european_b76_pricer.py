@@ -30,14 +30,14 @@ from src.instruments.ir.options.capfloor import (
     compute_accrual_factor,
 )
 from src.pricers.ir.european_b76 import (
-    CapletBlack76PricerSimple,
-    FloorletBlack76PricerSimple,
+    IrEuropeanCapletB76PricerSimple,
+    IrFloorletB76PricerSimple,
     CapBlack76PricerSimple,
     FloorBlack76PricerSimple,
-    CapletBlack76Pricer,
-    FloorletBlack76Pricer,
-    CapBlack76Pricer,
-    FloorBlack76Pricer,
+    IrCapletB76Pricer,
+    IrFloorletB76Pricer,
+    IrCapB76Pricer,
+    IrFloorB76Pricer,
 )
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.market import Market
@@ -166,13 +166,13 @@ class TestCapletPricing:
     
     def test_caplet_price_positive(self, caplet):
         """Caplet price should be positive."""
-        pricer = CapletBlack76PricerSimple()
+        pricer = IrEuropeanCapletB76PricerSimple()
         pv = pricer.price(caplet)
         assert pv > 0
     
     def test_itm_caplet_higher_than_otm(self, base_params):
         """ITM caplet should be more valuable than OTM."""
-        pricer = CapletBlack76PricerSimple()
+        pricer = IrEuropeanCapletB76PricerSimple()
         
         # ITM: forward > strike
         itm_params = {**base_params, "forward_rate": 0.07, "strike": 0.05}
@@ -186,7 +186,7 @@ class TestCapletPricing:
     
     def test_caplet_price_scales_with_notional(self, base_params):
         """Price should scale linearly with notional."""
-        pricer = CapletBlack76PricerSimple()
+        pricer = IrEuropeanCapletB76PricerSimple()
         
         caplet_1 = CapletSimple(**base_params)
         
@@ -204,13 +204,13 @@ class TestFloorletPricing:
     
     def test_floorlet_price_positive(self, floorlet):
         """Floorlet price should be positive."""
-        pricer = FloorletBlack76PricerSimple()
+        pricer = IrFloorletB76PricerSimple()
         pv = pricer.price(floorlet)
         assert pv > 0
     
     def test_itm_floorlet_higher_than_otm(self, base_params):
         """ITM floorlet should be more valuable than OTM."""
-        pricer = FloorletBlack76PricerSimple()
+        pricer = IrFloorletB76PricerSimple()
         
         # ITM: forward < strike
         itm_params = {**base_params, "forward_rate": 0.03, "strike": 0.05}
@@ -240,8 +240,8 @@ class TestPutCallParity:
         caplet = CapletSimple(**base_params)
         floorlet = FloorletSimple(**base_params)
         
-        caplet_pricer = CapletBlack76PricerSimple()
-        floorlet_pricer = FloorletBlack76PricerSimple()
+        caplet_pricer = IrEuropeanCapletB76PricerSimple()
+        floorlet_pricer = IrFloorletB76PricerSimple()
         
         caplet_pv = caplet_pricer.price(caplet)
         floorlet_pv = floorlet_pricer.price(floorlet)
@@ -270,7 +270,7 @@ class TestCapletGreeks:
     
     def test_greeks_exist(self, caplet):
         """Greeks should be computed."""
-        pricer = CapletBlack76PricerSimple()
+        pricer = IrEuropeanCapletB76PricerSimple()
         greeks = pricer.greeks(caplet)
         
         assert "delta" in greeks
@@ -281,19 +281,19 @@ class TestCapletGreeks:
     
     def test_call_delta_positive(self, caplet):
         """Caplet delta should be positive (call on forward)."""
-        pricer = CapletBlack76PricerSimple()
+        pricer = IrEuropeanCapletB76PricerSimple()
         greeks = pricer.greeks(caplet)
         assert greeks["delta"] > 0
     
     def test_gamma_positive(self, caplet):
         """Gamma should be positive (option is convex)."""
-        pricer = CapletBlack76PricerSimple()
+        pricer = IrEuropeanCapletB76PricerSimple()
         greeks = pricer.greeks(caplet)
         assert greeks["gamma"] > 0
     
     def test_vega_positive(self, caplet):
         """Vega should be positive."""
-        pricer = CapletBlack76PricerSimple()
+        pricer = IrEuropeanCapletB76PricerSimple()
         greeks = pricer.greeks(caplet)
         assert greeks["vega"] > 0
 
@@ -303,7 +303,7 @@ class TestFloorletGreeks:
     
     def test_put_delta_negative(self, floorlet):
         """Floorlet delta should be negative (put on forward)."""
-        pricer = FloorletBlack76PricerSimple()
+        pricer = IrFloorletB76PricerSimple()
         greeks = pricer.greeks(floorlet)
         assert greeks["delta"] < 0
 
@@ -318,7 +318,7 @@ class TestFiniteDifferenceGreeks:
     
     def test_delta_fd(self, base_params):
         """Delta should match finite difference approximation."""
-        pricer = CapletBlack76PricerSimple()
+        pricer = IrEuropeanCapletB76PricerSimple()
         
         # Bump forward rate.
         bump = 1e-4
@@ -344,7 +344,7 @@ class TestFiniteDifferenceGreeks:
     
     def test_vega_fd(self, base_params):
         """Vega should match finite difference approximation."""
-        pricer = CapletBlack76PricerSimple()
+        pricer = IrEuropeanCapletB76PricerSimple()
         
         bump = 1e-4
         
@@ -395,7 +395,7 @@ class TestCapPricing:
         )
         
         # Price.
-        caplet_pricer = CapletBlack76PricerSimple()
+        caplet_pricer = IrEuropeanCapletB76PricerSimple()
         cap_pricer = CapBlack76PricerSimple()
         
         caplet1_pv = caplet_pricer.price(caplet1)
@@ -421,7 +421,7 @@ class TestFloorPricing:
             floorlets=(floorlet1, floorlet2),
         )
         
-        floorlet_pricer = FloorletBlack76PricerSimple()
+        floorlet_pricer = IrFloorletB76PricerSimple()
         floor_pricer = FloorBlack76PricerSimple()
         
         expected = floorlet_pricer.price(floorlet1) + floorlet_pricer.price(floorlet2)
@@ -450,7 +450,7 @@ class TestMarketDataPricers:
             vol_id=vol_id,
         )
         
-        pricer = CapletBlack76Pricer()
+        pricer = IrCapletB76Pricer()
         pv = pricer.price(caplet, market)
         
         assert pv > 0
@@ -469,7 +469,7 @@ class TestMarketDataPricers:
             vol_id=vol_id,
         )
         
-        pricer = CapBlack76Pricer()
+        pricer = IrCapB76Pricer()
         pv = pricer.price(cap, market)
         
         assert pv > 0
@@ -488,7 +488,7 @@ class TestEdgeCases:
         params = {**base_params, "forward_rate": base_params["strike"]}
         caplet = CapletSimple(**params)
         
-        pricer = CapletBlack76PricerSimple()
+        pricer = IrEuropeanCapletB76PricerSimple()
         pv = pricer.price(caplet)
         
         assert pv > 0
@@ -498,7 +498,7 @@ class TestEdgeCases:
         params = {**base_params, "forward_rate": 0.02, "strike": 0.10}
         caplet = CapletSimple(**params)
         
-        pricer = CapletBlack76PricerSimple()
+        pricer = IrEuropeanCapletB76PricerSimple()
         pv = pricer.price(caplet)
         
         # Allow for small floating-point errors near zero
@@ -510,7 +510,7 @@ class TestEdgeCases:
         params = {**base_params, "forward_rate": 0.10, "strike": 0.02}
         caplet = CapletSimple(**params)
         
-        pricer = CapletBlack76PricerSimple()
+        pricer = IrEuropeanCapletB76PricerSimple()
         pv = pricer.price(caplet)
         
         # Intrinsic = DF × τ × N × (F - K)
@@ -527,7 +527,7 @@ class TestEdgeCases:
         params = {**base_params, "vol": 0.0}
         caplet = CapletSimple(**params)
         
-        pricer = CapletBlack76PricerSimple()
+        pricer = IrEuropeanCapletB76PricerSimple()
         pv = pricer.price(caplet)
         
         # With zero vol, price = intrinsic

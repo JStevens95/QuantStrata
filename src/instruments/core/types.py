@@ -5,6 +5,10 @@ from typing import Literal
 # -----------------------------------------------------------------------------
 # Core instrument definitions (type aliases)
 # -----------------------------------------------------------------------------
+
+# Standard option type (call or put).
+OptionType = Literal["call", "put"]
+
 # Define averaging type for Asian options
 AsianAveragingType = Literal["arithmetic", "geometric"]
 
@@ -25,3 +29,9 @@ FRADirection = Literal["payer", "receiver"]
 
 # Type for swap direction.
 SwapDirection = Literal["payer", "receiver"]
+
+# Swaption type (payer or receiver).
+SwaptionType = Literal["payer", "receiver"]
+
+# Settlement style.
+SettlementStyle = Literal["cash", "physical"]

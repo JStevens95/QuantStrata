@@ -5,6 +5,7 @@ Interest Rate Option Instruments.
 This module contains interest rate options including:
 - Caplets and Floorlets
 - Caps and Floors
+- Swaptions
 """
 from src.instruments.ir.options.capfloor import (
     Caplet,
@@ -16,8 +17,13 @@ from src.instruments.ir.options.capfloor import (
     Floor,
     FloorSimple,
 )
+from src.instruments.ir.options.swaption import (
+    Swaption,
+    SwaptionSimple,
+)
 
 __all__ = [
+    # Caps/Floors
     "Caplet",
     "CapletSimple",
     "Floorlet",
@@ -26,4 +32,7 @@ __all__ = [
     "CapSimple",
     "Floor",
     "FloorSimple",
+    # Swaptions
+    "Swaption",
+    "SwaptionSimple",
 ]
