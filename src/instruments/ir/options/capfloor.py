@@ -55,7 +55,7 @@ from src.instruments.core.types import DayCountConvention
 
 
 @dataclass(frozen=True, slots=True)
-class CapletSimple:
+class IrCapletEuropeanOptionSimple:
     """
     Single caplet with direct parameter input.
     
@@ -114,7 +114,7 @@ class CapletSimple:
 
 
 @dataclass(frozen=True, slots=True)
-class FloorletSimple:
+class IrFloorletEuropeanOptionSimple:
     """
     Single floorlet with direct parameter input.
     
@@ -155,7 +155,7 @@ class FloorletSimple:
 
 
 @dataclass(frozen=True, slots=True)
-class CapSimple:
+class IrCapEuropeanOptionSimple:
     """
     Interest rate cap with direct parameter input.
     
@@ -173,7 +173,7 @@ class CapSimple:
     """
     notional: float
     strike: float
-    caplets: Tuple[CapletSimple, ...] = field(default_factory=tuple)
+    caplets: Tuple[IrCapletEuropeanOptionSimple, ...] = field(default_factory=tuple)
     
     def __post_init__(self) -> None:
         """Validate cap inputs."""
@@ -186,7 +186,7 @@ class CapSimple:
 
 
 @dataclass(frozen=True, slots=True)
-class FloorSimple:
+class IrFloorEuropeanOptionSimple:
     """
     Interest rate floor with direct parameter input.
     
@@ -203,7 +203,7 @@ class FloorSimple:
     """
     notional: float
     strike: float
-    floorlets: Tuple[FloorletSimple, ...] = field(default_factory=tuple)
+    floorlets: Tuple[IrFloorletEuropeanOptionSimple, ...] = field(default_factory=tuple)
     
     def __post_init__(self) -> None:
         """Validate floor inputs."""
@@ -221,7 +221,7 @@ class FloorSimple:
 
 
 @dataclass(frozen=True, slots=True)
-class Caplet:
+class IrCapletEuropeanOption:
     """
     Single caplet with market data lookup.
     
@@ -265,7 +265,7 @@ class Caplet:
 
 
 @dataclass(frozen=True, slots=True)
-class Floorlet:
+class IrFloorletEuropeanOption:
     """
     Single floorlet with market data lookup.
     
@@ -296,7 +296,7 @@ class Floorlet:
 
 
 @dataclass(frozen=True, slots=True)
-class Cap:
+class IrCapEuropeanOption:
     """
     Interest rate cap with market data lookup.
     
@@ -348,7 +348,7 @@ class Cap:
 
 
 @dataclass(frozen=True, slots=True)
-class Floor:
+class IrFloorEuropeanOption:
     """
     Interest rate floor with market data lookup.
     
@@ -436,15 +436,15 @@ __all__ = [
     # Types
     "DayCountConvention",
     # Simple instruments
-    "CapletSimple",
-    "FloorletSimple",
-    "CapSimple",
-    "FloorSimple",
+    "IrCapletEuropeanOptionSimple",
+    "IrFloorletEuropeanOptionSimple",
+    "IrCapEuropeanOptionSimple",
+    "IrFloorEuropeanOptionSimple",
     # Market data instruments
-    "Caplet",
-    "Floorlet",
-    "Cap",
-    "Floor",
+    "IrCapletEuropeanOption",
+    "IrFloorletEuropeanOption",
+    "IrCapEuropeanOption",
+    "IrFloorEuropeanOption",
     # Utilities
     "compute_accrual_factor",
 ]

@@ -7,45 +7,41 @@ This module contains pricers for interest rate derivatives:
 - Cap/Floor Black76 pricers
 - Swaption Bachelier pricers
 """
-from src.pricers.ir.linear import (
-    FRAPricer,
-    FRAPricerSimple,
-    IRSwapPricer,
-    IRSwapPricerSimple,
-)
+from src.pricers.ir.swap import IrSwapPricer, IrSwapPricerSimple
+from src.pricers.ir.fra import IrFraPricer, IrFraPricerSimple
 from src.pricers.ir.european_b76 import (
     # Simple pricers (actual class names from european_b76.py)
-    IrEuropeanCapletB76PricerSimple,
-    IrEuropeanFloorletB76PricerSimple,
-    IrEuropeanCapB76PricerSimple,
-    IrEuropeanFloorB76PricerSimple,
+    IrCapletEuropeanOptionB76PricerSimple,
+    IrFloorletEuropeanOptionB76PricerSimple,
+    IrCapEuropeanOptionB76PricerSimple,
+    IrFloorEuropeanOptionB76PricerSimple,
     # Market data pricers
-    IrEuropeanCapletB76Pricer,
-    IrEuropeanFloorletB76Pricer,
-    IrEuropeanCapB76Pricer,
-    IrEuropeanFloorB76Pricer,
+    IrCapletEuropeanOptionB76Pricer,
+    IrFloorletEuropeanOptionB76Pricer,
+    IrCapEuropeanOptionB76Pricer,
+    IrFloorEuropeanOptionB76Pricer,
 )
 from src.pricers.ir.european_bch import (
-    IrEuropeanSwaptionBchPricer,
-    IrEuropeanSwaptionBchPricerSimple,
+    IrSwaptionEuropeanOptionBchPricer,
+    IrSwaptionEuropeanOptionBchPricerSimple,
 )
 
 __all__ = [
     # Linear pricers
-    "FRAPricer",
-    "FRAPricerSimple",
-    "IRSwapPricer",
-    "IRSwapPricerSimple",
+    "IrFraPricer",
+    "IrFraPricerSimple",
+    "IrSwapPricer",
+    "IrSwapPricerSimple",
     # Black76 pricers
-    "IrEuropeanCapletB76PricerSimple",
-    "IrEuropeanFloorletB76PricerSimple",
-    "IrEuropeanCapB76PricerSimple",
-    "IrEuropeanFloorB76PricerSimple",
-    "IrEuropeanCapletB76Pricer",
-    "IrEuropeanFloorletB76Pricer",
-    "IrEuropeanCapB76Pricer",
-    "IrEuropeanFloorB76Pricer",
+    "IrCapletEuropeanOptionB76PricerSimple",
+    "IrFloorletEuropeanOptionB76PricerSimple",
+    "IrCapEuropeanOptionB76PricerSimple",
+    "IrFloorEuropeanOptionB76PricerSimple",
+    "IrCapletEuropeanOptionB76Pricer",
+    "IrFloorletEuropeanOptionB76Pricer",
+    "IrCapEuropeanOptionB76Pricer",
+    "IrFloorEuropeanOptionB76Pricer",
     # Bachelier pricers
-    "IrEuropeanSwaptionBchPricer",
-    "IrEuropeanSwaptionBchPricerSimple",
+    "IrSwaptionEuropeanOptionBchPricer",
+    "IrSwaptionEuropeanOptionBchPricerSimple",
 ]

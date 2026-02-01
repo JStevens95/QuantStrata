@@ -6,13 +6,13 @@ from dataclasses import dataclass  # Dataclasses for small immutable pricer/conf
 from typing import Literal, Optional  # Literal for payoff-type tags; Optional for seed/paths.
 
 from src.instruments.core.types import TouchStyle
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption  # FX vanilla instrument.
-from src.instruments.fx.options.digital import EuropeanFxDigitalOption  # FX digital instrument.
-from src.instruments.fx.options.barrier import EuropeanFxBarrierOption  # FX barrier instrument.
-from src.instruments.fx.options.asian import EuropeanFxAsianOption  # FX Asian instrument.
-from src.instruments.fx.options.lookback import EuropeanFxLookbackOption  # FX lookback instrument.
-from src.instruments.fx.options.double_barrier import EuropeanFxDoubleBarrierOption  # FX double barrier instrument.
-from src.instruments.fx.options.touch import EuropeanFxTouchOption  # FX touch instrument.
+from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption  # FX vanilla instrument.
+from src.instruments.fx.options.digital import FxDigitalEuropeanOption  # FX digital instrument.
+from src.instruments.fx.options.barrier import FxBarrierEuropeanOption  # FX barrier instrument.
+from src.instruments.fx.options.asian import FxAsianEuropeanOption  # FX Asian instrument.
+from src.instruments.fx.options.lookback import FxLookbackEuropeanOption  # FX lookback instrument.
+from src.instruments.fx.options.double_barrier import FxDoubleBarrierEuropeanOption  # FX double barrier instrument.
+from src.instruments.fx.options.touch import FxTouchEuropeanOption  # FX touch instrument.
 
 from src.marketdata.core.market import Market  # Market snapshot interface.
 from src.models.numeric.monte_carlo.rng import NormalRng  # Reproducible normal RNG.
@@ -29,7 +29,7 @@ from src.models.payoffs.factory import build_payoff_1d, require_terminal_payoff,
 # ======================================================================================
 
 @dataclass(frozen=True, slots=True)
-class FxMcSimulation:
+class FxVanillaOptionMcSimulation:
     """
     Reusable Monte Carlo simulation artifact for a single *vanilla* trade on a single Market snapshot.
 
@@ -64,7 +64,7 @@ class FxMcSimulation:
 
 
 @dataclass(frozen=True, slots=True)
-class FxDigitalMcSimulation:
+class FxDigitalOptionMcSimulation:
     """
     Reusable Monte Carlo simulation artifact for a single *digital* trade on a single Market snapshot.
 
@@ -101,7 +101,7 @@ class FxDigitalMcSimulation:
 
 
 @dataclass(frozen=True, slots=True)
-class FxBarrierMcSimulation:
+class FxBarrierOptionMcSimulation:
     """
     Reusable Monte Carlo simulation artifact for a single *barrier* trade on a single Market snapshot.
 
@@ -141,7 +141,7 @@ class FxBarrierMcSimulation:
 
 
 @dataclass(frozen=True, slots=True)
-class FxAsianMcSimulation:
+class FxAsianOptionMcSimulation:
     """
     Reusable Monte Carlo simulation artifact for a single Asian option trade.
 
@@ -182,7 +182,7 @@ class FxAsianMcSimulation:
 
 
 @dataclass(frozen=True, slots=True)
-class FxLookbackMcSimulation:
+class FxLookbackOptionMcSimulation:
     """
     Reusable Monte Carlo simulation artifact for a single lookback option trade.
 
@@ -224,7 +224,7 @@ class FxLookbackMcSimulation:
 
 
 @dataclass(frozen=True, slots=True)
-class FxDoubleBarrierMcSimulation:
+class FxDoubleBarrierOptionMcSimulation:
     """
     Monte Carlo simulation artifact for a double barrier option.
 
@@ -315,7 +315,7 @@ class FxDoubleBarrierMcSimulation:
 
 
 @dataclass(frozen=True, slots=True)
-class FxTouchMcSimulation:
+class FxTouchOptionMcSimulation:
     """
     Monte Carlo simulation artifact for a touch option.
 
@@ -395,7 +395,7 @@ class FxTouchMcSimulation:
 # ======================================================================================
 
 @dataclass(frozen=True, slots=True)
-class FxEuropeanVanillaMcPricer:
+class FxVanillaEuropeanOptionMcPricer:
     """
     Monte Carlo pricer for European FX vanilla options under Garman–Kohlhagen.
 
@@ -414,34 +414,34 @@ class FxEuropeanVanillaMcPricer:
     n_steps: int = 1  # Number of time steps (exact GBM allows 1).
     scheme: GbmScheme = "exact"  # Default to exact terminal sampling for GBM.
 
-    def price(self, trade: EuropeanFxVanillaOption, market: Market) -> float:
+    def price(self, trade: FxVanillaEuropeanOption, market: Market) -> float:
         sim = self.run(trade, market, store_paths=False)  # Run once without storing paths.
         return float(sim.discounted_payoffs.mean())  # PV is the mean of discounted payoff samples.
 
     def run(
         self,
-        trade: EuropeanFxVanillaOption,
+        trade: FxVanillaEuropeanOption,
         market: Market,
         *,
         store_paths: bool = False,
         paths_keep: int = 0,
-    ) -> FxMcSimulation:
+    ) -> FxVanillaOptionMcSimulation:
         return self._run_simulation(trade, market, store_paths=store_paths, paths_keep=paths_keep)  # Single source of truth.
 
-    def sample_terminal_spots(self, trade: EuropeanFxVanillaOption, market: Market) -> np.ndarray:
+    def sample_terminal_spots(self, trade: FxVanillaEuropeanOption, market: Market) -> np.ndarray:
         return self.run(trade, market, store_paths=False).terminal_spots  # Delegate to run().
 
-    def sample_discounted_payoffs(self, trade: EuropeanFxVanillaOption, market: Market) -> np.ndarray:
+    def sample_discounted_payoffs(self, trade: FxVanillaEuropeanOption, market: Market) -> np.ndarray:
         return self.run(trade, market, store_paths=False).discounted_payoffs  # Delegate to run().
 
     def _run_simulation(
         self,
-        trade: EuropeanFxVanillaOption,
+        trade: FxVanillaEuropeanOption,
         market: Market,
         *,
         store_paths: bool,
         paths_keep: int,
-    ) -> FxMcSimulation:
+    ) -> FxVanillaOptionMcSimulation:
         if self.n_paths <= 0:  # Validate path count.
             raise ValueError("n_paths must be positive.")  # Fail fast.
         if self.n_steps <= 0:  # Validate step count.
@@ -476,7 +476,7 @@ class FxEuropeanVanillaMcPricer:
             terminal_spots = np.array([spot0], dtype=np.float64)  # Terminal spot is spot0.
             payoff = payoff_fn.terminal(spot=terminal_spots)  # Compute terminal payoff vector.
             discounted_payoffs = (float(df_d) * payoff * notional).astype(np.float64, copy=False)  # Discount + scale.
-            return FxMcSimulation(
+            return FxVanillaOptionMcSimulation(
                 spot0=spot0,
                 strike=strike,
                 maturity=maturity,
@@ -531,7 +531,7 @@ class FxEuropeanVanillaMcPricer:
             else:  # Otherwise keep a subset.
                 kept_paths = all_paths[: min(paths_keep, n_paths_eff), :].copy()  # Copy only kept rows.
 
-        return FxMcSimulation(
+        return FxVanillaOptionMcSimulation(
             spot0=spot0,
             strike=strike,
             maturity=maturity,
@@ -557,7 +557,7 @@ class FxEuropeanVanillaMcPricer:
 # ======================================================================================
 
 @dataclass(frozen=True, slots=True)
-class FxEuropeanDigitalMcPricer:
+class FxDigitalEuropeanOptionMcPricer:
     """
     Monte Carlo pricer for European FX digital options under Garman–Kohlhagen.
 
@@ -585,34 +585,34 @@ class FxEuropeanDigitalMcPricer:
     n_steps: int = 1  # Number of time steps.
     scheme: GbmScheme = "exact"  # GBM scheme ("exact" recommended here).
 
-    def price(self, trade: EuropeanFxDigitalOption, market: Market) -> float:
+    def price(self, trade: FxDigitalEuropeanOption, market: Market) -> float:
         sim = self.run(trade, market, store_paths=False)  # Run once without storing paths.
         return float(sim.discounted_payoffs.mean())  # PV is the mean of discounted payoff samples.
 
     def run(
         self,
-        trade: EuropeanFxDigitalOption,
+        trade: FxDigitalEuropeanOption,
         market: Market,
         *,
         store_paths: bool = False,
         paths_keep: int = 0,
-    ) -> FxDigitalMcSimulation:
+    ) -> FxDigitalOptionMcSimulation:
         return self._run_simulation(trade, market, store_paths=store_paths, paths_keep=paths_keep)  # Single source of truth.
 
-    def sample_terminal_spots(self, trade: EuropeanFxDigitalOption, market: Market) -> np.ndarray:
+    def sample_terminal_spots(self, trade: FxDigitalEuropeanOption, market: Market) -> np.ndarray:
         return self.run(trade, market, store_paths=False).terminal_spots  # Delegate to run().
 
-    def sample_discounted_payoffs(self, trade: EuropeanFxDigitalOption, market: Market) -> np.ndarray:
+    def sample_discounted_payoffs(self, trade: FxDigitalEuropeanOption, market: Market) -> np.ndarray:
         return self.run(trade, market, store_paths=False).discounted_payoffs  # Delegate to run().
 
     def _run_simulation(
         self,
-        trade: EuropeanFxDigitalOption,
+        trade: FxDigitalEuropeanOption,
         market: Market,
         *,
         store_paths: bool,
         paths_keep: int,
-    ) -> FxDigitalMcSimulation:
+    ) -> FxDigitalOptionMcSimulation:
         if self.n_paths <= 0:  # Validate path count.
             raise ValueError("n_paths must be positive.")  # Fail fast.
         if self.n_steps <= 0:  # Validate step count.
@@ -648,7 +648,7 @@ class FxEuropeanDigitalMcPricer:
             terminal_spots = np.array([spot0], dtype=np.float64)  # Terminal spot is spot0.
             payoff = payoff_fn.terminal(spot=terminal_spots)  # Compute terminal payoff in domestic units.
             discounted_payoffs = (float(df_d) * payoff).astype(np.float64, copy=False)  # Discount in domestic.
-            return FxDigitalMcSimulation(
+            return FxDigitalOptionMcSimulation(
                 spot0=spot0,
                 strike=strike,
                 maturity=maturity,
@@ -703,7 +703,7 @@ class FxEuropeanDigitalMcPricer:
             else:  # Store subset otherwise.
                 kept_paths = all_paths[: min(paths_keep, n_paths_eff), :].copy()  # Copy subset.
 
-        return FxDigitalMcSimulation(
+        return FxDigitalOptionMcSimulation(
             spot0=spot0,
             strike=strike,
             maturity=maturity,
@@ -726,7 +726,7 @@ class FxEuropeanDigitalMcPricer:
 
 
 @dataclass(frozen=True, slots=True)
-class FxEuropeanBarrierMcPricer:
+class FxBarrierEuropeanOptionMcPricer:
     """
     Monte Carlo pricer for European FX single-barrier options under Garman–Kohlhagen.
 
@@ -751,34 +751,34 @@ class FxEuropeanBarrierMcPricer:
     n_steps: int = 64  # Barrier needs monitoring points; choose a denser default than vanilla/digital.
     scheme: GbmScheme = "exact"  # Exact GBM steps (exact per step) is typically preferred.
 
-    def price(self, trade: EuropeanFxBarrierOption, market: Market) -> float:
+    def price(self, trade: FxBarrierEuropeanOption, market: Market) -> float:
         sim = self.run(trade, market, store_paths=False)
         return float(sim.discounted_payoffs.mean())
 
     def run(
         self,
-        trade: EuropeanFxBarrierOption,
+        trade: FxBarrierEuropeanOption,
         market: Market,
         *,
         store_paths: bool = False,
         paths_keep: int = 0,
-    ) -> FxBarrierMcSimulation:
+    ) -> FxBarrierOptionMcSimulation:
         return self._run_simulation(trade, market, store_paths=store_paths, paths_keep=paths_keep)
 
-    def sample_terminal_spots(self, trade: EuropeanFxBarrierOption, market: Market) -> np.ndarray:
+    def sample_terminal_spots(self, trade: FxBarrierEuropeanOption, market: Market) -> np.ndarray:
         return self.run(trade, market, store_paths=False).terminal_spots
 
-    def sample_discounted_payoffs(self, trade: EuropeanFxBarrierOption, market: Market) -> np.ndarray:
+    def sample_discounted_payoffs(self, trade: FxBarrierEuropeanOption, market: Market) -> np.ndarray:
         return self.run(trade, market, store_paths=False).discounted_payoffs
 
     def _run_simulation(
         self,
-        trade: EuropeanFxBarrierOption,
+        trade: FxBarrierEuropeanOption,
         market: Market,
         *,
         store_paths: bool,
         paths_keep: int,
-    ) -> FxBarrierMcSimulation:
+    ) -> FxBarrierOptionMcSimulation:
         # -----------------------------
         # Validate pricer configuration
         # -----------------------------
@@ -848,7 +848,7 @@ class FxEuropeanBarrierMcPricer:
             payoff = payoff_fn.terminal_from_paths(paths)  # per-unit-notional, domestic
             discounted_payoffs = (float(df_d) * payoff * notional).astype(np.float64, copy=False)
 
-            return FxBarrierMcSimulation(
+            return FxBarrierOptionMcSimulation(
                 spot0=spot0,
                 strike=strike,
                 barrier_level=barrier_level,
@@ -922,7 +922,7 @@ class FxEuropeanBarrierMcPricer:
             else:
                 kept_paths = all_paths[: min(paths_keep, n_paths_eff), :].copy()
 
-        return FxBarrierMcSimulation(
+        return FxBarrierOptionMcSimulation(
             spot0=spot0,
             strike=strike,
             barrier_level=barrier_level,
@@ -948,7 +948,7 @@ class FxEuropeanBarrierMcPricer:
 
 
 @dataclass(frozen=True, slots=True)
-class FxEuropeanAsianMcPricer:
+class FxAsianEuropeanOptionMcPricer:
     """
     Monte Carlo pricer for European FX Asian options under Garman–Kohlhagen.
 
@@ -995,7 +995,7 @@ class FxEuropeanAsianMcPricer:
     n_steps: int = 64  # Number of time steps (more steps = more monitoring points for averaging).
     scheme: GbmScheme = "exact"  # GBM scheme ("exact" recommended for GBM).
 
-    def price(self, trade: EuropeanFxAsianOption, market: Market) -> float:
+    def price(self, trade: FxAsianEuropeanOption, market: Market) -> float:
         """
         Price an Asian option using Monte Carlo simulation.
 
@@ -1003,7 +1003,7 @@ class FxEuropeanAsianMcPricer:
 
         Parameters
         ----------
-        trade : EuropeanFxAsianOption
+        trade : FxAsianEuropeanOption
             The Asian option instrument to price.
         market : Market
             Market snapshot containing spot, vol, and curves.
@@ -1020,12 +1020,12 @@ class FxEuropeanAsianMcPricer:
 
     def run(
         self,
-        trade: EuropeanFxAsianOption,
+        trade: FxAsianEuropeanOption,
         market: Market,
         *,
         store_paths: bool = False,
         paths_keep: int = 0,
-    ) -> FxAsianMcSimulation:
+    ) -> FxAsianOptionMcSimulation:
         """
         Run Monte Carlo simulation and return full simulation artifact.
 
@@ -1034,7 +1034,7 @@ class FxEuropeanAsianMcPricer:
 
         Parameters
         ----------
-        trade : EuropeanFxAsianOption
+        trade : FxAsianEuropeanOption
             The Asian option instrument to simulate.
         market : Market
             Market snapshot containing spot, vol, and curves.
@@ -1050,7 +1050,7 @@ class FxEuropeanAsianMcPricer:
         """
         return self._run_simulation(trade, market, store_paths=store_paths, paths_keep=paths_keep)
 
-    def sample_terminal_spots(self, trade: EuropeanFxAsianOption, market: Market) -> np.ndarray:
+    def sample_terminal_spots(self, trade: FxAsianEuropeanOption, market: Market) -> np.ndarray:
         """
         Sample terminal spot prices from the simulation.
 
@@ -1058,7 +1058,7 @@ class FxEuropeanAsianMcPricer:
 
         Parameters
         ----------
-        trade : EuropeanFxAsianOption
+        trade : FxAsianEuropeanOption
             The Asian option instrument.
         market : Market
             Market snapshot.
@@ -1070,7 +1070,7 @@ class FxEuropeanAsianMcPricer:
         """
         return self.run(trade, market, store_paths=False).terminal_spots
 
-    def sample_average_spots(self, trade: EuropeanFxAsianOption, market: Market) -> np.ndarray:
+    def sample_average_spots(self, trade: FxAsianEuropeanOption, market: Market) -> np.ndarray:
         """
         Sample average spot prices from the simulation.
 
@@ -1078,7 +1078,7 @@ class FxEuropeanAsianMcPricer:
 
         Parameters
         ----------
-        trade : EuropeanFxAsianOption
+        trade : FxAsianEuropeanOption
             The Asian option instrument.
         market : Market
             Market snapshot.
@@ -1090,7 +1090,7 @@ class FxEuropeanAsianMcPricer:
         """
         return self.run(trade, market, store_paths=False).average_spots
 
-    def sample_discounted_payoffs(self, trade: EuropeanFxAsianOption, market: Market) -> np.ndarray:
+    def sample_discounted_payoffs(self, trade: FxAsianEuropeanOption, market: Market) -> np.ndarray:
         """
         Sample discounted payoffs from the simulation.
 
@@ -1098,7 +1098,7 @@ class FxEuropeanAsianMcPricer:
 
         Parameters
         ----------
-        trade : EuropeanFxAsianOption
+        trade : FxAsianEuropeanOption
             The Asian option instrument.
         market : Market
             Market snapshot.
@@ -1112,12 +1112,12 @@ class FxEuropeanAsianMcPricer:
 
     def _run_simulation(
         self,
-        trade: EuropeanFxAsianOption,
+        trade: FxAsianEuropeanOption,
         market: Market,
         *,
         store_paths: bool,
         paths_keep: int,
-    ) -> FxAsianMcSimulation:
+    ) -> FxAsianOptionMcSimulation:
         """
         Internal method that performs the actual Monte Carlo simulation.
 
@@ -1209,7 +1209,7 @@ class FxEuropeanAsianMcPricer:
             # Compute average for diagnostics (will be S0)
             average_spots = np.array([spot0], dtype=np.float64)
 
-            return FxAsianMcSimulation(
+            return FxAsianOptionMcSimulation(
                 spot0=spot0,
                 strike=strike,
                 maturity=maturity,
@@ -1292,7 +1292,7 @@ class FxEuropeanAsianMcPricer:
             else:  # Keep subset otherwise
                 kept_paths = all_paths[: min(paths_keep, n_paths_eff), :].copy()  # Copy subset
 
-        return FxAsianMcSimulation(
+        return FxAsianOptionMcSimulation(
             spot0=spot0,
             strike=strike,
             maturity=maturity,
@@ -1316,7 +1316,7 @@ class FxEuropeanAsianMcPricer:
 
 
 @dataclass(frozen=True, slots=True)
-class FxEuropeanLookbackMcPricer:
+class FxLookbackEuropeanOptionMcPricer:
     """
     Monte Carlo pricer for European FX Lookback options under Garman–Kohlhagen.
 
@@ -1367,7 +1367,7 @@ class FxEuropeanLookbackMcPricer:
     n_steps: int = 64  # Number of time steps (more steps = better extremum approximation).
     scheme: GbmScheme = "exact"  # GBM scheme ("exact" recommended for GBM).
 
-    def price(self, trade: EuropeanFxLookbackOption, market: Market) -> float:
+    def price(self, trade: FxLookbackEuropeanOption, market: Market) -> float:
         """
         Price a lookback option using Monte Carlo simulation.
 
@@ -1375,7 +1375,7 @@ class FxEuropeanLookbackMcPricer:
 
         Parameters
         ----------
-        trade : EuropeanFxLookbackOption
+        trade : FxLookbackEuropeanOption
             The lookback option instrument to price.
         market : Market
             Market snapshot containing spot, vol, and curves.
@@ -1392,12 +1392,12 @@ class FxEuropeanLookbackMcPricer:
 
     def run(
         self,
-        trade: EuropeanFxLookbackOption,
+        trade: FxLookbackEuropeanOption,
         market: Market,
         *,
         store_paths: bool = False,
         paths_keep: int = 0,
-    ) -> FxLookbackMcSimulation:
+    ) -> FxLookbackOptionMcSimulation:
         """
         Run Monte Carlo simulation and return full simulation artifact.
 
@@ -1406,7 +1406,7 @@ class FxEuropeanLookbackMcPricer:
 
         Parameters
         ----------
-        trade : EuropeanFxLookbackOption
+        trade : FxLookbackEuropeanOption
             The lookback option instrument to simulate.
         market : Market
             Market snapshot containing spot, vol, and curves.
@@ -1422,13 +1422,13 @@ class FxEuropeanLookbackMcPricer:
         """
         return self._run_simulation(trade, market, store_paths=store_paths, paths_keep=paths_keep)
 
-    def sample_terminal_spots(self, trade: EuropeanFxLookbackOption, market: Market) -> np.ndarray:
+    def sample_terminal_spots(self, trade: FxLookbackEuropeanOption, market: Market) -> np.ndarray:
         """
         Sample terminal spot prices from the simulation.
 
         Parameters
         ----------
-        trade : EuropeanFxLookbackOption
+        trade : FxLookbackEuropeanOption
             The lookback option instrument.
         market : Market
             Market snapshot.
@@ -1440,13 +1440,13 @@ class FxEuropeanLookbackMcPricer:
         """
         return self.run(trade, market, store_paths=False).terminal_spots
 
-    def sample_max_spots(self, trade: EuropeanFxLookbackOption, market: Market) -> np.ndarray:
+    def sample_max_spots(self, trade: FxLookbackEuropeanOption, market: Market) -> np.ndarray:
         """
         Sample maximum spot prices from the simulation.
 
         Parameters
         ----------
-        trade : EuropeanFxLookbackOption
+        trade : FxLookbackEuropeanOption
             The lookback option instrument.
         market : Market
             Market snapshot.
@@ -1458,13 +1458,13 @@ class FxEuropeanLookbackMcPricer:
         """
         return self.run(trade, market, store_paths=False).max_spots
 
-    def sample_min_spots(self, trade: EuropeanFxLookbackOption, market: Market) -> np.ndarray:
+    def sample_min_spots(self, trade: FxLookbackEuropeanOption, market: Market) -> np.ndarray:
         """
         Sample minimum spot prices from the simulation.
 
         Parameters
         ----------
-        trade : EuropeanFxLookbackOption
+        trade : FxLookbackEuropeanOption
             The lookback option instrument.
         market : Market
             Market snapshot.
@@ -1476,13 +1476,13 @@ class FxEuropeanLookbackMcPricer:
         """
         return self.run(trade, market, store_paths=False).min_spots
 
-    def sample_discounted_payoffs(self, trade: EuropeanFxLookbackOption, market: Market) -> np.ndarray:
+    def sample_discounted_payoffs(self, trade: FxLookbackEuropeanOption, market: Market) -> np.ndarray:
         """
         Sample discounted payoffs from the simulation.
 
         Parameters
         ----------
-        trade : EuropeanFxLookbackOption
+        trade : FxLookbackEuropeanOption
             The lookback option instrument.
         market : Market
             Market snapshot.
@@ -1496,12 +1496,12 @@ class FxEuropeanLookbackMcPricer:
 
     def _run_simulation(
         self,
-        trade: EuropeanFxLookbackOption,
+        trade: FxLookbackEuropeanOption,
         market: Market,
         *,
         store_paths: bool,
         paths_keep: int,
-    ) -> FxLookbackMcSimulation:
+    ) -> FxLookbackOptionMcSimulation:
         """
         Internal method that performs the actual Monte Carlo simulation.
 
@@ -1510,7 +1510,7 @@ class FxEuropeanLookbackMcPricer:
 
         Parameters
         ----------
-        trade : EuropeanFxLookbackOption
+        trade : FxLookbackEuropeanOption
             The lookback option instrument to simulate.
         market : Market
             Market snapshot.
@@ -1590,7 +1590,7 @@ class FxEuropeanLookbackMcPricer:
             payoff = payoff_fn.terminal_from_paths(paths)
             discounted_payoffs = (float(df_d) * payoff * notional).astype(np.float64, copy=False)
 
-            return FxLookbackMcSimulation(
+            return FxLookbackOptionMcSimulation(
                 spot0=spot0,
                 strike=strike,
                 maturity=maturity,
@@ -1667,7 +1667,7 @@ class FxEuropeanLookbackMcPricer:
             else:
                 kept_paths = all_paths[: min(paths_keep, n_paths_eff), :].copy()
 
-        return FxLookbackMcSimulation(
+        return FxLookbackOptionMcSimulation(
             spot0=spot0,
             strike=strike,
             maturity=maturity,
@@ -1692,7 +1692,7 @@ class FxEuropeanLookbackMcPricer:
 
 
 @dataclass(frozen=True, slots=True)
-class FxEuropeanDoubleBarrierMcPricer:
+class FxDoubleBarrierEuropeanOptionMcPricer:
     """
     Monte Carlo pricer for European FX double barrier options.
 
@@ -1722,7 +1722,7 @@ class FxEuropeanDoubleBarrierMcPricer:
 
     Examples
     --------
-    >>> from src.pricers.fx.double_barrier_mc import FxEuropeanDoubleBarrierMcPricer
+    >>> from src.pricers.fx.european_mc import FxDoubleBarrierEuropeanOptionMcPricer
     >>> pricer = FxEuropeanDoubleBarrierMcPricer(n_paths=100_000)
     >>> pv = pricer.price(trade, market)
     """
@@ -1736,13 +1736,13 @@ class FxEuropeanDoubleBarrierMcPricer:
     n_steps: int = 64                     # Monitoring points for barrier checking.
     scheme: GbmScheme = "exact"           # GBM scheme (exact per step).
 
-    def price(self, trade: EuropeanFxDoubleBarrierOption, market: Market) -> float:
+    def price(self, trade: FxDoubleBarrierEuropeanOption, market: Market) -> float:
         """
         Compute the present value of the double barrier option.
 
         Parameters
         ----------
-        trade : EuropeanFxDoubleBarrierOption
+        trade : FxDoubleBarrierEuropeanOption
             The double barrier option instrument.
         market : Market
             Market snapshot with spot, curves, and vol surface.
@@ -1758,18 +1758,18 @@ class FxEuropeanDoubleBarrierMcPricer:
 
     def run(
         self,
-        trade: EuropeanFxDoubleBarrierOption,
+        trade: FxDoubleBarrierEuropeanOption,
         market: Market,
         *,
         store_paths: bool = False,
         paths_keep: int = 0,
-    ) -> FxDoubleBarrierMcSimulation:
+    ) -> FxDoubleBarrierOptionMcSimulation:
         """
         Run the full simulation and return artifact with all details.
 
         Parameters
         ----------
-        trade : EuropeanFxDoubleBarrierOption
+        trade : FxDoubleBarrierEuropeanOption
             The double barrier option instrument.
         market : Market
             Market snapshot.
@@ -1785,22 +1785,22 @@ class FxEuropeanDoubleBarrierMcPricer:
         """
         return self._run_simulation(trade, market, store_paths=store_paths, paths_keep=paths_keep)
 
-    def sample_terminal_spots(self, trade: EuropeanFxDoubleBarrierOption, market: Market) -> np.ndarray:
+    def sample_terminal_spots(self, trade: FxDoubleBarrierEuropeanOption, market: Market) -> np.ndarray:
         """Return terminal spots S(T) from simulation."""
         return self.run(trade, market, store_paths=False).terminal_spots
 
-    def sample_discounted_payoffs(self, trade: EuropeanFxDoubleBarrierOption, market: Market) -> np.ndarray:
+    def sample_discounted_payoffs(self, trade: FxDoubleBarrierEuropeanOption, market: Market) -> np.ndarray:
         """Return discounted payoff samples from simulation."""
         return self.run(trade, market, store_paths=False).discounted_payoffs
 
     def _run_simulation(
         self,
-        trade: EuropeanFxDoubleBarrierOption,
+        trade: FxDoubleBarrierEuropeanOption,
         market: Market,
         *,
         store_paths: bool,
         paths_keep: int,
-    ) -> FxDoubleBarrierMcSimulation:
+    ) -> FxDoubleBarrierOptionMcSimulation:
         """
         Internal simulation implementation.
 
@@ -1901,7 +1901,7 @@ class FxEuropeanDoubleBarrierMcPricer:
             payoff = payoff_fn.terminal_from_paths(paths)
             discounted_payoffs = (float(df_d) * payoff * notional).astype(np.float64, copy=False)
 
-            return FxDoubleBarrierMcSimulation(
+            return FxDoubleBarrierOptionMcSimulation(
                 spot0=spot0,
                 strike=strike,
                 lower_barrier=lower_barrier,
@@ -1990,7 +1990,7 @@ class FxEuropeanDoubleBarrierMcPricer:
         # -----------------------------
         # Return simulation artifact
         # -----------------------------
-        return FxDoubleBarrierMcSimulation(
+        return FxDoubleBarrierOptionMcSimulation(
             spot0=spot0,
             strike=strike,
             lower_barrier=lower_barrier,
@@ -2019,7 +2019,7 @@ class FxEuropeanDoubleBarrierMcPricer:
 
 
 @dataclass(frozen=True, slots=True)
-class FxEuropeanTouchMcPricer:
+class FxTouchEuropeanOptionMcPricer:
     """
     Monte Carlo pricer for European FX touch options.
 
@@ -2052,13 +2052,13 @@ class FxEuropeanTouchMcPricer:
     n_steps: int = 64
     scheme: GbmScheme = "exact"
 
-    def price(self, trade: EuropeanFxTouchOption, market: Market) -> float:
+    def price(self, trade: FxTouchEuropeanOption, market: Market) -> float:
         """
         Compute the present value of the touch option.
 
         Parameters
         ----------
-        trade : EuropeanFxTouchOption
+        trade : FxTouchEuropeanOption
             The touch option instrument.
         market : Market
             Market snapshot.
@@ -2073,18 +2073,18 @@ class FxEuropeanTouchMcPricer:
 
     def run(
         self,
-        trade: EuropeanFxTouchOption,
+        trade: FxTouchEuropeanOption,
         market: Market,
         *,
         store_paths: bool = False,
         paths_keep: int = 0,
-    ) -> FxTouchMcSimulation:
+    ) -> FxTouchOptionMcSimulation:
         """
         Run the full simulation and return artifact with all details.
 
         Parameters
         ----------
-        trade : EuropeanFxTouchOption
+        trade : FxTouchEuropeanOption
             The touch option instrument.
         market : Market
             Market snapshot.
@@ -2100,22 +2100,22 @@ class FxEuropeanTouchMcPricer:
         """
         return self._run_simulation(trade, market, store_paths=store_paths, paths_keep=paths_keep)
 
-    def sample_terminal_spots(self, trade: EuropeanFxTouchOption, market: Market) -> np.ndarray:
+    def sample_terminal_spots(self, trade: FxTouchEuropeanOption, market: Market) -> np.ndarray:
         """Return terminal spots S(T)."""
         return self.run(trade, market, store_paths=False).terminal_spots
 
-    def sample_discounted_payoffs(self, trade: EuropeanFxTouchOption, market: Market) -> np.ndarray:
+    def sample_discounted_payoffs(self, trade: FxTouchEuropeanOption, market: Market) -> np.ndarray:
         """Return discounted payoff samples."""
         return self.run(trade, market, store_paths=False).discounted_payoffs
 
     def _run_simulation(
         self,
-        trade: EuropeanFxTouchOption,
+        trade: FxTouchEuropeanOption,
         market: Market,
         *,
         store_paths: bool,
         paths_keep: int,
-    ) -> FxTouchMcSimulation:
+    ) -> FxTouchOptionMcSimulation:
         """Internal simulation implementation."""
         # Validate pricer configuration.
         if self.n_paths <= 0:
@@ -2175,7 +2175,7 @@ class FxEuropeanTouchMcPricer:
             payoff = payoff_fn.terminal_from_paths(paths)
             discounted_payoffs = (float(df_d) * payoff * notional).astype(np.float64, copy=False)
 
-            return FxTouchMcSimulation(
+            return FxTouchOptionMcSimulation(
                 spot0=spot0,
                 barrier_level=barrier_level,
                 barrier_direction=barrier_direction,
@@ -2245,7 +2245,7 @@ class FxEuropeanTouchMcPricer:
             else:
                 kept_paths = all_paths[: min(paths_keep, n_paths_eff), :].copy()
 
-        return FxTouchMcSimulation(
+        return FxTouchOptionMcSimulation(
             spot0=spot0,
             barrier_level=barrier_level,
             barrier_direction=barrier_direction,

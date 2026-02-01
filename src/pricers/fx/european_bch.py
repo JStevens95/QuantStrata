@@ -29,10 +29,9 @@ from typing import Dict, Literal
 
 from src.marketdata.core.market import Market
 from src.instruments.fx.options.spread import (
-    EuropeanFxSpreadOption,
-    EuropeanFxSpreadOptionSimple,
+    FxSpreadEuropeanOption,
+    FxSpreadEuropeanOptionSimple,
 )
-from src.instruments.core.types import OptionType
 
 # Import pure functions from the Bachelier model.
 from src.models.analytic.bachelier.base import (
@@ -64,12 +63,12 @@ def _rate_from_df(*, df: float, t: float) -> float:
 
 
 @dataclass(frozen=True, slots=True)
-class FxEuropeanSpreadBchPricerSimple:
+class FxSpreadEuropeanOptionBchPricerSimple:
     """
     Bachelier pricer for FX spread option with direct parameters.
     """
     
-    def price(self, trade: EuropeanFxSpreadOptionSimple) -> float:
+    def price(self, trade: FxSpreadEuropeanOptionSimple) -> float:
         """
         Price an FX spread option using Bachelier model.
         
@@ -110,7 +109,7 @@ class FxEuropeanSpreadBchPricerSimple:
         
         return N * unit_pv
     
-    def greeks(self, trade: EuropeanFxSpreadOptionSimple) -> Dict[GreekName, float]:
+    def greeks(self, trade: FxSpreadEuropeanOptionSimple) -> Dict[GreekName, float]:
         """
         Compute Greeks for an FX spread option.
         
@@ -167,12 +166,12 @@ class FxEuropeanSpreadBchPricerSimple:
 
 
 @dataclass(frozen=True, slots=True)
-class FxEuropeanSpreadBchPricer:
+class FxSpreadEuropeanOptionBchPricer:
     """
     Bachelier pricer for FX spread option with market data lookup.
     """
     
-    def price(self, trade: EuropeanFxSpreadOption, market: Market) -> float:
+    def price(self, trade: FxSpreadEuropeanOption, market: Market) -> float:
         """
         Price an FX spread option using market data.
         
@@ -189,18 +188,18 @@ class FxEuropeanSpreadBchPricer:
             Present value of the spread option.
         """
         simple = self._to_simple(trade, market)
-        return FxEuropeanSpreadBchPricerSimple().price(simple)
+        return FxSpreadEuropeanOptionBchPricerSimple().price(simple)
     
-    def greeks(self, trade: EuropeanFxSpreadOption, market: Market) -> Dict[GreekName, float]:
+    def greeks(self, trade: FxSpreadEuropeanOption, market: Market) -> Dict[GreekName, float]:
         """Compute Greeks for an FX spread option with market data."""
         simple = self._to_simple(trade, market)
-        return FxEuropeanSpreadBchPricerSimple().greeks(simple)
+        return FxSpreadEuropeanOptionBchPricerSimple().greeks(simple)
     
     def _to_simple(
         self,
-        trade: EuropeanFxSpreadOption,
+        trade: FxSpreadEuropeanOption,
         market: Market,
-    ) -> EuropeanFxSpreadOptionSimple:
+    ) -> FxSpreadEuropeanOptionSimple:
         """Convert market-based spread option to simple spread option."""
         curve = market.curve(trade.curve_id)
         
@@ -218,7 +217,7 @@ class FxEuropeanSpreadBchPricer:
         vol_surface = market.vol_surface(trade.vol_id)
         sigma = float(vol_surface.vol(expiry=trade.expiry, strike=trade.strike))
         
-        return EuropeanFxSpreadOptionSimple(
+        return FxSpreadEuropeanOptionSimple(
             notional=trade.notional,
             strike=trade.strike,
             expiry=trade.expiry,
@@ -234,6 +233,6 @@ class FxEuropeanSpreadBchPricer:
 # =============================================================================
 
 __all__ = [
-    "FxEuropeanSpreadBchPricer",
-    "FxEuropeanSpreadBchPricerSimple",
+    "FxSpreadEuropeanOptionBchPricer",
+    "FxSpreadEuropeanOptionBchPricerSimple",
 ]

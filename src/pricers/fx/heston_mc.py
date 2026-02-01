@@ -120,7 +120,7 @@ class HestonMcResult:
 # =============================================================================
 
 @dataclass(frozen=True, slots=True)
-class FxHestonMcPricer:
+class FxHestonEuropeanOptionMcPricer:
     """
     Monte Carlo pricer for FX European options under Heston model.
 
@@ -139,9 +139,9 @@ class FxHestonMcPricer:
 
     Examples
     --------
-    >>> from src.pricers.fx.heston_mc import FxHestonMcPricer
-    >>> from src.models.stochastic_vol.heston import HestonParameters
-    >>> pricer = FxHestonMcPricer(n_paths=50000, n_steps=100)
+    >>> from src.pricers.fx.heston_mc import FxHestonEuropeanOptionMcPricer
+    >>> from src.models.stochastic_volatility.heston import HestonParameters
+    >>> pricer = FxHestonEuropeanOptionMcPricer(n_paths=50000, n_steps=100)
     >>> params = HestonParameters(kappa=2.0, theta=0.04, xi=0.3, v0=0.04, rho=-0.7)
     >>> result = pricer.price_european(
     ...     spot=100.0, strike=100.0, maturity=1.0,
@@ -413,7 +413,7 @@ def price_heston_european(
     ... )
     """
     params = HestonParameters(kappa=kappa, theta=theta, xi=xi, v0=v0, rho=rho)
-    pricer = FxHestonMcPricer(n_paths=n_paths, n_steps=n_steps, seed=seed)
+    pricer = FxHestonEuropeanOptionMcPricer(n_paths=n_paths, n_steps=n_steps, seed=seed)
     result = pricer.price_european(
         spot=spot, strike=strike, maturity=maturity,
         domestic_rate=domestic_rate, foreign_rate=foreign_rate,

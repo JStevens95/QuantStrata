@@ -13,20 +13,20 @@ Author: QuantStrata Team
 import pytest
 import numpy as np
 
-from src.instruments.equity.options.vanilla import EuropeanEquityVanillaOption
-from src.instruments.equity.options.barrier import EuropeanEquityBarrierOption
-from src.instruments.equity.options.asian import EuropeanEquityAsianOption
-from src.instruments.equity.options.lookback import EuropeanEquityLookbackOption
+from src.instruments.equity.options.vanilla import EquityVanillaEuropeanOption
+from src.instruments.equity.options.barrier import EquityBarrierEuropeanOption
+from src.instruments.equity.options.asian import EquityAsianEuropeanOption
+from src.instruments.equity.options.lookback import EquityLookbackEuropeanOption
 from src.pricers.equity.european_mc import (
-    EquityEuropeanVanillaMcPricer,
-    EquityEuropeanBarrierMcPricer,
-    EquityEuropeanAsianMcPricer,
-    EquityEuropeanLookbackMcPricer,
-    EquityBarrierMcSimulation,
-    EquityAsianMcSimulation,
-    EquityLookbackMcSimulation,
+    EquityVanillaEuropeanOptionMcPricer,
+    EquityBarrierEuropeanOptionMcPricer,
+    EquityAsianEuropeanOptionMcPricer,
+    EquityLookbackEuropeanOptionMcPricer,
+    EquityBarrierOptionMcSimulation,
+    EquityAsianOptionMcSimulation,
+    EquityLookbackOptionMcSimulation,
 )
-from src.pricers.equity.european_bsm import EquityEuropeanVanillaBsmPricer
+from src.pricers.equity.european_bsm import EquityVanillaEuropeanOptionBsmPricer
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.interfaces import Quote
 from src.marketdata.core.market import Market
@@ -73,8 +73,8 @@ class TestBasicPricing:
     
     def test_call_positive_value(self, standard_market, spot_id, vol_id, curve_id):
         """MC call should have positive value."""
-        pricer = EquityEuropeanVanillaMcPricer(n_paths=50_000, seed=42)
-        opt = EuropeanEquityVanillaOption(
+        pricer = EquityVanillaEuropeanOptionMcPricer(n_paths=50_000, seed=42)
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -84,8 +84,8 @@ class TestBasicPricing:
     
     def test_put_positive_value(self, standard_market, spot_id, vol_id, curve_id):
         """MC put should have positive value."""
-        pricer = EquityEuropeanVanillaMcPricer(n_paths=50_000, seed=42)
-        opt = EuropeanEquityVanillaOption(
+        pricer = EquityVanillaEuropeanOptionMcPricer(n_paths=50_000, seed=42)
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="put", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -95,14 +95,14 @@ class TestBasicPricing:
     
     def test_notional_scaling(self, standard_market, spot_id, vol_id, curve_id):
         """Price should scale linearly with notional."""
-        pricer = EquityEuropeanVanillaMcPricer(n_paths=50_000, seed=42)
+        pricer = EquityVanillaEuropeanOptionMcPricer(n_paths=50_000, seed=42)
         
-        opt_1 = EuropeanEquityVanillaOption(
+        opt_1 = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
         )
-        opt_100 = EuropeanEquityVanillaOption(
+        opt_100 = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=100, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -123,10 +123,10 @@ class TestConvergenceToBsm:
     
     def test_call_converges_to_bsm(self, standard_market, spot_id, vol_id, curve_id):
         """MC call should converge to BSM price."""
-        mc_pricer = EquityEuropeanVanillaMcPricer(n_paths=200_000, seed=42, antithetic=True)
-        bsm_pricer = EquityEuropeanVanillaBsmPricer()
+        mc_pricer = EquityVanillaEuropeanOptionMcPricer(n_paths=200_000, seed=42, antithetic=True)
+        bsm_pricer = EquityVanillaEuropeanOptionBsmPricer()
         
-        opt = EuropeanEquityVanillaOption(
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -141,10 +141,10 @@ class TestConvergenceToBsm:
     
     def test_put_converges_to_bsm(self, standard_market, spot_id, vol_id, curve_id):
         """MC put should converge to BSM price."""
-        mc_pricer = EquityEuropeanVanillaMcPricer(n_paths=200_000, seed=42, antithetic=True)
-        bsm_pricer = EquityEuropeanVanillaBsmPricer()
+        mc_pricer = EquityVanillaEuropeanOptionMcPricer(n_paths=200_000, seed=42, antithetic=True)
+        bsm_pricer = EquityVanillaEuropeanOptionBsmPricer()
         
-        opt = EuropeanEquityVanillaOption(
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="put", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -165,10 +165,10 @@ class TestConvergenceToBsm:
             vols={vol_id: FlatVolSurface(sigma=0.20)},
         )
         
-        mc_pricer = EquityEuropeanVanillaMcPricer(n_paths=200_000, seed=42, antithetic=True)
-        bsm_pricer = EquityEuropeanVanillaBsmPricer()
+        mc_pricer = EquityVanillaEuropeanOptionMcPricer(n_paths=200_000, seed=42, antithetic=True)
+        bsm_pricer = EquityVanillaEuropeanOptionBsmPricer()
         
-        opt = EuropeanEquityVanillaOption(
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.02, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -190,8 +190,8 @@ class TestSimulationArtifact:
     
     def test_run_returns_artifact(self, standard_market, spot_id, vol_id, curve_id):
         """run() should return EquityMcSimulation artifact."""
-        pricer = EquityEuropeanVanillaMcPricer(n_paths=1_000, seed=42)
-        opt = EuropeanEquityVanillaOption(
+        pricer = EquityVanillaEuropeanOptionMcPricer(n_paths=1_000, seed=42)
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -207,8 +207,8 @@ class TestSimulationArtifact:
     
     def test_terminal_spots_shape(self, standard_market, spot_id, vol_id, curve_id):
         """Terminal spots should have correct shape."""
-        pricer = EquityEuropeanVanillaMcPricer(n_paths=1_000, seed=42, antithetic=True)
-        opt = EuropeanEquityVanillaOption(
+        pricer = EquityVanillaEuropeanOptionMcPricer(n_paths=1_000, seed=42, antithetic=True)
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -222,8 +222,8 @@ class TestSimulationArtifact:
     
     def test_discounted_payoffs_shape(self, standard_market, spot_id, vol_id, curve_id):
         """Discounted payoffs should have same shape as terminal spots."""
-        pricer = EquityEuropeanVanillaMcPricer(n_paths=1_000, seed=42)
-        opt = EuropeanEquityVanillaOption(
+        pricer = EquityVanillaEuropeanOptionMcPricer(n_paths=1_000, seed=42)
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -235,8 +235,8 @@ class TestSimulationArtifact:
     
     def test_store_paths(self, standard_market, spot_id, vol_id, curve_id):
         """With store_paths=True, paths should be stored."""
-        pricer = EquityEuropeanVanillaMcPricer(n_paths=100, n_steps=10, seed=42)
-        opt = EuropeanEquityVanillaOption(
+        pricer = EquityVanillaEuropeanOptionMcPricer(n_paths=100, n_steps=10, seed=42)
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -249,8 +249,8 @@ class TestSimulationArtifact:
     
     def test_paths_keep_limits(self, standard_market, spot_id, vol_id, curve_id):
         """paths_keep should limit stored paths."""
-        pricer = EquityEuropeanVanillaMcPricer(n_paths=100, n_steps=10, seed=42, antithetic=False)
-        opt = EuropeanEquityVanillaOption(
+        pricer = EquityVanillaEuropeanOptionMcPricer(n_paths=100, n_steps=10, seed=42, antithetic=False)
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -271,8 +271,8 @@ class TestEdgeCases:
     
     def test_zero_expiry(self, standard_market, spot_id, vol_id, curve_id):
         """At expiry, MC should return intrinsic value."""
-        pricer = EquityEuropeanVanillaMcPricer(n_paths=1_000, seed=42)
-        opt = EuropeanEquityVanillaOption(
+        pricer = EquityVanillaEuropeanOptionMcPricer(n_paths=1_000, seed=42)
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=90.0, expiry=0.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -282,14 +282,14 @@ class TestEdgeCases:
     
     def test_reproducible_with_seed(self, standard_market, spot_id, vol_id, curve_id):
         """Same seed should give same result."""
-        opt = EuropeanEquityVanillaOption(
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
         )
         
-        pricer1 = EquityEuropeanVanillaMcPricer(n_paths=10_000, seed=42)
-        pricer2 = EquityEuropeanVanillaMcPricer(n_paths=10_000, seed=42)
+        pricer1 = EquityVanillaEuropeanOptionMcPricer(n_paths=10_000, seed=42)
+        pricer2 = EquityVanillaEuropeanOptionMcPricer(n_paths=10_000, seed=42)
         
         pv1 = pricer1.price(opt, standard_market)
         pv2 = pricer2.price(opt, standard_market)
@@ -298,14 +298,14 @@ class TestEdgeCases:
     
     def test_different_seeds_different_results(self, standard_market, spot_id, vol_id, curve_id):
         """Different seeds should give different results."""
-        opt = EuropeanEquityVanillaOption(
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
         )
         
-        pricer1 = EquityEuropeanVanillaMcPricer(n_paths=10_000, seed=42)
-        pricer2 = EquityEuropeanVanillaMcPricer(n_paths=10_000, seed=123)
+        pricer1 = EquityVanillaEuropeanOptionMcPricer(n_paths=10_000, seed=42)
+        pricer2 = EquityVanillaEuropeanOptionMcPricer(n_paths=10_000, seed=123)
         
         pv1 = pricer1.price(opt, standard_market)
         pv2 = pricer2.price(opt, standard_market)
@@ -323,8 +323,8 @@ class TestBarrierMcPricerBasic:
 
     def test_up_and_out_call_positive(self, standard_market, spot_id, vol_id, curve_id):
         """Up-and-out call should have positive value when barrier not breached."""
-        pricer = EquityEuropeanBarrierMcPricer(n_paths=50_000, n_steps=64, seed=42)
-        opt = EuropeanEquityBarrierOption(
+        pricer = EquityBarrierEuropeanOptionMcPricer(n_paths=50_000, n_steps=64, seed=42)
+        opt = EquityBarrierEuropeanOption(
             ticker="AAPL", option_type="call",
             barrier_direction="up", barrier_style="knock_out",
             strike=100.0, barrier_level=150.0, expiry=1.0,
@@ -336,8 +336,8 @@ class TestBarrierMcPricerBasic:
 
     def test_down_and_out_put_positive(self, standard_market, spot_id, vol_id, curve_id):
         """Down-and-out put should have positive value when barrier not breached."""
-        pricer = EquityEuropeanBarrierMcPricer(n_paths=50_000, n_steps=64, seed=42)
-        opt = EuropeanEquityBarrierOption(
+        pricer = EquityBarrierEuropeanOptionMcPricer(n_paths=50_000, n_steps=64, seed=42)
+        opt = EquityBarrierEuropeanOption(
             ticker="AAPL", option_type="put",
             barrier_direction="down", barrier_style="knock_out",
             strike=100.0, barrier_level=60.0, expiry=1.0,
@@ -349,17 +349,17 @@ class TestBarrierMcPricerBasic:
 
     def test_barrier_less_than_vanilla(self, standard_market, spot_id, vol_id, curve_id):
         """Knock-out barrier should be worth less than equivalent vanilla."""
-        barrier_pricer = EquityEuropeanBarrierMcPricer(n_paths=100_000, n_steps=64, seed=42)
-        vanilla_pricer = EquityEuropeanVanillaMcPricer(n_paths=100_000, seed=42)
+        barrier_pricer = EquityBarrierEuropeanOptionMcPricer(n_paths=100_000, n_steps=64, seed=42)
+        vanilla_pricer = EquityVanillaEuropeanOptionMcPricer(n_paths=100_000, seed=42)
         
-        barrier_opt = EuropeanEquityBarrierOption(
+        barrier_opt = EquityBarrierEuropeanOption(
             ticker="AAPL", option_type="call",
             barrier_direction="up", barrier_style="knock_out",
             strike=100.0, barrier_level=130.0, expiry=1.0,
             notional=1, dividend_yield=0.0,
             spot_id=spot_id, vol_id=vol_id, curve_id=curve_id,
         )
-        vanilla_opt = EuropeanEquityVanillaOption(
+        vanilla_opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0,
             spot_id=spot_id, vol_id=vol_id, curve_id=curve_id,
@@ -372,16 +372,16 @@ class TestBarrierMcPricerBasic:
 
     def test_notional_scaling(self, standard_market, spot_id, vol_id, curve_id):
         """Barrier option price should scale with notional."""
-        pricer = EquityEuropeanBarrierMcPricer(n_paths=50_000, n_steps=64, seed=42)
+        pricer = EquityBarrierEuropeanOptionMcPricer(n_paths=50_000, n_steps=64, seed=42)
         
-        opt_1 = EuropeanEquityBarrierOption(
+        opt_1 = EquityBarrierEuropeanOption(
             ticker="AAPL", option_type="call",
             barrier_direction="up", barrier_style="knock_out",
             strike=100.0, barrier_level=150.0, expiry=1.0,
             notional=1, dividend_yield=0.0,
             spot_id=spot_id, vol_id=vol_id, curve_id=curve_id,
         )
-        opt_100 = EuropeanEquityBarrierOption(
+        opt_100 = EquityBarrierEuropeanOption(
             ticker="AAPL", option_type="call",
             barrier_direction="up", barrier_style="knock_out",
             strike=100.0, barrier_level=150.0, expiry=1.0,
@@ -399,9 +399,9 @@ class TestBarrierMcSimulationArtifact:
     """Tests for barrier MC simulation artifact."""
 
     def test_run_returns_artifact(self, standard_market, spot_id, vol_id, curve_id):
-        """run() should return EquityBarrierMcSimulation artifact."""
-        pricer = EquityEuropeanBarrierMcPricer(n_paths=1_000, n_steps=32, seed=42)
-        opt = EuropeanEquityBarrierOption(
+        """run() should return EquityBarrierOptionMcSimulation artifact."""
+        pricer = EquityBarrierEuropeanOptionMcPricer(n_paths=1_000, n_steps=32, seed=42)
+        opt = EquityBarrierEuropeanOption(
             ticker="AAPL", option_type="call",
             barrier_direction="up", barrier_style="knock_out",
             strike=100.0, barrier_level=150.0, expiry=1.0,
@@ -411,7 +411,7 @@ class TestBarrierMcSimulationArtifact:
         
         sim = pricer.run(opt, standard_market)
         
-        assert isinstance(sim, EquityBarrierMcSimulation)
+        assert isinstance(sim, EquityBarrierOptionMcSimulation)
         assert sim.spot0 == 100.0
         assert sim.strike == 100.0
         assert sim.barrier_level == 150.0
@@ -420,8 +420,8 @@ class TestBarrierMcSimulationArtifact:
 
     def test_terminal_spots_shape(self, standard_market, spot_id, vol_id, curve_id):
         """Terminal spots should have correct shape."""
-        pricer = EquityEuropeanBarrierMcPricer(n_paths=1_000, n_steps=32, seed=42, antithetic=True)
-        opt = EuropeanEquityBarrierOption(
+        pricer = EquityBarrierEuropeanOptionMcPricer(n_paths=1_000, n_steps=32, seed=42, antithetic=True)
+        opt = EquityBarrierEuropeanOption(
             ticker="AAPL", option_type="call",
             barrier_direction="up", barrier_style="knock_out",
             strike=100.0, barrier_level=150.0, expiry=1.0,
@@ -445,8 +445,8 @@ class TestAsianMcPricerBasic:
 
     def test_arithmetic_asian_call_positive(self, standard_market, spot_id, vol_id, curve_id):
         """Arithmetic Asian call should have positive value."""
-        pricer = EquityEuropeanAsianMcPricer(n_paths=50_000, seed=42)
-        opt = EuropeanEquityAsianOption(
+        pricer = EquityAsianEuropeanOptionMcPricer(n_paths=50_000, seed=42)
+        opt = EquityAsianEuropeanOption(
             ticker="AAPL", option_type="call", averaging_type="arithmetic",
             strike=100.0, expiry=1.0, notional=1, n_averaging=12,
             dividend_yield=0.0, spot_id=spot_id, vol_id=vol_id, curve_id=curve_id,
@@ -456,8 +456,8 @@ class TestAsianMcPricerBasic:
 
     def test_geometric_asian_call_positive(self, standard_market, spot_id, vol_id, curve_id):
         """Geometric Asian call should have positive value."""
-        pricer = EquityEuropeanAsianMcPricer(n_paths=50_000, seed=42)
-        opt = EuropeanEquityAsianOption(
+        pricer = EquityAsianEuropeanOptionMcPricer(n_paths=50_000, seed=42)
+        opt = EquityAsianEuropeanOption(
             ticker="AAPL", option_type="call", averaging_type="geometric",
             strike=100.0, expiry=1.0, notional=1, n_averaging=12,
             dividend_yield=0.0, spot_id=spot_id, vol_id=vol_id, curve_id=curve_id,
@@ -467,15 +467,15 @@ class TestAsianMcPricerBasic:
 
     def test_asian_less_than_vanilla(self, standard_market, spot_id, vol_id, curve_id):
         """Asian option should be worth less than equivalent vanilla (averaging reduces volatility)."""
-        asian_pricer = EquityEuropeanAsianMcPricer(n_paths=100_000, seed=42)
-        vanilla_pricer = EquityEuropeanVanillaMcPricer(n_paths=100_000, seed=42)
+        asian_pricer = EquityAsianEuropeanOptionMcPricer(n_paths=100_000, seed=42)
+        vanilla_pricer = EquityVanillaEuropeanOptionMcPricer(n_paths=100_000, seed=42)
         
-        asian_opt = EuropeanEquityAsianOption(
+        asian_opt = EquityAsianEuropeanOption(
             ticker="AAPL", option_type="call", averaging_type="arithmetic",
             strike=100.0, expiry=1.0, notional=1, n_averaging=12,
             dividend_yield=0.0, spot_id=spot_id, vol_id=vol_id, curve_id=curve_id,
         )
-        vanilla_opt = EuropeanEquityVanillaOption(
+        vanilla_opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0,
             spot_id=spot_id, vol_id=vol_id, curve_id=curve_id,
@@ -488,14 +488,14 @@ class TestAsianMcPricerBasic:
 
     def test_arithmetic_greater_than_geometric(self, standard_market, spot_id, vol_id, curve_id):
         """Arithmetic average Asian should be worth more than geometric (Jensen's inequality)."""
-        pricer = EquityEuropeanAsianMcPricer(n_paths=100_000, seed=42)
+        pricer = EquityAsianEuropeanOptionMcPricer(n_paths=100_000, seed=42)
         
-        arith_opt = EuropeanEquityAsianOption(
+        arith_opt = EquityAsianEuropeanOption(
             ticker="AAPL", option_type="call", averaging_type="arithmetic",
             strike=100.0, expiry=1.0, notional=1, n_averaging=12,
             dividend_yield=0.0, spot_id=spot_id, vol_id=vol_id, curve_id=curve_id,
         )
-        geom_opt = EuropeanEquityAsianOption(
+        geom_opt = EquityAsianEuropeanOption(
             ticker="AAPL", option_type="call", averaging_type="geometric",
             strike=100.0, expiry=1.0, notional=1, n_averaging=12,
             dividend_yield=0.0, spot_id=spot_id, vol_id=vol_id, curve_id=curve_id,
@@ -508,14 +508,14 @@ class TestAsianMcPricerBasic:
 
     def test_notional_scaling(self, standard_market, spot_id, vol_id, curve_id):
         """Asian option price should scale with notional."""
-        pricer = EquityEuropeanAsianMcPricer(n_paths=50_000, seed=42)
+        pricer = EquityAsianEuropeanOptionMcPricer(n_paths=50_000, seed=42)
         
-        opt_1 = EuropeanEquityAsianOption(
+        opt_1 = EquityAsianEuropeanOption(
             ticker="AAPL", option_type="call", averaging_type="arithmetic",
             strike=100.0, expiry=1.0, notional=1, n_averaging=12,
             dividend_yield=0.0, spot_id=spot_id, vol_id=vol_id, curve_id=curve_id,
         )
-        opt_100 = EuropeanEquityAsianOption(
+        opt_100 = EquityAsianEuropeanOption(
             ticker="AAPL", option_type="call", averaging_type="arithmetic",
             strike=100.0, expiry=1.0, notional=100, n_averaging=12,
             dividend_yield=0.0, spot_id=spot_id, vol_id=vol_id, curve_id=curve_id,
@@ -531,9 +531,9 @@ class TestAsianMcSimulationArtifact:
     """Tests for Asian MC simulation artifact."""
 
     def test_run_returns_artifact(self, standard_market, spot_id, vol_id, curve_id):
-        """run() should return EquityAsianMcSimulation artifact."""
-        pricer = EquityEuropeanAsianMcPricer(n_paths=1_000, seed=42)
-        opt = EuropeanEquityAsianOption(
+        """run() should return EquityAsianOptionMcSimulation artifact."""
+        pricer = EquityAsianEuropeanOptionMcPricer(n_paths=1_000, seed=42)
+        opt = EquityAsianEuropeanOption(
             ticker="AAPL", option_type="call", averaging_type="arithmetic",
             strike=100.0, expiry=1.0, notional=1, n_averaging=12,
             dividend_yield=0.0, spot_id=spot_id, vol_id=vol_id, curve_id=curve_id,
@@ -541,15 +541,15 @@ class TestAsianMcSimulationArtifact:
         
         sim = pricer.run(opt, standard_market)
         
-        assert isinstance(sim, EquityAsianMcSimulation)
+        assert isinstance(sim, EquityAsianOptionMcSimulation)
         assert sim.spot0 == 100.0
         assert sim.strike == 100.0
         assert sim.averaging_type == "arithmetic"
 
     def test_average_spots_shape(self, standard_market, spot_id, vol_id, curve_id):
         """Average spots should have correct shape."""
-        pricer = EquityEuropeanAsianMcPricer(n_paths=1_000, seed=42, antithetic=True)
-        opt = EuropeanEquityAsianOption(
+        pricer = EquityAsianEuropeanOptionMcPricer(n_paths=1_000, seed=42, antithetic=True)
+        opt = EquityAsianEuropeanOption(
             ticker="AAPL", option_type="call", averaging_type="arithmetic",
             strike=100.0, expiry=1.0, notional=1, n_averaging=12,
             dividend_yield=0.0, spot_id=spot_id, vol_id=vol_id, curve_id=curve_id,
@@ -571,8 +571,8 @@ class TestLookbackMcPricerBasic:
 
     def test_floating_strike_call_positive(self, standard_market, spot_id, vol_id, curve_id):
         """Floating strike lookback call should have positive value (always ITM)."""
-        pricer = EquityEuropeanLookbackMcPricer(n_paths=50_000, n_steps=252, seed=42)
-        opt = EuropeanEquityLookbackOption(
+        pricer = EquityLookbackEuropeanOptionMcPricer(n_paths=50_000, n_steps=252, seed=42)
+        opt = EquityLookbackEuropeanOption(
             ticker="AAPL", option_type="call", lookback_type="floating_strike",
             strike=100.0, expiry=1.0, notional=1, dividend_yield=0.0,
             spot_id=spot_id, vol_id=vol_id, curve_id=curve_id,
@@ -582,8 +582,8 @@ class TestLookbackMcPricerBasic:
 
     def test_fixed_strike_call_positive(self, standard_market, spot_id, vol_id, curve_id):
         """Fixed strike lookback call should have positive value."""
-        pricer = EquityEuropeanLookbackMcPricer(n_paths=50_000, n_steps=252, seed=42)
-        opt = EuropeanEquityLookbackOption(
+        pricer = EquityLookbackEuropeanOptionMcPricer(n_paths=50_000, n_steps=252, seed=42)
+        opt = EquityLookbackEuropeanOption(
             ticker="AAPL", option_type="call", lookback_type="fixed_strike",
             strike=100.0, expiry=1.0, notional=1, dividend_yield=0.0,
             spot_id=spot_id, vol_id=vol_id, curve_id=curve_id,
@@ -593,15 +593,15 @@ class TestLookbackMcPricerBasic:
 
     def test_lookback_greater_than_vanilla(self, standard_market, spot_id, vol_id, curve_id):
         """Lookback option should be worth more than equivalent vanilla (hindsight)."""
-        lookback_pricer = EquityEuropeanLookbackMcPricer(n_paths=100_000, n_steps=252, seed=42)
-        vanilla_pricer = EquityEuropeanVanillaMcPricer(n_paths=100_000, seed=42)
+        lookback_pricer = EquityLookbackEuropeanOptionMcPricer(n_paths=100_000, n_steps=252, seed=42)
+        vanilla_pricer = EquityVanillaEuropeanOptionMcPricer(n_paths=100_000, seed=42)
         
-        lookback_opt = EuropeanEquityLookbackOption(
+        lookback_opt = EquityLookbackEuropeanOption(
             ticker="AAPL", option_type="call", lookback_type="fixed_strike",
             strike=100.0, expiry=1.0, notional=1, dividend_yield=0.0,
             spot_id=spot_id, vol_id=vol_id, curve_id=curve_id,
         )
-        vanilla_opt = EuropeanEquityVanillaOption(
+        vanilla_opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0,
             spot_id=spot_id, vol_id=vol_id, curve_id=curve_id,
@@ -614,8 +614,8 @@ class TestLookbackMcPricerBasic:
 
     def test_floating_strike_always_itm(self, standard_market, spot_id, vol_id, curve_id):
         """Floating strike lookback should always have non-zero payoff."""
-        pricer = EquityEuropeanLookbackMcPricer(n_paths=10_000, n_steps=100, seed=42)
-        opt = EuropeanEquityLookbackOption(
+        pricer = EquityLookbackEuropeanOptionMcPricer(n_paths=10_000, n_steps=100, seed=42)
+        opt = EquityLookbackEuropeanOption(
             ticker="AAPL", option_type="call", lookback_type="floating_strike",
             strike=100.0, expiry=1.0, notional=1, dividend_yield=0.0,
             spot_id=spot_id, vol_id=vol_id, curve_id=curve_id,
@@ -628,14 +628,14 @@ class TestLookbackMcPricerBasic:
 
     def test_notional_scaling(self, standard_market, spot_id, vol_id, curve_id):
         """Lookback option price should scale with notional."""
-        pricer = EquityEuropeanLookbackMcPricer(n_paths=50_000, n_steps=100, seed=42)
+        pricer = EquityLookbackEuropeanOptionMcPricer(n_paths=50_000, n_steps=100, seed=42)
         
-        opt_1 = EuropeanEquityLookbackOption(
+        opt_1 = EquityLookbackEuropeanOption(
             ticker="AAPL", option_type="call", lookback_type="floating_strike",
             strike=100.0, expiry=1.0, notional=1, dividend_yield=0.0,
             spot_id=spot_id, vol_id=vol_id, curve_id=curve_id,
         )
-        opt_100 = EuropeanEquityLookbackOption(
+        opt_100 = EquityLookbackEuropeanOption(
             ticker="AAPL", option_type="call", lookback_type="floating_strike",
             strike=100.0, expiry=1.0, notional=100, dividend_yield=0.0,
             spot_id=spot_id, vol_id=vol_id, curve_id=curve_id,
@@ -651,9 +651,9 @@ class TestLookbackMcSimulationArtifact:
     """Tests for lookback MC simulation artifact."""
 
     def test_run_returns_artifact(self, standard_market, spot_id, vol_id, curve_id):
-        """run() should return EquityLookbackMcSimulation artifact."""
-        pricer = EquityEuropeanLookbackMcPricer(n_paths=1_000, n_steps=50, seed=42)
-        opt = EuropeanEquityLookbackOption(
+        """run() should return EquityLookbackOptionMcSimulation artifact."""
+        pricer = EquityLookbackEuropeanOptionMcPricer(n_paths=1_000, n_steps=50, seed=42)
+        opt = EquityLookbackEuropeanOption(
             ticker="AAPL", option_type="call", lookback_type="floating_strike",
             strike=100.0, expiry=1.0, notional=1, dividend_yield=0.0,
             spot_id=spot_id, vol_id=vol_id, curve_id=curve_id,
@@ -661,14 +661,14 @@ class TestLookbackMcSimulationArtifact:
         
         sim = pricer.run(opt, standard_market)
         
-        assert isinstance(sim, EquityLookbackMcSimulation)
+        assert isinstance(sim, EquityLookbackOptionMcSimulation)
         assert sim.spot0 == 100.0
         assert sim.lookback_type == "floating_strike"
 
     def test_extrema_shapes(self, standard_market, spot_id, vol_id, curve_id):
         """Max and min spots should have correct shapes."""
-        pricer = EquityEuropeanLookbackMcPricer(n_paths=1_000, n_steps=50, seed=42, antithetic=True)
-        opt = EuropeanEquityLookbackOption(
+        pricer = EquityLookbackEuropeanOptionMcPricer(n_paths=1_000, n_steps=50, seed=42, antithetic=True)
+        opt = EquityLookbackEuropeanOption(
             ticker="AAPL", option_type="call", lookback_type="floating_strike",
             strike=100.0, expiry=1.0, notional=1, dividend_yield=0.0,
             spot_id=spot_id, vol_id=vol_id, curve_id=curve_id,
@@ -682,8 +682,8 @@ class TestLookbackMcSimulationArtifact:
 
     def test_extrema_bounds(self, standard_market, spot_id, vol_id, curve_id):
         """Max should be >= terminal >= min."""
-        pricer = EquityEuropeanLookbackMcPricer(n_paths=1_000, n_steps=50, seed=42)
-        opt = EuropeanEquityLookbackOption(
+        pricer = EquityLookbackEuropeanOptionMcPricer(n_paths=1_000, n_steps=50, seed=42)
+        opt = EquityLookbackEuropeanOption(
             ticker="AAPL", option_type="call", lookback_type="floating_strike",
             strike=100.0, expiry=1.0, notional=1, dividend_yield=0.0,
             spot_id=spot_id, vol_id=vol_id, curve_id=curve_id,

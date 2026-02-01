@@ -21,7 +21,7 @@ from src.instruments.core.types import LookbackType
 
 
 @dataclass(frozen=True, slots=True)
-class EuropeanFxLookbackOption:
+class FxLookbackEuropeanOption:
     """
     European FX Lookback option (path-dependent exotic).
 

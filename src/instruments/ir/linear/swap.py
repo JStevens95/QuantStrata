@@ -49,12 +49,10 @@ Author: QuantStrata Team
 """
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
-from typing import Literal, Tuple, List
+from typing import Tuple, List
 
 from src.marketdata.core.ids import MarketId
-from src.instruments.ir.options.capfloor import compute_accrual_factor
 from src.instruments.core.types import SwapDirection, DayCountConvention
 
 
@@ -106,7 +104,7 @@ class FloatingLeg(SwapLeg):
 
 
 @dataclass(frozen=True, slots=True)
-class InterestRateSwapSimple:
+class IrSwapSimple:
     """
     Interest Rate Swap with direct parameter input.
     
@@ -140,7 +138,7 @@ class InterestRateSwapSimple:
         ...     FloatingLeg(start_time=1, end_time=2, accrual_factor=1.0,
         ...                 discount_factor=0.90, notional=1e6, forward_rate=0.052),
         ... )
-        >>> swap = InterestRateSwapSimple(
+        >>> swap = IrSwapSimple(
         ...     notional=1_000_000,
         ...     fixed_rate=0.05,
         ...     fixed_leg=fixed_legs,
@@ -214,7 +212,7 @@ class InterestRateSwapSimple:
 
 
 @dataclass(frozen=True, slots=True)
-class InterestRateSwap:
+class IrSwap:
     """
     Interest Rate Swap with market data lookup.
     
@@ -246,7 +244,7 @@ class InterestRateSwap:
     Examples
     --------
     5-year USD swap, semi-annual fixed vs quarterly floating:
-        >>> swap = InterestRateSwap(
+        >>> swap = IrSwap(
         ...     notional=10_000_000,
         ...     fixed_rate=0.05,
         ...     start_time=0.0,
@@ -353,8 +351,8 @@ __all__ = [
     "FixedLeg",
     "FloatingLeg",
     # Instruments
-    "InterestRateSwap",
-    "InterestRateSwapSimple",
+    "IrSwap",
+    "IrSwapSimple",
     # Utilities
     "generate_swap_schedule",
 ]

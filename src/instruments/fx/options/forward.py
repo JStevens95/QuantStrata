@@ -41,7 +41,7 @@ from src.models.payoffs.types import OptionType
 
 
 @dataclass(frozen=True, slots=True)
-class EuropeanFxForwardOption:
+class FxForwardEuropeanOption:
     """
     European option on an FX forward.
 
@@ -86,7 +86,7 @@ class EuropeanFxForwardOption:
     Examples
     --------
     >>> # Option to buy EUR vs USD at forward rate 1.12
-    >>> opt = EuropeanFxForwardOption(
+    >>> opt = FxForwardEuropeanOption(
     ...     option_type="call",
     ...     notional=1_000_000,  # EUR 1M
     ...     strike=1.12,
@@ -146,7 +146,7 @@ class EuropeanFxForwardOption:
 
 
 @dataclass(frozen=True, slots=True)
-class EuropeanFxForwardOptionSimple:
+class FxForwardEuropeanOptionSimple:
     """
     Simplified FX forward option for direct Black76 pricing.
 
@@ -173,7 +173,7 @@ class EuropeanFxForwardOptionSimple:
     Examples
     --------
     >>> # Direct Black76 pricing with known forward
-    >>> opt = EuropeanFxForwardOptionSimple(
+    >>> opt = FxForwardEuropeanOptionSimple(
     ...     option_type="call",
     ...     notional=1_000_000,
     ...     strike=1.12,
@@ -217,6 +217,6 @@ class EuropeanFxForwardOptionSimple:
 
 
 __all__ = [
-    "EuropeanFxForwardOption",
-    "EuropeanFxForwardOptionSimple",
+    "FxForwardEuropeanOption",
+    "FxForwardEuropeanOptionSimple",
 ]

@@ -17,7 +17,7 @@ from src.instruments.core.types import DigitalType
 
 
 @dataclass(frozen=True, slots=True)
-class EuropeanEquityDigitalOption:
+class EquityDigitalEuropeanOption:
     """
     European equity digital (binary) option.
 
@@ -80,7 +80,7 @@ class EuropeanEquityDigitalOption:
     >>> spot_id = MarketId(asset_class="EQ", mkt_type="SPOT", name="AAPL")
     >>> vol_id = MarketId(asset_class="EQ", mkt_type="VOL", name="AAPL")
     >>> curve_id = MarketId(asset_class="IR", mkt_type="CURVE", name="USD_OIS")
-    >>> cash_digital = EuropeanEquityDigitalOption(
+    >>> cash_digital = EquityDigitalEuropeanOption(
     ...     ticker="AAPL",
     ...     option_type="call",
     ...     digital_type="cash",

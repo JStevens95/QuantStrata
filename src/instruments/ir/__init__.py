@@ -9,43 +9,32 @@ This module contains instruments for the interest rate asset class:
 - Caps and Floors (multi-period options)
 """
 from src.instruments.ir.linear.fra import (
-    ForwardRateAgreement,
-    ForwardRateAgreementSimple,
+    IrForwardRateAgreement, IrForwardRateAgreementSimple,
 )
 from src.instruments.ir.linear.swap import (
-    InterestRateSwap,
-    InterestRateSwapSimple,
-    SwapLeg,
-    FixedLeg,
-    FloatingLeg,
+    IrSwap, IrSwapSimple, SwapLeg, FixedLeg, FloatingLeg,
 )
 from src.instruments.ir.options.capfloor import (
-    Caplet,
-    CapletSimple,
-    Floorlet,
-    FloorletSimple,
-    Cap,
-    CapSimple,
-    Floor,
-    FloorSimple,
+    IrCapletEuropeanOption, IrCapletEuropeanOptionSimple, IrFloorletEuropeanOption, IrFloorletEuropeanOptionSimple,
+    IrCapEuropeanOption, IrCapEuropeanOptionSimple, IrFloorEuropeanOption, IrFloorEuropeanOptionSimple,
 )
 
 __all__ = [
     # Linear instruments
-    "ForwardRateAgreement",
-    "ForwardRateAgreementSimple",
-    "InterestRateSwap",
-    "InterestRateSwapSimple",
+    "IrForwardRateAgreement",
+    "IrForwardRateAgreementSimple",
+    "IrSwap",
+    "IrSwapSimple",
     "SwapLeg",
     "FixedLeg",
     "FloatingLeg",
     # Options
-    "Caplet",
-    "CapletSimple",
-    "Floorlet",
-    "FloorletSimple",
-    "Cap",
-    "CapSimple",
-    "Floor",
-    "FloorSimple",
+    "IrCapletEuropeanOption",
+    "IrCapletEuropeanOptionSimple",
+    "IrFloorletEuropeanOption",
+    "IrFloorletEuropeanOptionSimple",
+    "IrCapEuropeanOption",
+    "IrCapEuropeanOptionSimple",
+    "IrFloorEuropeanOption",
+    "IrFloorEuropeanOptionSimple",
 ]

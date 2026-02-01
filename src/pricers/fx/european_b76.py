@@ -42,8 +42,8 @@ from typing import Dict, Literal
 
 from src.marketdata.core.market import Market
 from src.instruments.fx.options.forward import (
-    EuropeanFxForwardOption,
-    EuropeanFxForwardOptionSimple,
+    FxForwardEuropeanOption,
+    FxForwardEuropeanOptionSimple,
 )
 
 # Import pure functions from Black76 model.
@@ -95,7 +95,7 @@ def _rate_from_df(*, df: float, t: float) -> float:
 
 
 @dataclass(frozen=True, slots=True)
-class FxForwardOptionBlack76Pricer:
+class FxForwardEuropeanOptionB76Pricer:
     """
     Black76 pricer for FX forward options.
 
@@ -106,12 +106,12 @@ class FxForwardOptionBlack76Pricer:
 
     Examples
     --------
-    >>> pricer = FxForwardOptionBlack76Pricer()
+    >>> pricer = FxForwardEuropeanOptionB76Pricer()
     >>> pv = pricer.price(option, market)
     >>> greeks = pricer.greeks(option, market)
     """
 
-    def price(self, option: EuropeanFxForwardOption, market: Market) -> float:
+    def price(self, option: FxForwardEuropeanOption, market: Market) -> float:
         """
         Compute present value of FX forward option.
 
@@ -160,7 +160,7 @@ class FxForwardOptionBlack76Pricer:
 
         return unit_price * float(option.notional)
 
-    def greeks(self, option: EuropeanFxForwardOption, market: Market) -> Dict[GreekName, float]:
+    def greeks(self, option: FxForwardEuropeanOption, market: Market) -> Dict[GreekName, float]:
         """
         Compute Greeks for FX forward option.
 
@@ -290,7 +290,7 @@ class FxForwardOptionBlack76Pricer:
 
 
 @dataclass(frozen=True, slots=True)
-class FxForwardOptionBlack76PricerSimple:
+class FxForwardEuropeanOptionB76PricerSimple:
     """
     Simplified Black76 pricer for FX forward options.
 
@@ -298,12 +298,12 @@ class FxForwardOptionBlack76PricerSimple:
 
     Examples
     --------
-    >>> pricer = FxForwardOptionBlack76PricerSimple()
+    >>> pricer = FxForwardEuropeanOptionB76PricerSimple()
     >>> pv = pricer.price(option)
     >>> greeks = pricer.greeks(option)
     """
 
-    def price(self, option: EuropeanFxForwardOptionSimple) -> float:
+    def price(self, option: FxForwardEuropeanOptionSimple) -> float:
         """
         Compute present value using Black76.
 
@@ -328,7 +328,7 @@ class FxForwardOptionBlack76PricerSimple:
 
         return unit_price * float(option.notional)
 
-    def greeks(self, option: EuropeanFxForwardOptionSimple) -> Dict[str, float]:
+    def greeks(self, option: FxForwardEuropeanOptionSimple) -> Dict[str, float]:
         """
         Compute Greeks using Black76.
 
@@ -405,6 +405,6 @@ class FxForwardOptionBlack76PricerSimple:
 
 
 __all__ = [
-    "FxForwardOptionBlack76Pricer",
-    "FxForwardOptionBlack76PricerSimple",
+    "FxForwardEuropeanOptionB76Pricer",
+    "FxForwardEuropeanOptionB76PricerSimple",
 ]

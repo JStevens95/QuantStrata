@@ -17,7 +17,7 @@ from src.instruments.core.types import AsianAveragingType
 
 
 @dataclass(frozen=True, slots=True)
-class EuropeanEquityAsianOption:
+class EquityAsianEuropeanOption:
     """
     European equity Asian option (average price).
 
@@ -79,7 +79,7 @@ class EuropeanEquityAsianOption:
     >>> spot_id = MarketId(asset_class="EQ", mkt_type="SPOT", name="AAPL")
     >>> vol_id = MarketId(asset_class="EQ", mkt_type="VOL", name="AAPL")
     >>> curve_id = MarketId(asset_class="IR", mkt_type="CURVE", name="USD_OIS")
-    >>> asian_call = EuropeanEquityAsianOption(
+    >>> asian_call = EquityAsianEuropeanOption(
     ...     ticker="AAPL",
     ...     option_type="call",
     ...     averaging_type="arithmetic",

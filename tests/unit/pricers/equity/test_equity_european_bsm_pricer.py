@@ -10,8 +10,8 @@ import math
 import pytest
 import numpy as np
 
-from src.instruments.equity.options.vanilla import EuropeanEquityVanillaOption
-from src.pricers.equity.european_bsm import EquityEuropeanVanillaBsmPricer
+from src.instruments.equity.options.vanilla import EquityVanillaEuropeanOption
+from src.pricers.equity.european_bsm import EquityVanillaEuropeanOptionBsmPricer
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.interfaces import Quote
 from src.marketdata.core.market import Market
@@ -50,8 +50,8 @@ def standard_market(spot_id, vol_id, curve_id) -> Market:
 
 
 @pytest.fixture
-def pricer() -> EquityEuropeanVanillaBsmPricer:
-    return EquityEuropeanVanillaBsmPricer()
+def pricer() -> EquityVanillaEuropeanOptionBsmPricer:
+    return EquityVanillaEuropeanOptionBsmPricer()
 
 
 # =============================================================================
@@ -63,7 +63,7 @@ class TestBasicPricing:
     
     def test_atm_call_positive_value(self, pricer, standard_market, spot_id, vol_id, curve_id):
         """ATM call should have positive value."""
-        opt = EuropeanEquityVanillaOption(
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -73,7 +73,7 @@ class TestBasicPricing:
     
     def test_atm_put_positive_value(self, pricer, standard_market, spot_id, vol_id, curve_id):
         """ATM put should have positive value."""
-        opt = EuropeanEquityVanillaOption(
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="put", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -83,7 +83,7 @@ class TestBasicPricing:
     
     def test_deep_itm_call(self, pricer, standard_market, spot_id, vol_id, curve_id):
         """Deep ITM call should be close to intrinsic value."""
-        opt = EuropeanEquityVanillaOption(
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=50.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -95,7 +95,7 @@ class TestBasicPricing:
     
     def test_deep_otm_call(self, pricer, standard_market, spot_id, vol_id, curve_id):
         """Deep OTM call should be small."""
-        opt = EuropeanEquityVanillaOption(
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=200.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -106,12 +106,12 @@ class TestBasicPricing:
     
     def test_notional_scaling(self, pricer, standard_market, spot_id, vol_id, curve_id):
         """Price should scale linearly with notional."""
-        opt_1 = EuropeanEquityVanillaOption(
+        opt_1 = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
         )
-        opt_100 = EuropeanEquityVanillaOption(
+        opt_100 = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=100, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -135,12 +135,12 @@ class TestPutCallParity:
         T = 1.0
         r = 0.05
         
-        call = EuropeanEquityVanillaOption(
+        call = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=K, expiry=T,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
         )
-        put = EuropeanEquityVanillaOption(
+        put = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="put", strike=K, expiry=T,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -168,14 +168,14 @@ class TestPutCallParity:
             vols={vol_id: FlatVolSurface(sigma=0.20)},
         )
         
-        pricer = EquityEuropeanVanillaBsmPricer()
+        pricer = EquityVanillaEuropeanOptionBsmPricer()
         
-        call = EuropeanEquityVanillaOption(
+        call = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=K, expiry=T,
             notional=1, dividend_yield=q, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
         )
-        put = EuropeanEquityVanillaOption(
+        put = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="put", strike=K, expiry=T,
             notional=1, dividend_yield=q, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -198,7 +198,7 @@ class TestGreeks:
     
     def test_call_delta_positive(self, pricer, standard_market, spot_id, vol_id, curve_id):
         """Call delta should be positive and between 0 and 1."""
-        opt = EuropeanEquityVanillaOption(
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -208,7 +208,7 @@ class TestGreeks:
     
     def test_put_delta_negative(self, pricer, standard_market, spot_id, vol_id, curve_id):
         """Put delta should be negative and between -1 and 0."""
-        opt = EuropeanEquityVanillaOption(
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="put", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -219,7 +219,7 @@ class TestGreeks:
     def test_gamma_positive(self, pricer, standard_market, spot_id, vol_id, curve_id):
         """Gamma should be positive for both calls and puts."""
         for opt_type in ["call", "put"]:
-            opt = EuropeanEquityVanillaOption(
+            opt = EquityVanillaEuropeanOption(
                 ticker="AAPL", option_type=opt_type, strike=100.0, expiry=1.0,
                 notional=1, dividend_yield=0.0, spot_id=spot_id,
                 vol_id=vol_id, curve_id=curve_id,
@@ -230,7 +230,7 @@ class TestGreeks:
     def test_vega_positive(self, pricer, standard_market, spot_id, vol_id, curve_id):
         """Vega should be positive for both calls and puts."""
         for opt_type in ["call", "put"]:
-            opt = EuropeanEquityVanillaOption(
+            opt = EquityVanillaEuropeanOption(
                 ticker="AAPL", option_type=opt_type, strike=100.0, expiry=1.0,
                 notional=1, dividend_yield=0.0, spot_id=spot_id,
                 vol_id=vol_id, curve_id=curve_id,
@@ -240,12 +240,12 @@ class TestGreeks:
     
     def test_greeks_notional_scaling(self, pricer, standard_market, spot_id, vol_id, curve_id):
         """Greeks should scale with notional."""
-        opt_1 = EuropeanEquityVanillaOption(
+        opt_1 = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
         )
-        opt_100 = EuropeanEquityVanillaOption(
+        opt_100 = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=100, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -266,7 +266,7 @@ class TestEdgeCases:
     
     def test_zero_expiry(self, pricer, standard_market, spot_id, vol_id, curve_id):
         """At expiry, price should equal intrinsic value."""
-        opt_call = EuropeanEquityVanillaOption(
+        opt_call = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=90.0, expiry=0.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -274,7 +274,7 @@ class TestEdgeCases:
         pv_call = pricer.price(opt_call, standard_market)
         assert abs(pv_call - 10.0) < 1e-10  # S - K = 100 - 90 = 10
         
-        opt_put = EuropeanEquityVanillaOption(
+        opt_put = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="put", strike=110.0, expiry=0.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -284,7 +284,7 @@ class TestEdgeCases:
     
     def test_zero_expiry_greeks(self, pricer, standard_market, spot_id, vol_id, curve_id):
         """At expiry, greeks should be zero (stable policy)."""
-        opt = EuropeanEquityVanillaOption(
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=0.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -295,7 +295,7 @@ class TestEdgeCases:
     
     def test_high_dividend_reduces_call_value(self, spot_id, vol_id, curve_id):
         """Higher dividend yield should reduce call value."""
-        pricer = EquityEuropeanVanillaBsmPricer()
+        pricer = EquityVanillaEuropeanOptionBsmPricer()
         
         market = Market(
             asof="2026-01-28",
@@ -304,12 +304,12 @@ class TestEdgeCases:
             vols={vol_id: FlatVolSurface(sigma=0.20)},
         )
         
-        call_q0 = EuropeanEquityVanillaOption(
+        call_q0 = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
         )
-        call_q5 = EuropeanEquityVanillaOption(
+        call_q5 = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.05, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,

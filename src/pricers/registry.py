@@ -6,53 +6,79 @@ from typing import Any, Mapping, MutableMapping, Optional, Protocol, Type
 # --- import FX instruments ---
 from src.instruments.fx.linear.spot import FxSpot
 from src.instruments.fx.linear.forward import FxForward
-from src.instruments.fx.options.digital import EuropeanFxDigitalOption
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption, AmericanFxVanillaOption
-from src.instruments.fx.options.barrier import EuropeanFxBarrierOption
-from src.instruments.fx.options.double_barrier import EuropeanFxDoubleBarrierOption
-from src.instruments.fx.options.asian import EuropeanFxAsianOption
-from src.instruments.fx.options.lookback import EuropeanFxLookbackOption
-from src.instruments.fx.options.touch import EuropeanFxTouchOption
+from src.instruments.fx.options.digital import FxDigitalEuropeanOption
+from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption, FxVanillaAmericanOption
+from src.instruments.fx.options.barrier import FxBarrierEuropeanOption
+from src.instruments.fx.options.double_barrier import FxDoubleBarrierEuropeanOption
+from src.instruments.fx.options.asian import FxAsianEuropeanOption
+from src.instruments.fx.options.lookback import FxLookbackEuropeanOption
+from src.instruments.fx.options.touch import FxTouchEuropeanOption
+from src.instruments.fx.options.spread import FxSpreadEuropeanOption, FxSpreadEuropeanOptionSimple
+from src.instruments.fx.options.forward import FxForwardEuropeanOption, FxForwardEuropeanOptionSimple
 
 # --- import equity instruments ---
 from src.instruments.equity.linear.spot import EquitySpot
 from src.instruments.equity.linear.forward import EquityForward
-from src.instruments.equity.options.vanilla import EuropeanEquityVanillaOption, AmericanEquityVanillaOption
-from src.instruments.equity.options.digital import EuropeanEquityDigitalOption
-from src.instruments.equity.options.barrier import EuropeanEquityBarrierOption
-from src.instruments.equity.options.asian import EuropeanEquityAsianOption
-from src.instruments.equity.options.lookback import EuropeanEquityLookbackOption
+from src.instruments.equity.options.vanilla import EquityVanillaEuropeanOption, EquityVanillaAmericanOption
+from src.instruments.equity.options.digital import EquityDigitalEuropeanOption
+from src.instruments.equity.options.barrier import EquityBarrierEuropeanOption
+from src.instruments.equity.options.asian import EquityAsianEuropeanOption
+from src.instruments.equity.options.lookback import EquityLookbackEuropeanOption
+from src.instruments.equity.options.spread import EquitySpreadEuropeanOption, EquitySpreadEuropeanOptionSimple
+from src.instruments.equity.options.futures import EquityFuturesEuropeanOption, EquityFuturesEuropeanOptionSimple
+
+# --- import ir instruments ---
+from src.instruments.ir.linear.swap import IrSwap, IrSwapSimple
+from src.instruments.ir.linear.fra import IrForwardRateAgreement, IrForwardRateAgreementSimple
+from src.instruments.ir.options.swaption import IrSwaptionEuropeanOption, IrSwaptionEuropeanOptionSimple
+from src.instruments.ir.options.capfloor import (
+    IrCapletEuropeanOption, IrCapletEuropeanOptionSimple, IrCapEuropeanOption, IrCapEuropeanOptionSimple,
+    IrFloorletEuropeanOption, IrFloorletEuropeanOptionSimple, IrFloorEuropeanOption, IrFloorEuropeanOptionSimple
+)
 
 
 # --- import FX analytic pricers (linear + non-linear) ---
 from src.pricers.fx.spot import FxSpotPricer
 from src.pricers.fx.forward import FxForwardPricer
-from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer, FxEuropeanDigitalBsmPricer
+from src.pricers.fx.european_bsm import FxVanillaEuropeanOptionBsmPricer, FxDigitalEuropeanOptionBsmPricer
+from src.pricers.fx.european_b76 import FxForwardEuropeanOptionB76Pricer, FxForwardEuropeanOptionB76PricerSimple
+from src.pricers.fx.european_bch import FxSpreadEuropeanOptionBchPricer, FxSpreadEuropeanOptionBchPricerSimple
 
 # --- import Equity analytic pricers (linear + non-linear) ---
 from src.pricers.equity.spot import EquitySpotPricer
 from src.pricers.equity.forward import EquityForwardPricer
-from src.pricers.equity.european_bsm import EquityEuropeanVanillaBsmPricer, EquityEuropeanDigitalBsmPricer
+from src.pricers.equity.european_bsm import EquityVanillaEuropeanOptionBsmPricer, EquityDigitalEuropeanOptionBsmPricer
+from src.pricers.equity.european_b76 import (
+    EquityFuturesEuropeanOptionB76Pricer, EquityFuturesEuropeanOptionB76PricerSimple
+)
+from src.pricers.equity.european_bch import (
+    EquitySpreadEuropeanOptionBchPricer, EquitySpreadEuropeanOptionBchPricerSimple
+)
+
+# --- import ir analytic pricers (linear + non-linear)
+from src.pricers.ir.swap import IrSwapPricer, IrSwapPricerSimple
+from src.pricers.ir.fra import IrFraPricer, IrFraPricerSimple
 
 # --- import FX numerical pricers ---
 from src.pricers.fx.european_mc import (
-    FxEuropeanBarrierMcPricer, FxEuropeanVanillaMcPricer, FxEuropeanDigitalMcPricer, FxEuropeanAsianMcPricer,
-    FxEuropeanLookbackMcPricer, FxEuropeanDoubleBarrierMcPricer, FxEuropeanTouchMcPricer
+    FxVanillaEuropeanOptionMcPricer, FxDigitalEuropeanOptionMcPricer, FxBarrierEuropeanOptionMcPricer,
+    FxAsianEuropeanOptionMcPricer, FxLookbackEuropeanOptionMcPricer, FxDoubleBarrierEuropeanOptionMcPricer,
+    FxTouchEuropeanOptionMcPricer
     )
 from src.pricers.fx.european_fde import (
-    FxEuropeanVanillaFdPricer, FxEuropeanDigitalFdPricer
+    FxVanillaEuropeanOptionFdPricer, FxDigitalEuropeanOptionFdPricer
     )
-from src.pricers.fx.american_fde import FxAmericanVanillaFdPricer
+from src.pricers.fx.american_fde import FxVanillaAmericanOptionFdPricer
 
 # --- import Equity numerical pricers ---
 from src.pricers.equity.european_mc import (
-    EquityEuropeanVanillaMcPricer, EquityEuropeanAsianMcPricer, EquityEuropeanBarrierMcPricer,
-    EquityEuropeanLookbackMcPricer
+    EquityVanillaEuropeanOptionMcPricer, EquityAsianEuropeanOptionMcPricer, EquityBarrierEuropeanOptionMcPricer,
+    EquityLookbackEuropeanOptionMcPricer
 )
 from src.pricers.equity.european_fde import (
-    EquityEuropeanVanillaFdPricer
+    EquityVanillaEuropeanOptionFdPricer
 )
-from src.pricers.equity.american_fde import EquityAmericanVanillaFdPricer
+from src.pricers.equity.american_fde import EquityVanillaAmericanOptionFdPricer
 
 
 class InstrumentPricer(Protocol):
@@ -238,28 +264,32 @@ class DefaultPricerRegistry:
         fx_fwd = FxForwardPricer()
 
         # ---- 1.2. non-linear analytic pricers ----
-        fx_eur_van_bsm = FxEuropeanVanillaBsmPricer()
-        fx_eur_dig_bsm = FxEuropeanDigitalBsmPricer()
+        fx_van_eur_bsm = FxVanillaEuropeanOptionBsmPricer()
+        fx_dig_eur_bsm = FxDigitalEuropeanOptionBsmPricer()
+        fx_fwd_eur_b76 = FxForwardEuropeanOptionB76Pricer()
+        fx_fwd_eur_b76_s = FxForwardEuropeanOptionB76PricerSimple()
+        fx_sprd_eur_bch = FxSpreadEuropeanOptionBchPricer()
+        fx_sprd_eur_bch_s = FxSpreadEuropeanOptionBchPricerSimple()
 
         # ---- 1.3 non-linear numerical pricers - Monte Carlo. ----
         # non-path dependent instruments.
-        fx_eur_van_mc = FxEuropeanVanillaMcPricer()
-        fx_eur_dig_mc = FxEuropeanDigitalMcPricer()
+        fx_van_eur_mc = FxVanillaEuropeanOptionMcPricer()
+        fx_dig_eur_mc = FxDigitalEuropeanOptionMcPricer()
 
         # path dependent instruments.
-        fx_eur_asian_mc = FxEuropeanAsianMcPricer()
-        fx_eur_lookback_mc = FxEuropeanLookbackMcPricer()
-        fx_eur_bar_mc = FxEuropeanBarrierMcPricer()
-        fx_eur_double_barrier_mc = FxEuropeanDoubleBarrierMcPricer()
-        fx_eur_touch_mc = FxEuropeanTouchMcPricer()
+        fx_asian_eur_mc = FxAsianEuropeanOptionMcPricer()
+        fx_lookback_eur_mc = FxLookbackEuropeanOptionMcPricer()
+        fx_bar_eur_mc = FxBarrierEuropeanOptionMcPricer()
+        fx_double_bar_eur_mc = FxDoubleBarrierEuropeanOptionMcPricer()
+        fx_touch_eur_mc = FxTouchEuropeanOptionMcPricer()
 
         # ---- 1.4 non-linear numerical pricers - Finite Difference. ----
         # non-path dependent instruments.
-        fx_eur_van_fd = FxEuropeanVanillaFdPricer()
-        fx_eur_dig_fd = FxEuropeanDigitalFdPricer()
+        fx_van_eur_fd = FxVanillaEuropeanOptionFdPricer()
+        fx_dig_eur_fd = FxDigitalEuropeanOptionFdPricer()
 
         # path dependent instruments.
-        fx_am_van_fd = FxAmericanVanillaFdPricer()
+        fx_van_am_fd = FxVanillaAmericanOptionFdPricer()
 
         # ==== 2. Equity pricers instantiate once (so default + alias share the same config) ====
 
@@ -268,28 +298,43 @@ class DefaultPricerRegistry:
         eq_fwd = EquityForwardPricer()
 
         # ---- 2.2. non-linear analytic pricers ----
-        eq_eur_van_bsm = EquityEuropeanVanillaBsmPricer()
-        eq_eur_dig_bsm = EquityEuropeanDigitalBsmPricer()
+        eq_van_eur_bsm = EquityVanillaEuropeanOptionBsmPricer()
+        eq_dig_eur_bsm = EquityDigitalEuropeanOptionBsmPricer()
+        eq_fut_eur_b76 = EquityFuturesEuropeanOptionB76Pricer()
+        eq_fut_eur_b76_s = EquityFuturesEuropeanOptionB76PricerSimple()
+        eq_sprd_eur_bch = EquitySpreadEuropeanOptionBchPricer()
+        eq_sprd_eur_bch_s = EquitySpreadEuropeanOptionBchPricerSimple()
 
         # ---- 2.3 non-linear numerical pricers - Monte Carlo. ----
         # non-path dependent instruments.
-        eq_eur_van_mc = EquityEuropeanVanillaMcPricer()
-        # eq_eur_dig_mc = EquityEuropeanDigitalMcPricer() <--- TODO: need to implement digital mc pricer.
+        eq_van_eur_mc = EquityVanillaEuropeanOptionMcPricer()
+        # eq_dig_eur_mc = EquityEuropeanDigitalMcPricer() <--- TODO: need to implement digital mc pricer.
 
         # path dependent instruments.
-        eq_eur_asian_mc = EquityEuropeanAsianMcPricer()
-        eq_eur_lookback_mc = EquityEuropeanLookbackMcPricer()
-        eq_eur_bar_mc = EquityEuropeanBarrierMcPricer()
-        # eq_eur_double_barrier_mc = EquityEuropeanDoubleBarrierMcPricer()  <--- TODO: need to implement in mc pricer.
-        # eq_eur_touch_mc = EquityEuropeanTouchMcPricer()   <--- TODO: need to implement in mc pricer.
+        eq_asian_eur_mc = EquityAsianEuropeanOptionMcPricer()
+        eq_lookback_eur_mc = EquityLookbackEuropeanOptionMcPricer()
+        eq_bar_eur_mc = EquityBarrierEuropeanOptionMcPricer()
+        # eq_double_bar_eur_mc = EquityDoubleBarrierEuropeanOptionMcPricer()  <--- TODO: need to implement in mc pricer.
+        # eq_touch_eur_mc = EquityTouchEuropeanOptionMcPricer()   <--- TODO: need to implement in mc pricer.
 
         # ---- 2.4 non-linear numerical pricers - Finite Difference. ----
         # non-path dependent instruments.
-        eq_eur_van_fd = EquityEuropeanVanillaFdPricer()
-        # eq_eur_dig_fd = EquityEuropeanDigitalFdPricer()   <--- TODO: need to implement in fd pricer.
+        eq_van_eur_fd = EquityVanillaEuropeanOptionFdPricer()
+        # eq_dig_eur_fd = EquityDigitalEuropeanOptionFdPricer()   <--- TODO: need to implement in fd pricer.
 
         # path dependent instruments.
-        eq_am_van_fd = EquityAmericanVanillaFdPricer()
+        eq_van_am_fd = EquityVanillaAmericanOptionFdPricer()
+
+
+        # ==== 3. Interest Rate pricers instantiate once (so default + alias share the same config) ====
+
+        # ---- 3.1. linear pricers ----
+        ir_fra = IrFraPricer()
+        ir_fra_s = IrFraPricerSimple()
+        ir_swp = IrSwapPricer()
+        ir_swp_s = IrSwapPricerSimple()
+
+        eq_fwd = EquityForwardPricer()
 
         # ============================================================================================================ #
         # ============================================================================================================ #
@@ -298,51 +343,65 @@ class DefaultPricerRegistry:
         # ---- Register FX defaults ----
         reg.register(FxSpot, fx_spot)
         reg.register(FxForward, fx_fwd)
-        reg.register(EuropeanFxVanillaOption, fx_eur_van_bsm)
-        reg.register(EuropeanFxDigitalOption, fx_eur_dig_bsm)
-        reg.register(EuropeanFxBarrierOption, fx_eur_bar_mc)
-        reg.register(AmericanFxVanillaOption, fx_am_van_fd)
-        reg.register(EuropeanFxAsianOption, fx_eur_asian_mc)
-        reg.register(EuropeanFxLookbackOption, fx_eur_lookback_mc)
-        reg.register(EuropeanFxDoubleBarrierOption, fx_eur_double_barrier_mc)
-        reg.register(EuropeanFxTouchOption, fx_eur_touch_mc)
+        reg.register(FxVanillaEuropeanOption, fx_van_eur_bsm)
+        reg.register(FxDigitalEuropeanOption, fx_dig_eur_bsm)
+        reg.register(FxForwardEuropeanOption, fx_fwd_eur_b76)
+        reg.register(FxForwardEuropeanOptionSimple, fx_fwd_eur_b76_s)
+        reg.register(FxSpreadEuropeanOption, fx_sprd_eur_bch)
+        reg.register(FxSpreadEuropeanOptionSimple, fx_sprd_eur_bch_s)
+        reg.register(FxBarrierEuropeanOption, fx_bar_eur_mc)
+        reg.register(FxVanillaAmericanOption, fx_van_am_fd)
+        reg.register(FxAsianEuropeanOption, fx_asian_eur_mc)
+        reg.register(FxLookbackEuropeanOption, fx_lookback_eur_mc)
+        reg.register(FxDoubleBarrierEuropeanOption, fx_double_bar_eur_mc)
+        reg.register(FxTouchEuropeanOption, fx_touch_eur_mc)
 
         # ---- Register Equity defaults ----
         reg.register(EquitySpot, eq_spot)
         reg.register(EquityForward, eq_fwd)
-        reg.register(EuropeanEquityVanillaOption, eq_eur_van_bsm)
-        reg.register(EuropeanEquityDigitalOption, eq_eur_dig_bsm)
-        reg.register(EuropeanEquityBarrierOption, eq_eur_bar_mc)
-        reg.register(AmericanEquityVanillaOption, eq_am_van_fd)
-        reg.register(EuropeanEquityAsianOption, eq_eur_asian_mc)
-        reg.register(EuropeanEquityLookbackOption, eq_eur_lookback_mc)
+        reg.register(EquityVanillaEuropeanOption, eq_van_eur_bsm)
+        reg.register(EquityDigitalEuropeanOption, eq_dig_eur_bsm)
+        reg.register(EquityFuturesEuropeanOption, eq_fut_eur_b76)
+        reg.register(EquityFuturesEuropeanOptionSimple, eq_fut_eur_b76_s)
+        reg.register(EquitySpreadEuropeanOption, eq_sprd_eur_bch)
+        reg.register(EquitySpreadEuropeanOptionSimple, eq_sprd_eur_bch_s)
+        reg.register(EquityBarrierEuropeanOption, eq_bar_eur_mc)
+        reg.register(EquityVanillaAmericanOption, eq_van_am_fd)
+        reg.register(EquityAsianEuropeanOption, eq_asian_eur_mc)
+        reg.register(EquityLookbackEuropeanOption, eq_lookback_eur_mc)
+
+        # ---- Register IR defaults ----
+        reg.register(IrForwardRateAgreement, ir_fra)
+        reg.register(IrForwardRateAgreementSimple, ir_fra_s)
+        reg.register(IrSwap, ir_swp)
+        reg.register(IrSwapSimple, ir_swp_s)
 
         # ============================================================================================================ #
         # ============================================================================================================ #
         # ============================================================================================================ #
 
         # ---- named aliases - FX ----
-        reg.register(EuropeanFxVanillaOption, fx_eur_van_mc, pricer_id="mc")
-        reg.register(EuropeanFxDigitalOption, fx_eur_dig_mc, pricer_id="mc")
-        reg.register(EuropeanFxBarrierOption, fx_eur_bar_mc, pricer_id="mc")
-        reg.register(EuropeanFxAsianOption, fx_eur_asian_mc, pricer_id="mc")
-        reg.register(EuropeanFxLookbackOption, fx_eur_lookback_mc, pricer_id="mc")
-        reg.register(EuropeanFxDoubleBarrierOption, fx_eur_double_barrier_mc, pricer_id="mc")
-        reg.register(EuropeanFxTouchOption, fx_eur_touch_mc, pricer_id="mc")
+        reg.register(FxVanillaEuropeanOption, fx_van_eur_mc, pricer_id="mc")
+        reg.register(FxDigitalEuropeanOption, fx_dig_eur_mc, pricer_id="mc")
+        reg.register(FxBarrierEuropeanOption, fx_bar_eur_mc, pricer_id="mc")
+        reg.register(FxAsianEuropeanOption, fx_asian_eur_mc, pricer_id="mc")
+        reg.register(FxLookbackEuropeanOption, fx_lookback_eur_mc, pricer_id="mc")
+        reg.register(FxDoubleBarrierEuropeanOption, fx_double_bar_eur_mc, pricer_id="mc")
+        reg.register(FxTouchEuropeanOption, fx_touch_eur_mc, pricer_id="mc")
 
-        reg.register(EuropeanFxVanillaOption, fx_eur_van_fd, pricer_id="fd")
-        reg.register(EuropeanFxDigitalOption, fx_eur_dig_fd, pricer_id="fd")
-        reg.register(AmericanFxVanillaOption, fx_am_van_fd, pricer_id="fd")
+        reg.register(FxVanillaEuropeanOption, fx_van_eur_fd, pricer_id="fd")
+        reg.register(FxDigitalEuropeanOption, fx_dig_eur_fd, pricer_id="fd")
+        reg.register(FxVanillaAmericanOption, fx_van_am_fd, pricer_id="fd")
 
         # ---- named aliases - Equity ----
-        reg.register(EuropeanEquityVanillaOption, eq_eur_van_mc, pricer_id="mc")
-        # reg.register(EuropeanEquityDigitalOption, fx_eur_dig_mc, pricer_id="mc") <--- TODO: need to implement in mc pricer.
-        reg.register(EuropeanEquityBarrierOption, eq_eur_bar_mc, pricer_id="mc")
-        reg.register(EuropeanEquityAsianOption, eq_eur_asian_mc, pricer_id="mc")
-        reg.register(EuropeanEquityLookbackOption, eq_eur_lookback_mc, pricer_id="mc")
+        reg.register(EquityVanillaEuropeanOption, eq_van_eur_mc, pricer_id="mc")
+        # reg.register(EquityDigitalEuropeanOption, eq_dig_eur_mc, pricer_id="mc") <--- TODO: need to implement in mc pricer.
+        reg.register(EquityBarrierEuropeanOption, eq_bar_eur_mc, pricer_id="mc")
+        reg.register(EquityAsianEuropeanOption, eq_asian_eur_mc, pricer_id="mc")
+        reg.register(EquityLookbackEuropeanOption, eq_lookback_eur_mc, pricer_id="mc")
 
-        reg.register(EuropeanEquityVanillaOption, eq_eur_van_fd, pricer_id="fd")
-        # reg.register(EuropeanEquityDigitalOption, fx_eur_dig_fd, pricer_id="fd") <--- TODO: need to implement in fd pricer.
-        reg.register(AmericanEquityVanillaOption, eq_am_van_fd, pricer_id="fd")
+        reg.register(EquityVanillaEuropeanOption, eq_van_eur_fd, pricer_id="fd")
+        # reg.register(EquityDigitalEuropeanOption, eq_dig_eur_fd, pricer_id="fd") <--- TODO: need to implement in fd pricer.
+        reg.register(EquityVanillaAmericanOption, eq_van_am_fd, pricer_id="fd")
 
         return reg

@@ -41,8 +41,8 @@ from typing import Dict, Literal
 
 from src.marketdata.core.market import Market
 from src.instruments.equity.options.futures import (
-    EuropeanEquityFuturesOption,
-    EuropeanEquityFuturesOptionSimple,
+    EquityFuturesEuropeanOption,
+    EquityFuturesEuropeanOptionSimple,
 )
 
 # Import pure functions from Black76 model.
@@ -93,7 +93,7 @@ def _rate_from_df(*, df: float, t: float) -> float:
 
 
 @dataclass(frozen=True, slots=True)
-class EquityFuturesOptionBlack76Pricer:
+class EquityFuturesEuropeanOptionB76Pricer:
     """
     Black76 pricer for equity futures options.
 
@@ -104,18 +104,18 @@ class EquityFuturesOptionBlack76Pricer:
 
     Examples
     --------
-    >>> pricer = EquityFuturesOptionBlack76Pricer()
+    >>> pricer = EquityFuturesEuropeanOptionB76Pricer()
     >>> pv = pricer.price(option, market)
     >>> greeks = pricer.greeks(option, market)
     """
 
-    def price(self, option: EuropeanEquityFuturesOption, market: Market) -> float:
+    def price(self, option: EquityFuturesEuropeanOption, market: Market) -> float:
         """
         Compute present value of equity futures option.
 
         Parameters
         ----------
-        option : EuropeanEquityFuturesOption
+        option : EquityFuturesEuropeanOption
             The option to price.
         market : Market
             Market snapshot containing spot, curve, and vol surface.
@@ -157,13 +157,13 @@ class EquityFuturesOptionBlack76Pricer:
 
         return unit_price * float(option.notional)
 
-    def greeks(self, option: EuropeanEquityFuturesOption, market: Market) -> Dict[GreekName, float]:
+    def greeks(self, option: EquityFuturesEuropeanOption, market: Market) -> Dict[GreekName, float]:
         """
         Compute Greeks for equity futures option.
 
         Parameters
         ----------
-        option : EuropeanEquityFuturesOption
+        option : EquityFuturesEuropeanOption
             The option to price.
         market : Market
             Market snapshot.
@@ -259,7 +259,7 @@ class EquityFuturesOptionBlack76Pricer:
 
 
 @dataclass(frozen=True, slots=True)
-class EquityFuturesOptionBlack76PricerSimple:
+class EquityFuturesEuropeanOptionB76PricerSimple:
     """
     Simplified Black76 pricer for equity futures options.
 
@@ -267,18 +267,18 @@ class EquityFuturesOptionBlack76PricerSimple:
 
     Examples
     --------
-    >>> pricer = EquityFuturesOptionBlack76PricerSimple()
+    >>> pricer = EquityFuturesEuropeanOptionB76PricerSimple()
     >>> pv = pricer.price(option)
     >>> greeks = pricer.greeks(option)
     """
 
-    def price(self, option: EuropeanEquityFuturesOptionSimple) -> float:
+    def price(self, option: EquityFuturesEuropeanOptionSimple) -> float:
         """
         Compute present value using Black76.
 
         Parameters
         ----------
-        option : EuropeanEquityFuturesOptionSimple
+        option : EquityFuturesEuropeanOptionSimple
             Option with embedded market parameters.
 
         Returns
@@ -297,13 +297,13 @@ class EquityFuturesOptionBlack76PricerSimple:
 
         return unit_price * float(option.notional)
 
-    def greeks(self, option: EuropeanEquityFuturesOptionSimple) -> Dict[str, float]:
+    def greeks(self, option: EquityFuturesEuropeanOptionSimple) -> Dict[str, float]:
         """
         Compute Greeks using Black76.
 
         Parameters
         ----------
-        option : EuropeanEquityFuturesOptionSimple
+        option : EquityFuturesEuropeanOptionSimple
             Option with embedded market parameters.
 
         Returns
@@ -374,6 +374,6 @@ class EquityFuturesOptionBlack76PricerSimple:
 
 
 __all__ = [
-    "EquityFuturesOptionBlack76Pricer",
-    "EquityFuturesOptionBlack76PricerSimple",
+    "EquityFuturesEuropeanOptionB76Pricer",
+    "EquityFuturesEuropeanOptionB76PricerSimple",
 ]

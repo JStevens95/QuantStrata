@@ -14,7 +14,7 @@ from typing import Dict, Literal, Tuple
 
 import numpy as np
 
-from src.instruments.equity.options.vanilla import EuropeanEquityVanillaOption
+from src.instruments.equity.options.vanilla import EquityVanillaEuropeanOption
 from src.marketdata.core.market import Market
 from src.models.numeric.finite_difference.boundaries import BoundaryPair, DirichletBC
 from src.models.numeric.finite_difference.grids import SpatialGrid1D, TimeGrid
@@ -37,7 +37,7 @@ def _rate_from_df(*, df: float, t: float) -> float:
 
 
 @dataclass(frozen=True, slots=True)
-class EquityEuropeanVanillaFdPricer:
+class EquityVanillaEuropeanOptionFdPricer:
     """
     Finite Difference pricer for European equity vanilla options.
 
@@ -95,13 +95,13 @@ class EquityEuropeanVanillaFdPricer:
     vol_abs_bump: float = 1e-4
     rate_abs_bump: float = 1e-4
 
-    def price(self, trade: EuropeanEquityVanillaOption, market: Market) -> float:
+    def price(self, trade: EquityVanillaEuropeanOption, market: Market) -> float:
         """
         Price European equity option via finite difference.
 
         Parameters
         ----------
-        trade : EuropeanEquityVanillaOption
+        trade : EquityVanillaEuropeanOption
             Option to price
         market : Market
             Market snapshot
@@ -114,13 +114,13 @@ class EquityEuropeanVanillaFdPricer:
         pv_per_unit, _ = self._price_per_unit_and_context(trade, market)
         return float(trade.notional) * float(pv_per_unit)
 
-    def greeks(self, trade: EuropeanEquityVanillaOption, market: Market) -> Dict[GreekName, float]:
+    def greeks(self, trade: EquityVanillaEuropeanOption, market: Market) -> Dict[GreekName, float]:
         """
         Compute Greeks via finite difference methods.
 
         Parameters
         ----------
-        trade : EuropeanEquityVanillaOption
+        trade : EquityVanillaEuropeanOption
             Option to analyze
         market : Market
             Market snapshot
@@ -228,7 +228,7 @@ class EquityEuropeanVanillaFdPricer:
 
     def diagnostics(
             self,
-            trade: EuropeanEquityVanillaOption,
+            trade: EquityVanillaEuropeanOption,
             market: Market,
             *,
             store_surface: bool = True,
@@ -238,7 +238,7 @@ class EquityEuropeanVanillaFdPricer:
 
         Parameters
         ----------
-        trade : EuropeanEquityVanillaOption
+        trade : EquityVanillaEuropeanOption
             Option to analyze
         market : Market
             Market snapshot
@@ -326,7 +326,7 @@ class EquityEuropeanVanillaFdPricer:
 
     def _price_per_unit_and_context(
             self,
-            trade: EuropeanEquityVanillaOption,
+            trade: EquityVanillaEuropeanOption,
             market: Market,
     ) -> Tuple[float, Dict[str, object]]:
         """Solve PDE and return price + context for Greeks."""

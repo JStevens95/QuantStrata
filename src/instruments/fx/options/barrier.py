@@ -8,7 +8,7 @@ from src.models.payoffs.types import OptionType, BarrierStyle, BarrierDirection
 
 
 @dataclass(frozen=True, slots=True)
-class EuropeanFxBarrierOption:
+class FxBarrierEuropeanOption:
     """
     European FX single-barrier option (V1).
 

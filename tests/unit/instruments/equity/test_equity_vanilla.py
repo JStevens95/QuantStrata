@@ -8,8 +8,7 @@ Author: QuantStrata Team
 
 import pytest
 from src.instruments.equity.options.vanilla import (
-    EuropeanEquityVanillaOption,
-    AmericanEquityVanillaOption,
+    EquityVanillaEuropeanOption, EquityVanillaAmericanOption,
 )
 from src.instruments.equity.linear.spot import EquitySpot
 from src.instruments.equity.linear.forward import EquityForward
@@ -165,7 +164,7 @@ class TestEuropeanEquityVanillaOption:
 
     def test_construction_call(self, spot_id: MarketId, vol_id: MarketId, curve_id: MarketId):
         """Test valid call option construction."""
-        opt = EuropeanEquityVanillaOption(
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL",
             option_type="call",
             strike=150.0,
@@ -182,7 +181,7 @@ class TestEuropeanEquityVanillaOption:
 
     def test_construction_put(self, spot_id: MarketId, vol_id: MarketId, curve_id: MarketId):
         """Test valid put option construction."""
-        opt = EuropeanEquityVanillaOption(
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL",
             option_type="put",
             strike=150.0,
@@ -198,7 +197,7 @@ class TestEuropeanEquityVanillaOption:
     def test_invalid_option_type(self, spot_id: MarketId, vol_id: MarketId, curve_id: MarketId):
         """Test that invalid option type raises error."""
         with pytest.raises(ValueError, match="option_type"):
-            EuropeanEquityVanillaOption(
+            EquityVanillaEuropeanOption(
                 ticker="AAPL", option_type="invalid", strike=150.0, expiry=1.0,
                 notional=100, dividend_yield=0.005, spot_id=spot_id,
                 vol_id=vol_id, curve_id=curve_id,
@@ -207,7 +206,7 @@ class TestEuropeanEquityVanillaOption:
     def test_invalid_strike_zero(self, spot_id: MarketId, vol_id: MarketId, curve_id: MarketId):
         """Test that zero strike raises error."""
         with pytest.raises(ValueError, match="strike"):
-            EuropeanEquityVanillaOption(
+            EquityVanillaEuropeanOption(
                 ticker="AAPL", option_type="call", strike=0.0, expiry=1.0,
                 notional=100, dividend_yield=0.005, spot_id=spot_id,
                 vol_id=vol_id, curve_id=curve_id,
@@ -216,7 +215,7 @@ class TestEuropeanEquityVanillaOption:
     def test_invalid_notional_zero(self, spot_id: MarketId, vol_id: MarketId, curve_id: MarketId):
         """Test that zero notional raises error."""
         with pytest.raises(ValueError, match="notional"):
-            EuropeanEquityVanillaOption(
+            EquityVanillaEuropeanOption(
                 ticker="AAPL", option_type="call", strike=150.0, expiry=1.0,
                 notional=0.0, dividend_yield=0.005, spot_id=spot_id,
                 vol_id=vol_id, curve_id=curve_id,
@@ -224,7 +223,7 @@ class TestEuropeanEquityVanillaOption:
 
     def test_short_position_negative_notional(self, spot_id: MarketId, vol_id: MarketId, curve_id: MarketId):
         """Test that negative notional creates short position."""
-        opt = EuropeanEquityVanillaOption(
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=150.0, expiry=1.0,
             notional=-100, dividend_yield=0.005, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -241,7 +240,7 @@ class TestAmericanEquityVanillaOption:
 
     def test_construction_call(self, spot_id: MarketId, vol_id: MarketId, curve_id: MarketId):
         """Test valid American call construction."""
-        opt = AmericanEquityVanillaOption(
+        opt = EquityVanillaAmericanOption(
             ticker="AAPL",
             option_type="call",
             strike=150.0,
@@ -256,7 +255,7 @@ class TestAmericanEquityVanillaOption:
 
     def test_construction_put(self, spot_id: MarketId, vol_id: MarketId, curve_id: MarketId):
         """Test valid American put construction."""
-        opt = AmericanEquityVanillaOption(
+        opt = EquityVanillaAmericanOption(
             ticker="AAPL",
             option_type="put",
             strike=150.0,
@@ -272,7 +271,7 @@ class TestAmericanEquityVanillaOption:
     def test_invalid_expiry_negative(self, spot_id: MarketId, vol_id: MarketId, curve_id: MarketId):
         """Test that negative expiry raises error."""
         with pytest.raises(ValueError, match="expiry"):
-            AmericanEquityVanillaOption(
+            EquityVanillaAmericanOption(
                 ticker="AAPL", option_type="call", strike=150.0, expiry=-1.0,
                 notional=100, dividend_yield=0.005, spot_id=spot_id,
                 vol_id=vol_id, curve_id=curve_id,
@@ -280,7 +279,7 @@ class TestAmericanEquityVanillaOption:
 
     def test_immutable(self, spot_id: MarketId, vol_id: MarketId, curve_id: MarketId):
         """Test that option is immutable."""
-        opt = AmericanEquityVanillaOption(
+        opt = EquityVanillaAmericanOption(
             ticker="AAPL", option_type="call", strike=150.0, expiry=1.0,
             notional=100, dividend_yield=0.005, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,

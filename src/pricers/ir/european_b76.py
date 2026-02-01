@@ -42,14 +42,14 @@ from typing import Dict, Literal, List
 
 from src.marketdata.core.market import Market
 from src.instruments.ir.options.capfloor import (
-    Caplet,
-    CapletSimple,
-    Floorlet,
-    FloorletSimple,
-    Cap,
-    CapSimple,
-    Floor,
-    FloorSimple,
+    IrCapletEuropeanOption,
+    IrCapletEuropeanOptionSimple,
+    IrFloorletEuropeanOption,
+    IrFloorletEuropeanOptionSimple,
+    IrCapEuropeanOption,
+    IrCapEuropeanOptionSimple,
+    IrFloorEuropeanOption,
+    IrFloorEuropeanOptionSimple,
     compute_accrual_factor,
 )
 
@@ -119,14 +119,14 @@ def _forward_rate_from_dfs(
 
 
 @dataclass(frozen=True, slots=True)
-class IrEuropeanCapletB76PricerSimple:
+class IrCapletEuropeanOptionB76PricerSimple:
     """
     Black76 pricer for a single caplet with direct parameters.
     
     The caplet is priced as a call option on the forward rate.
     """
     
-    def price(self, trade: CapletSimple) -> float:
+    def price(self, trade: IrCapletEuropeanOptionSimple) -> float:
         """
         Price a caplet using Black76.
         
@@ -167,7 +167,7 @@ class IrEuropeanCapletB76PricerSimple:
         # Scale by notional and accrual factor.
         return N * tau * unit_pv
     
-    def greeks(self, trade: CapletSimple) -> Dict[GreekName, float]:
+    def greeks(self, trade: IrCapletEuropeanOptionSimple) -> Dict[GreekName, float]:
         """
         Compute Greeks for a caplet.
         
@@ -229,14 +229,14 @@ class IrEuropeanCapletB76PricerSimple:
 
 
 @dataclass(frozen=True, slots=True)
-class IrEuropeanFloorletB76PricerSimple:
+class IrFloorletEuropeanOptionB76PricerSimple:
     """
     Black76 pricer for a single floorlet with direct parameters.
     
     The floorlet is priced as a put option on the forward rate.
     """
     
-    def price(self, trade: FloorletSimple) -> float:
+    def price(self, trade: IrFloorletEuropeanOptionSimple) -> float:
         """
         Price a floorlet using Black76.
         
@@ -272,7 +272,7 @@ class IrEuropeanFloorletB76PricerSimple:
         
         return N * tau * unit_pv
     
-    def greeks(self, trade: FloorletSimple) -> Dict[GreekName, float]:
+    def greeks(self, trade: IrFloorletEuropeanOptionSimple) -> Dict[GreekName, float]:
         """Compute Greeks for a floorlet."""
         N = float(trade.notional)
         K = float(trade.strike)
@@ -313,14 +313,14 @@ class IrEuropeanFloorletB76PricerSimple:
 
 
 @dataclass(frozen=True, slots=True)
-class IrEuropeanCapB76PricerSimple:
+class IrCapEuropeanOptionB76PricerSimple:
     """
     Black76 pricer for a cap with direct parameters.
     
     A cap is a portfolio of caplets. The PV is the sum of caplet PVs.
     """
     
-    def price(self, trade: CapSimple) -> float:
+    def price(self, trade: IrCapEuropeanOptionSimple) -> float:
         """
         Price a cap as sum of caplets.
         
@@ -334,7 +334,7 @@ class IrEuropeanCapB76PricerSimple:
         float
             Present value of the cap.
         """
-        caplet_pricer = IrEuropeanCapletB76PricerSimple()
+        caplet_pricer = IrCapletEuropeanOptionB76PricerSimple()
         total_pv = 0.0
         
         for caplet in trade.caplets:
@@ -342,9 +342,9 @@ class IrEuropeanCapB76PricerSimple:
         
         return total_pv
     
-    def greeks(self, trade: CapSimple) -> Dict[GreekName, float]:
+    def greeks(self, trade: IrCapEuropeanOptionSimple) -> Dict[GreekName, float]:
         """Compute aggregate Greeks for a cap."""
-        caplet_pricer = IrEuropeanCapletB76PricerSimple()
+        caplet_pricer = IrCapletEuropeanOptionB76PricerSimple()
         
         total_greeks = {"delta": 0.0, "gamma": 0.0, "vega": 0.0, "theta": 0.0, "rho": 0.0}
         
@@ -357,16 +357,16 @@ class IrEuropeanCapB76PricerSimple:
 
 
 @dataclass(frozen=True, slots=True)
-class IrEuropeanFloorB76PricerSimple:
+class IrFloorEuropeanOptionB76PricerSimple:
     """
     Black76 pricer for a floor with direct parameters.
     
     A floor is a portfolio of floorlets. The PV is the sum of floorlet PVs.
     """
     
-    def price(self, trade: FloorSimple) -> float:
+    def price(self, trade: IrFloorEuropeanOptionSimple) -> float:
         """Price a floor as sum of floorlets."""
-        floorlet_pricer = IrEuropeanFloorletB76PricerSimple()
+        floorlet_pricer = IrFloorletEuropeanOptionB76PricerSimple()
         total_pv = 0.0
         
         for floorlet in trade.floorlets:
@@ -374,9 +374,9 @@ class IrEuropeanFloorB76PricerSimple:
         
         return total_pv
     
-    def greeks(self, trade: FloorSimple) -> Dict[GreekName, float]:
+    def greeks(self, trade: IrFloorEuropeanOptionSimple) -> Dict[GreekName, float]:
         """Compute aggregate Greeks for a floor."""
-        floorlet_pricer = IrEuropeanFloorletB76PricerSimple()
+        floorlet_pricer = IrFloorletEuropeanOptionB76PricerSimple()
         
         total_greeks = {"delta": 0.0, "gamma": 0.0, "vega": 0.0, "theta": 0.0, "rho": 0.0}
         
@@ -394,12 +394,12 @@ class IrEuropeanFloorB76PricerSimple:
 
 
 @dataclass(frozen=True, slots=True)
-class IrEuropeanCapletB76Pricer:
+class IrCapletEuropeanOptionB76Pricer:
     """
     Black76 pricer for a single caplet with market data lookup.
     """
     
-    def price(self, trade: Caplet, market: Market) -> float:
+    def price(self, trade: IrCapletEuropeanOption, market: Market) -> float:
         """
         Price a caplet using Black76 with market data.
         
@@ -437,7 +437,7 @@ class IrEuropeanCapletB76Pricer:
         sigma = float(vol_surface.vol(expiry=trade.fixing_time, strike=trade.strike))
         
         # Build simple caplet and price.
-        simple = CapletSimple(
+        simple = IrCapletEuropeanOptionSimple(
             notional=trade.notional,
             strike=trade.strike,
             fixing_time=trade.fixing_time,
@@ -448,9 +448,9 @@ class IrEuropeanCapletB76Pricer:
             discount_factor=df_end,
         )
         
-        return IrEuropeanCapletB76PricerSimple().price(simple)
+        return IrCapletEuropeanOptionB76PricerSimple().price(simple)
     
-    def greeks(self, trade: Caplet, market: Market) -> Dict[GreekName, float]:
+    def greeks(self, trade: IrCapletEuropeanOption, market: Market) -> Dict[GreekName, float]:
         """Compute Greeks for a caplet with market data."""
         curve = market.curve(trade.curve_id)
         
@@ -468,7 +468,7 @@ class IrEuropeanCapletB76Pricer:
         vol_surface = market.vol_surface(trade.vol_id)
         sigma = float(vol_surface.vol(expiry=trade.fixing_time, strike=trade.strike))
         
-        simple = CapletSimple(
+        simple = IrCapletEuropeanOptionSimple(
             notional=trade.notional,
             strike=trade.strike,
             fixing_time=trade.fixing_time,
@@ -479,16 +479,16 @@ class IrEuropeanCapletB76Pricer:
             discount_factor=df_end,
         )
         
-        return IrEuropeanCapletB76PricerSimple().greeks(simple)
+        return IrCapletEuropeanOptionB76PricerSimple().greeks(simple)
 
 
 @dataclass(frozen=True, slots=True)
-class IrEuropeanFloorletB76Pricer:
+class IrFloorletEuropeanOptionB76Pricer:
     """
     Black76 pricer for a single floorlet with market data lookup.
     """
     
-    def price(self, trade: Floorlet, market: Market) -> float:
+    def price(self, trade: IrFloorletEuropeanOption, market: Market) -> float:
         """Price a floorlet using Black76 with market data."""
         curve = market.curve(trade.curve_id)
         
@@ -506,7 +506,7 @@ class IrEuropeanFloorletB76Pricer:
         vol_surface = market.vol_surface(trade.vol_id)
         sigma = float(vol_surface.vol(expiry=trade.fixing_time, strike=trade.strike))
         
-        simple = FloorletSimple(
+        simple = IrFloorletEuropeanOptionSimple(
             notional=trade.notional,
             strike=trade.strike,
             fixing_time=trade.fixing_time,
@@ -517,9 +517,9 @@ class IrEuropeanFloorletB76Pricer:
             discount_factor=df_end,
         )
         
-        return IrEuropeanFloorletB76PricerSimple().price(simple)
+        return IrFloorletEuropeanOptionB76PricerSimple().price(simple)
     
-    def greeks(self, trade: Floorlet, market: Market) -> Dict[GreekName, float]:
+    def greeks(self, trade: IrFloorletEuropeanOption, market: Market) -> Dict[GreekName, float]:
         """Compute Greeks for a floorlet with market data."""
         curve = market.curve(trade.curve_id)
         
@@ -537,7 +537,7 @@ class IrEuropeanFloorletB76Pricer:
         vol_surface = market.vol_surface(trade.vol_id)
         sigma = float(vol_surface.vol(expiry=trade.fixing_time, strike=trade.strike))
         
-        simple = FloorletSimple(
+        simple = IrFloorletEuropeanOptionSimple(
             notional=trade.notional,
             strike=trade.strike,
             fixing_time=trade.fixing_time,
@@ -548,18 +548,18 @@ class IrEuropeanFloorletB76Pricer:
             discount_factor=df_end,
         )
         
-        return IrEuropeanFloorletB76PricerSimple().greeks(simple)
+        return IrFloorletEuropeanOptionB76PricerSimple().greeks(simple)
 
 
 @dataclass(frozen=True, slots=True)
-class IrEuropeanCapB76Pricer:
+class IrCapEuropeanOptionB76Pricer:
     """
     Black76 pricer for a cap with market data lookup.
     
     The pricer automatically generates caplets for each reset period.
     """
     
-    def price(self, trade: Cap, market: Market) -> float:
+    def price(self, trade: IrCapEuropeanOption, market: Market) -> float:
         """
         Price a cap using Black76 with market data.
         
@@ -579,27 +579,27 @@ class IrEuropeanCapB76Pricer:
         caplets = self._generate_caplets(trade, market)
         
         # Build simple cap and price.
-        simple_cap = CapSimple(
+        simple_cap = IrCapEuropeanOptionSimple(
             notional=trade.notional,
             strike=trade.strike,
             caplets=tuple(caplets),
         )
         
-        return IrEuropeanCapB76PricerSimple().price(simple_cap)
+        return IrCapEuropeanOptionB76PricerSimple().price(simple_cap)
     
-    def greeks(self, trade: Cap, market: Market) -> Dict[GreekName, float]:
+    def greeks(self, trade: IrCapEuropeanOption, market: Market) -> Dict[GreekName, float]:
         """Compute aggregate Greeks for a cap."""
         caplets = self._generate_caplets(trade, market)
         
-        simple_cap = CapSimple(
+        simple_cap = IrCapEuropeanOptionSimple(
             notional=trade.notional,
             strike=trade.strike,
             caplets=tuple(caplets),
         )
         
-        return IrEuropeanCapB76PricerSimple().greeks(simple_cap)
+        return IrCapEuropeanOptionB76PricerSimple().greeks(simple_cap)
     
-    def _generate_caplets(self, trade: Cap, market: Market) -> List[CapletSimple]:
+    def _generate_caplets(self, trade: IrCapEuropeanOption, market: Market) -> List[IrCapletEuropeanOptionSimple]:
         """Generate caplets for each reset period."""
         curve = market.curve(trade.curve_id)
         vol_surface = market.vol_surface(trade.vol_id)
@@ -634,7 +634,7 @@ class IrEuropeanCapB76Pricer:
             sigma = float(vol_surface.vol(expiry=t_start, strike=trade.strike))
             
             # Create caplet.
-            caplet = CapletSimple(
+            caplet = IrCapletEuropeanOptionSimple(
                 notional=trade.notional,
                 strike=trade.strike,
                 fixing_time=t_start,
@@ -652,36 +652,36 @@ class IrEuropeanCapB76Pricer:
 
 
 @dataclass(frozen=True, slots=True)
-class IrEuropeanFloorB76Pricer:
+class IrFloorEuropeanOptionB76Pricer:
     """
     Black76 pricer for a floor with market data lookup.
     """
     
-    def price(self, trade: Floor, market: Market) -> float:
+    def price(self, trade: IrFloorEuropeanOption, market: Market) -> float:
         """Price a floor using Black76 with market data."""
         floorlets = self._generate_floorlets(trade, market)
         
-        simple_floor = FloorSimple(
+        simple_floor = IrFloorEuropeanOptionSimple(
             notional=trade.notional,
             strike=trade.strike,
             floorlets=tuple(floorlets),
         )
         
-        return IrEuropeanFloorB76PricerSimple().price(simple_floor)
+        return IrFloorEuropeanOptionB76PricerSimple().price(simple_floor)
     
-    def greeks(self, trade: Floor, market: Market) -> Dict[GreekName, float]:
+    def greeks(self, trade: IrFloorEuropeanOption, market: Market) -> Dict[GreekName, float]:
         """Compute aggregate Greeks for a floor."""
         floorlets = self._generate_floorlets(trade, market)
         
-        simple_floor = FloorSimple(
+        simple_floor = IrFloorEuropeanOptionSimple(
             notional=trade.notional,
             strike=trade.strike,
             floorlets=tuple(floorlets),
         )
         
-        return IrEuropeanFloorB76PricerSimple().greeks(simple_floor)
+        return IrFloorEuropeanOptionB76PricerSimple().greeks(simple_floor)
     
-    def _generate_floorlets(self, trade: Floor, market: Market) -> List[FloorletSimple]:
+    def _generate_floorlets(self, trade: IrFloorEuropeanOption, market: Market) -> List[IrFloorletEuropeanOptionSimple]:
         """Generate floorlets for each reset period."""
         curve = market.curve(trade.curve_id)
         vol_surface = market.vol_surface(trade.vol_id)
@@ -707,7 +707,7 @@ class IrEuropeanFloorB76Pricer:
             F = _forward_rate_from_dfs(df_start=df_start, df_end=df_end, accrual_factor=tau)
             sigma = float(vol_surface.vol(expiry=t_start, strike=trade.strike))
             
-            floorlet = FloorletSimple(
+            floorlet = IrFloorletEuropeanOptionSimple(
                 notional=trade.notional,
                 strike=trade.strike,
                 fixing_time=t_start,
@@ -730,13 +730,13 @@ class IrEuropeanFloorB76Pricer:
 
 __all__ = [
     # Simple pricers
-    "IrEuropeanCapletB76PricerSimple",
-    "IrEuropeanFloorletB76PricerSimple",
-    "IrEuropeanCapB76PricerSimple",
-    "IrEuropeanFloorB76PricerSimple",
+    "IrCapletEuropeanOptionB76PricerSimple",
+    "IrFloorletEuropeanOptionB76PricerSimple",
+    "IrCapEuropeanOptionB76PricerSimple",
+    "IrFloorEuropeanOptionB76PricerSimple",
     # Market data pricers
-    "IrEuropeanCapletB76Pricer",
-    "IrEuropeanFloorletB76Pricer",
-    "IrEuropeanCapB76Pricer",
-    "IrEuropeanFloorB76Pricer",
+    "IrCapletEuropeanOptionB76Pricer",
+    "IrFloorletEuropeanOptionB76Pricer",
+    "IrCapEuropeanOptionB76Pricer",
+    "IrFloorEuropeanOptionB76Pricer",
 ]

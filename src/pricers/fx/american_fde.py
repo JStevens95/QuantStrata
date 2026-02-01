@@ -5,7 +5,7 @@ import numpy as np
 from dataclasses import dataclass
 from typing import Dict, Literal, Tuple
 
-from src.instruments.fx.options.vanilla import AmericanFxVanillaOption
+from src.instruments.fx.options.vanilla import FxVanillaAmericanOption
 from src.marketdata.core.market import Market
 from src.models.numeric.finite_difference.boundaries import BoundaryPair, DirichletBC
 from src.models.numeric.finite_difference.grids import SpatialGrid1D, TimeGrid
@@ -19,7 +19,7 @@ GreekName = Literal["delta", "gamma", "vega", "rho_domestic", "rho_foreign"]
 
 
 @dataclass(frozen=True, slots=True)
-class FxAmericanVanillaFdPricer:
+class FxVanillaAmericanOptionFdPricer:
     """
     Finite-difference (PDE) pricer for American FX vanilla options under Garman–Kohlhagen.
 
@@ -66,11 +66,11 @@ class FxAmericanVanillaFdPricer:
     vol_abs_bump: float = 1e-4
     rate_abs_bump: float = 1e-4
 
-    def price(self, trade: AmericanFxVanillaOption, market: Market) -> float:
+    def price(self, trade: FxVanillaAmericanOption, market: Market) -> float:
         pv_per_unit, _ = self._price_per_unit_and_context(trade, market)
         return float(trade.notional) * float(pv_per_unit)
 
-    def greeks(self, trade: AmericanFxVanillaOption, market: Market) -> Dict[GreekName, float]:
+    def greeks(self, trade: FxVanillaAmericanOption, market: Market) -> Dict[GreekName, float]:
         option_type: OptionType = trade.option_type  # type: ignore[assignment]
         notional = float(trade.notional)
 
@@ -253,7 +253,7 @@ class FxAmericanVanillaFdPricer:
 
     def diagnostics(
         self,
-        trade: AmericanFxVanillaOption,
+        trade: FxVanillaAmericanOption,
         market: Market,
         *,
         store_surface: bool = False,
@@ -327,7 +327,7 @@ class FxAmericanVanillaFdPricer:
 
     def _price_per_unit_and_context(
         self,
-        trade: AmericanFxVanillaOption,
+        trade: FxVanillaAmericanOption,
         market: Market,
     ) -> Tuple[float, Dict[str, object]]:
         option_type: OptionType = trade.option_type  # type: ignore[assignment]

@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from typing import Dict, Literal, Tuple
 
 # Project imports: instruments + market snapshot
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
-from src.instruments.fx.options.digital import EuropeanFxDigitalOption
+from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
+from src.instruments.fx.options.digital import FxDigitalEuropeanOption
 from src.marketdata.core.market import Market
 
 # Project imports: finite-difference engine building blocks
@@ -38,7 +38,7 @@ GreekName = Literal["delta", "gamma", "vega", "rho_domestic", "rho_foreign"]
 # ======================================================================================
 
 @dataclass(frozen=True, slots=True)
-class FxEuropeanVanillaFdPricer:
+class FxVanillaEuropeanOptionFdPricer:
     """
     Finite-difference (PDE) pricer for European FX vanilla options under Garman–Kohlhagen.
 
@@ -82,7 +82,7 @@ class FxEuropeanVanillaFdPricer:
     # Public API
     # =====================================================================
 
-    def price(self, trade: EuropeanFxVanillaOption, market: Market) -> float:
+    def price(self, trade: FxVanillaEuropeanOption, market: Market) -> float:
         """
         Price in domestic currency, scaled by trade.notional.
 
@@ -96,7 +96,7 @@ class FxEuropeanVanillaFdPricer:
         # Scale to trade notional (foreign units notionally, consistent with your BSM/MC conventions).
         return float(trade.notional) * float(pv_per_unit)
 
-    def greeks(self, trade: EuropeanFxVanillaOption, market: Market) -> Dict[GreekName, float]:
+    def greeks(self, trade: FxVanillaEuropeanOption, market: Market) -> Dict[GreekName, float]:
         """
         Compute FD greeks (scaled by notional).
 
@@ -289,7 +289,7 @@ class FxEuropeanVanillaFdPricer:
 
     def diagnostics(
         self,
-        trade: EuropeanFxVanillaOption,
+        trade: FxVanillaEuropeanOption,
         market: Market,
         *,
         store_surface: bool = True,
@@ -392,7 +392,7 @@ class FxEuropeanVanillaFdPricer:
 
     def _price_per_unit_and_context(
         self,
-        trade: EuropeanFxVanillaOption,
+        trade: FxVanillaEuropeanOption,
         market: Market,
     ) -> Tuple[float, Dict[str, object]]:
         """
@@ -691,7 +691,7 @@ class FxEuropeanVanillaFdPricer:
 # ======================================================================================
 
 @dataclass(frozen=True, slots=True)
-class FxEuropeanDigitalFdPricer:
+class FxDigitalEuropeanOptionFdPricer:
     """
     Finite-difference (PDE) pricer for European FX digitals under GK.
 
@@ -721,12 +721,12 @@ class FxEuropeanDigitalFdPricer:
     # Public API
     # =====================================================================
 
-    def price(self, trade: EuropeanFxDigitalOption, market: Market) -> float:
+    def price(self, trade: FxDigitalEuropeanOption, market: Market) -> float:
         """Return domestic PV (already in domestic units for both cash and asset)."""
         pv, _ctx = self._price_and_context(trade, market)
         return float(pv)
 
-    def greeks(self, trade: EuropeanFxDigitalOption, market: Market) -> Dict[GreekName, float]:
+    def greeks(self, trade: FxDigitalEuropeanOption, market: Market) -> Dict[GreekName, float]:
         """
         V1 greeks for digitals (robust policy):
 
@@ -874,7 +874,7 @@ class FxEuropeanDigitalFdPricer:
     # Internals
     # =====================================================================
 
-    def _price_and_context(self, trade: EuropeanFxDigitalOption, market: Market) -> Tuple[float, Dict[str, object]]:
+    def _price_and_context(self, trade: FxDigitalEuropeanOption, market: Market) -> Tuple[float, Dict[str, object]]:
         """
         Price digital via PDE solve (or degenerate shortcuts) and return PV + context.
         """
@@ -976,7 +976,7 @@ class FxEuropeanDigitalFdPricer:
         self,
         *,
         payoff: BasePayoff1D,
-        trade: EuropeanFxDigitalOption,
+        trade: FxDigitalEuropeanOption,
         K: float,
         T: float,
         r_d: float,

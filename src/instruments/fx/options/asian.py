@@ -9,7 +9,7 @@ from src.instruments.core.types import AsianAveragingType
 
 
 @dataclass(frozen=True, slots=True)
-class EuropeanFxAsianOption:
+class FxAsianEuropeanOption:
     """
     European FX Asian option (average price option).
 

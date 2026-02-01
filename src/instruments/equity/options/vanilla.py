@@ -15,7 +15,7 @@ from src.models.payoffs.types import OptionType
 
 
 @dataclass(frozen=True, slots=True)
-class EuropeanEquityVanillaOption:
+class EquityVanillaEuropeanOption:
     """
     European vanilla equity option (call/put).
 
@@ -57,7 +57,7 @@ class EuropeanEquityVanillaOption:
     >>> spot_id = MarketId(asset_class="EQ", mkt_type="SPOT", name="AAPL")
     >>> vol_id = MarketId(asset_class="EQ", mkt_type="VOL", name="AAPL")
     >>> curve_id = MarketId(asset_class="IR", mkt_type="CURVE", name="USD_OIS")
-    >>> option = EuropeanEquityVanillaOption(
+    >>> option = EquityVanillaEuropeanOption(
     ...     ticker="AAPL",
     ...     option_type="call",
     ...     strike=150.0,
@@ -115,7 +115,7 @@ class EuropeanEquityVanillaOption:
 
 
 @dataclass(frozen=True, slots=True)
-class AmericanEquityVanillaOption:
+class EquityVanillaAmericanOption:
     """
     American vanilla equity option (call/put) with early exercise.
 
@@ -164,7 +164,7 @@ class AmericanEquityVanillaOption:
     >>> spot_id = MarketId(asset_class="EQ", mkt_type="SPOT", name="AAPL")
     >>> vol_id = MarketId(asset_class="EQ", mkt_type="VOL", name="AAPL")
     >>> curve_id = MarketId(asset_class="IR", mkt_type="CURVE", name="USD_OIS")
-    >>> option = AmericanEquityVanillaOption(
+    >>> option = EquityVanillaAmericanOption(
     ...     ticker="AAPL",
     ...     option_type="put",
     ...     strike=150.0,

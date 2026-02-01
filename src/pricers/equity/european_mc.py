@@ -17,10 +17,10 @@ import numpy as np  # NumPy for fast vectorized Monte Carlo operations.
 from dataclasses import dataclass  # Dataclasses for small immutable pricer/config objects.
 from typing import Optional  # Optional for seed/paths.
 
-from src.instruments.equity.options.vanilla import EuropeanEquityVanillaOption  # Equity vanilla instrument.
-from src.instruments.equity.options.barrier import EuropeanEquityBarrierOption  # Equity barrier instrument.
-from src.instruments.equity.options.asian import EuropeanEquityAsianOption  # Equity Asian instrument.
-from src.instruments.equity.options.lookback import EuropeanEquityLookbackOption  # Equity lookback instrument.
+from src.instruments.equity.options.vanilla import EquityVanillaEuropeanOption  # Equity vanilla instrument.
+from src.instruments.equity.options.barrier import EquityBarrierEuropeanOption  # Equity barrier instrument.
+from src.instruments.equity.options.asian import EquityAsianEuropeanOption  # Equity Asian instrument.
+from src.instruments.equity.options.lookback import EquityLookbackEuropeanOption  # Equity lookback instrument.
 
 from src.marketdata.core.market import Market  # Market snapshot interface.
 from src.models.numeric.monte_carlo.rng import NormalRng  # Reproducible normal RNG.
@@ -59,7 +59,7 @@ def _rate_from_df(*, df: float, t: float) -> float:
 
 
 @dataclass(frozen=True, slots=True)
-class EquityMcSimulation:
+class EquityVanillOptionMcSimulation:
     """
     Reusable Monte Carlo simulation artifact for a single *vanilla* trade on a single Market snapshot.
 
@@ -94,7 +94,7 @@ class EquityMcSimulation:
 
 
 @dataclass(frozen=True, slots=True)
-class EquityBarrierMcSimulation:
+class EquityBarrierOptionMcSimulation:
     """
     Reusable Monte Carlo simulation artifact for a single *barrier* trade on a single Market snapshot.
 
@@ -134,7 +134,7 @@ class EquityBarrierMcSimulation:
 
 
 @dataclass(frozen=True, slots=True)
-class EquityAsianMcSimulation:
+class EquityAsianOptionMcSimulation:
     """
     Reusable Monte Carlo simulation artifact for a single Asian option trade.
 
@@ -175,7 +175,7 @@ class EquityAsianMcSimulation:
 
 
 @dataclass(frozen=True, slots=True)
-class EquityLookbackMcSimulation:
+class EquityLookbackOptionMcSimulation:
     """
     Reusable Monte Carlo simulation artifact for a single lookback option trade.
 
@@ -222,7 +222,7 @@ class EquityLookbackMcSimulation:
 
 
 @dataclass(frozen=True, slots=True)
-class EquityEuropeanVanillaMcPricer:
+class EquityVanillaEuropeanOptionMcPricer:
     """
     Monte Carlo pricer for European equity vanilla options under Black-Scholes with dividends.
 
@@ -256,13 +256,13 @@ class EquityEuropeanVanillaMcPricer:
     n_steps: int = 1  # Number of time steps (exact GBM allows 1 for vanilla).
     scheme: GbmScheme = "exact"  # Default to exact terminal sampling for GBM.
 
-    def price(self, trade: EuropeanEquityVanillaOption, market: Market) -> float:
+    def price(self, trade: EquityVanillaEuropeanOption, market: Market) -> float:
         """
         Price European equity vanilla option via Monte Carlo.
 
         Parameters
         ----------
-        trade : EuropeanEquityVanillaOption
+        trade : EquityVanillaEuropeanOption
             The vanilla option instrument to price.
         market : Market
             Market snapshot containing spot, vol, and curves.
@@ -277,18 +277,18 @@ class EquityEuropeanVanillaMcPricer:
 
     def run(
         self,
-        trade: EuropeanEquityVanillaOption,
+        trade: EquityVanillaEuropeanOption,
         market: Market,
         *,
         store_paths: bool = False,
         paths_keep: int = 0,
-    ) -> EquityMcSimulation:
+    ) -> EquityVanillOptionMcSimulation:
         """
         Run Monte Carlo simulation and return full simulation artifact.
 
         Parameters
         ----------
-        trade : EuropeanEquityVanillaOption
+        trade : EquityVanillaEuropeanOption
             The vanilla option instrument to simulate.
         market : Market
             Market snapshot containing spot, vol, and curves.
@@ -304,22 +304,22 @@ class EquityEuropeanVanillaMcPricer:
         """
         return self._run_simulation(trade, market, store_paths=store_paths, paths_keep=paths_keep)  # Single source of truth.
 
-    def sample_terminal_spots(self, trade: EuropeanEquityVanillaOption, market: Market) -> np.ndarray:
+    def sample_terminal_spots(self, trade: EquityVanillaEuropeanOption, market: Market) -> np.ndarray:
         """Return terminal spot distribution."""
         return self.run(trade, market, store_paths=False).terminal_spots  # Delegate to run().
 
-    def sample_discounted_payoffs(self, trade: EuropeanEquityVanillaOption, market: Market) -> np.ndarray:
+    def sample_discounted_payoffs(self, trade: EquityVanillaEuropeanOption, market: Market) -> np.ndarray:
         """Return discounted payoff samples."""
         return self.run(trade, market, store_paths=False).discounted_payoffs  # Delegate to run().
 
     def _run_simulation(
         self,
-        trade: EuropeanEquityVanillaOption,
+        trade: EquityVanillaEuropeanOption,
         market: Market,
         *,
         store_paths: bool,
         paths_keep: int,
-    ) -> EquityMcSimulation:
+    ) -> EquityVanillOptionMcSimulation:
         """
         Internal method that performs the actual Monte Carlo simulation.
 
@@ -380,7 +380,7 @@ class EquityEuropeanVanillaMcPricer:
             terminal_spots = np.array([spot0], dtype=np.float64)  # Terminal spot is spot0.
             payoff = payoff_fn.terminal(spot=terminal_spots)  # Compute terminal payoff vector.
             discounted_payoffs = (float(df) * payoff * notional).astype(np.float64, copy=False)  # Discount + scale.
-            return EquityMcSimulation(
+            return EquityVanillOptionMcSimulation(
                 spot0=spot0,
                 strike=strike,
                 maturity=maturity,
@@ -446,7 +446,7 @@ class EquityEuropeanVanillaMcPricer:
             else:  # Otherwise keep a subset.
                 kept_paths = all_paths[: min(paths_keep, n_paths_eff), :].copy()  # Copy only kept rows.
 
-        return EquityMcSimulation(
+        return EquityVanillOptionMcSimulation(
             spot0=spot0,
             strike=strike,
             maturity=maturity,
@@ -473,7 +473,7 @@ class EquityEuropeanVanillaMcPricer:
 
 
 @dataclass(frozen=True, slots=True)
-class EquityEuropeanBarrierMcPricer:
+class EquityBarrierEuropeanOptionMcPricer:
     """
     Monte Carlo pricer for European equity single-barrier options under Black-Scholes with dividends.
 
@@ -515,13 +515,13 @@ class EquityEuropeanBarrierMcPricer:
     n_steps: int = 64  # Barrier needs monitoring points; choose a denser default than vanilla.
     scheme: GbmScheme = "exact"  # Exact GBM steps (exact per step) is typically preferred.
 
-    def price(self, trade: EuropeanEquityBarrierOption, market: Market) -> float:
+    def price(self, trade: EquityBarrierEuropeanOption, market: Market) -> float:
         """
         Price equity barrier option via Monte Carlo.
 
         Parameters
         ----------
-        trade : EuropeanEquityBarrierOption
+        trade : EquityBarrierEuropeanOption
             The barrier option instrument to price.
         market : Market
             Market snapshot containing spot, vol, and curves.
@@ -536,18 +536,18 @@ class EquityEuropeanBarrierMcPricer:
 
     def run(
         self,
-        trade: EuropeanEquityBarrierOption,
+        trade: EquityBarrierEuropeanOption,
         market: Market,
         *,
         store_paths: bool = False,
         paths_keep: int = 0,
-    ) -> EquityBarrierMcSimulation:
+    ) -> EquityBarrierOptionMcSimulation:
         """
         Run Monte Carlo simulation and return full simulation artifact.
 
         Parameters
         ----------
-        trade : EuropeanEquityBarrierOption
+        trade : EquityBarrierEuropeanOption
             The barrier option instrument to simulate.
         market : Market
             Market snapshot containing spot, vol, and curves.
@@ -563,22 +563,22 @@ class EquityEuropeanBarrierMcPricer:
         """
         return self._run_simulation(trade, market, store_paths=store_paths, paths_keep=paths_keep)  # Single source of truth.
 
-    def sample_terminal_spots(self, trade: EuropeanEquityBarrierOption, market: Market) -> np.ndarray:
+    def sample_terminal_spots(self, trade: EquityBarrierEuropeanOption, market: Market) -> np.ndarray:
         """Return terminal spot distribution."""
         return self.run(trade, market, store_paths=False).terminal_spots  # Delegate to run().
 
-    def sample_discounted_payoffs(self, trade: EuropeanEquityBarrierOption, market: Market) -> np.ndarray:
+    def sample_discounted_payoffs(self, trade: EquityBarrierEuropeanOption, market: Market) -> np.ndarray:
         """Return discounted payoff samples."""
         return self.run(trade, market, store_paths=False).discounted_payoffs  # Delegate to run().
 
     def _run_simulation(
         self,
-        trade: EuropeanEquityBarrierOption,
+        trade: EquityBarrierEuropeanOption,
         market: Market,
         *,
         store_paths: bool,
         paths_keep: int,
-    ) -> EquityBarrierMcSimulation:
+    ) -> EquityBarrierOptionMcSimulation:
         """
         Internal method that performs the actual Monte Carlo simulation.
 
@@ -656,7 +656,7 @@ class EquityEuropeanBarrierMcPricer:
             payoff = payoff_fn.terminal_from_paths(paths)  # Per-unit-notional payoff.
             discounted_payoffs = (float(df) * payoff * notional).astype(np.float64, copy=False)  # Discount + scale.
 
-            return EquityBarrierMcSimulation(
+            return EquityBarrierOptionMcSimulation(
                 spot0=spot0,
                 strike=strike,
                 barrier_level=barrier_level,
@@ -728,7 +728,7 @@ class EquityEuropeanBarrierMcPricer:
             else:  # Otherwise keep a subset.
                 kept_paths = all_paths[: min(paths_keep, n_paths_eff), :].copy()  # Copy only kept rows.
 
-        return EquityBarrierMcSimulation(
+        return EquityBarrierOptionMcSimulation(
             spot0=spot0,
             strike=strike,
             barrier_level=barrier_level,
@@ -759,7 +759,7 @@ class EquityEuropeanBarrierMcPricer:
 
 
 @dataclass(frozen=True, slots=True)
-class EquityEuropeanAsianMcPricer:
+class EquityAsianEuropeanOptionMcPricer:
     """
     Monte Carlo pricer for European equity Asian options under Black-Scholes with dividends.
 
@@ -810,7 +810,7 @@ class EquityEuropeanAsianMcPricer:
     n_steps: int = 64  # Number of time steps (more steps = more monitoring points for averaging).
     scheme: GbmScheme = "exact"  # GBM scheme ("exact" recommended for GBM).
 
-    def price(self, trade: EuropeanEquityAsianOption, market: Market) -> float:
+    def price(self, trade: EquityAsianEuropeanOption, market: Market) -> float:
         """
         Price an Asian option using Monte Carlo simulation.
 
@@ -818,7 +818,7 @@ class EquityEuropeanAsianMcPricer:
 
         Parameters
         ----------
-        trade : EuropeanEquityAsianOption
+        trade : EquityAsianEuropeanOption
             The Asian option instrument to price.
         market : Market
             Market snapshot containing spot, vol, and curves.
@@ -835,12 +835,12 @@ class EquityEuropeanAsianMcPricer:
 
     def run(
         self,
-        trade: EuropeanEquityAsianOption,
+        trade: EquityAsianEuropeanOption,
         market: Market,
         *,
         store_paths: bool = False,
         paths_keep: int = 0,
-    ) -> EquityAsianMcSimulation:
+    ) -> EquityAsianOptionMcSimulation:
         """
         Run Monte Carlo simulation and return full simulation artifact.
 
@@ -849,7 +849,7 @@ class EquityEuropeanAsianMcPricer:
 
         Parameters
         ----------
-        trade : EuropeanEquityAsianOption
+        trade : EquityAsianEuropeanOption
             The Asian option instrument to simulate.
         market : Market
             Market snapshot containing spot, vol, and curves.
@@ -865,7 +865,7 @@ class EquityEuropeanAsianMcPricer:
         """
         return self._run_simulation(trade, market, store_paths=store_paths, paths_keep=paths_keep)  # Single source of truth.
 
-    def sample_terminal_spots(self, trade: EuropeanEquityAsianOption, market: Market) -> np.ndarray:
+    def sample_terminal_spots(self, trade: EquityAsianEuropeanOption, market: Market) -> np.ndarray:
         """
         Sample terminal spot prices from the simulation.
 
@@ -873,7 +873,7 @@ class EquityEuropeanAsianMcPricer:
 
         Parameters
         ----------
-        trade : EuropeanEquityAsianOption
+        trade : EquityAsianEuropeanOption
             The Asian option instrument.
         market : Market
             Market snapshot.
@@ -885,7 +885,7 @@ class EquityEuropeanAsianMcPricer:
         """
         return self.run(trade, market, store_paths=False).terminal_spots  # Delegate to run().
 
-    def sample_average_spots(self, trade: EuropeanEquityAsianOption, market: Market) -> np.ndarray:
+    def sample_average_spots(self, trade: EquityAsianEuropeanOption, market: Market) -> np.ndarray:
         """
         Sample average spot prices from the simulation.
 
@@ -893,7 +893,7 @@ class EquityEuropeanAsianMcPricer:
 
         Parameters
         ----------
-        trade : EuropeanEquityAsianOption
+        trade : EquityAsianEuropeanOption
             The Asian option instrument.
         market : Market
             Market snapshot.
@@ -905,7 +905,7 @@ class EquityEuropeanAsianMcPricer:
         """
         return self.run(trade, market, store_paths=False).average_spots  # Delegate to run().
 
-    def sample_discounted_payoffs(self, trade: EuropeanEquityAsianOption, market: Market) -> np.ndarray:
+    def sample_discounted_payoffs(self, trade: EquityAsianEuropeanOption, market: Market) -> np.ndarray:
         """
         Sample discounted payoffs from the simulation.
 
@@ -913,7 +913,7 @@ class EquityEuropeanAsianMcPricer:
 
         Parameters
         ----------
-        trade : EuropeanEquityAsianOption
+        trade : EquityAsianEuropeanOption
             The Asian option instrument.
         market : Market
             Market snapshot.
@@ -927,12 +927,12 @@ class EquityEuropeanAsianMcPricer:
 
     def _run_simulation(
         self,
-        trade: EuropeanEquityAsianOption,
+        trade: EquityAsianEuropeanOption,
         market: Market,
         *,
         store_paths: bool,
         paths_keep: int,
-    ) -> EquityAsianMcSimulation:
+    ) -> EquityAsianOptionMcSimulation:
         """
         Internal method that performs the actual Monte Carlo simulation.
 
@@ -1023,7 +1023,7 @@ class EquityEuropeanAsianMcPricer:
             # Compute average for diagnostics (will be S0).
             average_spots = np.array([spot0], dtype=np.float64)
 
-            return EquityAsianMcSimulation(
+            return EquityAsianOptionMcSimulation(
                 spot0=spot0,
                 strike=strike,
                 maturity=maturity,
@@ -1106,7 +1106,7 @@ class EquityEuropeanAsianMcPricer:
             else:  # Store subset otherwise.
                 kept_paths = all_paths[: min(paths_keep, n_paths_eff), :].copy()  # Copy subset.
 
-        return EquityAsianMcSimulation(
+        return EquityAsianOptionMcSimulation(
             spot0=spot0,
             strike=strike,
             maturity=maturity,
@@ -1135,7 +1135,7 @@ class EquityEuropeanAsianMcPricer:
 
 
 @dataclass(frozen=True, slots=True)
-class EquityEuropeanLookbackMcPricer:
+class EquityLookbackEuropeanOptionMcPricer:
     """
     Monte Carlo pricer for European equity lookback options under Black-Scholes with dividends.
 
@@ -1185,7 +1185,7 @@ class EquityEuropeanLookbackMcPricer:
     n_steps: int = 252  # Daily monitoring for 1 year (dense monitoring for extrema).
     scheme: GbmScheme = "exact"  # GBM scheme ("exact" recommended).
 
-    def price(self, trade: EuropeanEquityLookbackOption, market: Market) -> float:
+    def price(self, trade: EquityLookbackEuropeanOption, market: Market) -> float:
         """
         Price a lookback option using Monte Carlo simulation.
 
@@ -1193,7 +1193,7 @@ class EquityEuropeanLookbackMcPricer:
 
         Parameters
         ----------
-        trade : EuropeanEquityLookbackOption
+        trade : EquityLookbackEuropeanOption
             The lookback option instrument to price.
         market : Market
             Market snapshot containing spot, vol, and curves.
@@ -1210,12 +1210,12 @@ class EquityEuropeanLookbackMcPricer:
 
     def run(
         self,
-        trade: EuropeanEquityLookbackOption,
+        trade: EquityLookbackEuropeanOption,
         market: Market,
         *,
         store_paths: bool = False,
         paths_keep: int = 0,
-    ) -> EquityLookbackMcSimulation:
+    ) -> EquityLookbackOptionMcSimulation:
         """
         Run Monte Carlo simulation and return full simulation artifact.
 
@@ -1224,7 +1224,7 @@ class EquityEuropeanLookbackMcPricer:
 
         Parameters
         ----------
-        trade : EuropeanEquityLookbackOption
+        trade : EquityLookbackEuropeanOption
             The lookback option instrument to simulate.
         market : Market
             Market snapshot containing spot, vol, and curves.
@@ -1235,12 +1235,12 @@ class EquityEuropeanLookbackMcPricer:
 
         Returns
         -------
-        EquityLookbackMcSimulation
+        EquityLookbackOptionMcSimulation
             Complete simulation artifact with inputs and outputs.
         """
         return self._run_simulation(trade, market, store_paths=store_paths, paths_keep=paths_keep)  # Single source of truth.
 
-    def sample_terminal_spots(self, trade: EuropeanEquityLookbackOption, market: Market) -> np.ndarray:
+    def sample_terminal_spots(self, trade: EquityLookbackEuropeanOption, market: Market) -> np.ndarray:
         """
         Sample terminal spot prices from the simulation.
 
@@ -1248,7 +1248,7 @@ class EquityEuropeanLookbackMcPricer:
 
         Parameters
         ----------
-        trade : EuropeanEquityLookbackOption
+        trade : EquityLookbackEuropeanOption
             The lookback option instrument.
         market : Market
             Market snapshot.
@@ -1260,7 +1260,7 @@ class EquityEuropeanLookbackMcPricer:
         """
         return self.run(trade, market, store_paths=False).terminal_spots  # Delegate to run().
 
-    def sample_max_spots(self, trade: EuropeanEquityLookbackOption, market: Market) -> np.ndarray:
+    def sample_max_spots(self, trade: EquityLookbackEuropeanOption, market: Market) -> np.ndarray:
         """
         Sample maximum spot prices from the simulation.
 
@@ -1268,7 +1268,7 @@ class EquityEuropeanLookbackMcPricer:
 
         Parameters
         ----------
-        trade : EuropeanEquityLookbackOption
+        trade : EquityLookbackEuropeanOption
             The lookback option instrument.
         market : Market
             Market snapshot.
@@ -1280,7 +1280,7 @@ class EquityEuropeanLookbackMcPricer:
         """
         return self.run(trade, market, store_paths=False).max_spots  # Delegate to run().
 
-    def sample_min_spots(self, trade: EuropeanEquityLookbackOption, market: Market) -> np.ndarray:
+    def sample_min_spots(self, trade: EquityLookbackEuropeanOption, market: Market) -> np.ndarray:
         """
         Sample minimum spot prices from the simulation.
 
@@ -1300,7 +1300,7 @@ class EquityEuropeanLookbackMcPricer:
         """
         return self.run(trade, market, store_paths=False).min_spots  # Delegate to run().
 
-    def sample_discounted_payoffs(self, trade: EuropeanEquityLookbackOption, market: Market) -> np.ndarray:
+    def sample_discounted_payoffs(self, trade: EquityLookbackEuropeanOption, market: Market) -> np.ndarray:
         """
         Sample discounted payoffs from the simulation.
 
@@ -1308,7 +1308,7 @@ class EquityEuropeanLookbackMcPricer:
 
         Parameters
         ----------
-        trade : EuropeanEquityLookbackOption
+        trade : EquityLookbackEuropeanOption
             The lookback option instrument.
         market : Market
             Market snapshot.
@@ -1322,12 +1322,12 @@ class EquityEuropeanLookbackMcPricer:
 
     def _run_simulation(
         self,
-        trade: EuropeanEquityLookbackOption,
+        trade: EquityLookbackEuropeanOption,
         market: Market,
         *,
         store_paths: bool,
         paths_keep: int,
-    ) -> EquityLookbackMcSimulation:
+    ) -> EquityLookbackOptionMcSimulation:
         """
         Internal method that performs the actual Monte Carlo simulation.
 
@@ -1336,7 +1336,7 @@ class EquityEuropeanLookbackMcPricer:
 
         Parameters
         ----------
-        trade : EuropeanEquityLookbackOption
+        trade : EquityLookbackEuropeanOption
             The lookback option instrument to simulate.
         market : Market
             Market snapshot.
@@ -1347,7 +1347,7 @@ class EquityEuropeanLookbackMcPricer:
 
         Returns
         -------
-        EquityLookbackMcSimulation
+        EquityLookbackOptionMcSimulation
             Complete simulation artifact.
         """
         # -----------------------------
@@ -1416,7 +1416,7 @@ class EquityEuropeanLookbackMcPricer:
             payoff = payoff_fn.terminal_from_paths(paths)  # Per-unit-notional payoff.
             discounted_payoffs = (float(df) * payoff * notional).astype(np.float64, copy=False)  # Discount + scale.
 
-            return EquityLookbackMcSimulation(
+            return EquityLookbackOptionMcSimulation(
                 spot0=spot0,
                 strike=strike,
                 maturity=maturity,
@@ -1495,7 +1495,7 @@ class EquityEuropeanLookbackMcPricer:
             else:  # Store subset otherwise.
                 kept_paths = all_paths[: min(paths_keep, n_paths_eff), :].copy()  # Copy subset.
 
-        return EquityLookbackMcSimulation(
+        return EquityLookbackOptionMcSimulation(
             spot0=spot0,
             strike=strike,
             maturity=maturity,

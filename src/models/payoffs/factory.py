@@ -13,20 +13,20 @@ from src.models.payoffs.lookback import LookbackPayoff
 from src.models.payoffs.touch import TouchPayoff
 
 # FX Instruments
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption, AmericanFxVanillaOption
-from src.instruments.fx.options.digital import EuropeanFxDigitalOption
-from src.instruments.fx.options.barrier import EuropeanFxBarrierOption
-from src.instruments.fx.options.double_barrier import EuropeanFxDoubleBarrierOption
-from src.instruments.fx.options.asian import EuropeanFxAsianOption
-from src.instruments.fx.options.lookback import EuropeanFxLookbackOption
-from src.instruments.fx.options.touch import EuropeanFxTouchOption
+from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption, FxVanillaAmericanOption
+from src.instruments.fx.options.digital import FxDigitalEuropeanOption
+from src.instruments.fx.options.barrier import FxBarrierEuropeanOption
+from src.instruments.fx.options.double_barrier import FxDoubleBarrierEuropeanOption
+from src.instruments.fx.options.asian import FxAsianEuropeanOption
+from src.instruments.fx.options.lookback import FxLookbackEuropeanOption
+from src.instruments.fx.options.touch import FxTouchEuropeanOption
 
 # Equity Instruments
-from src.instruments.equity.options.vanilla import EuropeanEquityVanillaOption, AmericanEquityVanillaOption
-from src.instruments.equity.options.digital import EuropeanEquityDigitalOption
-from src.instruments.equity.options.barrier import EuropeanEquityBarrierOption
-from src.instruments.equity.options.asian import EuropeanEquityAsianOption
-from src.instruments.equity.options.lookback import EuropeanEquityLookbackOption
+from src.instruments.equity.options.vanilla import EquityVanillaEuropeanOption, EquityVanillaAmericanOption
+from src.instruments.equity.options.digital import EquityDigitalEuropeanOption
+from src.instruments.equity.options.barrier import EquityBarrierEuropeanOption
+from src.instruments.equity.options.asian import EquityAsianEuropeanOption
+from src.instruments.equity.options.lookback import EquityLookbackEuropeanOption
 
 from src.models.payoffs.types import OptionType
 
@@ -75,21 +75,21 @@ class PayoffFactory:
         # ---------------------------
         # FX European Vanilla
         # ---------------------------
-        if isinstance(instrument, EuropeanFxVanillaOption):
+        if isinstance(instrument, FxVanillaEuropeanOption):
             opt: OptionType = instrument.option_type
             return VanillaPayoff(option_type=opt, strike=float(instrument.strike))
 
         # ---------------------------
         # FX American Vanilla
         # ---------------------------
-        if isinstance(instrument, AmericanFxVanillaOption):
+        if isinstance(instrument, FxVanillaAmericanOption):
             opt: OptionType = instrument.option_type
             return VanillaPayoff(option_type=opt, strike=float(instrument.strike))
 
         # ---------------------------
         # FX European Digital
         # ---------------------------
-        if isinstance(instrument, EuropeanFxDigitalOption):
+        if isinstance(instrument, FxDigitalEuropeanOption):
             opt: OptionType = instrument.option_type
             k = float(instrument.strike)
             payout = float(instrument.payout_amount)
@@ -104,7 +104,7 @@ class PayoffFactory:
         # ---------------------------
         # FX European Single Barrier (discrete monitoring, MC)
         # ---------------------------
-        if isinstance(instrument, EuropeanFxBarrierOption):
+        if isinstance(instrument, FxBarrierEuropeanOption):
             opt: OptionType = instrument.option_type
             return SingleBarrierPayoff(
                 option_type=opt,
@@ -118,7 +118,7 @@ class PayoffFactory:
         # ---------------------------
         # FX European Double Barrier (corridor option, path-dependent, MC)
         # ---------------------------
-        if isinstance(instrument, EuropeanFxDoubleBarrierOption):
+        if isinstance(instrument, FxDoubleBarrierEuropeanOption):
             opt: OptionType = instrument.option_type
             return DoubleBarrierPayoff(
                 option_type=opt,
@@ -132,7 +132,7 @@ class PayoffFactory:
         # ---------------------------
         # FX European Asian (average price option, path-dependent, MC)
         # ---------------------------
-        if isinstance(instrument, EuropeanFxAsianOption):
+        if isinstance(instrument, FxAsianEuropeanOption):
             opt: OptionType = instrument.option_type
             return AsianPayoff(
                 option_type=opt,
@@ -143,7 +143,7 @@ class PayoffFactory:
         # ---------------------------
         # FX European Lookback (path extremum option, path-dependent, MC)
         # ---------------------------
-        if isinstance(instrument, EuropeanFxLookbackOption):
+        if isinstance(instrument, FxLookbackEuropeanOption):
             opt: OptionType = instrument.option_type
             return LookbackPayoff(
                 option_type=opt,
@@ -154,7 +154,7 @@ class PayoffFactory:
         # ---------------------------
         # FX European Touch (binary barrier option, path-dependent, MC)
         # ---------------------------
-        if isinstance(instrument, EuropeanFxTouchOption):
+        if isinstance(instrument, FxTouchEuropeanOption):
             return TouchPayoff(
                 touch_style=instrument.touch_style,  # type: ignore[arg-type]
                 barrier_direction=instrument.barrier_direction,  # type: ignore[arg-type]
@@ -165,21 +165,21 @@ class PayoffFactory:
         # ---------------------------
         # Equity European Vanilla
         # ---------------------------
-        if isinstance(instrument, EuropeanEquityVanillaOption):
+        if isinstance(instrument, EquityVanillaEuropeanOption):
             opt: OptionType = instrument.option_type
             return VanillaPayoff(option_type=opt, strike=float(instrument.strike))
 
         # ---------------------------
         # Equity American Vanilla
         # ---------------------------
-        if isinstance(instrument, AmericanEquityVanillaOption):
+        if isinstance(instrument, EquityVanillaAmericanOption):
             opt: OptionType = instrument.option_type
             return VanillaPayoff(option_type=opt, strike=float(instrument.strike))
 
         # ---------------------------
         # Equity European Digital
         # ---------------------------
-        if isinstance(instrument, EuropeanEquityDigitalOption):
+        if isinstance(instrument, EquityDigitalEuropeanOption):
             opt: OptionType = instrument.option_type
             k = float(instrument.strike)
             payout = float(instrument.payout)
@@ -194,7 +194,7 @@ class PayoffFactory:
         # ---------------------------
         # Equity European Single Barrier (discrete monitoring, MC)
         # ---------------------------
-        if isinstance(instrument, EuropeanEquityBarrierOption):
+        if isinstance(instrument, EquityBarrierEuropeanOption):
             opt: OptionType = instrument.option_type
             return SingleBarrierPayoff(
                 option_type=opt,
@@ -208,7 +208,7 @@ class PayoffFactory:
         # ---------------------------
         # Equity European Asian (average price option, path-dependent, MC)
         # ---------------------------
-        if isinstance(instrument, EuropeanEquityAsianOption):
+        if isinstance(instrument, EquityAsianEuropeanOption):
             opt: OptionType = instrument.option_type
             return AsianPayoff(
                 option_type=opt,
@@ -219,7 +219,7 @@ class PayoffFactory:
         # ---------------------------
         # Equity European Lookback (path extremum option, path-dependent, MC)
         # ---------------------------
-        if isinstance(instrument, EuropeanEquityLookbackOption):
+        if isinstance(instrument, EquityLookbackEuropeanOption):
             opt: OptionType = instrument.option_type
             return LookbackPayoff(
                 option_type=opt,

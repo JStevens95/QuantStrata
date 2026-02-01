@@ -15,7 +15,7 @@ from src.models.payoffs.types import OptionType, BarrierStyle, BarrierDirection
 
 
 @dataclass(frozen=True, slots=True)
-class EuropeanEquityBarrierOption:
+class EquityBarrierEuropeanOption:
     """
     European equity single-barrier option.
 
@@ -74,7 +74,7 @@ class EuropeanEquityBarrierOption:
     >>> spot_id = MarketId(asset_class="EQ", mkt_type="SPOT", name="AAPL")
     >>> vol_id = MarketId(asset_class="EQ", mkt_type="VOL", name="AAPL")
     >>> curve_id = MarketId(asset_class="IR", mkt_type="CURVE", name="USD_OIS")
-    >>> barrier_call = EuropeanEquityBarrierOption(
+    >>> barrier_call = EquityBarrierEuropeanOption(
     ...     ticker="AAPL",
     ...     option_type="call",
     ...     barrier_direction="up",

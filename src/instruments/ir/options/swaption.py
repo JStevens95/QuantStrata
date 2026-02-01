@@ -66,7 +66,7 @@ from src.instruments.core.types import SwaptionType, SettlementStyle
 
 
 @dataclass(frozen=True, slots=True)
-class SwaptionSimple:
+class IrSwaptionEuropeanOptionSimple:
     """
     European swaption with direct parameter input.
     
@@ -98,7 +98,7 @@ class SwaptionSimple:
     Examples
     --------
     1Y into 5Y payer swaption (1Y5Y):
-        >>> swaption = SwaptionSimple(
+        >>> swaption = IrSwaptionEuropeanOptionSimple(
         ...     notional=10_000_000,
         ...     strike=0.04,              # 4% strike
         ...     option_expiry=1.0,        # 1 year to expiry
@@ -172,7 +172,7 @@ class SwaptionSimple:
 
 
 @dataclass(frozen=True, slots=True)
-class Swaption:
+class IrSwaptionEuropeanOption:
     """
     European swaption with market data lookup.
     
@@ -208,7 +208,7 @@ class Swaption:
     Examples
     --------
     1Y into 5Y payer swaption:
-        >>> swaption = Swaption(
+        >>> swaption = IrSwaptionEuropeanOption(
         ...     notional=10_000_000,
         ...     strike=0.04,
         ...     option_expiry=1.0,
@@ -281,6 +281,6 @@ __all__ = [
     "SwaptionType",
     "SettlementStyle",
     # Instruments
-    "Swaption",
-    "SwaptionSimple",
+    "IrSwaptionEuropeanOption",
+    "IrSwaptionEuropeanOptionSimple",
 ]

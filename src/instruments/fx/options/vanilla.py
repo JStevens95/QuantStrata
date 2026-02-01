@@ -6,7 +6,7 @@ from src.marketdata.core.ids import MarketId
 from src.models.payoffs.types import OptionType
 
 @dataclass(frozen=True, slots=True)
-class EuropeanFxVanillaOption:
+class FxVanillaEuropeanOption:
     """
     European vanilla FX option (call/put): payoff = max(±(S_T - K), 0).
 
@@ -41,7 +41,7 @@ class EuropeanFxVanillaOption:
 
 
 @dataclass(frozen=True, slots=True)
-class AmericanFxVanillaOption:
+class FxVanillaAmericanOption:
     """
     Placeholder for an American vanilla FX option.
 

@@ -49,7 +49,7 @@ from src.instruments.core.types import OptionType
 
 
 @dataclass(frozen=True, slots=True)
-class EuropeanFxSpreadOptionSimple:
+class FxSpreadEuropeanOptionSimple:
     """
     European FX spread option with direct parameter input.
     
@@ -75,7 +75,7 @@ class EuropeanFxSpreadOptionSimple:
     Examples
     --------
     EUR/USD - GBP/USD spread option:
-        >>> spread_opt = EuropeanFxSpreadOptionSimple(
+        >>> spread_opt = FxSpreadEuropeanOptionSimple(
         ...     notional=1_000_000,
         ...     strike=0.10,              # Spread strike
         ...     expiry=0.5,               # 6 months
@@ -120,7 +120,7 @@ class EuropeanFxSpreadOptionSimple:
 
 
 @dataclass(frozen=True, slots=True)
-class EuropeanFxSpreadOption:
+class FxSpreadEuropeanOption:
     """
     European FX spread option with market data lookup.
     
@@ -150,7 +150,7 @@ class EuropeanFxSpreadOption:
     Examples
     --------
     EUR/USD - GBP/USD spread call:
-        >>> spread = EuropeanFxSpreadOption(
+        >>> spread = FxSpreadEuropeanOption(
         ...     notional=1_000_000,
         ...     strike=0.10,
         ...     expiry=0.5,
@@ -194,6 +194,6 @@ class EuropeanFxSpreadOption:
 # =============================================================================
 
 __all__ = [
-    "EuropeanFxSpreadOption",
-    "EuropeanFxSpreadOptionSimple",
+    "FxSpreadEuropeanOption",
+    "FxSpreadEuropeanOptionSimple",
 ]

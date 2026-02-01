@@ -36,7 +36,6 @@ Use Cases
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
 
 from src.marketdata.core.ids import MarketId
 from src.models.payoffs.types import BarrierDirection
@@ -44,7 +43,7 @@ from src.instruments.core.types import TouchStyle
 
 
 @dataclass(frozen=True, slots=True)
-class EuropeanFxTouchOption:
+class FxTouchEuropeanOption:
     """
     European FX Touch (binary barrier) option.
 
@@ -98,10 +97,10 @@ class EuropeanFxTouchOption:
 
     Examples
     --------
-    >>> from src.instruments.fx.options.touch import EuropeanFxTouchOption
+    >>> from src.instruments.fx.options.touch import FxTouchEuropeanOption
     >>> from src.marketdata.core.ids import MarketId
     >>> # One-touch up option: pays $10k if EURUSD touches 1.15
-    >>> one_touch = EuropeanFxTouchOption(
+    >>> one_touch = FxTouchEuropeanOption(
     ...     touch_style="one_touch",
     ...     barrier_direction="up",
     ...     barrier_level=1.15,

@@ -48,7 +48,7 @@ from src.instruments.core.types import OptionType
 
 
 @dataclass(frozen=True, slots=True)
-class EuropeanEquitySpreadOptionSimple:
+class EquitySpreadEuropeanOptionSimple:
     """
     European equity spread option with direct parameter input.
     
@@ -74,7 +74,7 @@ class EuropeanEquitySpreadOptionSimple:
     Examples
     --------
     S&P 500 - NASDAQ 100 spread option:
-        >>> spread_opt = EuropeanEquitySpreadOptionSimple(
+        >>> spread_opt = EquitySpreadEuropeanOptionSimple(
         ...     notional=100,             # 100 spread units
         ...     strike=500,               # Strike spread level
         ...     expiry=0.25,              # 3 months
@@ -119,7 +119,7 @@ class EuropeanEquitySpreadOptionSimple:
 
 
 @dataclass(frozen=True, slots=True)
-class EuropeanEquitySpreadOption:
+class EquitySpreadEuropeanOption:
     """
     European equity spread option with market data lookup.
     
@@ -149,7 +149,7 @@ class EuropeanEquitySpreadOption:
     Examples
     --------
     S&P 500 vs NASDAQ spread:
-        >>> spread = EuropeanEquitySpreadOption(
+        >>> spread = EquitySpreadEuropeanOption(
         ...     notional=100,
         ...     strike=500,
         ...     expiry=0.25,
@@ -193,6 +193,6 @@ class EuropeanEquitySpreadOption:
 # =============================================================================
 
 __all__ = [
-    "EuropeanEquitySpreadOption",
-    "EuropeanEquitySpreadOptionSimple",
+    "EquitySpreadEuropeanOption",
+    "EquitySpreadEuropeanOptionSimple",
 ]

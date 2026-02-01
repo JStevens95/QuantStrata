@@ -32,19 +32,14 @@ Implementation Notes
 
 from __future__ import annotations
 
-import math
 import numpy as np
 from dataclasses import dataclass
-from typing import Callable, Dict, Literal, Optional, Protocol, Tuple, Union
+from typing import Protocol, Union
 
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
+from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
 from src.marketdata.core.market import Market
 from src.marketdata.surfaces.local_vol_surface import LocalVolSurface, FlatLocalVolSurface
-from src.models.numeric.finite_difference.grids import SpatialGrid1D, TimeGrid
-from src.models.numeric.finite_difference.tridiagonal import solve_tridiagonal
 from src.models.payoffs.types import OptionType
-from src.models.payoffs.base import BasePayoff1D
-from src.models.payoffs.factory import build_payoff_1d, require_terminal_payoff
 
 
 # =============================================================================
@@ -69,7 +64,7 @@ LocalVolInput = Union[LocalVolSurface, FlatLocalVolSurface, LocalVolCallable, fl
 # =============================================================================
 
 @dataclass(frozen=True, slots=True)
-class FxLocalVolFdPricer:
+class FxLocalVolEuropeanOptionFdPricer:
     """
     Finite-difference pricer for European FX options under local volatility.
 
@@ -96,8 +91,8 @@ class FxLocalVolFdPricer:
 
     Examples
     --------
-    >>> from src.pricers.fx.local_vol_fde import FxLocalVolFdPricer
-    >>> from src.marketdata.surfaces.local_vol import FlatLocalVolSurface
+    >>> from src.pricers.fx.local_vol_fde import FxLocalVolEuropeanOptionFdPricer
+    >>> from src.marketdata.surfaces.local_vol_surface import FlatLocalVolSurface
     >>> # Create a flat local vol surface (equivalent to BSM).
     >>> local_vol = FlatLocalVolSurface(sigma=0.20)
     >>> pricer = FxLocalVolFdPricer(local_vol_surface=local_vol)

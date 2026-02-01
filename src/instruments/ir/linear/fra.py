@@ -61,7 +61,7 @@ from src.instruments.core.types import FRADirection, DayCountConvention
 
 
 @dataclass(frozen=True, slots=True)
-class ForwardRateAgreementSimple:
+class IrForwardRateAgreementSimple:
     """
     Forward Rate Agreement with direct parameter input.
     
@@ -90,7 +90,7 @@ class ForwardRateAgreementSimple:
     Examples
     --------
     3x6 FRA (3 months to fixing, 6 months to payment):
-        >>> fra = ForwardRateAgreementSimple(
+        >>> fra = IrForwardRateAgreementSimple(
         ...     notional=10_000_000,
         ...     fixed_rate=0.05,       # 5% contract rate
         ...     fixing_time=0.25,      # 3 months
@@ -158,7 +158,7 @@ class ForwardRateAgreementSimple:
 
 
 @dataclass(frozen=True, slots=True)
-class ForwardRateAgreement:
+class IrForwardRateAgreement:
     """
     Forward Rate Agreement with market data lookup.
     
@@ -182,7 +182,7 @@ class ForwardRateAgreement:
     Examples
     --------
     3x6 FRA on USD SOFR:
-        >>> fra = ForwardRateAgreement(
+        >>> fra = IrForwardRateAgreement(
         ...     notional=10_000_000,
         ...     fixed_rate=0.05,
         ...     fixing_time=0.25,
@@ -233,6 +233,6 @@ class ForwardRateAgreement:
 
 __all__ = [
     "FRADirection",
-    "ForwardRateAgreement",
-    "ForwardRateAgreementSimple",
+    "IrForwardRateAgreement",
+    "IrForwardRateAgreementSimple",
 ]

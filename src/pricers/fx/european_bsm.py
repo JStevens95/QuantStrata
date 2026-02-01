@@ -15,8 +15,8 @@ from typing import Dict, Literal
 import numpy as np
 
 from src.marketdata.core.market import Market
-from src.instruments.fx.options.digital import EuropeanFxDigitalOption
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
+from src.instruments.fx.options.digital import FxDigitalEuropeanOption
+from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
 
 # Import pure functions from the generic BSM model.
 from src.models.analytic.black_scholes_merton.base import (
@@ -64,7 +64,7 @@ def _terminal_value(payoff: BasePayoff1D, spot: float) -> float:
 
 
 @dataclass(frozen=True, slots=True)
-class FxEuropeanVanillaBsmPricer:
+class FxVanillaEuropeanOptionBsmPricer:
     """
     Adapter pricer: EuropeanFxVanillaOption -> BlackScholesMertonVanilla formulas (generic carry).
 
@@ -82,7 +82,7 @@ class FxEuropeanVanillaBsmPricer:
     - rho_foreign = -rho_carry (since only b depends on r_f)
     """
 
-    def price(self, trade: EuropeanFxVanillaOption, market: Market) -> float:
+    def price(self, trade: FxVanillaEuropeanOption, market: Market) -> float:
         """Price FX vanilla option using BSM."""
         # Read market inputs.
         S0 = float(market.quote(trade.spot_id))
@@ -139,7 +139,7 @@ class FxEuropeanVanillaBsmPricer:
         )
         return float(notional) * float(pv_per_unit)
 
-    def greeks(self, trade: EuropeanFxVanillaOption, market: Market) -> Dict[GreekName, float]:
+    def greeks(self, trade: FxVanillaEuropeanOption, market: Market) -> Dict[GreekName, float]:
         """Compute Greeks for FX vanilla option."""
         # Read market inputs.
         S0 = float(market.quote(trade.spot_id))
@@ -212,14 +212,14 @@ class FxEuropeanVanillaBsmPricer:
 
 
 @dataclass(frozen=True, slots=True)
-class FxEuropeanDigitalBsmPricer:
+class FxDigitalEuropeanOptionBsmPricer:
     """
     Adapter pricer: EuropeanFxDigitalOption -> BSM digital formulas.
 
     Routes to cash-or-nothing or asset-or-nothing based on payoff type.
     """
 
-    def price(self, trade: EuropeanFxDigitalOption, market: Market) -> float:
+    def price(self, trade: FxDigitalEuropeanOption, market: Market) -> float:
         """Price FX digital option using BSM."""
         S0 = float(market.quote(trade.spot_id))
         K = float(trade.strike)
@@ -282,7 +282,7 @@ class FxEuropeanDigitalBsmPricer:
 
         raise TypeError(f"Unsupported payoff type: {type(payoff)!r}")
 
-    def greeks(self, trade: EuropeanFxDigitalOption, market: Market) -> Dict[GreekName, float]:
+    def greeks(self, trade: FxDigitalEuropeanOption, market: Market) -> Dict[GreekName, float]:
         """Compute Greeks for FX digital option."""
         S0 = float(market.quote(trade.spot_id))
         K = float(trade.strike)

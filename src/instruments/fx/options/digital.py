@@ -7,7 +7,7 @@ from src.models.payoffs.types import OptionType, DigitalPayoff
 
 
 @dataclass(frozen=True, slots=True)
-class EuropeanFxDigitalOption:
+class FxDigitalEuropeanOption:
     """
     European FX digital option with explicit payoff type.
 

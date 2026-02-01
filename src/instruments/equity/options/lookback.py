@@ -17,7 +17,7 @@ from src.instruments.core.types import LookbackType
 
 
 @dataclass(frozen=True, slots=True)
-class EuropeanEquityLookbackOption:
+class EquityLookbackEuropeanOption:
     """
     European equity lookback option.
 
@@ -75,7 +75,7 @@ class EuropeanEquityLookbackOption:
     >>> spot_id = MarketId(asset_class="EQ", mkt_type="SPOT", name="AAPL")
     >>> vol_id = MarketId(asset_class="EQ", mkt_type="VOL", name="AAPL")
     >>> curve_id = MarketId(asset_class="IR", mkt_type="CURVE", name="USD_OIS")
-    >>> lookback_call = EuropeanEquityLookbackOption(
+    >>> lookback_call = EquityLookbackEuropeanOption(
     ...     ticker="AAPL",
     ...     option_type="call",
     ...     lookback_type="floating_strike",

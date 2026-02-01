@@ -10,9 +10,9 @@ import math
 import pytest
 import numpy as np
 
-from src.instruments.equity.options.vanilla import EuropeanEquityVanillaOption
-from src.pricers.equity.european_fde import EquityEuropeanVanillaFdPricer
-from src.pricers.equity.european_bsm import EquityEuropeanVanillaBsmPricer
+from src.instruments.equity.options.vanilla import EquityVanillaEuropeanOption
+from src.pricers.equity.european_fde import EquityVanillaEuropeanOptionFdPricer
+from src.pricers.equity.european_bsm import EquityVanillaEuropeanOptionBsmPricer
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.interfaces import Quote
 from src.marketdata.core.market import Market
@@ -59,8 +59,8 @@ class TestBasicPricing:
     
     def test_call_positive_value(self, standard_market, spot_id, vol_id, curve_id):
         """FD call should have positive value."""
-        pricer = EquityEuropeanVanillaFdPricer(n_space=201, n_time_steps=100)
-        opt = EuropeanEquityVanillaOption(
+        pricer = EquityVanillaEuropeanOptionFdPricer(n_space=201, n_time_steps=100)
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -70,8 +70,8 @@ class TestBasicPricing:
     
     def test_put_positive_value(self, standard_market, spot_id, vol_id, curve_id):
         """FD put should have positive value."""
-        pricer = EquityEuropeanVanillaFdPricer(n_space=201, n_time_steps=100)
-        opt = EuropeanEquityVanillaOption(
+        pricer = EquityVanillaEuropeanOptionFdPricer(n_space=201, n_time_steps=100)
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="put", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -81,14 +81,14 @@ class TestBasicPricing:
     
     def test_notional_scaling(self, standard_market, spot_id, vol_id, curve_id):
         """Price should scale linearly with notional."""
-        pricer = EquityEuropeanVanillaFdPricer(n_space=201, n_time_steps=100)
+        pricer = EquityVanillaEuropeanOptionFdPricer(n_space=201, n_time_steps=100)
         
-        opt_1 = EuropeanEquityVanillaOption(
+        opt_1 = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
         )
-        opt_100 = EuropeanEquityVanillaOption(
+        opt_100 = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=100, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -109,10 +109,10 @@ class TestConvergenceToBsm:
     
     def test_call_converges_to_bsm(self, standard_market, spot_id, vol_id, curve_id):
         """FD call should converge to BSM price."""
-        fd_pricer = EquityEuropeanVanillaFdPricer(n_space=401, n_time_steps=200)
-        bsm_pricer = EquityEuropeanVanillaBsmPricer()
+        fd_pricer = EquityVanillaEuropeanOptionFdPricer(n_space=401, n_time_steps=200)
+        bsm_pricer = EquityVanillaEuropeanOptionBsmPricer()
         
-        opt = EuropeanEquityVanillaOption(
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -127,10 +127,10 @@ class TestConvergenceToBsm:
     
     def test_put_converges_to_bsm(self, standard_market, spot_id, vol_id, curve_id):
         """FD put should converge to BSM price."""
-        fd_pricer = EquityEuropeanVanillaFdPricer(n_space=401, n_time_steps=200)
-        bsm_pricer = EquityEuropeanVanillaBsmPricer()
+        fd_pricer = EquityVanillaEuropeanOptionFdPricer(n_space=401, n_time_steps=200)
+        bsm_pricer = EquityVanillaEuropeanOptionBsmPricer()
         
-        opt = EuropeanEquityVanillaOption(
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="put", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -151,10 +151,10 @@ class TestConvergenceToBsm:
             vols={vol_id: FlatVolSurface(sigma=0.20)},
         )
         
-        fd_pricer = EquityEuropeanVanillaFdPricer(n_space=401, n_time_steps=200)
-        bsm_pricer = EquityEuropeanVanillaBsmPricer()
+        fd_pricer = EquityVanillaEuropeanOptionFdPricer(n_space=401, n_time_steps=200)
+        bsm_pricer = EquityVanillaEuropeanOptionBsmPricer()
         
-        opt = EuropeanEquityVanillaOption(
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.02, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -176,9 +176,9 @@ class TestGridRefinement:
     
     def test_finer_grid_more_accurate(self, standard_market, spot_id, vol_id, curve_id):
         """Finer grid should give more accurate results."""
-        bsm_pricer = EquityEuropeanVanillaBsmPricer()
+        bsm_pricer = EquityVanillaEuropeanOptionBsmPricer()
         
-        opt = EuropeanEquityVanillaOption(
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -187,12 +187,12 @@ class TestGridRefinement:
         bsm_pv = bsm_pricer.price(opt, standard_market)
         
         # Coarse grid
-        fd_coarse = EquityEuropeanVanillaFdPricer(n_space=51, n_time_steps=25)
+        fd_coarse = EquityVanillaEuropeanOptionFdPricer(n_space=51, n_time_steps=25)
         pv_coarse = fd_coarse.price(opt, standard_market)
         error_coarse = abs(pv_coarse - bsm_pv) / bsm_pv
         
         # Fine grid
-        fd_fine = EquityEuropeanVanillaFdPricer(n_space=401, n_time_steps=200)
+        fd_fine = EquityVanillaEuropeanOptionFdPricer(n_space=401, n_time_steps=200)
         pv_fine = fd_fine.price(opt, standard_market)
         error_fine = abs(pv_fine - bsm_pv) / bsm_pv
         
@@ -208,8 +208,8 @@ class TestGreeks:
     
     def test_call_delta_positive(self, standard_market, spot_id, vol_id, curve_id):
         """FD call delta should be positive and between 0 and 1."""
-        pricer = EquityEuropeanVanillaFdPricer(n_space=201, n_time_steps=100)
-        opt = EuropeanEquityVanillaOption(
+        pricer = EquityVanillaEuropeanOptionFdPricer(n_space=201, n_time_steps=100)
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -219,8 +219,8 @@ class TestGreeks:
     
     def test_put_delta_negative(self, standard_market, spot_id, vol_id, curve_id):
         """FD put delta should be negative and between -1 and 0."""
-        pricer = EquityEuropeanVanillaFdPricer(n_space=201, n_time_steps=100)
-        opt = EuropeanEquityVanillaOption(
+        pricer = EquityVanillaEuropeanOptionFdPricer(n_space=201, n_time_steps=100)
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="put", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -230,8 +230,8 @@ class TestGreeks:
     
     def test_gamma_positive(self, standard_market, spot_id, vol_id, curve_id):
         """FD gamma should be positive."""
-        pricer = EquityEuropeanVanillaFdPricer(n_space=201, n_time_steps=100)
-        opt = EuropeanEquityVanillaOption(
+        pricer = EquityVanillaEuropeanOptionFdPricer(n_space=201, n_time_steps=100)
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -241,8 +241,8 @@ class TestGreeks:
     
     def test_vega_positive(self, standard_market, spot_id, vol_id, curve_id):
         """FD vega should be positive."""
-        pricer = EquityEuropeanVanillaFdPricer(n_space=201, n_time_steps=100)
-        opt = EuropeanEquityVanillaOption(
+        pricer = EquityVanillaEuropeanOptionFdPricer(n_space=201, n_time_steps=100)
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -260,8 +260,8 @@ class TestDiagnostics:
     
     def test_diagnostics_returns_grids(self, standard_market, spot_id, vol_id, curve_id):
         """diagnostics() should return grid information."""
-        pricer = EquityEuropeanVanillaFdPricer(n_space=101, n_time_steps=50)
-        opt = EuropeanEquityVanillaOption(
+        pricer = EquityVanillaEuropeanOptionFdPricer(n_space=101, n_time_steps=50)
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -275,8 +275,8 @@ class TestDiagnostics:
     
     def test_diagnostics_surface_shape(self, standard_market, spot_id, vol_id, curve_id):
         """Surface should have correct shape (n_space x n_time)."""
-        pricer = EquityEuropeanVanillaFdPricer(n_space=51, n_time_steps=25)
-        opt = EuropeanEquityVanillaOption(
+        pricer = EquityVanillaEuropeanOptionFdPricer(n_space=51, n_time_steps=25)
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=1.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -301,8 +301,8 @@ class TestEdgeCases:
     
     def test_zero_expiry(self, standard_market, spot_id, vol_id, curve_id):
         """At expiry, FD should return intrinsic value."""
-        pricer = EquityEuropeanVanillaFdPricer(n_space=201, n_time_steps=100)
-        opt = EuropeanEquityVanillaOption(
+        pricer = EquityVanillaEuropeanOptionFdPricer(n_space=201, n_time_steps=100)
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=90.0, expiry=0.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,
@@ -312,8 +312,8 @@ class TestEdgeCases:
     
     def test_zero_expiry_greeks(self, standard_market, spot_id, vol_id, curve_id):
         """At expiry, FD greeks should be zero."""
-        pricer = EquityEuropeanVanillaFdPricer(n_space=201, n_time_steps=100)
-        opt = EuropeanEquityVanillaOption(
+        pricer = EquityVanillaEuropeanOptionFdPricer(n_space=201, n_time_steps=100)
+        opt = EquityVanillaEuropeanOption(
             ticker="AAPL", option_type="call", strike=100.0, expiry=0.0,
             notional=1, dividend_yield=0.0, spot_id=spot_id,
             vol_id=vol_id, curve_id=curve_id,

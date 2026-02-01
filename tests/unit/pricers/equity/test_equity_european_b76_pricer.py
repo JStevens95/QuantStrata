@@ -25,12 +25,12 @@ from src.marketdata.surfaces.vol_surface import FlatVolSurface
 from src.marketdata.curves.term_structure import FlatZeroRateCurve
 
 from src.instruments.equity.options.futures import (
-    EuropeanEquityFuturesOption,
-    EuropeanEquityFuturesOptionSimple,
+    EquityFuturesEuropeanOption,
+    EquityFuturesEuropeanOptionSimple,
 )
 from src.pricers.equity.european_b76 import (
-    EquityFuturesOptionBlack76Pricer,
-    EquityFuturesOptionBlack76PricerSimple,
+    EquityFuturesEuropeanOptionB76Pricer,
+    EquityFuturesEuropeanOptionB76PricerSimple,
 )
 
 
@@ -78,13 +78,13 @@ def base_market(market_ids):
 @pytest.fixture
 def pricer():
     """Create Black76 pricer."""
-    return EquityFuturesOptionBlack76Pricer()
+    return EquityFuturesEuropeanOptionB76Pricer()
 
 
 @pytest.fixture
 def simple_pricer():
     """Create simple Black76 pricer."""
-    return EquityFuturesOptionBlack76PricerSimple()
+    return EquityFuturesEuropeanOptionB76PricerSimple()
 
 
 # =============================================================================
@@ -98,7 +98,7 @@ class TestEuropeanEquityFuturesOptionValidation:
     def test_invalid_option_type(self, market_ids):
         """Should reject invalid option type."""
         with pytest.raises(ValueError, match="option_type"):
-            EuropeanEquityFuturesOption(
+            EquityFuturesEuropeanOption(
                 ticker="SPX",
                 option_type="invalid",
                 strike=5000.0,
@@ -114,7 +114,7 @@ class TestEuropeanEquityFuturesOptionValidation:
     def test_empty_ticker(self, market_ids):
         """Should reject empty ticker."""
         with pytest.raises(ValueError, match="ticker"):
-            EuropeanEquityFuturesOption(
+            EquityFuturesEuropeanOption(
                 ticker="",
                 option_type="call",
                 strike=5000.0,
@@ -130,7 +130,7 @@ class TestEuropeanEquityFuturesOptionValidation:
     def test_negative_strike(self, market_ids):
         """Should reject negative strike."""
         with pytest.raises(ValueError, match="strike"):
-            EuropeanEquityFuturesOption(
+            EquityFuturesEuropeanOption(
                 ticker="SPX",
                 option_type="call",
                 strike=-5000.0,
@@ -146,7 +146,7 @@ class TestEuropeanEquityFuturesOptionValidation:
     def test_futures_expiry_before_option_expiry(self, market_ids):
         """Should reject futures_expiry < expiry."""
         with pytest.raises(ValueError, match="futures_expiry"):
-            EuropeanEquityFuturesOption(
+            EquityFuturesEuropeanOption(
                 ticker="SPX",
                 option_type="call",
                 strike=5000.0,
@@ -170,7 +170,7 @@ class TestEquityFuturesOptionBlack76Pricing:
 
     def test_call_price_positive(self, market_ids, base_market, pricer):
         """Call price should be positive."""
-        option = EuropeanEquityFuturesOption(
+        option = EquityFuturesEuropeanOption(
             ticker="SPX",
             option_type="call",
             strike=5200.0,
@@ -189,7 +189,7 @@ class TestEquityFuturesOptionBlack76Pricing:
 
     def test_put_price_positive(self, market_ids, base_market, pricer):
         """Put price should be positive."""
-        option = EuropeanEquityFuturesOption(
+        option = EquityFuturesEuropeanOption(
             ticker="SPX",
             option_type="put",
             strike=5200.0,
@@ -208,7 +208,7 @@ class TestEquityFuturesOptionBlack76Pricing:
 
     def test_notional_scaling(self, market_ids, base_market, pricer):
         """Price should scale linearly with notional."""
-        option_50 = EuropeanEquityFuturesOption(
+        option_50 = EquityFuturesEuropeanOption(
             ticker="SPX",
             option_type="call",
             strike=5200.0,
@@ -221,7 +221,7 @@ class TestEquityFuturesOptionBlack76Pricing:
             dividend_yield=0.015,
         )
 
-        option_100 = EuropeanEquityFuturesOption(
+        option_100 = EquityFuturesEuropeanOption(
             ticker="SPX",
             option_type="call",
             strike=5200.0,
@@ -264,7 +264,7 @@ class TestPutCallParity:
         # Use futures as strike (ATM forward).
         strike = futures
 
-        call = EuropeanEquityFuturesOption(
+        call = EquityFuturesEuropeanOption(
             ticker="SPX",
             option_type="call",
             strike=strike,
@@ -277,7 +277,7 @@ class TestPutCallParity:
             dividend_yield=q,
         )
 
-        put = EuropeanEquityFuturesOption(
+        put = EquityFuturesEuropeanOption(
             ticker="SPX",
             option_type="put",
             strike=strike,
@@ -307,7 +307,7 @@ class TestPutCallParity:
         strikes = [4500, 4800, 5000, 5200, 5500]
 
         for strike in strikes:
-            call = EuropeanEquityFuturesOption(
+            call = EquityFuturesEuropeanOption(
                 ticker="SPX",
                 option_type="call",
                 strike=float(strike),
@@ -320,7 +320,7 @@ class TestPutCallParity:
                 dividend_yield=q,
             )
 
-            put = EuropeanEquityFuturesOption(
+            put = EquityFuturesEuropeanOption(
                 ticker="SPX",
                 option_type="put",
                 strike=float(strike),
@@ -353,7 +353,7 @@ class TestGreeks:
 
     def test_greeks_exist(self, market_ids, base_market, pricer):
         """All Greeks should be computed."""
-        option = EuropeanEquityFuturesOption(
+        option = EquityFuturesEuropeanOption(
             ticker="SPX",
             option_type="call",
             strike=5200.0,
@@ -381,7 +381,7 @@ class TestGreeks:
 
     def test_call_delta_positive(self, market_ids, base_market, pricer):
         """Call delta should be positive."""
-        option = EuropeanEquityFuturesOption(
+        option = EquityFuturesEuropeanOption(
             ticker="SPX",
             option_type="call",
             strike=5200.0,
@@ -401,7 +401,7 @@ class TestGreeks:
 
     def test_put_delta_negative(self, market_ids, base_market, pricer):
         """Put delta should be negative."""
-        option = EuropeanEquityFuturesOption(
+        option = EquityFuturesEuropeanOption(
             ticker="SPX",
             option_type="put",
             strike=5200.0,
@@ -421,7 +421,7 @@ class TestGreeks:
 
     def test_gamma_positive(self, market_ids, base_market, pricer):
         """Gamma should be positive for both calls and puts."""
-        call = EuropeanEquityFuturesOption(
+        call = EquityFuturesEuropeanOption(
             ticker="SPX",
             option_type="call",
             strike=5200.0,
@@ -440,7 +440,7 @@ class TestGreeks:
 
     def test_vega_positive(self, market_ids, base_market, pricer):
         """Vega should be positive."""
-        option = EuropeanEquityFuturesOption(
+        option = EquityFuturesEuropeanOption(
             ticker="SPX",
             option_type="call",
             strike=5200.0,
@@ -487,7 +487,7 @@ class TestFiniteDifferenceValidation:
                 },
             )
 
-        option = EuropeanEquityFuturesOption(
+        option = EquityFuturesEuropeanOption(
             ticker="SPX",
             option_type="call",
             strike=5200.0,
@@ -533,7 +533,7 @@ class TestFiniteDifferenceValidation:
                 },
             )
 
-        option = EuropeanEquityFuturesOption(
+        option = EquityFuturesEuropeanOption(
             ticker="SPX",
             option_type="call",
             strike=5200.0,
@@ -578,7 +578,7 @@ class TestSimplePricer:
         vol = 0.18
 
         # Full pricer option.
-        option_full = EuropeanEquityFuturesOption(
+        option_full = EquityFuturesEuropeanOption(
             ticker="SPX",
             option_type="call",
             strike=5200.0,
@@ -592,7 +592,7 @@ class TestSimplePricer:
         )
 
         # Simple pricer option.
-        option_simple = EuropeanEquityFuturesOptionSimple(
+        option_simple = EquityFuturesEuropeanOptionSimple(
             ticker="SPX",
             option_type="call",
             strike=5200.0,
@@ -610,7 +610,7 @@ class TestSimplePricer:
 
     def test_simple_greeks(self, simple_pricer):
         """Simple pricer should compute Greeks."""
-        option = EuropeanEquityFuturesOptionSimple(
+        option = EquityFuturesEuropeanOptionSimple(
             ticker="SPX",
             option_type="call",
             strike=5200.0,
@@ -647,7 +647,7 @@ class TestEdgeCases:
         df = math.exp(-r * t)
         strike = 4000.0  # Very deep ITM
 
-        option = EuropeanEquityFuturesOption(
+        option = EquityFuturesEuropeanOption(
             ticker="SPX",
             option_type="call",
             strike=strike,
@@ -670,7 +670,7 @@ class TestEdgeCases:
         """Deep OTM call should be close to zero."""
         strike = 8000.0  # Very deep OTM (60%+ above forward)
 
-        option = EuropeanEquityFuturesOption(
+        option = EquityFuturesEuropeanOption(
             ticker="SPX",
             option_type="call",
             strike=strike,

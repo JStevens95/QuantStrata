@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Dict, Literal
+from typing import Dict
 
 import numpy as np
 
 from src.marketdata.core.market import Market
-from src.instruments.equity.options.vanilla import EuropeanEquityVanillaOption
-from src.instruments.equity.options.digital import EuropeanEquityDigitalOption
+from src.instruments.equity.options.vanilla import EquityVanillaEuropeanOption
+from src.instruments.equity.options.digital import EquityDigitalEuropeanOption
 
 # Import pure functions from the generic BSM model.
 from src.models.analytic.black_scholes_merton.base import (
@@ -79,9 +79,9 @@ def _terminal_value(payoff: BasePayoff1D, spot: float) -> float:
 
 
 @dataclass(frozen=True, slots=True)
-class EquityEuropeanVanillaBsmPricer:
+class EquityVanillaEuropeanOptionBsmPricer:
     """
-    Adapter pricer: EuropeanEquityVanillaOption -> BSM vanilla formulas.
+    Adapter pricer: EquityVanillaEuropeanOption -> BSM vanilla formulas.
 
     Equity Mapping
     --------------
@@ -96,13 +96,13 @@ class EquityEuropeanVanillaBsmPricer:
     - rho = rho_discount + rho_carry (total rate sensitivity)
     """
 
-    def price(self, trade: EuropeanEquityVanillaOption, market: Market) -> float:
+    def price(self, trade: EquityVanillaEuropeanOption, market: Market) -> float:
         """
         Calculate present value of European equity vanilla option.
 
         Parameters
         ----------
-        trade : EuropeanEquityVanillaOption
+        trade : EquityVanillaEuropeanOption
             Option to price
         market : Market
             Market snapshot with spot, curve, and vol surface
@@ -164,13 +164,13 @@ class EquityEuropeanVanillaBsmPricer:
         )
         return float(notional) * float(pv_per_unit)
 
-    def greeks(self, trade: EuropeanEquityVanillaOption, market: Market) -> Dict[GreekName, float]:
+    def greeks(self, trade: EquityVanillaEuropeanOption, market: Market) -> Dict[GreekName, float]:
         """
         Calculate Greeks for European equity vanilla option.
 
         Parameters
         ----------
-        trade : EuropeanEquityVanillaOption
+        trade : EquityVanillaEuropeanOption
             Option to analyze
         market : Market
             Market snapshot
@@ -242,20 +242,20 @@ class EquityEuropeanVanillaBsmPricer:
 
 
 @dataclass(frozen=True, slots=True)
-class EquityEuropeanDigitalBsmPricer:
+class EquityDigitalEuropeanOptionBsmPricer:
     """
-    Adapter pricer: EuropeanEquityDigitalOption -> BSM digital formulas.
+    Adapter pricer: EquityDigitalEuropeanOption -> BSM digital formulas.
 
     Routes to cash-or-nothing or asset-or-nothing based on digital_type.
     """
 
-    def price(self, trade: EuropeanEquityDigitalOption, market: Market) -> float:
+    def price(self, trade: EquityDigitalEuropeanOption, market: Market) -> float:
         """
         Calculate BSM price for equity digital option.
 
         Parameters
         ----------
-        trade : EuropeanEquityDigitalOption
+        trade : EquityDigitalEuropeanOption
             The digital option to price
         market : Market
             Market snapshot with spot, curve, and vol
@@ -329,14 +329,14 @@ class EquityEuropeanDigitalBsmPricer:
         return float(notional * pv_per_unit)
 
     def greeks(
-        self, trade: EuropeanEquityDigitalOption, market: Market
+        self, trade: EquityDigitalEuropeanOption, market: Market
     ) -> Dict[GreekName, float]:
         """
         Calculate Greeks for equity digital option.
 
         Parameters
         ----------
-        trade : EuropeanEquityDigitalOption
+        trade : EquityDigitalEuropeanOption
             The digital option
         market : Market
             Market snapshot

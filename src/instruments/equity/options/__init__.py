@@ -13,21 +13,20 @@ Author: QuantStrata Team
 """
 
 from src.instruments.equity.options.vanilla import (
-    EuropeanEquityVanillaOption,
-    AmericanEquityVanillaOption,
+    EquityVanillaEuropeanOption, EquityVanillaAmericanOption,
 )
-from src.instruments.equity.options.barrier import EuropeanEquityBarrierOption
-from src.instruments.equity.options.digital import EuropeanEquityDigitalOption
-from src.instruments.equity.options.asian import EuropeanEquityAsianOption
-from src.instruments.equity.options.lookback import EuropeanEquityLookbackOption
+from src.instruments.equity.options.barrier import EquityBarrierEuropeanOption
+from src.instruments.equity.options.digital import EquityDigitalEuropeanOption
+from src.instruments.equity.options.asian import EquityAsianEuropeanOption
+from src.instruments.equity.options.lookback import EquityLookbackEuropeanOption
 
 __all__ = [
     # Vanilla
-    "EuropeanEquityVanillaOption",
-    "AmericanEquityVanillaOption",
+    "EquityVanillaEuropeanOption",
+    "EquityVanillaAmericanOption",
     # Exotic
-    "EuropeanEquityBarrierOption",
-    "EuropeanEquityDigitalOption",
-    "EuropeanEquityAsianOption",
-    "EuropeanEquityLookbackOption",
+    "EquityBarrierEuropeanOption",
+    "EquityDigitalEuropeanOption",
+    "EquityAsianEuropeanOption",
+    "EquityLookbackEuropeanOption",
 ]

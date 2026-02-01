@@ -29,8 +29,8 @@ from typing import Dict, Literal
 
 from src.marketdata.core.market import Market
 from src.instruments.equity.options.spread import (
-    EuropeanEquitySpreadOption,
-    EuropeanEquitySpreadOptionSimple,
+    EquitySpreadEuropeanOption,
+    EquitySpreadEuropeanOptionSimple,
 )
 from src.instruments.core.types import OptionType
 
@@ -64,18 +64,18 @@ def _rate_from_df(*, df: float, t: float) -> float:
 
 
 @dataclass(frozen=True, slots=True)
-class EquityEuropeanSpreadBchPricerSimple:
+class EquitySpreadEuropeanOptionBchPricerSimple:
     """
     Bachelier pricer for equity spread option with direct parameters.
     """
     
-    def price(self, trade: EuropeanEquitySpreadOptionSimple) -> float:
+    def price(self, trade: EquitySpreadEuropeanOptionSimple) -> float:
         """
         Price an equity spread option using Bachelier model.
         
         Parameters
         ----------
-        trade : EuropeanEquitySpreadOptionSimple
+        trade : EquitySpreadEuropeanOptionSimple
             Spread option with direct parameters.
         
         Returns
@@ -110,13 +110,13 @@ class EquityEuropeanSpreadBchPricerSimple:
         
         return N * unit_pv
     
-    def greeks(self, trade: EuropeanEquitySpreadOptionSimple) -> Dict[GreekName, float]:
+    def greeks(self, trade: EquitySpreadEuropeanOptionSimple) -> Dict[GreekName, float]:
         """
         Compute Greeks for an equity spread option.
         
         Parameters
         ----------
-        trade : EuropeanEquitySpreadOptionSimple
+        trade : EquitySpreadEuropeanOptionSimple
             Spread option with direct parameters.
         
         Returns
@@ -167,18 +167,18 @@ class EquityEuropeanSpreadBchPricerSimple:
 
 
 @dataclass(frozen=True, slots=True)
-class EquityEuropeanSpreadBchPricer:
+class EquitySpreadEuropeanOptionBchPricer:
     """
     Bachelier pricer for equity spread option with market data lookup.
     """
     
-    def price(self, trade: EuropeanEquitySpreadOption, market: Market) -> float:
+    def price(self, trade: EquitySpreadEuropeanOption, market: Market) -> float:
         """
         Price an equity spread option using market data.
         
         Parameters
         ----------
-        trade : EuropeanEquitySpreadOption
+        trade : EquitySpreadEuropeanOption
             Spread option instrument.
         market : Market
             Market snapshot.
@@ -189,18 +189,18 @@ class EquityEuropeanSpreadBchPricer:
             Present value of the spread option.
         """
         simple = self._to_simple(trade, market)
-        return EquityEuropeanSpreadBchPricerSimple().price(simple)
+        return EquitySpreadEuropeanOptionBchPricerSimple().price(simple)
     
-    def greeks(self, trade: EuropeanEquitySpreadOption, market: Market) -> Dict[GreekName, float]:
+    def greeks(self, trade: EquitySpreadEuropeanOption, market: Market) -> Dict[GreekName, float]:
         """Compute Greeks for an equity spread option with market data."""
         simple = self._to_simple(trade, market)
-        return EquityEuropeanSpreadBchPricerSimple().greeks(simple)
+        return EquitySpreadEuropeanOptionBchPricerSimple().greeks(simple)
     
     def _to_simple(
         self,
-        trade: EuropeanEquitySpreadOption,
+        trade: EquitySpreadEuropeanOption,
         market: Market,
-    ) -> EuropeanEquitySpreadOptionSimple:
+    ) -> EquitySpreadEuropeanOptionSimple:
         """Convert market-based spread option to simple spread option."""
         curve = market.curve(trade.curve_id)
         
@@ -218,7 +218,7 @@ class EquityEuropeanSpreadBchPricer:
         vol_surface = market.vol_surface(trade.vol_id)
         sigma = float(vol_surface.vol(expiry=trade.expiry, strike=trade.strike))
         
-        return EuropeanEquitySpreadOptionSimple(
+        return EquitySpreadEuropeanOptionSimple(
             notional=trade.notional,
             strike=trade.strike,
             expiry=trade.expiry,
@@ -234,6 +234,6 @@ class EquityEuropeanSpreadBchPricer:
 # =============================================================================
 
 __all__ = [
-    "EquityEuropeanSpreadBchPricer",
-    "EquityEuropeanSpreadBchPricerSimple",
+    "EquitySpreadEuropeanOptionBchPricer",
+    "EquitySpreadEuropeanOptionBchPricerSimple",
 ]

@@ -14,27 +14,27 @@ Author: QuantStrata Team
 
 # BSM Pricers (vanilla + digital)
 from src.pricers.equity.european_bsm import (
-    EquityEuropeanVanillaBsmPricer,  # Analytic BSM for vanilla options.
-    EquityEuropeanDigitalBsmPricer,  # Analytic BSM for digital options.
+    EquityVanillaEuropeanOptionBsmPricer,  # Analytic BSM for vanilla options.
+    EquityDigitalEuropeanOptionBsmPricer,  # Analytic BSM for digital options.
 )
 
 # MC Simulation Artifacts
 from src.pricers.equity.european_mc import (
     # Simulation artifacts (for analysis/plotting without rerunning).
-    EquityMcSimulation,  # Vanilla simulation artifact.
-    EquityBarrierMcSimulation,  # Barrier simulation artifact.
-    EquityAsianMcSimulation,  # Asian simulation artifact.
-    EquityLookbackMcSimulation,  # Lookback simulation artifact.
+    EquityVanillOptionMcSimulation,  # Vanilla simulation artifact.
+    EquityBarrierOptionMcSimulation,  # Barrier simulation artifact.
+    EquityAsianOptionMcSimulation,  # Asian simulation artifact.
+    EquityLookbackOptionMcSimulation,  # Lookback simulation artifact.
     # MC Pricers.
-    EquityEuropeanVanillaMcPricer,  # MC for vanilla options.
-    EquityEuropeanBarrierMcPricer,  # MC for barrier options.
-    EquityEuropeanAsianMcPricer,  # MC for Asian options.
-    EquityEuropeanLookbackMcPricer,  # MC for lookback options.
+    EquityVanillaEuropeanOptionMcPricer,  # MC for vanilla options.
+    EquityBarrierEuropeanOptionMcPricer,  # MC for barrier options.
+    EquityAsianEuropeanOptionMcPricer,  # MC for Asian options.
+    EquityLookbackEuropeanOptionMcPricer,  # MC for lookback options.
 )
 
 # FDE Pricers (finite difference / PDE)
-from src.pricers.equity.european_fde import EquityEuropeanVanillaFdPricer  # FD for European vanilla.
-from src.pricers.equity.american_fde import EquityAmericanVanillaFdPricer  # FD for American vanilla.
+from src.pricers.equity.european_fde import EquityVanillaEuropeanOptionFdPricer  # FD for European vanilla.
+from src.pricers.equity.american_fde import EquityVanillaAmericanOptionFdPricer  # FD for American vanilla.
 
 # Linear pricers (forwards and spots)
 from src.pricers.equity.forward import EquityForwardPricer  # Forward pricer.
@@ -42,21 +42,21 @@ from src.pricers.equity.spot import EquitySpotPricer  # Spot pricer.
 
 __all__ = [
     # BSM (analytic)
-    "EquityEuropeanVanillaBsmPricer",
-    "EquityEuropeanDigitalBsmPricer",
+    "EquityVanillaEuropeanOptionBsmPricer",
+    "EquityDigitalEuropeanOptionBsmPricer",
     # MC Simulation Artifacts
-    "EquityMcSimulation",
-    "EquityBarrierMcSimulation",
-    "EquityAsianMcSimulation",
-    "EquityLookbackMcSimulation",
+    "EquityVanillOptionMcSimulation",
+    "EquityBarrierOptionMcSimulation",
+    "EquityAsianOptionMcSimulation",
+    "EquityLookbackOptionMcSimulation",
     # MC Pricers
-    "EquityEuropeanVanillaMcPricer",
-    "EquityEuropeanBarrierMcPricer",
-    "EquityEuropeanAsianMcPricer",
-    "EquityEuropeanLookbackMcPricer",
+    "EquityVanillaEuropeanOptionMcPricer",
+    "EquityBarrierEuropeanOptionMcPricer",
+    "EquityAsianEuropeanOptionMcPricer",
+    "EquityLookbackEuropeanOptionMcPricer",
     # FDE (PDE)
-    "EquityEuropeanVanillaFdPricer",
-    "EquityAmericanVanillaFdPricer",
+    "EquityVanillaEuropeanOptionFdPricer",
+    "EquityVanillaAmericanOptionFdPricer",
     # Linear
     "EquityForwardPricer",
     "EquitySpotPricer",

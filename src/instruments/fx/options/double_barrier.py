@@ -36,7 +36,7 @@ from src.models.payoffs.types import OptionType, BarrierStyle
 
 
 @dataclass(frozen=True, slots=True)
-class EuropeanFxDoubleBarrierOption:
+class FxDoubleBarrierEuropeanOption:
     """
     European FX double-barrier option with upper and lower barriers.
 
@@ -92,9 +92,9 @@ class EuropeanFxDoubleBarrierOption:
 
     Examples
     --------
-    >>> from src.instruments.fx.options.double_barrier import EuropeanFxDoubleBarrierOption
+    >>> from src.instruments.fx.options.double_barrier import FxDoubleBarrierEuropeanOption
     >>> from src.marketdata.core.ids import MarketId
-    >>> option = EuropeanFxDoubleBarrierOption(
+    >>> option = FxDoubleBarrierEuropeanOption(
     ...     option_type="call",
     ...     notional=1_000_000.0,
     ...     strike=1.10,

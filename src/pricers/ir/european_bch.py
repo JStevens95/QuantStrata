@@ -52,15 +52,11 @@ from typing import Dict, Literal
 
 from src.marketdata.core.market import Market
 from src.instruments.ir.options.swaption import (
-    Swaption,
-    SwaptionSimple,
+    IrSwaptionEuropeanOption,
+    IrSwaptionEuropeanOptionSimple,
 )
 from src.instruments.ir.linear.swap import (
-    InterestRateSwap,
-    InterestRateSwapSimple,
     generate_swap_schedule,
-    FixedLeg,
-    FloatingLeg,
 )
 from src.instruments.ir.options.capfloor import compute_accrual_factor
 
@@ -111,7 +107,7 @@ def _rate_from_df(*, df: float, t: float) -> float:
 
 
 @dataclass(frozen=True, slots=True)
-class IrEuropeanSwaptionBchPricerSimple:
+class IrSwaptionEuropeanOptionBchPricerSimple:
     """
     Bachelier pricer for swaption with direct parameters.
     
@@ -119,7 +115,7 @@ class IrEuropeanSwaptionBchPricerSimple:
     low/negative rate environments.
     """
     
-    def price(self, trade: SwaptionSimple) -> float:
+    def price(self, trade: IrSwaptionEuropeanOptionSimple) -> float:
         """
         Price a swaption using Bachelier model.
         
@@ -175,7 +171,7 @@ class IrEuropeanSwaptionBchPricerSimple:
         # Scale by notional and annuity.
         return N * A * unit_pv
     
-    def greeks(self, trade: SwaptionSimple) -> Dict[GreekName, float]:
+    def greeks(self, trade: IrSwaptionEuropeanOptionSimple) -> Dict[GreekName, float]:
         """
         Compute Greeks for a swaption.
         
@@ -237,7 +233,7 @@ class IrEuropeanSwaptionBchPricerSimple:
             ),
         }
     
-    def vega_bp(self, trade: SwaptionSimple) -> float:
+    def vega_bp(self, trade: IrSwaptionEuropeanOptionSimple) -> float:
         """
         Compute vega per 1 basis point of normal vol.
         
@@ -248,14 +244,14 @@ class IrEuropeanSwaptionBchPricerSimple:
 
 
 @dataclass(frozen=True, slots=True)
-class IrEuropeanSwaptionBchPricer:
+class IrSwaptionEuropeanOptionBchPricer:
     """
     Bachelier pricer for swaption with market data lookup.
     
     Automatically computes forward swap rate and annuity from the curve.
     """
     
-    def price(self, trade: Swaption, market: Market) -> float:
+    def price(self, trade: IrSwaptionEuropeanOption, market: Market) -> float:
         """
         Price a swaption using Bachelier model with market data.
         
@@ -272,29 +268,29 @@ class IrEuropeanSwaptionBchPricer:
             Present value of the swaption.
         """
         simple = self._to_simple(trade, market)
-        return IrEuropeanSwaptionBchPricerSimple().price(simple)
+        return IrSwaptionEuropeanOptionBchPricerSimple().price(simple)
     
-    def greeks(self, trade: Swaption, market: Market) -> Dict[GreekName, float]:
+    def greeks(self, trade: IrSwaptionEuropeanOption, market: Market) -> Dict[GreekName, float]:
         """Compute Greeks for a swaption with market data."""
         simple = self._to_simple(trade, market)
-        return IrEuropeanSwaptionBchPricerSimple().greeks(simple)
+        return IrSwaptionEuropeanOptionBchPricerSimple().greeks(simple)
     
-    def vega_bp(self, trade: Swaption, market: Market) -> float:
+    def vega_bp(self, trade: IrSwaptionEuropeanOption, market: Market) -> float:
         """Compute vega per 1bp of normal vol."""
         simple = self._to_simple(trade, market)
-        return IrEuropeanSwaptionBchPricerSimple().vega_bp(simple)
+        return IrSwaptionEuropeanOptionBchPricerSimple().vega_bp(simple)
     
-    def forward_swap_rate(self, trade: Swaption, market: Market) -> float:
+    def forward_swap_rate(self, trade: IrSwaptionEuropeanOption, market: Market) -> float:
         """Compute the forward swap rate."""
         simple = self._to_simple(trade, market)
         return simple.forward_swap_rate
     
-    def annuity(self, trade: Swaption, market: Market) -> float:
+    def annuity(self, trade: IrSwaptionEuropeanOption, market: Market) -> float:
         """Compute the annuity (PV01) of the underlying swap."""
         simple = self._to_simple(trade, market)
         return simple.annuity
     
-    def _to_simple(self, trade: Swaption, market: Market) -> SwaptionSimple:
+    def _to_simple(self, trade: IrSwaptionEuropeanOption, market: Market) -> IrSwaptionEuropeanOptionSimple:
         """Convert market-based swaption to simple swaption."""
         curve = market.curve(trade.curve_id)
         vol_surface = market.vol_surface(trade.vol_id)
@@ -326,7 +322,7 @@ class IrEuropeanSwaptionBchPricer:
         # Discount factor to option expiry.
         df_expiry = float(curve.df(trade.option_expiry))
         
-        return SwaptionSimple(
+        return IrSwaptionEuropeanOptionSimple(
             notional=trade.notional,
             strike=trade.strike,
             option_expiry=trade.option_expiry,
@@ -346,6 +342,6 @@ class IrEuropeanSwaptionBchPricer:
 
 __all__ = [
     # Swaption pricers
-    "IrEuropeanSwaptionBchPricer",
-    "IrEuropeanSwaptionBchPricerSimple",
+    "IrSwaptionEuropeanOptionBchPricer",
+    "IrSwaptionEuropeanOptionBchPricerSimple",
 ]

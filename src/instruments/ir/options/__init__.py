@@ -8,31 +8,31 @@ This module contains interest rate options including:
 - Swaptions
 """
 from src.instruments.ir.options.capfloor import (
-    Caplet,
-    CapletSimple,
-    Floorlet,
-    FloorletSimple,
-    Cap,
-    CapSimple,
-    Floor,
-    FloorSimple,
+    IrCapletEuropeanOption,
+    IrCapletEuropeanOptionSimple,
+    IrFloorletEuropeanOption,
+    IrFloorletEuropeanOptionSimple,
+    IrCapEuropeanOption,
+    IrCapEuropeanOptionSimple,
+    IrFloorEuropeanOption,
+    IrFloorEuropeanOptionSimple,
 )
 from src.instruments.ir.options.swaption import (
-    Swaption,
-    SwaptionSimple,
+    IrSwaptionEuropeanOption,
+    IrSwaptionEuropeanOptionSimple,
 )
 
 __all__ = [
     # Caps/Floors
-    "Caplet",
-    "CapletSimple",
-    "Floorlet",
-    "FloorletSimple",
-    "Cap",
-    "CapSimple",
-    "Floor",
-    "FloorSimple",
+    "IrCapletEuropeanOption",
+    "IrCapletEuropeanOptionSimple",
+    "IrFloorletEuropeanOption",
+    "IrFloorletEuropeanOptionSimple",
+    "IrCapEuropeanOption",
+    "IrCapEuropeanOptionSimple",
+    "IrFloorEuropeanOption",
+    "IrFloorEuropeanOptionSimple",
     # Swaptions
-    "Swaption",
-    "SwaptionSimple",
+    "IrSwaptionEuropeanOption",
+    "IrSwaptionEuropeanOptionSimple",
 ]

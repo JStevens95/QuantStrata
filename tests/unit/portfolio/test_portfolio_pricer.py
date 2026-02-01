@@ -15,8 +15,8 @@ from src.portfolio.core import Portfolio, Position
 from src.portfolio.portfolio import PortfolioPricer
 
 # ---- instrument + pricer under test ----
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
-from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer
+from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
+from src.pricers.fx.european_bsm import FxVanillaEuropeanOptionBsmPricer
 
 # ---- production registry used for instrument -> pricer routing ----
 from src.pricers.registry import PricerRegistry
@@ -69,13 +69,13 @@ def test_portfolio_pv_equals_sum_of_position_pvs(fx_market_and_ids) -> None:
     market, spot_id, vol_id, rd_id, rf_id = fx_market_and_ids
 
     # Create the concrete instrument pricer (BSM European FX vanilla)
-    fx_pricer = FxEuropeanVanillaBsmPricer()
+    fx_pricer = FxVanillaEuropeanOptionBsmPricer()
 
     # Use the *production* registry so test matches real routing behaviour
     registry = PricerRegistry()
 
     # Register our pricer as the default for EuropeanFxVanillaOption instruments
-    registry.register(EuropeanFxVanillaOption, fx_pricer)
+    registry.register(FxVanillaEuropeanOption, fx_pricer)
 
     # PortfolioPricer uses the registry to resolve pricers per instrument
     portfolio_pricer = PortfolioPricer(pricer_registry=registry)
@@ -87,7 +87,7 @@ def test_portfolio_pv_equals_sum_of_position_pvs(fx_market_and_ids) -> None:
     positions = [
         Position(
             position_id="POS_1",  # unique id used for reporting/debugging
-            instrument=EuropeanFxVanillaOption(
+            instrument=FxVanillaEuropeanOption(
                 option_type="call",
                 notional=1_000_000.0,
                 strike=S,  # ATM
@@ -101,7 +101,7 @@ def test_portfolio_pv_equals_sum_of_position_pvs(fx_market_and_ids) -> None:
         ),
         Position(
             position_id="POS_2",
-            instrument=EuropeanFxVanillaOption(
+            instrument=FxVanillaEuropeanOption(
                 option_type="put",
                 notional=500_000.0,
                 strike=0.98 * S,  # slightly ITM/OTM depending on spot definition
@@ -115,7 +115,7 @@ def test_portfolio_pv_equals_sum_of_position_pvs(fx_market_and_ids) -> None:
         ),
         Position(
             position_id="POS_3",
-            instrument=EuropeanFxVanillaOption(
+            instrument=FxVanillaEuropeanOption(
                 option_type="call",
                 notional=750_000.0,
                 strike=1.02 * S,  # slightly OTM
@@ -157,11 +157,11 @@ def test_portfolio_greeks_equal_sum_of_position_greeks(fx_market_and_ids) -> Non
     market, spot_id, vol_id, rd_id, rf_id = fx_market_and_ids
 
     # Concrete pricer under test
-    fx_pricer = FxEuropeanVanillaBsmPricer()
+    fx_pricer = FxVanillaEuropeanOptionBsmPricer()
 
     # Production registry (same routing contract as the real system)
     registry = PricerRegistry()
-    registry.register(EuropeanFxVanillaOption, fx_pricer)
+    registry.register(FxVanillaEuropeanOption, fx_pricer)
 
     # PortfolioPricer aggregates greeks across positions
     portfolio_pricer = PortfolioPricer(pricer_registry=registry)
@@ -173,7 +173,7 @@ def test_portfolio_greeks_equal_sum_of_position_greeks(fx_market_and_ids) -> Non
     positions = [
         Position(
             position_id="POS_A",
-            instrument=EuropeanFxVanillaOption(
+            instrument=FxVanillaEuropeanOption(
                 option_type="call",
                 notional=1_000_000.0,
                 strike=S,
@@ -187,7 +187,7 @@ def test_portfolio_greeks_equal_sum_of_position_greeks(fx_market_and_ids) -> Non
         ),
         Position(
             position_id="POS_B",
-            instrument=EuropeanFxVanillaOption(
+            instrument=FxVanillaEuropeanOption(
                 option_type="put",
                 notional=1_000_000.0,
                 strike=S,

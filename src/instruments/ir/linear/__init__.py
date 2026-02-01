@@ -7,12 +7,12 @@ This module contains linear (non-optional) interest rate instruments:
 - Interest Rate Swaps (IRS)
 """
 from src.instruments.ir.linear.fra import (
-    ForwardRateAgreement,
-    ForwardRateAgreementSimple,
+    IrForwardRateAgreement,
+    IrForwardRateAgreementSimple,
 )
 from src.instruments.ir.linear.swap import (
-    InterestRateSwap,
-    InterestRateSwapSimple,
+    IrSwap,
+    IrSwapSimple,
     SwapLeg,
     FixedLeg,
     FloatingLeg,
@@ -20,11 +20,11 @@ from src.instruments.ir.linear.swap import (
 
 __all__ = [
     # FRA
-    "ForwardRateAgreement",
-    "ForwardRateAgreementSimple",
+    "IrForwardRateAgreement",
+    "IrForwardRateAgreementSimple",
     # Swap
-    "InterestRateSwap",
-    "InterestRateSwapSimple",
+    "IrSwap",
+    "IrSwapSimple",
     "SwapLeg",
     "FixedLeg",
     "FloatingLeg",

@@ -41,7 +41,7 @@ from src.models.payoffs.types import OptionType
 
 
 @dataclass(frozen=True, slots=True)
-class EuropeanEquityFuturesOption:
+class EquityFuturesEuropeanOption:
     """
     European option on an equity index futures contract.
 
@@ -88,7 +88,7 @@ class EuropeanEquityFuturesOption:
     Examples
     --------
     >>> # Option on S&P 500 futures
-    >>> opt = EuropeanEquityFuturesOption(
+    >>> opt = EquityFuturesEuropeanOption(
     ...     ticker="SPX",
     ...     option_type="call",
     ...     strike=5000.0,
@@ -156,7 +156,7 @@ class EuropeanEquityFuturesOption:
 
 
 @dataclass(frozen=True, slots=True)
-class EuropeanEquityFuturesOptionSimple:
+class EquityFuturesEuropeanOptionSimple:
     """
     Simplified equity futures option for direct Black76 pricing.
 
@@ -185,7 +185,7 @@ class EuropeanEquityFuturesOptionSimple:
     Examples
     --------
     >>> # Direct Black76 pricing with known futures
-    >>> opt = EuropeanEquityFuturesOptionSimple(
+    >>> opt = EquityFuturesEuropeanOptionSimple(
     ...     ticker="ES",
     ...     option_type="call",
     ...     strike=5000.0,
@@ -234,6 +234,6 @@ class EuropeanEquityFuturesOptionSimple:
 
 
 __all__ = [
-    "EuropeanEquityFuturesOption",
-    "EuropeanEquityFuturesOptionSimple",
+    "EquityFuturesEuropeanOption",
+    "EquityFuturesEuropeanOptionSimple",
 ]
