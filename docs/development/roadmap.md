@@ -1,6 +1,6 @@
 # QuantStrata Development Roadmap
 
-**Last Updated:** January 27, 2026 (Phase 4.2 Complete - Advanced Numerical Methods)  
+**Last Updated:** January 27, 2026 (Phase 4.3 Complete - Multi-Asset Products)  
 **Current Version:** V1 (FX Derivatives Foundation)  
 **Target:** Comprehensive Professional Quant Library
 
@@ -499,28 +499,34 @@ linear products that should be implemented before options on them (swaptions).
 
 **Status:** Phase 4.2 COMPLETE. See `docs/development/progress/phase_4_2_advanced_numerical_methods.md`.
 
-### 4.3 Multi-Asset Products
-- [ ] **Basket Options**
-  - Implement: `BasketOption` (option on weighted sum)
-  - Payoff: `max(Σ(w_i * S_i) - K, 0)`
-  - MC pricer: Simulate correlated assets
-  - Use case: Multi-asset derivatives
+### 4.3 Multi-Asset Products ✅
 
-- [ ] **Spread Options**
-  - Implement: `SpreadOption` (option on S1 - S2)
-  - Pricer: MC (required), analytic approximation (optional)
-  - Use case: Commodity/energy trading
+- [x] **Basket Options**
+  - Implemented: `BasketParameters`, `basket_call_mc`, `basket_put_mc`
+  - Features: Arbitrary weights, correlated simulation
+  - Tests: 12 unit tests passing
 
-- [ ] **Worst-of / Best-of Options**
-  - Implement: `WorstOfOption`, `BestOfOption`
-  - Payoff: Option on min/max of multiple assets
-  - MC pricer: Simulate correlated paths
-  - Use case: Structured products
+- [x] **Spread Options**
+  - Implemented: `SpreadParameters`, `spread_call_mc`, `spread_put_mc`
+  - Features: Kirk's approximation, Margrabe's formula
+  - Tests: 17 unit tests passing
+
+- [x] **Worst-of / Best-of Options**
+  - Implemented: `RainbowParameters`, `best_of_call_mc`, `worst_of_call_mc`
+  - Features: N-asset support, correlation effects
+  - Tests: 16 unit tests passing
+
+- [x] **Multi-Asset Simulation Infrastructure**
+  - Implemented: `CorrelationMatrix`, `MultiAssetGBM`, `MultiAssetSimulation`
+  - Features: Cholesky correlation, terminal simulation
+  - Tests: 17 unit tests passing
+
+**Status:** Phase 4.3 COMPLETE. See `docs/development/progress/phase_4_3_multi_asset_products.md`.
 
 ### Deliverables:
 - ✅ 3 advanced models (Merton jump-diffusion, SABR, Variance Gamma) - 109 tests
 - ✅ 3 advanced numerical methods (LSM, QMC, Importance Sampling) - 54 new tests
-- [ ] Multi-asset products (Phase 4.3)
+- ✅ 4 multi-asset products (Basket, Spread, Best-of, Worst-of) - 62 tests
 
 **Impact:** Demonstrates advanced quantitative skills and research-level understanding.
 
