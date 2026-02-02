@@ -398,24 +398,33 @@ linear products that should be implemented before options on them (swaptions).
 
 **Status:** Phase 3.5 COMPLETE. See `docs/development/progress/phase_3_5_hull_white.md` for details.
 
-### 3.6 Black-Karasinski & Rate Infrastructure
+### 3.6 Black-Karasinski Model ✅
 
-- [ ] **Black-Karasinski Model** (3.6.1)
-  - Implement: `BlackKarasinskiDynamics` (log-normal short rate)
-  - MC pricer: Simulate log-rate paths
-  - Use case: Alternative short rate model (positive rates only)
+- [x] **Black-Karasinski Model** (3.6.1)
+  - Implemented: `BlackKarasinskiParameters`, `BlackKarasinskiDynamics`, `BlackKarasinskiSimulation`
+  - MC pricer: `IrBondZeroCouponBKMCPricerSimple`, `IrBondEuropeanOptionBKMCPricerSimple`
+  - MC pricer: `IrCapletEuropeanOptionBKMCPricerSimple`, `IrFloorletEuropeanOptionBKMCPricerSimple`
+  - Key properties: Log-normal rates (always positive), exact OU simulation
+  - Tests: 58 tests passing
+  - Documentation: `docs/guides/models/black_karasinski.md`
 
-- [ ] **Rate Market Data Enhancement** (3.6.2)
+**Status:** Phase 3.6 COMPLETE. See `docs/development/progress/phase_3_6_black_karasinski.md` for details.
+
+### 3.7 Rate Infrastructure Enhancement (Future)
+
+- [ ] **Rate Market Data Enhancement**
   - Swaption vol surface generation
   - Cap/floor vol surfaces
   - Enhanced IR generators
 
-- [ ] **Rate Curve Bootstrapping** (3.6.3)
+- [ ] **Rate Curve Bootstrapping**
   - Enhance: Multi-instrument bootstrapping
   - Support: Deposits, FRAs, swaps, OIS
   - Validation: Smoothness, arbitrage checks
 
-### 3.7 LIBOR Market Model (Advanced)
+### 3.8 LIBOR Market Model (Advanced)
+
+### 3.8 LIBOR Market Model (Advanced)
 
 - [ ] **LMM Implementation**
   - Implement: `LiborMarketModel` (multi-factor)
@@ -428,7 +437,7 @@ linear products that should be implemented before options on them (swaptions).
 - [x] Complete Bachelier pricers (swaptions, spread options) - 45 tests passing
 - [x] Bond instruments and options (zero coupon, fixed rate, bond options) - 40 tests passing
 - [x] Hull-White model (analytic, MC, FDE pricers) - 60 tests passing
-- [ ] Black-Karasinski model
+- [x] Black-Karasinski model (MC pricers) - 58 tests passing
 - [ ] Rate market data infrastructure
 - [ ] LMM (advanced)
 

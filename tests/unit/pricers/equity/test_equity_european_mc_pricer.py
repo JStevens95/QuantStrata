@@ -17,7 +17,7 @@ from src.instruments.equity.options.vanilla import EquityVanillaEuropeanOption
 from src.instruments.equity.options.barrier import EquityBarrierEuropeanOption
 from src.instruments.equity.options.asian import EquityAsianEuropeanOption
 from src.instruments.equity.options.lookback import EquityLookbackEuropeanOption
-from src.pricers.equity.european_mc import (
+from src.pricers.equity.european_bsm_mc import (
     EquityVanillaEuropeanOptionMcPricer,
     EquityBarrierEuropeanOptionMcPricer,
     EquityAsianEuropeanOptionMcPricer,

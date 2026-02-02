@@ -19,7 +19,7 @@ from src.portfolio.portfolio import PortfolioPricer
 
 # ---- pricer objects ----
 from src.pricers.registry import DefaultPricerRegistry
-from src.pricers.fx.european_fde import FxVanillaEuropeanOptionFdPricer
+from src.pricers.fx.european_bsm_fde import FxVanillaEuropeanOptionFdPricer
 
 # ---- sensitivity objects ----
 from src.risk.sensitivities.config import SensitivitiesBumps, SensitivitiesConfig

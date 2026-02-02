@@ -13,7 +13,7 @@ from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
 from src.instruments.fx.options.digital import FxDigitalEuropeanOption
 
 from src.pricers.fx.european_bsm import FxVanillaEuropeanOptionBsmPricer, FxDigitalEuropeanOptionBsmPricer
-from src.pricers.fx.european_fde import FxVanillaEuropeanOptionFdPricer, FxDigitalEuropeanOptionFdPricer
+from src.pricers.fx.european_bsm_fde import FxVanillaEuropeanOptionFdPricer, FxDigitalEuropeanOptionFdPricer
 
 from src.models.payoffs.vanilla import VanillaPayoff
 from src.models.payoffs.digital import DigitalCashPayoff, DigitalAssetPayoff

@@ -39,11 +39,11 @@ from src.marketdata.surfaces.vol_surface import FlatVolSurface
 
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
 from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer
-from src.pricers.fx.european_mc import FxEuropeanVanillaMcPricer
+from src.pricers.fx.european_bsm_mc import FxEuropeanVanillaMcPricer
 
 # FD pricer may not exist / may be WIP: import defensively.
 try:
-    from src.pricers.fx.european_fde import FxEuropeanVanillaFdPricer  # type: ignore
+    from src.pricers.fx.european_bsm_fde import FxEuropeanVanillaFdPricer  # type: ignore
 except Exception:  # pragma: no cover
     FxEuropeanVanillaFdPricer = None  # type: ignore
 

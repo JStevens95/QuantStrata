@@ -91,7 +91,7 @@ class FxLocalVolEuropeanOptionFdPricer:
 
     Examples
     --------
-    >>> from src.pricers.fx.local_vol_fde import FxLocalVolEuropeanOptionFdPricer
+    >>> from src.pricers.fx.european_localvol_fde import FxLocalVolEuropeanOptionFdPricer
     >>> from src.marketdata.surfaces.local_vol_surface import FlatLocalVolSurface
     >>> # Create a flat local vol surface (equivalent to BSM).
     >>> local_vol = FlatLocalVolSurface(sigma=0.20)

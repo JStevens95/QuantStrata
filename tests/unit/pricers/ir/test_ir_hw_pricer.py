@@ -32,13 +32,13 @@ from src.pricers.ir.european_hw import (
     IrFloorletEuropeanOptionHWPricerSimple,
     IrSwaptionEuropeanOptionHWPricerSimple,
 )
-from src.pricers.ir.european_mc import (
+from src.pricers.ir.european_hw_mc import (
     MCConfig,
     IrBondZeroCouponMCPricerSimple,
     IrBondEuropeanOptionMCPricerSimple,
     IrCapletEuropeanOptionMCPricerSimple,
 )
-from src.pricers.ir.european_fde import (
+from src.pricers.ir.european_hw_fde import (
     FDConfig,
     IrBondZeroCouponFDPricerSimple,
     IrBondEuropeanOptionFDPricerSimple,

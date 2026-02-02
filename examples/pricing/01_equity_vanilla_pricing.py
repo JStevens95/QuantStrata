@@ -29,9 +29,9 @@ from src.instruments.equity.options.vanilla import (
     AmericanEquityVanillaOption,
 )
 from src.pricers.equity.european_bsm import EquityEuropeanVanillaBsmPricer
-from src.pricers.equity.european_mc import EquityEuropeanVanillaMcPricer
-from src.pricers.equity.european_fde import EquityEuropeanVanillaFdPricer
-from src.pricers.equity.american_fde import EquityAmericanVanillaFdPricer
+from src.pricers.equity.european_bsm_mc import EquityEuropeanVanillaMcPricer
+from src.pricers.equity.european_bsm_fde import EquityEuropeanVanillaFdPricer
+from src.pricers.equity.american_bsm_fde import EquityAmericanVanillaFdPricer
 
 # Plot configuration
 plt.style.use('seaborn-v0_8-whitegrid')

@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 from scipy.stats import norm
 
-from src.pricers.fx.local_vol_fde import FxLocalVolEuropeanOptionFdPricer
+from src.pricers.fx.european_localvol_fde import FxLocalVolEuropeanOptionFdPricer
 from src.marketdata.surfaces.local_vol_surface import FlatLocalVolSurface, LocalVolSurface
 
 

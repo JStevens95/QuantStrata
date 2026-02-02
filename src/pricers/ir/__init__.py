@@ -9,6 +9,7 @@ This module contains pricers for interest rate derivatives:
 - Bond option Black76 pricers
 - Swaption Bachelier pricers
 - Hull-White pricers (analytic, MC, FDE)
+- Black-Karasinski pricers (MC)
 """
 from src.pricers.ir.swap import IrSwapPricer, IrSwapPricerSimple
 from src.pricers.ir.fra import IrFraPricer, IrFraPricerSimple
@@ -49,7 +50,7 @@ from src.pricers.ir.european_hw import (
     IrFloorEuropeanOptionHWPricerSimple,
     IrSwaptionEuropeanOptionHWPricerSimple,
 )
-from src.pricers.ir.european_mc import (
+from src.pricers.ir.european_hw_mc import (
     # Hull-White MC pricers
     MCConfig,
     DEFAULT_MC_CONFIG,
@@ -60,7 +61,7 @@ from src.pricers.ir.european_mc import (
     IrFloorletEuropeanOptionMCPricerSimple,
     IrSwaptionEuropeanOptionMCPricerSimple,
 )
-from src.pricers.ir.european_fde import (
+from src.pricers.ir.european_hw_fde import (
     # Hull-White FDE pricers
     FDConfig,
     DEFAULT_FD_CONFIG,
@@ -69,6 +70,15 @@ from src.pricers.ir.european_fde import (
     IrBondEuropeanOptionFDPricerSimple,
     IrCapletEuropeanOptionFDPricerSimple,
     IrFloorletEuropeanOptionFDPricerSimple,
+)
+from src.pricers.ir.european_bk_mc import (
+    # Black-Karasinski MC pricers
+    BKMCConfig,
+    DEFAULT_BK_MC_CONFIG,
+    IrBondZeroCouponBKMCPricerSimple,
+    IrBondEuropeanOptionBKMCPricerSimple,
+    IrCapletEuropeanOptionBKMCPricerSimple,
+    IrFloorletEuropeanOptionBKMCPricerSimple,
 )
 
 __all__ = [
@@ -124,4 +134,11 @@ __all__ = [
     "IrBondEuropeanOptionFDPricerSimple",
     "IrCapletEuropeanOptionFDPricerSimple",
     "IrFloorletEuropeanOptionFDPricerSimple",
+    # Black-Karasinski MC pricers
+    "BKMCConfig",
+    "DEFAULT_BK_MC_CONFIG",
+    "IrBondZeroCouponBKMCPricerSimple",
+    "IrBondEuropeanOptionBKMCPricerSimple",
+    "IrCapletEuropeanOptionBKMCPricerSimple",
+    "IrFloorletEuropeanOptionBKMCPricerSimple",
 ]

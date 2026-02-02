@@ -19,7 +19,7 @@ from src.pricers.fx.european_bsm import (
     FxDigitalEuropeanOptionBsmPricer,
     _rate_from_df
 )
-from src.pricers.fx.european_mc import (
+from src.pricers.fx.european_bsm_mc import (
     FxVanillaEuropeanOptionMcPricer,
     FxDigitalEuropeanOptionMcPricer,
     FxBarrierEuropeanOptionMcPricer,

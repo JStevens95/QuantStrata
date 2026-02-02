@@ -18,8 +18,8 @@ from src.pricers.equity.european_bsm import (
     EquityDigitalEuropeanOptionBsmPricer,  # Analytic BSM for digital options.
 )
 
-# MC Simulation Artifacts
-from src.pricers.equity.european_mc import (
+# MC Simulation Artifacts (BSM/GBM dynamics)
+from src.pricers.equity.european_bsm_mc import (
     # Simulation artifacts (for analysis/plotting without rerunning).
     EquityVanillOptionMcSimulation,  # Vanilla simulation artifact.
     EquityBarrierOptionMcSimulation,  # Barrier simulation artifact.
@@ -32,9 +32,9 @@ from src.pricers.equity.european_mc import (
     EquityLookbackEuropeanOptionMcPricer,  # MC for lookback options.
 )
 
-# FDE Pricers (finite difference / PDE)
-from src.pricers.equity.european_fde import EquityVanillaEuropeanOptionFdPricer  # FD for European vanilla.
-from src.pricers.equity.american_fde import EquityVanillaAmericanOptionFdPricer  # FD for American vanilla.
+# FDE Pricers (finite difference / PDE, BSM/GBM dynamics)
+from src.pricers.equity.european_bsm_fde import EquityVanillaEuropeanOptionFdPricer  # FD for European vanilla.
+from src.pricers.equity.american_bsm_fde import EquityVanillaAmericanOptionFdPricer  # FD for American vanilla.
 
 # Linear pricers (forwards and spots)
 from src.pricers.equity.forward import EquityForwardPricer  # Forward pricer.

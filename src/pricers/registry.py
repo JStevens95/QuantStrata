@@ -79,25 +79,25 @@ from src.pricers.ir.european_bch import (
 )
 
 # --- import FX numerical pricers ---
-from src.pricers.fx.european_mc import (
+from src.pricers.fx.european_bsm_mc import (
     FxVanillaEuropeanOptionMcPricer, FxDigitalEuropeanOptionMcPricer, FxBarrierEuropeanOptionMcPricer,
     FxAsianEuropeanOptionMcPricer, FxLookbackEuropeanOptionMcPricer, FxDoubleBarrierEuropeanOptionMcPricer,
     FxTouchEuropeanOptionMcPricer
     )
-from src.pricers.fx.european_fde import (
+from src.pricers.fx.european_bsm_fde import (
     FxVanillaEuropeanOptionFdPricer, FxDigitalEuropeanOptionFdPricer
     )
-from src.pricers.fx.american_fde import FxVanillaAmericanOptionFdPricer
+from src.pricers.fx.american_bsm_fde import FxVanillaAmericanOptionFdPricer
 
 # --- import Equity numerical pricers ---
-from src.pricers.equity.european_mc import (
+from src.pricers.equity.european_bsm_mc import (
     EquityVanillaEuropeanOptionMcPricer, EquityAsianEuropeanOptionMcPricer, EquityBarrierEuropeanOptionMcPricer,
     EquityLookbackEuropeanOptionMcPricer
 )
-from src.pricers.equity.european_fde import (
+from src.pricers.equity.european_bsm_fde import (
     EquityVanillaEuropeanOptionFdPricer
 )
-from src.pricers.equity.american_fde import EquityVanillaAmericanOptionFdPricer
+from src.pricers.equity.american_bsm_fde import EquityVanillaAmericanOptionFdPricer
 
 
 class InstrumentPricer(Protocol):

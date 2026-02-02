@@ -13,8 +13,8 @@ from src.instruments.equity.options.vanilla import (
     EquityVanillaEuropeanOption,
     EquityVanillaAmericanOption,
 )
-from src.pricers.equity.american_fde import EquityVanillaAmericanOptionFdPricer
-from src.pricers.equity.european_fde import EquityVanillaEuropeanOptionFdPricer
+from src.pricers.equity.american_bsm_fde import EquityVanillaAmericanOptionFdPricer
+from src.pricers.equity.european_bsm_fde import EquityVanillaEuropeanOptionFdPricer
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.interfaces import Quote
 from src.marketdata.core.market import Market

@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 from scipy.stats import norm
 
-from src.pricers.fx.heston_mc import (
+from src.pricers.fx.european_heston_mc import (
     FxHestonEuropeanOptionMcPricer,
     HestonMcResult,
     price_heston_european,

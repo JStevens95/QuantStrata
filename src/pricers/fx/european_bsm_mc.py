@@ -1722,7 +1722,7 @@ class FxDoubleBarrierEuropeanOptionMcPricer:
 
     Examples
     --------
-    >>> from src.pricers.fx.european_mc import FxDoubleBarrierEuropeanOptionMcPricer
+    >>> from src.pricers.fx.european_bsm_mc import FxDoubleBarrierEuropeanOptionMcPricer
     >>> pricer = FxEuropeanDoubleBarrierMcPricer(n_paths=100_000)
     >>> pv = pricer.price(trade, market)
     """

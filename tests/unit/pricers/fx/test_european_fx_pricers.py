@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional, Sequence, Tuple
 
 
 from src.pricers.fx.european_bsm import FxDigitalEuropeanOptionBsmPricer, FxVanillaEuropeanOptionBsmPricer
-from src.pricers.fx.european_fde import FxDigitalEuropeanOptionFdPricer, FxVanillaEuropeanOptionFdPricer
+from src.pricers.fx.european_bsm_fde import FxDigitalEuropeanOptionFdPricer, FxVanillaEuropeanOptionFdPricer
 
 from src.instruments.fx.options.digital import FxDigitalEuropeanOption
 from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
@@ -190,7 +190,7 @@ def make_digital_trade(
 
 def _try_import_mc() -> Optional[Tuple[Any, Any]]:
     try:
-        from src.pricers.fx.european_mc import FxVanillaEuropeanOptionMcPricer, FxDigitalEuropeanOptionMcPricer  # type: ignore
+        from src.pricers.fx.european_bsm_mc import FxVanillaEuropeanOptionMcPricer, FxDigitalEuropeanOptionMcPricer  # type: ignore
         return FxVanillaEuropeanOptionMcPricer, FxDigitalEuropeanOptionMcPricer
     except Exception:
         return None

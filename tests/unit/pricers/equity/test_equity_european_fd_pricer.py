@@ -11,7 +11,7 @@ import pytest
 import numpy as np
 
 from src.instruments.equity.options.vanilla import EquityVanillaEuropeanOption
-from src.pricers.equity.european_fde import EquityVanillaEuropeanOptionFdPricer
+from src.pricers.equity.european_bsm_fde import EquityVanillaEuropeanOptionFdPricer
 from src.pricers.equity.european_bsm import EquityVanillaEuropeanOptionBsmPricer
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.interfaces import Quote

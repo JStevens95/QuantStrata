@@ -139,7 +139,7 @@ class FxHestonEuropeanOptionMcPricer:
 
     Examples
     --------
-    >>> from src.pricers.fx.heston_mc import FxHestonEuropeanOptionMcPricer
+    >>> from src.pricers.fx.european_heston_mc import FxHestonEuropeanOptionMcPricer
     >>> from src.models.stochastic_volatility.heston import HestonParameters
     >>> pricer = FxHestonEuropeanOptionMcPricer(n_paths=50000, n_steps=100)
     >>> params = HestonParameters(kappa=2.0, theta=0.04, xi=0.3, v0=0.04, rho=-0.7)
@@ -404,7 +404,7 @@ def price_heston_european(
 
     Examples
     --------
-    >>> from src.pricers.fx.heston_mc import price_heston_european
+    >>> from src.pricers.fx.european_heston_mc import price_heston_european
     >>> price = price_heston_european(
     ...     spot=100.0, strike=100.0, maturity=1.0,
     ...     domestic_rate=0.05, foreign_rate=0.02,

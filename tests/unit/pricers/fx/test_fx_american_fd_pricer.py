@@ -7,8 +7,8 @@ from dataclasses import dataclass
 
 from src.marketdata.core.ids import MarketId
 from src.instruments.fx.options.vanilla import FxVanillaAmericanOption, FxVanillaEuropeanOption
-from src.pricers.fx.european_fde import FxVanillaEuropeanOptionFdPricer
-from src.pricers.fx.american_fde import FxVanillaAmericanOptionFdPricer
+from src.pricers.fx.european_bsm_fde import FxVanillaEuropeanOptionFdPricer
+from src.pricers.fx.american_bsm_fde import FxVanillaAmericanOptionFdPricer
 
 
 @dataclass(frozen=True, slots=True)
