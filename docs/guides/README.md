@@ -4,6 +4,16 @@ This section contains user-focused documentation for working with QuantStrata.
 
 ---
 
+## Risk
+
+Guides for risk management: VaR, Greeks aggregation, and stress testing.
+
+| Guide | Description |
+|-------|-------------|
+| [Risk Framework](risk/risk_framework.md) | VaR (historical, parametric, MC), Greeks aggregation, stress testing |
+
+---
+
 ## Calibration
 
 Guides for calibrating models to market data.

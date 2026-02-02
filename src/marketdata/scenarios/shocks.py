@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Sequence
 
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.interfaces import Curve, VolSurface
-from src.marketdata.scenarios.interfaces import MarketView
+from src.marketdata.scenarios.interfaces import MarketView, ScenarioShock
 
 BumpMode = Literal["relative", "absolute"]
 
@@ -239,3 +239,22 @@ class ParallelRateShock:
             curve_id=self.curve_id,
             overridden_curve=shocked_curve,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class CompositeShock:
+    """
+    Multi-factor scenario: apply a sequence of shocks in order.
+
+    Each shock is applied to the result of the previous one, so the final
+    market view has all shocks applied. Implements ScenarioShock protocol.
+    """
+
+    name: str
+    shocks: Sequence[ScenarioShock]
+
+    def apply(self, base_market: MarketView) -> MarketView:
+        current = base_market
+        for shock in self.shocks:
+            current = shock.apply(current)
+        return current

@@ -14,6 +14,7 @@ This roadmap follows a **phased, incremental approach** that:
 3. **Demonstrates breadth and depth** (multiple asset classes, advanced models)
 4. **Enhances educational value** (tutorials, notebooks)
 5. **Improves production readiness** (calibration, performance, backtesting)
+6. **Prepares for application projects** (streaming/live data for algo trading, advanced analytics, GNN-LSTM pricer, Q-learning agents)
 
 ---
 
@@ -619,21 +620,34 @@ linear products that should be implemented before options on them (swaptions).
 - Tutorial: `docs/tutorials/backtesting/backtesting_introduction.ipynb`
 - Progress: `docs/development/progress/phase_5_2_backtesting.md`
 
-### 5.3 Risk Infrastructure Enhancements
-- [ ] **Value-at-Risk (VaR)**
-  - Implement: Historical VaR, Parametric VaR, Monte Carlo VaR
+### 5.3 Risk Infrastructure Enhancements ✅
+- [x] **Value-at-Risk (VaR)**
+  - Implemented: Historical VaR, Parametric VaR, Monte Carlo VaR
   - Support: Portfolio-level VaR
   - Use case: Risk management
 
-- [ ] **Greeks Aggregation**
-  - Enhance: Portfolio-level greeks with proper bucketing
-  - Support: Risk factor decomposition
+- [x] **Greeks Aggregation**
+  - Implemented: Portfolio-level greeks with bucketing (by greek, by risk factor)
+  - Support: Risk factor decomposition (GreeksSummary, aggregate_sensitivities)
   - Use case: Risk reporting
 
-- [ ] **Stress Testing**
-  - Enhance: Scenario generation (historical, hypothetical)
-  - Support: Multi-factor stress scenarios
+- [x] **Stress Testing**
+  - Implemented: Scenario generation (preset packs, historical-based shocks)
+  - Support: Multi-factor stress scenarios (CompositeShock)
   - Use case: Regulatory stress testing
+
+**Status:** Phase 5.3 COMPLETE.
+
+**Components:**
+- `src/risk/var/` — VarConfig, VarResult, historical_var, parametric_var, mc_var, compute_var, DiagonalFactorModel
+- `src/risk/sensitivities/aggregation.py` — aggregate_sensitivities, GreeksSummary
+- `src/risk/scenarios/generation.py` — preset_stress_pack, shocks_from_historical_series, composite_from_preset
+- `src/marketdata/scenarios/shocks.py` — CompositeShock
+
+**Documentation:**
+- Reference: `docs/reference/risk/risk_infrastructure.md`
+- Guide: `docs/guides/risk/risk_framework.md`
+- Tutorial: `docs/tutorials/risk/risk_introduction.ipynb`
 
 ### 5.4 Performance & Scalability
 - [ ] **JAX Backend** (Optional, Advanced)
@@ -649,13 +663,45 @@ linear products that should be implemented before options on them (swaptions).
   - Implement: Pricer result caching
   - Use case: Performance optimization
 
+### 5.5 Streaming & Live Data (for Algo Trading)
+- [ ] **Streaming Data Provider**
+  - Implement: `StreamingMarketDataProvider` (or feed) protocol
+  - Support: Tick/bar stream (async iterator or callback)
+  - Output: Same `Market` snapshot type as pull-based providers
+  - Use case: Algorithmic trading, paper/live trading
+
+- [ ] **Event-Driven Engine**
+  - Implement: `StreamingEngine` or `LiveEngine` consuming stream of (timestamp, Market)
+  - Reuse: Same strategy signature `(market, portfolio, context) -> orders`
+  - Support: Paper vs live execution mode (adapter interface)
+  - Use case: Deploy strategies on streaming data
+
+- [ ] **Brokerage Adapter Interface**
+  - Define: Abstract interface for order execution (submit, cancel, positions)
+  - Support: Paper (simulated) and live brokerage adapters (future integration)
+  - Use case: Connect algo bot to practice/live brokerage accounts
+
+### 5.6 Advanced Analytics & Reporting
+- [ ] **Front-Office Risk Reports**
+  - Implement: Greeks surfaces, PnL attribution reports, VaR/CVaR summaries
+  - Support: Portfolio-level and instrument-level breakdowns
+  - Use case: Hedge fund risk management reporting
+
+- [ ] **Publication-Quality Visualisation**
+  - Enhance: Plotting utilities for advanced analytics (vol surfaces, Greeks heatmaps, scenario fan charts)
+  - Support: Consistent styling, export for reports
+  - Use case: Option pricing analytic reports, risk dashboards
+
+
 ### Deliverables:
 - ✅ Complete calibration framework
 - ✅ Backtesting infrastructure
-- ✅ Enhanced risk infrastructure
-- ✅ Performance optimizations
+- ✅ Risk infrastructure (VaR, Greeks aggregation, stress testing)
+- [ ] Streaming & live data (5.5): streaming provider, event-driven engine, brokerage adapter interface
+- [ ] Advanced analytics & reporting (5.6): front-office risk reports, publication-quality visualisation
+- [ ] Performance optimizations (5.4)
 
-**Impact:** Transforms library from "demonstration" to "production-ready" system.
+**Impact:** Transforms library from "demonstration" to "production-ready" system and supports application projects (algo bot, option analytics, GNN-LSTM pricer, Q-learning orchestrator).
 
 ---
 
@@ -724,18 +770,53 @@ linear products that should be implemented before options on them (swaptions).
 
 **Goal:** Add cutting-edge topics for interview differentiation
 
+### ML/RL Framework Design (General as Possible)
+
+For both **machine learning** and **Q-learning / reinforcement learning**, the library aims to provide a **general framework** rather than one-off scripts. The intended pipeline is:
+
+1. **Build specific ML/RL model instance** — User defines or selects a concrete model (e.g. GNN-LSTM pricer, Q-network for hedging) within the library’s model interfaces.
+2. **Fetch / prepare input data** — Generic data loading and preparation (e.g. from market data, backtests, or simulation) into the format expected by the training pipeline.
+3. **Train model via generic ML / Q-learning training pipeline** — A single, reusable training loop (or small set of loops) that works with any compliant model and data; supports checkpointing, logging, and hyperparameter control.
+4. **Standardised model evaluation outputs** — Common evaluation metrics and outputs (e.g. loss curves, validation scores, RL returns) so that any model can be compared and monitored in a consistent way.
+5. **Generalised projection / inference pipeline** — A standard way to load a trained model and run inference (e.g. price prediction, action recommendation) so that downstream applications (reports, algo bot, orchestrator) stay model-agnostic.
+
+This keeps the framework **model-agnostic** and **reusable** across ML-based pricing, calibration, GNN-LSTM pricer, and Q-learning agents.
+
 ### 7.1 Machine Learning Integration
+- [ ] **Generic ML Training Pipeline**
+  - Implement: Reusable training loop (data → model → loss → optimizer step); checkpointing, logging
+  - Support: Any model that conforms to a minimal trainable interface (forward, loss, optional validation)
+  - Use case: Train NN pricers, calibration nets, GNN-LSTM, etc. through one pipeline
+
+- [ ] **Data Preparation for ML**
+  - Implement: Fetch/prepare input data from market data, MC paths, or portfolio representation
+  - Support: Standardised feature/target format for pricing and calibration tasks
+  - Use case: Feed generic training pipeline
+
+- [ ] **Standardised ML Evaluation Outputs**
+  - Implement: Common metrics (loss curves, validation error, pricing error vs. benchmark)
+  - Support: Logging and serialisation so any ML model reports in a consistent way
+  - Use case: Compare and monitor models
+
+- [ ] **Generalised ML Inference Pipeline**
+  - Implement: Load trained model → run inference (e.g. price, implied vol) in a model-agnostic way
+  - Support: Integration with pricers, reports, and downstream applications
+  - Use case: Deploy trained ML pricer or calibration model
+
 - [ ] **ML-Based Pricing**
-  - Implement: Neural network pricers (train on MC data)
+  - Implement: Neural network pricers (train on MC data) via the generic pipeline above
   - Use case: Fast approximate pricing
 
 - [ ] **ML Calibration**
-  - Implement: ML-based model calibration
+  - Implement: ML-based model calibration via the generic pipeline above
   - Use case: Fast calibration
 
-- [ ] **GNN for Portfolio Pricing** (Already started)
-  - Complete: `src/m_learning/models/gnn_rnn_hybrid/`
-  - Use case: Graph-based portfolio representation
+- [ ] **Hybrid GNN-LSTM Full Revaluation Pricer** (Partially built)
+  - Complete: `src/m_learning/models/gnn_rnn_hybrid/` (attention, fusion, GNN/RNN layers, projection)
+  - Integrate: Trade graph builder, attribute encoder, training manager with portfolio pricing
+  - Train/evaluate/deploy via the generic ML pipeline (build instance → data → train → evaluate → inference)
+  - Deliverable: Full revaluation pricer using graph + time-series representation of portfolio
+  - Use case: Fast portfolio-level pricing and risk
 
 ### 7.2 Exotic Products
 - [ ] **Cliquet Options**
@@ -769,12 +850,234 @@ linear products that should be implemented before options on them (swaptions).
   - Model: GBM with convenience yield
   - Use case: Energy/agricultural derivatives
 
+### 7.5 Q-Learning & Reinforcement Learning Agents
+
+The same **general framework** applies: build agent instance → fetch/prepare data (e.g. environments) → generic RL training pipeline → standardised evaluation (returns, risk metrics) → generalised inference (action selection in backtest/live).
+
+- [ ] **Generic Q-Learning / RL Training Pipeline**
+  - Implement: Reusable RL training loop (environment → agent → reward → update); support for standard algorithms (e.g. DQN, policy gradient)
+  - Support: Any agent that conforms to a minimal interface (select action, update from transition/batch)
+  - Use case: Train delta-hedging agent, algo-trading agent, or other RL policies through one pipeline
+
+- [ ] **Environment & Data for RL**
+  - Implement: Fetch/prepare environments (e.g. trading sim, hedging sim) from library pricers, market data, backtesting
+  - Support: Standardised state/action/reward interface so different agents can plug in
+  - Use case: Feed generic RL training pipeline
+
+- [ ] **Standardised RL Evaluation Outputs**
+  - Implement: Common metrics (returns, Sharpe, drawdown, episode stats) and logging
+  - Support: Same evaluation format across agents for comparison and monitoring
+  - Use case: Compare and monitor RL agents
+
+- [ ] **Generalised RL Inference / Deployment**
+  - Implement: Load trained agent → select actions in a model-agnostic way (backtest or live)
+  - Support: Integration with backtesting engine, streaming engine, and orchestrator
+  - Use case: Deploy delta-hedging or algo-trading agent
+
+- [ ] **Q-Learning Framework** (stub: `src/q_learning/`)
+  - Implement: Agent interface, environment wrapper for trading/hedging
+  - Support: Discrete/continuous action spaces (e.g. hedge ratio, trade size)
+  - Use case: Delta hedging agent, algo trading agent
+
+- [ ] **RL Orchestrator**
+  - Implement: Orchestrator that deploys RL agents (delta hedging, algo trading) using the generic inference pipeline
+  - Integrate: With backtesting, streaming engine, and library pricers/risk
+  - Use case: Automated hedging, strategy deployment, cutting-edge applications
+
 ### Deliverables:
 - ✅ ML integration (pricing, calibration)
+- ✅ Hybrid GNN-LSTM full revaluation pricer
+- ✅ Q-learning / RL agent framework and orchestrator
 - ✅ 3+ exotic products
 - ✅ Optional: Credit/commodities
 
 **Impact:** Demonstrates **cutting-edge knowledge** and **research-level** capabilities.
+
+---
+
+## Phase 8: Quant Hedge Fund & Execution Extensions
+
+**Goal:** Add library components required for execution, factor risk, vol trading, portfolio optimisation, tail risk, real-time monitoring, and alternative data so that the additional application projects (5–12 below) can build on the library.
+
+*These items are not yet implemented or not yet planned in Phases 1–7.*
+
+### 8.1 Execution & Transaction Cost Analytics (TCA)
+- [ ] **Execution Cost Models**
+  - Implement: Market impact models (e.g. temporary/permanent), spread models
+  - Support: Parameterised by size, volatility, liquidity proxy
+  - Use case: Backtesting with realistic execution cost, TCA reporting
+
+- [ ] **Optimal Execution**
+  - Implement: Optimal execution framework (e.g. Almgren-Chriss-style or similar)
+  - Support: Trade-off between market impact and timing risk; TWAP/VWAP-style targets
+  - Use case: Execution & TCA application project, algo bot execution layer
+
+- [ ] **TCA Metrics & Reporting**
+  - Implement: Implementation shortfall, slippage vs benchmark, arrival price, volume participation
+  - Support: Standardised TCA output for comparison and reporting
+  - Use case: Execution & TCA application project
+
+### 8.2 Factor Risk Model & Factor Attribution
+- [ ] **Factor Exposure Computation**
+  - Implement: Compute portfolio exposures to risk factors (e.g. rates, vol, sector, style)
+  - Support: Factor definitions from library risk factors (Greeks, curves) or external factor returns
+  - Use case: Factor risk report, portfolio optimisation
+
+- [ ] **Factor Covariance / Factor Returns Interface**
+  - Implement: Interface for factor covariance matrix or factor return series
+  - Support: Sample or external factor model; integration with risk aggregation
+  - Use case: Factor VaR, portfolio optimisation
+
+- [ ] **Factor PnL Attribution**
+  - Implement: PnL attribution by factor (exposure × factor return) alongside existing scenario attribution
+  - Support: Portfolio-level and instrument-level factor breakdown
+  - Use case: Factor risk & attribution application project, risk reports
+
+### 8.3 Volatility Trading & Variance Swap Analytics
+- [ ] **Variance Swap / Vol Swap Pricing**
+  - Implement: Variance swap pricing (e.g. model-based from Heston/local vol), fair variance strike
+  - Support: Integration with existing vol models
+  - Use case: Volatility trading application project
+
+- [ ] **Dispersion & Vol-of-Vol Analytics**
+  - Implement: Index vs single-name dispersion metrics, vol-of-vol from existing models
+  - Support: Relative value and dispersion trading analytics
+  - Use case: Volatility trading application project
+
+### 8.4 Portfolio Construction & Optimisation
+- [ ] **Portfolio Optimisation API**
+  - Implement: Mean-variance optimisation, risk parity, max Sharpe / min variance
+  - Support: Constraints (turnover, sector, leverage, bounds); optional Black-Litterman
+  - Use case: Portfolio optimisation application project, algo bot rebalance
+
+- [ ] **Covariance / Risk Input for Optimisation**
+  - Implement: Portfolio covariance from library (e.g. Greeks + factor cov, or sample)
+  - Support: Same risk inputs as VaR and factor model where applicable
+  - Use case: Portfolio optimisation, factor-aware optimisation
+
+### 8.5 Tail Risk & Crisis Analytics
+- [ ] **CVaR / Expected Shortfall**
+  - Implement: Conditional VaR (expected shortfall) alongside VaR
+  - Support: Historical, parametric, or simulation-based
+  - Use case: Tail risk application project, risk reports
+
+- [ ] **Tail Dependence & Crisis Scenarios**
+  - Implement: Tail dependence metrics, crisis-regime scenarios (e.g. correlation breakdown)
+  - Support: Stress scenarios that include tail/crisis behaviour
+  - Use case: Tail risk & crisis analytics application project
+
+### 8.6 Real-Time Risk & Limit Monitoring
+- [ ] **Limit Monitoring & Alerts**
+  - Implement: Threshold checks (VaR, Greeks, exposure, PnL), breach detection, alert interface
+  - Support: Integration with streaming engine and risk aggregation
+  - Use case: Real-time risk dashboard application project
+
+### 8.7 Alternative Data for Alpha
+- [ ] **Alternative Data Adapters & Featurisation**
+  - Implement: Adapters for alternative data sources (e.g. sentiment, macro); featurisation into standard format
+  - Support: Output compatible with generic ML training pipeline (Phase 7.1)
+  - Use case: Alternative data alpha application project, ML strategies
+
+### 8.8 Market-Making / Quoting Simulator Components
+- [ ] **Spread & Inventory Model**
+  - Implement: Spread rule (e.g. around fair value from pricers), simple inventory penalty
+  - Support: Use by market-making simulator or RL quoting agent
+  - Use case: Options market-making application project
+
+### Deliverables (Phase 8):
+- [ ] Execution models, optimal execution, TCA metrics (8.1)
+- [ ] Factor exposure, factor cov/returns interface, factor attribution (8.2)
+- [ ] Variance swap analytics, dispersion, vol-of-vol (8.3)
+- [ ] Portfolio optimisation API, covariance input (8.4)
+- [ ] CVaR, tail dependence, crisis scenarios (8.5)
+- [ ] Limit monitoring and alerts (8.6)
+- [ ] Alternative data adapters and featurisation (8.7)
+- [ ] Spread/inventory model for market-making (8.8)
+
+**Impact:** Library supports execution, factor risk, vol trading, portfolio optimisation, tail risk, real-time monitoring, alt data, and market-making application projects.
+
+---
+
+## After Library Completion: Application Projects
+
+Once the core library is complete (Phases 1–8), the following **orchestrator/application projects** build on QuantStrata for production-style use cases. Each can be developed as a separate project (repo or subproject) that depends on the library.
+
+- **Projects 1–4** depend primarily on Phases 1–7 (option analytics, algo bot, GNN-LSTM pricer, Q-learning orchestrator).
+- **Projects 5–12** depend additionally on **Phase 8** (Quant Hedge Fund & Execution Extensions) for execution, factor risk, vol trading, portfolio optimisation, tail risk, real-time monitoring, alt data, and market-making components.
+
+### Application Project 1: Option Pricing Analytic Report & Visualisation
+- **Goal:** Comprehensive option pricing analytic report and visualisation for hedge fund risk management front office.
+- **Scope:** Most advanced analytics and plots: Greeks surfaces, vol surfaces, PnL attribution, VaR/CVaR, stress scenarios, scenario fan charts, portfolio-level risk dashboards.
+- **Library dependency:** Pricers, risk (attribution, VaR, stress), market data, calibration. Phase 5.6 (Advanced Analytics & Reporting) and 5.3 (Risk Infrastructure) feed this.
+- **Deliverable:** Orchestrator scripts + report generation (e.g. PDF/HTML) and interactive dashboards.
+
+### Application Project 2: Algorithmic Trading Bot
+- **Goal:** Algo trading bot connected to practice/live brokerage, with streaming data, strategy deployment, backtesting, and performance evaluation.
+- **Scope:** Streaming tick/bar data; connect to practice/live brokerage (paper and live modes); deploy strategies; backtest and evaluate performance; reports and plots; strategies can use ML/Q-learning from the library.
+- **Library dependency:** Backtesting (Phase 5.2), streaming & live data (Phase 5.5), brokerage adapter (Phase 5.5), m_learning/q_learning (Phase 7).
+- **Deliverable:** Trading bot application: data feed → StreamingEngine → strategy (incl. ML/RL) → order execution (paper/live) → performance reports and visualisations.
+
+### Application Project 3: Hybrid GNN-LSTM Full Revaluation Pricer
+- **Goal:** Production implementation of the Hybrid GNN-LSTM full revaluation pricer (partially built in the library).
+- **Scope:** Complete and harden `src/m_learning/models/gnn_rnn_hybrid/`; integrate with portfolio representation (trade graph, attributes); train and serve as full revaluation pricer; validate vs. library pricers.
+- **Library dependency:** m_learning (Phase 7.1), portfolio, pricers, market data.
+- **Deliverable:** Trained GNN-LSTM pricer service/model that can revalue portfolios using graph + time-series representation.
+
+### Application Project 4: Q-Learning Orchestrator Agent
+- **Goal:** Q-learning (RL) orchestrator that acts as an agent for delta hedging, algorithmic trading, and other cutting-edge applications.
+- **Scope:** RL agent(s) for delta hedging (e.g. minimise PnL variance vs. cost); algo trading agent (e.g. execution, strategy selection); orchestrator that runs agents against live/backtest environments using library pricers and risk.
+- **Library dependency:** q_learning (Phase 7.5), backtesting, streaming engine, pricers, risk.
+- **Deliverable:** RL agent framework + orchestrator scripts for delta hedging, algo trading, and extensible agent-based use cases.
+
+---
+
+### Application Project 5: Execution & Transaction Cost Analytics (TCA)
+- **Goal:** Execution quality analytics and TCA reporting for trading and algo strategies.
+- **Scope:** Optimal execution (e.g. Almgren-Chriss), market impact models, implementation shortfall, TCA metrics vs. benchmarks (VWAP, arrival price).
+- **Library dependency:** Phase 8.1 (execution cost models, optimal execution, TCA metrics), backtesting (5.2), streaming (5.5).
+- **Deliverable:** Execution models + TCA report generation and integration with algo bot / backtesting.
+
+### Application Project 6: Factor Risk Model & Factor Attribution
+- **Goal:** Multi-factor risk and factor-based PnL attribution for portfolio and risk reporting.
+- **Scope:** Factor exposures, factor covariance/returns, factor PnL attribution (“how much PnL from sector/momentum/vol?”); integration with existing scenario attribution.
+- **Library dependency:** Phase 8.2 (factor exposure, factor cov/returns, factor attribution), portfolio, risk (5.3), reporting (5.6).
+- **Deliverable:** Factor risk report and factor attribution outputs for risk dashboards and option analytics.
+
+### Application Project 7: Options Market-Making Simulator
+- **Goal:** Market-making simulator with inventory risk, bid/ask around fair value, and optional RL quoting agent.
+- **Scope:** Spread and inventory model; quoting logic (library pricers for fair value); optional RL agent for quote placement; backtest/simulate market-making PnL.
+- **Library dependency:** Phase 8.8 (spread/inventory model), pricers, calibration, risk, q_learning (7.5), backtesting.
+- **Deliverable:** Market-making simulator application: fair value → spread/inventory → quotes → optional RL → PnL and risk analytics.
+
+### Application Project 8: Volatility Trading & Variance Swap Analytics
+- **Goal:** Volatility trading analytics: variance swap pricing, dispersion, vol-of-vol, and vol surface relative value.
+- **Scope:** Variance swap / vol swap pricing; index vs single-name dispersion; vol-of-vol from library models; vol arbitrage analytics.
+- **Library dependency:** Phase 8.3 (variance swap, dispersion, vol-of-vol), Heston/SABR/local vol, calibration, risk.
+- **Deliverable:** Volatility trading analytics module and reports (variance swap, dispersion, surface analytics).
+
+### Application Project 9: Portfolio Construction & Optimisation
+- **Goal:** Portfolio optimisation and construction (mean-variance, risk parity, Black-Litterman) with constraints.
+- **Scope:** Mean-variance, risk parity, max Sharpe / min variance; turnover, sector, leverage constraints; optional Black-Litterman views; rebalance workflows.
+- **Library dependency:** Phase 8.4 (portfolio optimisation API, covariance input), portfolio, risk (5.3), backtesting.
+- **Deliverable:** Portfolio optimisation service and integration with strategy construction / algo bot rebalance.
+
+### Application Project 10: Tail Risk & Crisis Analytics
+- **Goal:** Tail risk and crisis-regime analytics beyond standard VaR/stress.
+- **Scope:** CVaR/expected shortfall, tail dependence, crisis-regime scenarios, correlation breakdown; reporting and visualisation.
+- **Library dependency:** Phase 8.5 (CVaR, tail dependence, crisis scenarios), risk (5.3), stress testing, reporting (5.6).
+- **Deliverable:** Tail risk and crisis analytics reports and dashboards (CVaR, tail dependence, crisis scenarios).
+
+### Application Project 11: Real-Time Risk & Intraday Limit Monitoring
+- **Goal:** Real-time risk dashboard and intraday limit monitoring.
+- **Scope:** Live Greeks, intraday VaR, limit checks (VaR, Greeks, exposure, PnL), breach alerts; optional margin/SIMM-style view.
+- **Library dependency:** Phase 8.6 (limit monitoring, alerts), streaming (5.5), pricers, risk (5.3), brokerage/positions.
+- **Deliverable:** Real-time risk dashboard: streaming data → library pricers/risk → limits and alerts.
+
+### Application Project 12: Alternative Data → Alpha / ML Pipeline
+- **Goal:** Alternative data ingestion, featurisation, and integration with ML/alpha research and backtesting.
+- **Scope:** Adapters for alternative data (e.g. sentiment, macro); featurisation into standard format; feed into generic ML pipeline and backtesting for alpha/strategy research.
+- **Library dependency:** Phase 8.7 (alt data adapters, featurisation), generic ML pipeline (7.1), backtesting (5.2), algo bot (Project 2).
+- **Deliverable:** Alternative data pipeline and integration with ML training and backtesting for alpha strategies.
 
 ---
 
@@ -855,11 +1158,13 @@ linear products that should be implemented before options on them (swaptions).
 | Phase 2 | Weeks 5-10 | Equity | 7+ equity products, equity infrastructure |
 | Phase 3 | Weeks 11-18 | Rates | 6+ rate products, Hull-White, LMM |
 | Phase 4 | Weeks 19-24 | Advanced Models | Jump-diffusion, SABR, multi-asset |
-| Phase 5 | Weeks 25-30 | Production | Calibration, backtesting, risk |
+| Phase 5 | Weeks 25-30+ | Production | Calibration, backtesting, risk, **streaming/live (5.5)**, **analytics/reports (5.6)** |
 | Phase 6 | Ongoing | Education | Tutorials, notebooks, docs |
-| Phase 7 | Weeks 31-36 | Advanced Topics | ML, exotics, credit/commodities |
+| Phase 7 | Weeks 31-36+ | Advanced Topics | ML, **GNN-LSTM pricer**, **Q-learning/RL agents (7.5)**, exotics, credit/commodities |
+| Phase 8 | After 7 | **Quant HF & Execution** | Execution/TCA (8.1), factor risk (8.2), vol trading (8.3), portfolio opt (8.4), tail risk (8.5), limit monitoring (8.6), alt data (8.7), market-making (8.8) |
+| *After library* | — | **Application Projects 1–12** | Option analytics, Algo bot, GNN-LSTM pricer, Q-learning orchestrator; **5** Execution/TCA, **6** Factor risk, **7** Market-making, **8** Vol trading, **9** Portfolio opt, **10** Tail risk, **11** Real-time risk, **12** Alt data alpha |
 
-**Total Timeline:** ~9 months for core functionality, ongoing for education/advanced topics
+**Total Timeline:** ~9 months for core functionality, ongoing for education/advanced topics; **Phase 8** (quant hedge fund & execution extensions) follows Phase 7; **application projects 1–12** (option report, algo bot, GNN-LSTM pricer, Q-learning orchestrator, execution/TCA, factor risk, market-making, vol trading, portfolio opt, tail risk, real-time risk, alt data alpha) follow library completion.
 
 ---
 
@@ -895,8 +1200,9 @@ This roadmap provides a **structured path** to building a **comprehensive, profe
 
 **Next Steps:**
 1. Review and prioritize phases
-2. Start with Phase 1 (FX enhancement)
+2. Complete remaining Phase 5 (risk, streaming 5.5, analytics 5.6, performance) and Phase 6–7
 3. Iterate based on learnings
 4. Maintain quality standards throughout
+5. **After library completion:** Complete Phase 8 (quant hedge fund & execution extensions) then build application projects 1–12 (option analytics, algo bot, GNN-LSTM pricer, Q-learning orchestrator, execution/TCA, factor risk, market-making, vol trading, portfolio opt, tail risk, real-time risk, alt data alpha)
 
 **The foundation is excellent. Time to build! 🚀**

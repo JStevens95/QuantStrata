@@ -4,6 +4,16 @@ Interactive Jupyter notebooks with worked examples covering calibration, pricing
 
 ---
 
+## Risk
+
+Risk infrastructure: VaR, Greeks aggregation, and stress testing.
+
+| Tutorial | Description |
+|----------|-------------|
+| [Risk Introduction](risk/risk_introduction.ipynb) | VaR (historical, parametric, MC), Greeks aggregation, stress scenarios |
+
+---
+
 ## Calibration
 
 Learn how to calibrate models to market data.
