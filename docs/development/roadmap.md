@@ -1,6 +1,6 @@
 # QuantStrata Development Roadmap
 
-**Last Updated:** January 27, 2026 (Phase 4.1 Complete - Advanced Stochastic Models)  
+**Last Updated:** January 27, 2026 (Phase 4.2 Complete - Advanced Numerical Methods)  
 **Current Version:** V1 (FX Derivatives Foundation)  
 **Target:** Comprehensive Professional Quant Library
 
@@ -477,22 +477,27 @@ linear products that should be implemented before options on them (swaptions).
 
 **Status:** Phase 4.1 COMPLETE. See `docs/development/progress/phase_4_1_advanced_stochastic_models.md`.
 
-### 4.2 Advanced Numerical Methods
-- [ ] **Adaptive Mesh Refinement (FD)**
-  - Implement: Adaptive grid refinement for FD
-  - Use case: Efficient pricing of path-dependent options
+### 4.2 Advanced Numerical Methods ✅
 
-- [ ] **Longstaff-Schwartz (LSM) for American**
-  - Implement: `LongstaffSchwartzPricer` (MC + regression)
-  - Use case: American options via MC (alternative to FD)
+- [x] **Longstaff-Schwartz (LSM) for American**
+  - Implemented: `lsm_american_put`, `lsm_american_call`, `price_american_put_lsm`
+  - Basis functions: Polynomial, Laguerre, Chebyshev
+  - Tests: 15 unit tests passing
 
-- [ ] **Quasi-Monte Carlo (QMC)**
-  - Implement: Sobol sequences for MC
-  - Use case: Faster convergence than pseudo-random
+- [x] **Quasi-Monte Carlo (QMC)**
+  - Implemented: `SobolRng`, `HaltonRng`, `qmc_european_call/put`
+  - Features: Scrambling, antithetic, path simulation
+  - Tests: 20 unit tests passing
 
-- [ ] **Importance Sampling**
-  - Implement: Variance reduction via importance sampling
-  - Use case: Rare event pricing (deep OTM options)
+- [x] **Importance Sampling**
+  - Implemented: `is_european_call/put`, `adaptive_is_european_call`
+  - Features: Optimal drift shift, variance reduction tracking
+  - Tests: 19 unit tests passing
+
+- [ ] **Adaptive Mesh Refinement (FD)** (deferred)
+  - Deferred to future phase
+
+**Status:** Phase 4.2 COMPLETE. See `docs/development/progress/phase_4_2_advanced_numerical_methods.md`.
 
 ### 4.3 Multi-Asset Products
 - [ ] **Basket Options**
@@ -514,7 +519,7 @@ linear products that should be implemented before options on them (swaptions).
 
 ### Deliverables:
 - ✅ 3 advanced models (Merton jump-diffusion, SABR, Variance Gamma) - 109 tests
-- [ ] Advanced numerical methods (Phase 4.2)
+- ✅ 3 advanced numerical methods (LSM, QMC, Importance Sampling) - 54 new tests
 - [ ] Multi-asset products (Phase 4.3)
 
 **Impact:** Demonstrates advanced quantitative skills and research-level understanding.

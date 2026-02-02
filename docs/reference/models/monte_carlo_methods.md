@@ -636,4 +636,33 @@ def mc_price_antithetic(S0, K, T, r, sigma, n_paths, payoff_func):
 
 ---
 
-*Document Version: 1.0 | QuantStrata Phase 1 | January 2026*
+---
+
+## Library Implementation
+
+The methods described in this document are implemented in QuantStrata:
+
+### Core Implementation
+
+| Method | Module | Key Functions |
+|--------|--------|---------------|
+| Standard MC | `src.models.numeric.monte_carlo.rng` | `NormalRng` |
+| Antithetic Variates | `src.models.numeric.monte_carlo.rng` | `standard_normals(antithetic=True)` |
+| Control Variates | `src.models.numeric.monte_carlo.control_variates` | See module |
+| Longstaff-Schwartz | `src.models.numeric.monte_carlo.lsm` | `lsm_american_put`, `price_american_put_lsm` |
+| Quasi-Monte Carlo | `src.models.numeric.monte_carlo.qmc` | `SobolRng`, `qmc_european_call` |
+| Importance Sampling | `src.models.numeric.monte_carlo.importance_sampling` | `is_european_put`, `is_european_call` |
+
+### User Guides
+
+- [LSM User Guide](../../guides/numerical_methods/lsm.md)
+- [QMC User Guide](../../guides/numerical_methods/qmc.md)
+- [Importance Sampling User Guide](../../guides/numerical_methods/importance_sampling.md)
+
+### Tutorial
+
+- [Advanced MC Methods Tutorial](../../tutorials/pricing/advanced_mc_methods.ipynb)
+
+---
+
+*Document Version: 2.0 | QuantStrata Phase 4.2 | January 2026*
