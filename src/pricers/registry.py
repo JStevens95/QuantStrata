@@ -58,6 +58,15 @@ from src.pricers.equity.european_bch import (
 # --- import ir analytic pricers (linear + non-linear)
 from src.pricers.ir.swap import IrSwapPricer, IrSwapPricerSimple
 from src.pricers.ir.fra import IrFraPricer, IrFraPricerSimple
+from src.pricers.ir.european_b76 import (
+    IrCapletEuropeanOptionB76Pricer, IrCapletEuropeanOptionB76PricerSimple,
+    IrFloorletEuropeanOptionB76Pricer, IrFloorletEuropeanOptionB76PricerSimple,
+    IrCapEuropeanOptionB76Pricer, IrCapEuropeanOptionB76PricerSimple,
+    IrFloorEuropeanOptionB76Pricer, IrFloorEuropeanOptionB76PricerSimple,
+)
+from src.pricers.ir.european_bch import (
+    IrSwaptionEuropeanOptionBchPricer, IrSwaptionEuropeanOptionBchPricerSimple,
+)
 
 # --- import FX numerical pricers ---
 from src.pricers.fx.european_mc import (
@@ -334,7 +343,19 @@ class DefaultPricerRegistry:
         ir_swp = IrSwapPricer()
         ir_swp_s = IrSwapPricerSimple()
 
-        eq_fwd = EquityForwardPricer()
+        # ---- 3.2. non-linear analytic pricers (Black76) ----
+        ir_caplet_b76 = IrCapletEuropeanOptionB76Pricer()
+        ir_caplet_b76_s = IrCapletEuropeanOptionB76PricerSimple()
+        ir_floorlet_b76 = IrFloorletEuropeanOptionB76Pricer()
+        ir_floorlet_b76_s = IrFloorletEuropeanOptionB76PricerSimple()
+        ir_cap_b76 = IrCapEuropeanOptionB76Pricer()
+        ir_cap_b76_s = IrCapEuropeanOptionB76PricerSimple()
+        ir_floor_b76 = IrFloorEuropeanOptionB76Pricer()
+        ir_floor_b76_s = IrFloorEuropeanOptionB76PricerSimple()
+
+        # ---- 3.3. non-linear analytic pricers (Bachelier) ----
+        ir_swaption_bch = IrSwaptionEuropeanOptionBchPricer()
+        ir_swaption_bch_s = IrSwaptionEuropeanOptionBchPricerSimple()
 
         # ============================================================================================================ #
         # ============================================================================================================ #
@@ -371,10 +392,25 @@ class DefaultPricerRegistry:
         reg.register(EquityLookbackEuropeanOption, eq_lookback_eur_mc)
 
         # ---- Register IR defaults ----
+        # Linear pricers
         reg.register(IrForwardRateAgreement, ir_fra)
         reg.register(IrForwardRateAgreementSimple, ir_fra_s)
         reg.register(IrSwap, ir_swp)
         reg.register(IrSwapSimple, ir_swp_s)
+
+        # Black76 pricers (caps/floors)
+        reg.register(IrCapletEuropeanOption, ir_caplet_b76)
+        reg.register(IrCapletEuropeanOptionSimple, ir_caplet_b76_s)
+        reg.register(IrFloorletEuropeanOption, ir_floorlet_b76)
+        reg.register(IrFloorletEuropeanOptionSimple, ir_floorlet_b76_s)
+        reg.register(IrCapEuropeanOption, ir_cap_b76)
+        reg.register(IrCapEuropeanOptionSimple, ir_cap_b76_s)
+        reg.register(IrFloorEuropeanOption, ir_floor_b76)
+        reg.register(IrFloorEuropeanOptionSimple, ir_floor_b76_s)
+
+        # Bachelier pricers (swaptions)
+        reg.register(IrSwaptionEuropeanOption, ir_swaption_bch)
+        reg.register(IrSwaptionEuropeanOptionSimple, ir_swaption_bch_s)
 
         # ============================================================================================================ #
         # ============================================================================================================ #
