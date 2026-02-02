@@ -8,6 +8,7 @@ This module contains pricers for interest rate derivatives:
 - Cap/Floor Black76 pricers
 - Bond option Black76 pricers
 - Swaption Bachelier pricers
+- Hull-White pricers (analytic, MC, FDE)
 """
 from src.pricers.ir.swap import IrSwapPricer, IrSwapPricerSimple
 from src.pricers.ir.fra import IrFraPricer, IrFraPricerSimple
@@ -36,6 +37,39 @@ from src.pricers.ir.european_bch import (
     IrSwaptionEuropeanOptionBchPricer,
     IrSwaptionEuropeanOptionBchPricerSimple,
 )
+from src.pricers.ir.european_hw import (
+    # Hull-White analytic pricers
+    IrBondZeroCouponHWPricerSimple,
+    IrBondZeroCouponHWPricer,
+    IrBondEuropeanOptionHWPricerSimple,
+    IrBondEuropeanOptionHWPricer,
+    IrCapletEuropeanOptionHWPricerSimple,
+    IrFloorletEuropeanOptionHWPricerSimple,
+    IrCapEuropeanOptionHWPricerSimple,
+    IrFloorEuropeanOptionHWPricerSimple,
+    IrSwaptionEuropeanOptionHWPricerSimple,
+)
+from src.pricers.ir.european_mc import (
+    # Hull-White MC pricers
+    MCConfig,
+    DEFAULT_MC_CONFIG,
+    MonteCarloEstimate,  # Re-export from base for convenience
+    IrBondZeroCouponMCPricerSimple,
+    IrBondEuropeanOptionMCPricerSimple,
+    IrCapletEuropeanOptionMCPricerSimple,
+    IrFloorletEuropeanOptionMCPricerSimple,
+    IrSwaptionEuropeanOptionMCPricerSimple,
+)
+from src.pricers.ir.european_fde import (
+    # Hull-White FDE pricers
+    FDConfig,
+    DEFAULT_FD_CONFIG,
+    HWGrid,
+    IrBondZeroCouponFDPricerSimple,
+    IrBondEuropeanOptionFDPricerSimple,
+    IrCapletEuropeanOptionFDPricerSimple,
+    IrFloorletEuropeanOptionFDPricerSimple,
+)
 
 __all__ = [
     # Linear pricers - FRA/Swap
@@ -63,4 +97,31 @@ __all__ = [
     # Bachelier pricers
     "IrSwaptionEuropeanOptionBchPricer",
     "IrSwaptionEuropeanOptionBchPricerSimple",
+    # Hull-White analytic pricers
+    "IrBondZeroCouponHWPricerSimple",
+    "IrBondZeroCouponHWPricer",
+    "IrBondEuropeanOptionHWPricerSimple",
+    "IrBondEuropeanOptionHWPricer",
+    "IrCapletEuropeanOptionHWPricerSimple",
+    "IrFloorletEuropeanOptionHWPricerSimple",
+    "IrCapEuropeanOptionHWPricerSimple",
+    "IrFloorEuropeanOptionHWPricerSimple",
+    "IrSwaptionEuropeanOptionHWPricerSimple",
+    # Hull-White MC pricers
+    "MCConfig",
+    "DEFAULT_MC_CONFIG",
+    "MonteCarloEstimate",  # Base MC result type
+    "IrBondZeroCouponMCPricerSimple",
+    "IrBondEuropeanOptionMCPricerSimple",
+    "IrCapletEuropeanOptionMCPricerSimple",
+    "IrFloorletEuropeanOptionMCPricerSimple",
+    "IrSwaptionEuropeanOptionMCPricerSimple",
+    # Hull-White FDE pricers
+    "FDConfig",
+    "DEFAULT_FD_CONFIG",
+    "HWGrid",
+    "IrBondZeroCouponFDPricerSimple",
+    "IrBondEuropeanOptionFDPricerSimple",
+    "IrCapletEuropeanOptionFDPricerSimple",
+    "IrFloorletEuropeanOptionFDPricerSimple",
 ]

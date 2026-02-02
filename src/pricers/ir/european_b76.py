@@ -76,17 +76,8 @@ GreekName = Literal["delta", "gamma", "vega", "theta", "rho"]
 # =============================================================================
 
 
-def _rate_from_df(*, df: float, t: float) -> float:
-    """
-    Convert discount factor to continuously-compounded rate.
-    
-    df = exp(-rT) => r = -ln(df)/T
-    """
-    if t <= 0.0:
-        return 0.0
-    if df <= 0.0:
-        raise ValueError(f"Discount factor must be > 0; got {df}.")
-    return float(-math.log(df) / t)
+# Import common rate utility.
+from src.core.math.rates import rate_from_df as _rate_from_df
 
 
 def _forward_rate_from_dfs(

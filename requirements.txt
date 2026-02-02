@@ -1,6 +1,19 @@
-numpy == 2.4.0
-pytest == 9.0.2
-matplotlib == 3.10.8
-QuantLib == 1.40
-tensorflow == 2.20.0
-scipy == 1.17.0
+# QuantStrata Requirements
+# ========================
+# Python 3.12+ required (uses dataclass slots=True feature from Python 3.10)
+
+# Core numerical libraries
+numpy >= 2.0.0
+scipy >= 1.12.0
+
+# Testing
+pytest >= 8.0.0
+
+# Visualization
+matplotlib >= 3.8.0
+
+# Optional: QuantLib for validation
+# QuantLib >= 1.40
+
+# Optional: Machine learning
+# tensorflow >= 2.15.0

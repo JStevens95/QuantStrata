@@ -34,29 +34,8 @@ from src.models.payoffs.factory import build_payoff_1d, require_terminal_payoff
 from src.models.payoffs.base import BasePayoff1D
 
 
-def _rate_from_df(*, df: float, t: float) -> float:
-    """
-    Convert discount factor to continuously-compounded rate.
-
-    df = exp(-r × T) => r = -ln(df) / T
-
-    Parameters
-    ----------
-    df : float
-        Discount factor
-    t : float
-        Time to maturity in years
-
-    Returns
-    -------
-    float
-        Continuously compounded rate
-    """
-    if t <= 0.0:
-        return 0.0
-    if df <= 0.0:
-        raise ValueError(f"Discount factor must be > 0; got {df}.")
-    return float(-math.log(df) / t)
+# Import common rate utility.
+from src.core.math.rates import rate_from_df as _rate_from_df
 
 
 def _terminal_value(payoff: BasePayoff1D, spot: float) -> float:

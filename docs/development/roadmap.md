@@ -1,6 +1,6 @@
 # QuantStrata Development Roadmap
 
-**Last Updated:** January 27, 2026 (Phase 3.4 Complete - Bond Instruments)  
+**Last Updated:** January 27, 2026 (Phase 3.5 Complete - Hull-White Model)  
 **Current Version:** V1 (FX Derivatives Foundation)  
 **Target:** Comprehensive Professional Quant Library
 
@@ -364,51 +364,73 @@ linear products that should be implemented before options on them (swaptions).
 
 **Status:** Phase 3.4 COMPLETE. See `docs/development/progress/phase_3_4_bond_instruments.md` for details.
 
-### 3.5 Rate Models
+### 3.5 Hull-White Model ✅
 
-- [ ] **Hull-White Model**
-  - Implement: `HullWhiteDynamics` (1F short rate model)
-  - MC pricer: Simulate short rate paths
-  - FD pricer: 1D PDE in short rate
-  - Calibration: To cap/swaption prices
-  - Use case: Demonstrates short rate modeling, enables IR MC/FD
+- [x] **Hull-White Model Core**
+  - Implemented: `HullWhiteParameters`, `HullWhiteDynamics`, `HullWhiteSimulation`
+  - Simulation: Exact OU and Euler schemes with antithetic variates
+  - Analytic: ZC bond pricing, bond option pricing (closed-form)
+  - Features: Mean reversion, Gaussian distribution, term structure fitting
+  - Tests: 37 model tests
 
-- [ ] **Black-Karasinski Model** (Optional)
+- [x] **Hull-White Analytic Pricers**
+  - `IrBondZeroCouponHWPricerSimple` - ZC bond pricing
+  - `IrBondEuropeanOptionHWPricerSimple` - Bond option pricing
+  - `IrCapletEuropeanOptionHWPricerSimple` - Caplet pricing
+  - `IrFloorletEuropeanOptionHWPricerSimple` - Floorlet pricing
+  - `IrSwaptionEuropeanOptionHWPricerSimple` - Swaption (Jamshidian)
+
+- [x] **Hull-White Monte Carlo Pricers**
+  - `IrBondZeroCouponMCPricerSimple` - ZC bonds via MC
+  - `IrBondEuropeanOptionMCPricerSimple` - Bond options via MC
+  - `IrCapletEuropeanOptionMCPricerSimple` - Caplets via MC
+  - `IrSwaptionEuropeanOptionMCPricerSimple` - Swaptions via MC
+  - Features: Configurable paths/steps, variance reduction, std error
+
+- [x] **Hull-White Finite Difference Pricers**
+  - `IrBondZeroCouponFDPricerSimple` - ZC bonds via FDE
+  - `IrBondEuropeanOptionFDPricerSimple` - Bond options via FDE
+  - Features: Crank-Nicolson, configurable grid, Thomas algorithm
+
+- [x] **Documentation**
+  - `docs/guides/models/hull_white.md` - Technical guide
+  - `docs/development/progress/phase_3_5_hull_white.md` - Progress report
+
+**Status:** Phase 3.5 COMPLETE. See `docs/development/progress/phase_3_5_hull_white.md` for details.
+
+### 3.6 Black-Karasinski & Rate Infrastructure
+
+- [ ] **Black-Karasinski Model** (3.6.1)
   - Implement: `BlackKarasinskiDynamics` (log-normal short rate)
   - MC pricer: Simulate log-rate paths
   - Use case: Alternative short rate model (positive rates only)
 
-- [ ] **LIBOR Market Model (LMM)** (Advanced, Optional)
-  - Implement: `LiborMarketModel` (multi-factor)
-  - MC pricer: Simulate forward rates
-  - Use case: Industry-standard rates model
+- [ ] **Rate Market Data Enhancement** (3.6.2)
+  - Swaption vol surface generation
+  - Cap/floor vol surfaces
+  - Enhanced IR generators
 
-### 3.6 Rate Market Data & Infrastructure
-
-- [ ] **Day Count Conventions**
-  - Implement: ACT/360, ACT/365, 30/360, ACT/ACT
-  - Use case: Required for proper IR pricing
-
-- [ ] **Rate Curve Provider**
-  - Extend: `SyntheticProvider` for rates
-  - Generate: Yield curves (various shapes: flat, upward, inverted)
-  - Generate: Swaption vol surfaces (normal vol)
-  - Use case: Testing and examples
-
-- [ ] **Enhanced Rate Curve Bootstrapping**
+- [ ] **Rate Curve Bootstrapping** (3.6.3)
   - Enhance: Multi-instrument bootstrapping
   - Support: Deposits, FRAs, swaps, OIS
   - Validation: Smoothness, arbitrage checks
-  - Use case: Production curve construction
+
+### 3.7 LIBOR Market Model (Advanced)
+
+- [ ] **LMM Implementation**
+  - Implement: `LiborMarketModel` (multi-factor)
+  - MC pricer: Simulate forward rates
+  - Use case: Industry-standard rates model
 
 ### Deliverables:
 - [x] Complete Black76 pricers (FX forward options, futures options, caps/floors)
 - [x] Linear IR instruments (FRA, IRS) - 36 tests passing
 - [x] Complete Bachelier pricers (swaptions, spread options) - 45 tests passing
 - [x] Bond instruments and options (zero coupon, fixed rate, bond options) - 40 tests passing
-- [ ] Hull-White model with calibration (enables IR MC/FD)
+- [x] Hull-White model (analytic, MC, FDE pricers) - 60 tests passing
+- [ ] Black-Karasinski model
 - [ ] Rate market data infrastructure
-- [ ] Examples, tests, and documentation
+- [ ] LMM (advanced)
 
 **Impact:** Demonstrates ability to handle complex, multi-factor models. Rates are a key differentiator for quant libraries.
 
