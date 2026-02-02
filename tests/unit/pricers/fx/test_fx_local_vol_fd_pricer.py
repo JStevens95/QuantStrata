@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 from scipy.stats import norm
 
-from src.pricers.fx.local_vol_fde import FxLocalVolFdPricer
+from src.pricers.fx.local_vol_fde import FxLocalVolEuropeanOptionFdPricer
 from src.marketdata.surfaces.local_vol_surface import FlatLocalVolSurface, LocalVolSurface
 
 
@@ -50,13 +50,13 @@ def bs_put_price(S: float, K: float, T: float, r: float, q: float, sigma: float)
 # Configuration Tests
 # =============================================================================
 
-class TestFxLocalVolFdPricerConfig:
+class TestFxLocalVolEuropeanOptionFdPricerConfig:
     """Tests for pricer configuration."""
 
     def test_default_config(self) -> None:
         """Test default configuration values."""
         local_vol = FlatLocalVolSurface(sigma=0.20)
-        pricer = FxLocalVolFdPricer(local_vol_surface=local_vol)
+        pricer = FxLocalVolEuropeanOptionFdPricer(local_vol_surface=local_vol)
         assert pricer.n_space == 401
         assert pricer.n_time_steps == 200
         assert pricer.n_std == 6.0
@@ -66,7 +66,7 @@ class TestFxLocalVolFdPricerConfig:
     def test_custom_config(self) -> None:
         """Test custom configuration."""
         local_vol = FlatLocalVolSurface(sigma=0.20)
-        pricer = FxLocalVolFdPricer(
+        pricer = FxLocalVolEuropeanOptionFdPricer(
             local_vol_surface=local_vol,
             n_space=201,
             n_time_steps=100,
@@ -83,27 +83,27 @@ class TestFxLocalVolFdPricerConfig:
         """Test that n_space < 10 raises ValueError."""
         local_vol = FlatLocalVolSurface(sigma=0.20)
         with pytest.raises(ValueError, match="n_space must be >= 10"):
-            FxLocalVolFdPricer(local_vol_surface=local_vol, n_space=5)
+            FxLocalVolEuropeanOptionFdPricer(local_vol_surface=local_vol, n_space=5)
 
     def test_invalid_n_time_steps_zero(self) -> None:
         """Test that n_time_steps < 1 raises ValueError."""
         local_vol = FlatLocalVolSurface(sigma=0.20)
         with pytest.raises(ValueError, match="n_time_steps must be >= 1"):
-            FxLocalVolFdPricer(local_vol_surface=local_vol, n_time_steps=0)
+            FxLocalVolEuropeanOptionFdPricer(local_vol_surface=local_vol, n_time_steps=0)
 
     def test_invalid_n_std_negative(self) -> None:
         """Test that n_std <= 0 raises ValueError."""
         local_vol = FlatLocalVolSurface(sigma=0.20)
         with pytest.raises(ValueError, match="n_std must be > 0"):
-            FxLocalVolFdPricer(local_vol_surface=local_vol, n_std=-1.0)
+            FxLocalVolEuropeanOptionFdPricer(local_vol_surface=local_vol, n_std=-1.0)
 
     def test_invalid_theta_out_of_bounds(self) -> None:
         """Test that theta outside [0, 1] raises ValueError."""
         local_vol = FlatLocalVolSurface(sigma=0.20)
         with pytest.raises(ValueError, match="theta must be in"):
-            FxLocalVolFdPricer(local_vol_surface=local_vol, theta=-0.1)
+            FxLocalVolEuropeanOptionFdPricer(local_vol_surface=local_vol, theta=-0.1)
         with pytest.raises(ValueError, match="theta must be in"):
-            FxLocalVolFdPricer(local_vol_surface=local_vol, theta=1.5)
+            FxLocalVolEuropeanOptionFdPricer(local_vol_surface=local_vol, theta=1.5)
 
 
 # =============================================================================
@@ -114,16 +114,16 @@ class TestLocalVolFdPricingFlatVol:
     """Tests for pricing with flat local vol (should match Black-Scholes)."""
 
     @pytest.fixture
-    def pricer(self) -> FxLocalVolFdPricer:
+    def pricer(self) -> FxLocalVolEuropeanOptionFdPricer:
         """Create pricer with flat local vol."""
         local_vol = FlatLocalVolSurface(sigma=0.20)
-        return FxLocalVolFdPricer(
+        return FxLocalVolEuropeanOptionFdPricer(
             local_vol_surface=local_vol,
             n_space=201,
             n_time_steps=100,
         )
 
-    def test_atm_call_price(self, pricer: FxLocalVolFdPricer) -> None:
+    def test_atm_call_price(self, pricer: FxLocalVolEuropeanOptionFdPricer) -> None:
         """Test ATM call price matches BSM."""
         spot = 100.0
         strike = 100.0
@@ -141,7 +141,7 @@ class TestLocalVolFdPricingFlatVol:
         # Should be very close (within 0.1% or 1bp)
         assert fd_price == pytest.approx(bs_price, rel=0.001, abs=0.01)
 
-    def test_atm_put_price(self, pricer: FxLocalVolFdPricer) -> None:
+    def test_atm_put_price(self, pricer: FxLocalVolEuropeanOptionFdPricer) -> None:
         """Test ATM put price matches BSM."""
         spot = 100.0
         strike = 100.0
@@ -158,7 +158,7 @@ class TestLocalVolFdPricingFlatVol:
 
         assert fd_price == pytest.approx(bs_price, rel=0.001, abs=0.01)
 
-    def test_itm_call_price(self, pricer: FxLocalVolFdPricer) -> None:
+    def test_itm_call_price(self, pricer: FxLocalVolEuropeanOptionFdPricer) -> None:
         """Test ITM call price matches BSM."""
         spot = 100.0
         strike = 90.0
@@ -175,7 +175,7 @@ class TestLocalVolFdPricingFlatVol:
 
         assert fd_price == pytest.approx(bs_price, rel=0.002, abs=0.02)
 
-    def test_otm_call_price(self, pricer: FxLocalVolFdPricer) -> None:
+    def test_otm_call_price(self, pricer: FxLocalVolEuropeanOptionFdPricer) -> None:
         """Test OTM call price matches BSM."""
         spot = 100.0
         strike = 110.0
@@ -192,7 +192,7 @@ class TestLocalVolFdPricingFlatVol:
 
         assert fd_price == pytest.approx(bs_price, rel=0.01, abs=0.01)
 
-    def test_put_call_parity(self, pricer: FxLocalVolFdPricer) -> None:
+    def test_put_call_parity(self, pricer: FxLocalVolEuropeanOptionFdPricer) -> None:
         """Test put-call parity is satisfied."""
         spot = 100.0
         strike = 100.0
@@ -239,7 +239,7 @@ class TestLocalVolFdPricingVaryingVol:
                 local_vols[i, j] = base_vol + smile_curvature * moneyness
 
         lv_surface = LocalVolSurface(times=times, spots=spots, local_vols=local_vols)
-        pricer = FxLocalVolFdPricer(
+        pricer = FxLocalVolEuropeanOptionFdPricer(
             local_vol_surface=lv_surface,
             n_space=201,
             n_time_steps=100,
@@ -267,7 +267,7 @@ class TestLocalVolFdPricingVaryingVol:
         ])
 
         lv_surface = LocalVolSurface(times=times, spots=spots, local_vols=local_vols)
-        pricer = FxLocalVolFdPricer(
+        pricer = FxLocalVolEuropeanOptionFdPricer(
             local_vol_surface=lv_surface,
             n_space=201,
             n_time_steps=100,
@@ -288,12 +288,12 @@ class TestLocalVolFdEdgeCases:
     """Tests for edge cases."""
 
     @pytest.fixture
-    def pricer(self) -> FxLocalVolFdPricer:
+    def pricer(self) -> FxLocalVolEuropeanOptionFdPricer:
         """Create default pricer."""
         local_vol = FlatLocalVolSurface(sigma=0.20)
-        return FxLocalVolFdPricer(local_vol_surface=local_vol, n_space=201, n_time_steps=50)
+        return FxLocalVolEuropeanOptionFdPricer(local_vol_surface=local_vol, n_space=201, n_time_steps=50)
 
-    def test_zero_maturity_call(self, pricer: FxLocalVolFdPricer) -> None:
+    def test_zero_maturity_call(self, pricer: FxLocalVolEuropeanOptionFdPricer) -> None:
         """Test that T=0 returns intrinsic value for call."""
         spot = 100.0
         strike = 100.0
@@ -304,7 +304,7 @@ class TestLocalVolFdEdgeCases:
         )
         assert price == pytest.approx(max(spot - strike, 0.0), abs=1e-6)
 
-    def test_zero_maturity_put(self, pricer: FxLocalVolFdPricer) -> None:
+    def test_zero_maturity_put(self, pricer: FxLocalVolEuropeanOptionFdPricer) -> None:
         """Test that T=0 returns intrinsic value for put."""
         spot = 100.0
         strike = 100.0
@@ -315,7 +315,7 @@ class TestLocalVolFdEdgeCases:
         )
         assert price == pytest.approx(max(strike - spot, 0.0), abs=1e-6)
 
-    def test_deep_itm_call(self, pricer: FxLocalVolFdPricer) -> None:
+    def test_deep_itm_call(self, pricer: FxLocalVolEuropeanOptionFdPricer) -> None:
         """Test deep ITM call pricing."""
         spot = 100.0
         strike = 50.0
@@ -330,7 +330,7 @@ class TestLocalVolFdEdgeCases:
         intrinsic = forward - strike
         assert price > intrinsic * 0.95  # Should be close to intrinsic
 
-    def test_deep_otm_call(self, pricer: FxLocalVolFdPricer) -> None:
+    def test_deep_otm_call(self, pricer: FxLocalVolEuropeanOptionFdPricer) -> None:
         """Test deep OTM call pricing."""
         spot = 100.0
         strike = 200.0
@@ -344,7 +344,7 @@ class TestLocalVolFdEdgeCases:
         assert price >= 0
         assert price < 1.0  # Should be very small
 
-    def test_invalid_spot_zero(self, pricer: FxLocalVolFdPricer) -> None:
+    def test_invalid_spot_zero(self, pricer: FxLocalVolEuropeanOptionFdPricer) -> None:
         """Test that spot=0 raises ValueError."""
         with pytest.raises(ValueError, match="spot must be > 0"):
             pricer.price_european(
@@ -352,7 +352,7 @@ class TestLocalVolFdEdgeCases:
                 domestic_rate=0.05, foreign_rate=0.02, option_type="call"
             )
 
-    def test_invalid_strike_zero(self, pricer: FxLocalVolFdPricer) -> None:
+    def test_invalid_strike_zero(self, pricer: FxLocalVolEuropeanOptionFdPricer) -> None:
         """Test that strike=0 raises ValueError."""
         with pytest.raises(ValueError, match="strike must be > 0"):
             pricer.price_european(
@@ -360,7 +360,7 @@ class TestLocalVolFdEdgeCases:
                 domestic_rate=0.05, foreign_rate=0.02, option_type="call"
             )
 
-    def test_invalid_maturity_negative(self, pricer: FxLocalVolFdPricer) -> None:
+    def test_invalid_maturity_negative(self, pricer: FxLocalVolEuropeanOptionFdPricer) -> None:
         """Test that negative maturity raises ValueError."""
         with pytest.raises(ValueError, match="maturity must be >= 0"):
             pricer.price_european(
@@ -386,7 +386,7 @@ class TestLocalVolFdConvergence:
         r_f = 0.02
 
         # Coarse grid
-        pricer_coarse = FxLocalVolFdPricer(
+        pricer_coarse = FxLocalVolEuropeanOptionFdPricer(
             local_vol_surface=local_vol,
             n_space=101,
             n_time_steps=50,
@@ -397,7 +397,7 @@ class TestLocalVolFdConvergence:
         )
 
         # Fine grid
-        pricer_fine = FxLocalVolFdPricer(
+        pricer_fine = FxLocalVolEuropeanOptionFdPricer(
             local_vol_surface=local_vol,
             n_space=401,
             n_time_steps=200,
@@ -426,7 +426,7 @@ class TestLocalVolFdInputTypes:
     def test_flat_local_vol_surface(self) -> None:
         """Test with FlatLocalVolSurface."""
         local_vol = FlatLocalVolSurface(sigma=0.25)
-        pricer = FxLocalVolFdPricer(local_vol_surface=local_vol, n_space=101, n_time_steps=50)
+        pricer = FxLocalVolEuropeanOptionFdPricer(local_vol_surface=local_vol, n_space=101, n_time_steps=50)
 
         price = pricer.price_european(
             spot=100.0, strike=100.0, maturity=0.5,
@@ -444,7 +444,7 @@ class TestLocalVolFdInputTypes:
             [0.20, 0.18, 0.16],
         ])
         local_vol = LocalVolSurface(times=times, spots=spots, local_vols=local_vols)
-        pricer = FxLocalVolFdPricer(local_vol_surface=local_vol, n_space=101, n_time_steps=50)
+        pricer = FxLocalVolEuropeanOptionFdPricer(local_vol_surface=local_vol, n_space=101, n_time_steps=50)
 
         price = pricer.price_european(
             spot=100.0, strike=100.0, maturity=0.5,
@@ -458,7 +458,7 @@ class TestLocalVolFdInputTypes:
             """Simple local vol function."""
             return 0.20 + 0.01 * (spot - 100.0) / 100.0
 
-        pricer = FxLocalVolFdPricer(local_vol_surface=local_vol_func, n_space=101, n_time_steps=50)
+        pricer = FxLocalVolEuropeanOptionFdPricer(local_vol_surface=local_vol_func, n_space=101, n_time_steps=50)
 
         price = pricer.price_european(
             spot=100.0, strike=100.0, maturity=0.5,
@@ -468,7 +468,7 @@ class TestLocalVolFdInputTypes:
 
     def test_constant_float_local_vol(self) -> None:
         """Test with constant float (treated as constant vol)."""
-        pricer = FxLocalVolFdPricer(local_vol_surface=0.20, n_space=101, n_time_steps=50)
+        pricer = FxLocalVolEuropeanOptionFdPricer(local_vol_surface=0.20, n_space=101, n_time_steps=50)
 
         price = pricer.price_european(
             spot=100.0, strike=100.0, maturity=0.5,

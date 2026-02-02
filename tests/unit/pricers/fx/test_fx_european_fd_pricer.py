@@ -9,11 +9,11 @@ import numpy as np
 import pytest
 
 from src.marketdata.core.ids import MarketId
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
-from src.instruments.fx.options.digital import EuropeanFxDigitalOption
+from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
+from src.instruments.fx.options.digital import FxDigitalEuropeanOption
 
-from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer, FxEuropeanDigitalBsmPricer
-from src.pricers.fx.european_fde import FxEuropeanVanillaFdPricer, FxEuropeanDigitalFdPricer
+from src.pricers.fx.european_bsm import FxVanillaEuropeanOptionBsmPricer, FxDigitalEuropeanOptionBsmPricer
+from src.pricers.fx.european_fde import FxVanillaEuropeanOptionFdPricer, FxDigitalEuropeanOptionFdPricer
 
 from src.models.payoffs.vanilla import VanillaPayoff
 from src.models.payoffs.digital import DigitalCashPayoff, DigitalAssetPayoff
@@ -150,7 +150,7 @@ def test_fx_vanilla_fd_price_close_to_bsm(
     This also indirectly checks payoff-library integration because the FD pricer
     uses `VanillaPayoff` as its terminal condition.
     """
-    trade = EuropeanFxVanillaOption(
+    trade = FxVanillaEuropeanOption(
         option_type=option_type,  # type: ignore[arg-type]
         notional=float(base_params["notional"]),
         strike=float(base_params["strike"]),
@@ -161,8 +161,8 @@ def test_fx_vanilla_fd_price_close_to_bsm(
         foreign_curve_id=ids["rf"],
     )
 
-    bsm = FxEuropeanVanillaBsmPricer()
-    fd = FxEuropeanVanillaFdPricer(
+    bsm = FxVanillaEuropeanOptionBsmPricer()
+    fd = FxVanillaEuropeanOptionFdPricer(
         n_space=401,
         n_time_steps=200,
         n_std=6.0,
@@ -196,7 +196,7 @@ def test_fx_vanilla_fd_put_call_parity(
     df_d = math.exp(-rd * t)
     df_f = math.exp(-rf * t)
 
-    call = EuropeanFxVanillaOption(
+    call = FxVanillaEuropeanOption(
         option_type="call",
         notional=n,
         strike=k,
@@ -206,7 +206,7 @@ def test_fx_vanilla_fd_put_call_parity(
         domestic_curve_id=ids["rd"],
         foreign_curve_id=ids["rf"],
     )
-    put = EuropeanFxVanillaOption(
+    put = FxVanillaEuropeanOption(
         option_type="put",
         notional=n,
         strike=k,
@@ -217,7 +217,7 @@ def test_fx_vanilla_fd_put_call_parity(
         foreign_curve_id=ids["rf"],
     )
 
-    fd = FxEuropeanVanillaFdPricer(n_space=401, n_time_steps=200, theta=0.5, use_log_space=True)
+    fd = FxVanillaEuropeanOptionFdPricer(n_space=401, n_time_steps=200, theta=0.5, use_log_space=True)
 
     pv_call = float(fd.price(call, market))
     pv_put = float(fd.price(put, market))
@@ -241,7 +241,7 @@ def test_fx_vanilla_fd_t0_matches_payoff_library(
 
     mkt = _make_market(ids, p)
 
-    trade = EuropeanFxVanillaOption(
+    trade = FxVanillaEuropeanOption(
         option_type="call",
         notional=float(p["notional"]),
         strike=float(p["strike"]),
@@ -256,7 +256,7 @@ def test_fx_vanilla_fd_t0_matches_payoff_library(
     expected_per_unit = float(payoff.terminal(np.asarray([float(p["spot"])], dtype=np.float64))[0])
     expected = float(p["notional"]) * expected_per_unit
 
-    fd = FxEuropeanVanillaFdPricer()
+    fd = FxVanillaEuropeanOptionFdPricer()
     pv_fd = float(fd.price(trade, mkt))
 
     assert pv_fd == pytest.approx(expected, rel=0.0, abs=0.0)
@@ -281,7 +281,7 @@ def test_fx_vanilla_fd_zero_vol_matches_discounted_deterministic_forward(
     rf = float(p["rf"])
     n = float(p["notional"])
 
-    trade = EuropeanFxVanillaOption(
+    trade = FxVanillaEuropeanOption(
         option_type="put",
         notional=n,
         strike=K,
@@ -299,7 +299,7 @@ def test_fx_vanilla_fd_zero_vol_matches_discounted_deterministic_forward(
     expected_per_unit = float(payoff.terminal(np.asarray([F0], dtype=np.float64))[0])
     expected = n * disc * expected_per_unit
 
-    fd = FxEuropeanVanillaFdPricer()
+    fd = FxVanillaEuropeanOptionFdPricer()
     pv_fd = float(fd.price(trade, mkt))
 
     assert pv_fd == pytest.approx(expected, rel=0.0, abs=0.0)
@@ -321,7 +321,7 @@ def test_fx_digital_fd_cash_price_close_to_bsm(
 
     Note: digitals converge more slowly (discontinuity at K), so tolerance is looser.
     """
-    trade = EuropeanFxDigitalOption(
+    trade = FxDigitalEuropeanOption(
         option_type=option_type,  # type: ignore[arg-type]
         payoff="cash",
         payout_amount=float(base_params["cash_payout"]),
@@ -333,8 +333,8 @@ def test_fx_digital_fd_cash_price_close_to_bsm(
         foreign_curve_id=ids["rf"],
     )
 
-    bsm = FxEuropeanDigitalBsmPricer()
-    fd = FxEuropeanDigitalFdPricer(
+    bsm = FxDigitalEuropeanOptionBsmPricer()
+    fd = FxDigitalEuropeanOptionFdPricer(
         n_space=801,
         n_time_steps=400,
         n_std=7.0,
@@ -358,7 +358,7 @@ def test_fx_digital_fd_asset_price_close_to_bsm(
     """
     Asset-or-nothing digital FD price should be reasonably close to analytic BSM digital asset.
     """
-    trade = EuropeanFxDigitalOption(
+    trade = FxDigitalEuropeanOption(
         option_type=option_type,  # type: ignore[arg-type]
         payoff="asset",
         payout_amount=float(base_params["asset_units"]),
@@ -370,8 +370,8 @@ def test_fx_digital_fd_asset_price_close_to_bsm(
         foreign_curve_id=ids["rf"],
     )
 
-    bsm = FxEuropeanDigitalBsmPricer()
-    fd = FxEuropeanDigitalFdPricer(
+    bsm = FxDigitalEuropeanOptionBsmPricer()
+    fd = FxDigitalEuropeanOptionFdPricer(
         n_space=801,
         n_time_steps=400,
         n_std=7.0,
@@ -409,7 +409,7 @@ def test_fx_digital_fd_t0_matches_payoff_library(
 
     mkt = _make_market(ids, p)
 
-    trade = EuropeanFxDigitalOption(
+    trade = FxDigitalEuropeanOption(
         option_type=option_type,  # type: ignore[arg-type]
         payoff=payoff_type,       # type: ignore[arg-type]
         payout_amount=float(p["cash_payout"] if payoff_type == "cash" else p["asset_units"]),
@@ -431,7 +431,7 @@ def test_fx_digital_fd_t0_matches_payoff_library(
 
     expected = float(payoff.terminal(np.asarray([S0], dtype=np.float64))[0])
 
-    fd = FxEuropeanDigitalFdPricer()
+    fd = FxDigitalEuropeanOptionFdPricer()
     pv_fd = float(fd.price(trade, mkt))
 
     assert pv_fd == pytest.approx(expected, rel=0.0, abs=0.0)
@@ -469,7 +469,7 @@ def test_fx_digital_fd_zero_vol_matches_discounted_deterministic_forward(
 
     payout = float(p["cash_payout"] if payoff_type == "cash" else p["asset_units"])
 
-    trade = EuropeanFxDigitalOption(
+    trade = FxDigitalEuropeanOption(
         option_type=option_type,  # type: ignore[arg-type]
         payoff=payoff_type,       # type: ignore[arg-type]
         payout_amount=payout,
@@ -491,7 +491,7 @@ def test_fx_digital_fd_zero_vol_matches_discounted_deterministic_forward(
 
     expected = disc * float(payoff.terminal(np.asarray([F0], dtype=np.float64))[0])
 
-    fd = FxEuropeanDigitalFdPricer()
+    fd = FxDigitalEuropeanOptionFdPricer()
     pv_fd = float(fd.price(trade, mkt))
 
     assert pv_fd == pytest.approx(expected, rel=0.0, abs=1e-12)

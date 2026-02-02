@@ -6,11 +6,11 @@ from dataclasses import is_dataclass
 from typing import Any, Dict, Optional, Sequence, Tuple
 
 
-from src.pricers.fx.european_bsm import FxEuropeanDigitalBsmPricer, FxEuropeanVanillaBsmPricer
-from src.pricers.fx.european_fde import FxEuropeanDigitalFdPricer, FxEuropeanVanillaFdPricer
+from src.pricers.fx.european_bsm import FxDigitalEuropeanOptionBsmPricer, FxVanillaEuropeanOptionBsmPricer
+from src.pricers.fx.european_fde import FxDigitalEuropeanOptionFdPricer, FxVanillaEuropeanOptionFdPricer
 
-from src.instruments.fx.options.digital import EuropeanFxDigitalOption
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
+from src.instruments.fx.options.digital import FxDigitalEuropeanOption
+from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
 
 
 # =============================================================================
@@ -130,11 +130,11 @@ def make_vanilla_trade(
     dom_curve_id: str = "DOM",
     for_curve_id: str = "FOR",
     vol_id: str = "VOL",
-) -> EuropeanFxVanillaOption:
+) -> FxVanillaEuropeanOption:
     """
-    Build a EuropeanFxVanillaOption even if field names differ slightly across refactors.
+    Build a FxVanillaEuropeanOption even if field names differ slightly across refactors.
     """
-    cls = EuropeanFxVanillaOption
+    cls = FxVanillaEuropeanOption
     fields = set(cls.__dataclass_fields__.keys())  # type: ignore[attr-defined]
     kw: Dict[str, Any] = {}
 
@@ -162,11 +162,11 @@ def make_digital_trade(
     dom_curve_id: str = "DOM",
     for_curve_id: str = "FOR",
     vol_id: str = "VOL",
-) -> EuropeanFxDigitalOption:
+) -> FxDigitalEuropeanOption:
     """
     Build a EuropeanFxDigitalOption even if field names differ slightly across refactors.
     """
-    cls = EuropeanFxDigitalOption
+    cls = FxDigitalEuropeanOption
     fields = set(cls.__dataclass_fields__.keys())  # type: ignore[attr-defined]
     kw: Dict[str, Any] = {}
 
@@ -190,8 +190,8 @@ def make_digital_trade(
 
 def _try_import_mc() -> Optional[Tuple[Any, Any]]:
     try:
-        from src.pricers.fx.european_mc import FxEuropeanVanillaMcPricer, FxEuropeanDigitalMcPricer  # type: ignore
-        return FxEuropeanVanillaMcPricer, FxEuropeanDigitalMcPricer
+        from src.pricers.fx.european_mc import FxVanillaEuropeanOptionMcPricer, FxDigitalEuropeanOptionMcPricer  # type: ignore
+        return FxVanillaEuropeanOptionMcPricer, FxDigitalEuropeanOptionMcPricer
     except Exception:
         return None
 
@@ -214,8 +214,8 @@ def test_vanilla_pv_bsm_vs_fd_parity(option_type: str, K_mult: float, T: float, 
     market = _TestMarket(spot=S0, r_d=r_d, r_f=r_f, sigma=sigma)
     trade = make_vanilla_trade(option_type=option_type, strike=K, expiry=T, notional=notional)
 
-    bsm = FxEuropeanVanillaBsmPricer()
-    fd = FxEuropeanVanillaFdPricer(
+    bsm = FxVanillaEuropeanOptionBsmPricer()
+    fd = FxVanillaEuropeanOptionFdPricer(
         n_space=501,
         n_time_steps=250,
         n_std=6.0,
@@ -264,8 +264,8 @@ def test_digital_pv_bsm_vs_fd_parity(
         expiry=T,
     )
 
-    bsm = FxEuropeanDigitalBsmPricer()
-    fd = FxEuropeanDigitalFdPricer(
+    bsm = FxDigitalEuropeanOptionBsmPricer()
+    fd = FxDigitalEuropeanOptionFdPricer(
         n_space=901,
         n_time_steps=450,
         n_std=7.0,
@@ -301,8 +301,8 @@ def test_vanilla_greeks_bsm_vs_fd_parity(option_type: str, K_mult: float, T: flo
     market = _TestMarket(spot=S0, r_d=r_d, r_f=r_f, sigma=sigma)
     trade = make_vanilla_trade(option_type=option_type, strike=K, expiry=T, notional=notional)
 
-    bsm = FxEuropeanVanillaBsmPricer()
-    fd = FxEuropeanVanillaFdPricer(
+    bsm = FxVanillaEuropeanOptionBsmPricer()
+    fd = FxVanillaEuropeanOptionFdPricer(
         n_space=601,
         n_time_steps=300,
         n_std=6.0,
@@ -353,7 +353,7 @@ def test_vanilla_pv_bsm_vs_mc_parity_if_available(option_type: str, K_mult: floa
     market = _TestMarket(spot=S0, r_d=r_d, r_f=r_f, sigma=sigma)
     trade = make_vanilla_trade(option_type=option_type, strike=K, expiry=T, notional=notional)
 
-    bsm = FxEuropeanVanillaBsmPricer()
+    bsm = FxVanillaEuropeanOptionBsmPricer()
     mc = FxEuropeanVanillaMcPricer(
         n_paths=250_000,
         seed=123,

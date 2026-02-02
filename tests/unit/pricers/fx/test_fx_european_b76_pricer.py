@@ -25,12 +25,12 @@ from src.marketdata.surfaces.vol_surface import FlatVolSurface
 from src.marketdata.curves.term_structure import FlatZeroRateCurve
 
 from src.instruments.fx.options.forward import (
-    EuropeanFxForwardOption,
-    EuropeanFxForwardOptionSimple,
+    FxForwardEuropeanOption,
+    FxForwardEuropeanOptionSimple,
 )
 from src.pricers.fx.european_b76 import (
-    FxForwardOptionBlack76Pricer,
-    FxForwardOptionBlack76PricerSimple,
+    FxForwardEuropeanOptionB76Pricer,
+    FxForwardEuropeanOptionB76PricerSimple,
 )
 
 
@@ -80,13 +80,13 @@ def base_market(market_ids):
 @pytest.fixture
 def pricer():
     """Create Black76 pricer."""
-    return FxForwardOptionBlack76Pricer()
+    return FxForwardEuropeanOptionB76Pricer()
 
 
 @pytest.fixture
 def simple_pricer():
     """Create simple Black76 pricer."""
-    return FxForwardOptionBlack76PricerSimple()
+    return FxForwardEuropeanOptionB76PricerSimple()
 
 
 # =============================================================================
@@ -94,13 +94,13 @@ def simple_pricer():
 # =============================================================================
 
 
-class TestEuropeanFxForwardOptionValidation:
+class TestFxForwardEuropeanOptionValidation:
     """Test instrument validation."""
 
     def test_invalid_option_type(self, market_ids):
         """Should reject invalid option type."""
         with pytest.raises(ValueError, match="option_type"):
-            EuropeanFxForwardOption(
+            FxForwardEuropeanOption(
                 option_type="invalid",
                 notional=1_000_000,
                 strike=1.12,
@@ -115,7 +115,7 @@ class TestEuropeanFxForwardOptionValidation:
     def test_zero_notional(self, market_ids):
         """Should reject zero notional."""
         with pytest.raises(ValueError, match="notional"):
-            EuropeanFxForwardOption(
+            FxForwardEuropeanOption(
                 option_type="call",
                 notional=0.0,
                 strike=1.12,
@@ -130,7 +130,7 @@ class TestEuropeanFxForwardOptionValidation:
     def test_negative_strike(self, market_ids):
         """Should reject negative strike."""
         with pytest.raises(ValueError, match="strike"):
-            EuropeanFxForwardOption(
+            FxForwardEuropeanOption(
                 option_type="call",
                 notional=1_000_000,
                 strike=-1.12,
@@ -145,7 +145,7 @@ class TestEuropeanFxForwardOptionValidation:
     def test_forward_expiry_before_option_expiry(self, market_ids):
         """Should reject forward_expiry < expiry."""
         with pytest.raises(ValueError, match="forward_expiry"):
-            EuropeanFxForwardOption(
+            FxForwardEuropeanOption(
                 option_type="call",
                 notional=1_000_000,
                 strike=1.12,
@@ -168,7 +168,7 @@ class TestFxForwardOptionBlack76Pricing:
 
     def test_call_price_positive(self, market_ids, base_market, pricer):
         """Call price should be positive."""
-        option = EuropeanFxForwardOption(
+        option = FxForwardEuropeanOption(
             option_type="call",
             notional=1_000_000,
             strike=1.12,
@@ -186,7 +186,7 @@ class TestFxForwardOptionBlack76Pricing:
 
     def test_put_price_positive(self, market_ids, base_market, pricer):
         """Put price should be positive."""
-        option = EuropeanFxForwardOption(
+        option = FxForwardEuropeanOption(
             option_type="put",
             notional=1_000_000,
             strike=1.12,
@@ -204,7 +204,7 @@ class TestFxForwardOptionBlack76Pricing:
 
     def test_notional_scaling(self, market_ids, base_market, pricer):
         """Price should scale linearly with notional."""
-        option_1m = EuropeanFxForwardOption(
+        option_1m = FxForwardEuropeanOption(
             option_type="call",
             notional=1_000_000,
             strike=1.12,
@@ -216,7 +216,7 @@ class TestFxForwardOptionBlack76Pricing:
             foreign_curve_id=market_ids["for_curve"],
         )
 
-        option_2m = EuropeanFxForwardOption(
+        option_2m = FxForwardEuropeanOption(
             option_type="call",
             notional=2_000_000,
             strike=1.12,
@@ -265,7 +265,7 @@ class TestPutCallParity:
         # Use forward as strike (ATM forward).
         strike = forward
 
-        call = EuropeanFxForwardOption(
+        call = FxForwardEuropeanOption(
             option_type="call",
             notional=1.0,
             strike=strike,
@@ -277,7 +277,7 @@ class TestPutCallParity:
             foreign_curve_id=market_ids["for_curve"],
         )
 
-        put = EuropeanFxForwardOption(
+        put = FxForwardEuropeanOption(
             option_type="put",
             notional=1.0,
             strike=strike,
@@ -306,7 +306,7 @@ class TestPutCallParity:
         strikes = [1.05, 1.10, 1.12, 1.15, 1.20, 1.25]
 
         for strike in strikes:
-            call = EuropeanFxForwardOption(
+            call = FxForwardEuropeanOption(
                 option_type="call",
                 notional=1.0,
                 strike=strike,
@@ -318,7 +318,7 @@ class TestPutCallParity:
                 foreign_curve_id=market_ids["for_curve"],
             )
 
-            put = EuropeanFxForwardOption(
+            put = FxForwardEuropeanOption(
                 option_type="put",
                 notional=1.0,
                 strike=strike,
@@ -350,7 +350,7 @@ class TestGreeks:
 
     def test_greeks_exist(self, market_ids, base_market, pricer):
         """All Greeks should be computed."""
-        option = EuropeanFxForwardOption(
+        option = FxForwardEuropeanOption(
             option_type="call",
             notional=1_000_000,
             strike=1.12,
@@ -378,7 +378,7 @@ class TestGreeks:
 
     def test_call_delta_positive(self, market_ids, base_market, pricer):
         """Call delta should be positive."""
-        option = EuropeanFxForwardOption(
+        option = FxForwardEuropeanOption(
             option_type="call",
             notional=1_000_000,
             strike=1.12,
@@ -397,7 +397,7 @@ class TestGreeks:
 
     def test_put_delta_negative(self, market_ids, base_market, pricer):
         """Put delta should be negative."""
-        option = EuropeanFxForwardOption(
+        option = FxForwardEuropeanOption(
             option_type="put",
             notional=1_000_000,
             strike=1.12,
@@ -416,7 +416,7 @@ class TestGreeks:
 
     def test_gamma_positive(self, market_ids, base_market, pricer):
         """Gamma should be positive for both calls and puts."""
-        call = EuropeanFxForwardOption(
+        call = FxForwardEuropeanOption(
             option_type="call",
             notional=1_000_000,
             strike=1.12,
@@ -428,7 +428,7 @@ class TestGreeks:
             foreign_curve_id=market_ids["for_curve"],
         )
 
-        put = EuropeanFxForwardOption(
+        put = FxForwardEuropeanOption(
             option_type="put",
             notional=1_000_000,
             strike=1.12,
@@ -448,7 +448,7 @@ class TestGreeks:
 
     def test_vega_positive(self, market_ids, base_market, pricer):
         """Vega should be positive for both calls and puts."""
-        call = EuropeanFxForwardOption(
+        call = FxForwardEuropeanOption(
             option_type="call",
             notional=1_000_000,
             strike=1.12,
@@ -495,7 +495,7 @@ class TestFiniteDifferenceValidation:
                 },
             )
 
-        option = EuropeanFxForwardOption(
+        option = FxForwardEuropeanOption(
             option_type="call",
             notional=1.0,
             strike=1.12,
@@ -541,7 +541,7 @@ class TestFiniteDifferenceValidation:
                 },
             )
 
-        option = EuropeanFxForwardOption(
+        option = FxForwardEuropeanOption(
             option_type="call",
             notional=1.0,
             strike=1.12,
@@ -585,7 +585,7 @@ class TestSimplePricer:
         vol = 0.08
 
         # Full pricer option.
-        option_full = EuropeanFxForwardOption(
+        option_full = FxForwardEuropeanOption(
             option_type="call",
             notional=1_000_000,
             strike=1.12,
@@ -598,7 +598,7 @@ class TestSimplePricer:
         )
 
         # Simple pricer option.
-        option_simple = EuropeanFxForwardOptionSimple(
+        option_simple = FxForwardEuropeanOptionSimple(
             option_type="call",
             notional=1_000_000,
             strike=1.12,
@@ -615,7 +615,7 @@ class TestSimplePricer:
 
     def test_simple_greeks(self, simple_pricer):
         """Simple pricer should compute Greeks."""
-        option = EuropeanFxForwardOptionSimple(
+        option = FxForwardEuropeanOptionSimple(
             option_type="call",
             notional=1_000_000,
             strike=1.12,
@@ -648,7 +648,7 @@ class TestEdgeCases:
         forward = 1.10 * math.exp((0.05 - 0.03) * 0.0)  # = 1.10
         strike = 1.08  # ITM call
 
-        option = EuropeanFxForwardOption(
+        option = FxForwardEuropeanOption(
             option_type="call",
             notional=1.0,
             strike=strike,
@@ -676,7 +676,7 @@ class TestEdgeCases:
         df = math.exp(-r_d * t)
         strike = 0.90  # Very deep ITM
 
-        option = EuropeanFxForwardOption(
+        option = FxForwardEuropeanOption(
             option_type="call",
             notional=1.0,
             strike=strike,
@@ -698,7 +698,7 @@ class TestEdgeCases:
         """Deep OTM call should be close to zero."""
         strike = 1.50  # Very deep OTM
 
-        option = EuropeanFxForwardOption(
+        option = FxForwardEuropeanOption(
             option_type="call",
             notional=1.0,
             strike=strike,

@@ -8,23 +8,23 @@ import numpy as np
 import pytest
 
 from src.marketdata.core.ids import MarketId
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
-from src.instruments.fx.options.digital import EuropeanFxDigitalOption
-from src.instruments.fx.options.barrier import EuropeanFxBarrierOption
-from src.instruments.fx.options.asian import EuropeanFxAsianOption
-from src.instruments.fx.options.lookback import EuropeanFxLookbackOption
+from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
+from src.instruments.fx.options.digital import FxDigitalEuropeanOption
+from src.instruments.fx.options.barrier import FxBarrierEuropeanOption
+from src.instruments.fx.options.asian import FxAsianEuropeanOption
+from src.instruments.fx.options.lookback import FxLookbackEuropeanOption
 
 from src.pricers.fx.european_bsm import (
-    FxEuropeanVanillaBsmPricer,
-    FxEuropeanDigitalBsmPricer,
+    FxVanillaEuropeanOptionBsmPricer,
+    FxDigitalEuropeanOptionBsmPricer,
     _rate_from_df
 )
 from src.pricers.fx.european_mc import (
-    FxEuropeanVanillaMcPricer,
-    FxEuropeanDigitalMcPricer,
-    FxEuropeanBarrierMcPricer,
-    FxEuropeanAsianMcPricer,
-    FxEuropeanLookbackMcPricer,
+    FxVanillaEuropeanOptionMcPricer,
+    FxDigitalEuropeanOptionMcPricer,
+    FxBarrierEuropeanOptionMcPricer,
+    FxAsianEuropeanOptionMcPricer,
+    FxLookbackEuropeanOptionMcPricer,
 )
 
 from src.models.payoffs.barrier import SingleBarrierPayoff
@@ -175,7 +175,7 @@ def test_fx_vanilla_mc_price_is_close_to_bsm(
     market: _DummyMarket,
     option_type: str,
 ) -> None:
-    trade = EuropeanFxVanillaOption(
+    trade = FxVanillaEuropeanOption(
         option_type=option_type,  # type: ignore[arg-type]
         notional=float(base_params["notional"]),
         strike=float(base_params["strike"]),
@@ -186,8 +186,8 @@ def test_fx_vanilla_mc_price_is_close_to_bsm(
         foreign_curve_id=ids["rf"],
     )
 
-    bsm = FxEuropeanVanillaBsmPricer()
-    mc = FxEuropeanVanillaMcPricer(n_paths=120_000, seed=7, antithetic=True)
+    bsm = FxVanillaEuropeanOptionBsmPricer()
+    mc = FxVanillaEuropeanOptionMcPricer(n_paths=120_000, seed=7, antithetic=True)
 
     pv_bsm = float(bsm.price(trade, market))
     pv_mc = float(mc.price(trade, market))
@@ -203,7 +203,7 @@ def test_fx_vanilla_mc_scales_linearly_with_notional(
     notional_1 = float(base_params["notional"])
     notional_2 = 2.0 * notional_1
 
-    trade_1 = EuropeanFxVanillaOption(
+    trade_1 = FxVanillaEuropeanOption(
         option_type="call",
         notional=notional_1,
         strike=float(base_params["strike"]),
@@ -213,7 +213,7 @@ def test_fx_vanilla_mc_scales_linearly_with_notional(
         domestic_curve_id=ids["rd"],
         foreign_curve_id=ids["rf"],
     )
-    trade_2 = EuropeanFxVanillaOption(
+    trade_2 = FxVanillaEuropeanOption(
         option_type="call",
         notional=notional_2,
         strike=float(base_params["strike"]),
@@ -224,8 +224,8 @@ def test_fx_vanilla_mc_scales_linearly_with_notional(
         foreign_curve_id=ids["rf"],
     )
 
-    pv_1 = float(FxEuropeanVanillaMcPricer(n_paths=80_000, seed=11, antithetic=True).price(trade_1, market))
-    pv_2 = float(FxEuropeanVanillaMcPricer(n_paths=80_000, seed=11, antithetic=True).price(trade_2, market))
+    pv_1 = float(FxVanillaEuropeanOptionMcPricer(n_paths=80_000, seed=11, antithetic=True).price(trade_1, market))
+    pv_2 = float(FxVanillaEuropeanOptionMcPricer(n_paths=80_000, seed=11, antithetic=True).price(trade_2, market))
 
     assert pv_2 == pytest.approx(2.0 * pv_1, rel=1e-12, abs=1e-6)
 
@@ -235,7 +235,7 @@ def test_fx_vanilla_mc_is_reproducible_for_same_seed(
     base_params: Dict[str, float],
     market: _DummyMarket,
 ) -> None:
-    trade = EuropeanFxVanillaOption(
+    trade = FxVanillaEuropeanOption(
         option_type="put",
         notional=float(base_params["notional"]),
         strike=float(base_params["strike"]),
@@ -246,8 +246,8 @@ def test_fx_vanilla_mc_is_reproducible_for_same_seed(
         foreign_curve_id=ids["rf"],
     )
 
-    pv_a = float(FxEuropeanVanillaMcPricer(n_paths=50_000, seed=999, antithetic=True).price(trade, market))
-    pv_b = float(FxEuropeanVanillaMcPricer(n_paths=50_000, seed=999, antithetic=True).price(trade, market))
+    pv_a = float(FxVanillaEuropeanOptionMcPricer(n_paths=50_000, seed=999, antithetic=True).price(trade, market))
+    pv_b = float(FxVanillaEuropeanOptionMcPricer(n_paths=50_000, seed=999, antithetic=True).price(trade, market))
 
     assert pv_a == pytest.approx(pv_b, rel=0.0, abs=0.0)
 
@@ -257,7 +257,7 @@ def test_fx_vanilla_mc_changes_with_different_seed(
     base_params: Dict[str, float],
     market: _DummyMarket,
 ) -> None:
-    trade = EuropeanFxVanillaOption(
+    trade = FxVanillaEuropeanOption(
         option_type="call",
         notional=float(base_params["notional"]),
         strike=float(base_params["strike"]),
@@ -268,8 +268,8 @@ def test_fx_vanilla_mc_changes_with_different_seed(
         foreign_curve_id=ids["rf"],
     )
 
-    pv_a = float(FxEuropeanVanillaMcPricer(n_paths=40_000, seed=1, antithetic=True).price(trade, market))
-    pv_b = float(FxEuropeanVanillaMcPricer(n_paths=40_000, seed=2, antithetic=True).price(trade, market))
+    pv_a = float(FxVanillaEuropeanOptionMcPricer(n_paths=40_000, seed=1, antithetic=True).price(trade, market))
+    pv_b = float(FxVanillaEuropeanOptionMcPricer(n_paths=40_000, seed=2, antithetic=True).price(trade, market))
 
     assert pv_a != pv_b
 
@@ -292,7 +292,7 @@ def test_fx_vanilla_mc_schemes_are_reasonable_vs_bsm(
     n_steps: int,
     rel_tol: float,
 ) -> None:
-    trade = EuropeanFxVanillaOption(
+    trade = FxVanillaEuropeanOption(
         option_type=option_type,  # type: ignore[arg-type]
         notional=float(base_params["notional"]),
         strike=float(base_params["strike"]),
@@ -303,10 +303,10 @@ def test_fx_vanilla_mc_schemes_are_reasonable_vs_bsm(
         foreign_curve_id=ids["rf"],
     )
 
-    bsm = FxEuropeanVanillaBsmPricer()
+    bsm = FxVanillaEuropeanOptionBsmPricer()
     pv_bsm = float(bsm.price(trade, market))
 
-    mc = FxEuropeanVanillaMcPricer(
+    mc = FxVanillaEuropeanOptionMcPricer(
         n_paths=120_000,
         seed=123,
         antithetic=True,
@@ -333,7 +333,7 @@ def test_fx_digital_cash_mc_price_is_close_to_bsm(
 ) -> None:
     payout = 10_000.0  # domestic cash amount
 
-    trade = EuropeanFxDigitalOption(
+    trade = FxDigitalEuropeanOption(
         option_type=option_type,  # type: ignore[arg-type]
         payoff="cash",
         payout_amount=float(payout),
@@ -345,8 +345,8 @@ def test_fx_digital_cash_mc_price_is_close_to_bsm(
         foreign_curve_id=ids["rf"],
     )
 
-    bsm = FxEuropeanDigitalBsmPricer()
-    mc = FxEuropeanDigitalMcPricer(n_paths=250_000, seed=7, antithetic=True)
+    bsm = FxDigitalEuropeanOptionBsmPricer()
+    mc = FxDigitalEuropeanOptionMcPricer(n_paths=250_000, seed=7, antithetic=True)
 
     pv_bsm = float(bsm.price(trade, market))
     sim = mc.run(trade, market, store_paths=False)
@@ -365,7 +365,7 @@ def test_fx_digital_asset_mc_price_is_close_to_bsm(
 ) -> None:
     asset_units = 20_000.0  # foreign units
 
-    trade = EuropeanFxDigitalOption(
+    trade = FxDigitalEuropeanOption(
         option_type=option_type,  # type: ignore[arg-type]
         payoff="asset",
         payout_amount=float(asset_units),
@@ -377,8 +377,8 @@ def test_fx_digital_asset_mc_price_is_close_to_bsm(
         foreign_curve_id=ids["rf"],
     )
 
-    bsm = FxEuropeanDigitalBsmPricer()
-    mc = FxEuropeanDigitalMcPricer(n_paths=250_000, seed=7, antithetic=True)
+    bsm = FxDigitalEuropeanOptionBsmPricer()
+    mc = FxDigitalEuropeanOptionMcPricer(n_paths=250_000, seed=7, antithetic=True)
 
     pv_bsm = float(bsm.price(trade, market))
     sim = mc.run(trade, market, store_paths=False)
@@ -392,7 +392,7 @@ def test_fx_digital_mc_is_reproducible_for_same_seed(
     base_params: Dict[str, float],
     market: _DummyMarket,
 ) -> None:
-    trade = EuropeanFxDigitalOption(
+    trade = FxDigitalEuropeanOption(
         option_type="call",
         payoff="cash",
         payout_amount=5_000.0,
@@ -404,8 +404,8 @@ def test_fx_digital_mc_is_reproducible_for_same_seed(
         foreign_curve_id=ids["rf"],
     )
 
-    pv_a = float(FxEuropeanDigitalMcPricer(n_paths=120_000, seed=777, antithetic=True).price(trade, market))
-    pv_b = float(FxEuropeanDigitalMcPricer(n_paths=120_000, seed=777, antithetic=True).price(trade, market))
+    pv_a = float(FxDigitalEuropeanOptionMcPricer(n_paths=120_000, seed=777, antithetic=True).price(trade, market))
+    pv_b = float(FxDigitalEuropeanOptionMcPricer(n_paths=120_000, seed=777, antithetic=True).price(trade, market))
     assert pv_a == pytest.approx(pv_b, rel=0.0, abs=0.0)
 
 
@@ -414,7 +414,7 @@ def test_fx_digital_mc_changes_with_different_seed(
     base_params: Dict[str, float],
     market: _DummyMarket,
 ) -> None:
-    trade = EuropeanFxDigitalOption(
+    trade = FxDigitalEuropeanOption(
         option_type="put",
         payoff="asset",
         payout_amount=10_000.0,
@@ -426,8 +426,8 @@ def test_fx_digital_mc_changes_with_different_seed(
         foreign_curve_id=ids["rf"],
     )
 
-    pv_a = float(FxEuropeanDigitalMcPricer(n_paths=90_000, seed=1, antithetic=True).price(trade, market))
-    pv_b = float(FxEuropeanDigitalMcPricer(n_paths=90_000, seed=2, antithetic=True).price(trade, market))
+    pv_a = float(FxDigitalEuropeanOptionMcPricer(n_paths=90_000, seed=1, antithetic=True).price(trade, market))
+    pv_b = float(FxDigitalEuropeanOptionMcPricer(n_paths=90_000, seed=2, antithetic=True).price(trade, market))
     assert pv_a != pv_b
 
 
@@ -445,7 +445,7 @@ def test_fx_digital_cash_call_put_parity_mc(
     rd = float(base_params["rd"])
     df_d = math.exp(-rd * t)
 
-    call = EuropeanFxDigitalOption(
+    call = FxDigitalEuropeanOption(
         option_type="call",
         payoff="cash",
         payout_amount=payout,
@@ -456,7 +456,7 @@ def test_fx_digital_cash_call_put_parity_mc(
         domestic_curve_id=ids["rd"],
         foreign_curve_id=ids["rf"],
     )
-    put = EuropeanFxDigitalOption(
+    put = FxDigitalEuropeanOption(
         option_type="put",
         payoff="cash",
         payout_amount=payout,
@@ -468,7 +468,7 @@ def test_fx_digital_cash_call_put_parity_mc(
         foreign_curve_id=ids["rf"],
     )
 
-    mc = FxEuropeanDigitalMcPricer(n_paths=300_000, seed=42, antithetic=True)
+    mc = FxDigitalEuropeanOptionMcPricer(n_paths=300_000, seed=42, antithetic=True)
 
     sim_c = mc.run(call, market, store_paths=False)
     sim_p = mc.run(put, market, store_paths=False)
@@ -500,7 +500,7 @@ def test_fx_digital_asset_call_put_parity_mc(
     rf = float(base_params["rf"])
     df_f = math.exp(-rf * t)
 
-    call = EuropeanFxDigitalOption(
+    call = FxDigitalEuropeanOption(
         option_type="call",
         payoff="asset",
         payout_amount=asset_units,
@@ -511,7 +511,7 @@ def test_fx_digital_asset_call_put_parity_mc(
         domestic_curve_id=ids["rd"],
         foreign_curve_id=ids["rf"],
     )
-    put = EuropeanFxDigitalOption(
+    put = FxDigitalEuropeanOption(
         option_type="put",
         payoff="asset",
         payout_amount=asset_units,
@@ -523,7 +523,7 @@ def test_fx_digital_asset_call_put_parity_mc(
         foreign_curve_id=ids["rf"],
     )
 
-    mc = FxEuropeanDigitalMcPricer(n_paths=300_000, seed=99, antithetic=True)
+    mc = FxDigitalEuropeanOptionMcPricer(n_paths=300_000, seed=99, antithetic=True)
 
     sim_c = mc.run(call, market, store_paths=False)
     sim_p = mc.run(put, market, store_paths=False)
@@ -575,7 +575,7 @@ def test_fx_digital_mc_price_at_expiry_is_deterministic(
 
     payout_amount = 5.0 if payoff == "cash" else 2.0
 
-    trade = EuropeanFxDigitalOption(
+    trade = FxDigitalEuropeanOption(
         option_type=option_type,  # type: ignore[arg-type]
         payoff=payoff,            # type: ignore[arg-type]
         payout_amount=float(payout_amount),
@@ -587,7 +587,7 @@ def test_fx_digital_mc_price_at_expiry_is_deterministic(
         foreign_curve_id=ids["rf"],
     )
 
-    mc = FxEuropeanDigitalMcPricer(n_paths=10_000, seed=1, antithetic=True)
+    mc = FxDigitalEuropeanOptionMcPricer(n_paths=10_000, seed=1, antithetic=True)
     pv = float(mc.price(trade, market0))
 
     assert pv == pytest.approx(float(expected_domestic), rel=0.0, abs=0.0)
@@ -608,8 +608,8 @@ def _make_barrier_trade(
     barrier_style: str,
     barrier_level: float,
     rebate_amount: float,
-) -> EuropeanFxBarrierOption:
-    return EuropeanFxBarrierOption(
+) -> FxBarrierEuropeanOption:
+    return FxBarrierEuropeanOption(
         option_type=option_type,  # type: ignore[arg-type]
         notional=float(notional),
         strike=float(strike),
@@ -708,7 +708,7 @@ def test_fx_barrier_mc_zero_vol_matches_discounted_deterministic_path(
     # Use multiple steps so discrete monitoring is meaningful.
     n_steps = 64
 
-    mc = FxEuropeanBarrierMcPricer(
+    mc = FxBarrierEuropeanOptionMcPricer(
         n_paths=50_000,
         seed=7,
         antithetic=True,
@@ -775,7 +775,7 @@ def test_fx_barrier_mc_scales_linearly_with_notional(
         rebate_amount=0.0,
     )
 
-    mc = FxEuropeanBarrierMcPricer(
+    mc = FxBarrierEuropeanOptionMcPricer(
         n_paths=120_000,
         seed=123,
         antithetic=True,
@@ -808,7 +808,7 @@ def test_fx_barrier_mc_is_reproducible_for_same_seed(
     )
 
     pv_a = float(
-        FxEuropeanBarrierMcPricer(
+        FxBarrierEuropeanOptionMcPricer(
             n_paths=80_000,
             seed=999,
             antithetic=True,
@@ -817,7 +817,7 @@ def test_fx_barrier_mc_is_reproducible_for_same_seed(
         ).price(trade, market)
     )
     pv_b = float(
-        FxEuropeanBarrierMcPricer(
+        FxBarrierEuropeanOptionMcPricer(
             n_paths=80_000,
             seed=999,
             antithetic=True,
@@ -847,8 +847,8 @@ def test_fx_barrier_mc_changes_with_different_seed(
         rebate_amount=0.02,
     )
 
-    pv_a = float(FxEuropeanBarrierMcPricer(n_paths=60_000, seed=1, antithetic=True, n_steps=64, scheme="exact").price(trade, market))  # type: ignore[arg-type]
-    pv_b = float(FxEuropeanBarrierMcPricer(n_paths=60_000, seed=2, antithetic=True, n_steps=64, scheme="exact").price(trade, market))  # type: ignore[arg-type]
+    pv_a = float(FxBarrierEuropeanOptionMcPricer(n_paths=60_000, seed=1, antithetic=True, n_steps=64, scheme="exact").price(trade, market))  # type: ignore[arg-type]
+    pv_b = float(FxBarrierEuropeanOptionMcPricer(n_paths=60_000, seed=2, antithetic=True, n_steps=64, scheme="exact").price(trade, market))  # type: ignore[arg-type]
 
     assert pv_a != pv_b
 
@@ -886,7 +886,7 @@ def test_fx_barrier_mc_price_at_expiry_is_deterministic(
         rebate_amount=0.25,  # domestic per unit notional
     )
 
-    mc = FxEuropeanBarrierMcPricer(n_paths=10_000, seed=1, antithetic=True, n_steps=1, scheme="exact")  # type: ignore[arg-type]
+    mc = FxBarrierEuropeanOptionMcPricer(n_paths=10_000, seed=1, antithetic=True, n_steps=1, scheme="exact")  # type: ignore[arg-type]
     pv = float(mc.price(trade, market0))
 
     expected = float(trade.notional) * float(trade.rebate_amount)
@@ -911,7 +911,7 @@ def test_fx_asian_mc_price_is_positive(
 
     This is a basic sanity check: option prices should never be negative.
     """
-    trade = EuropeanFxAsianOption(
+    trade = FxAsianEuropeanOption(
         option_type=option_type,  # type: ignore[arg-type]
         notional=float(base_params["notional"]),
         strike=float(base_params["strike"]),
@@ -923,7 +923,7 @@ def test_fx_asian_mc_price_is_positive(
         foreign_curve_id=ids["rf"],
     )
 
-    pricer = FxEuropeanAsianMcPricer(n_paths=50_000, seed=7, antithetic=True, n_steps=64)
+    pricer = FxAsianEuropeanOptionMcPricer(n_paths=50_000, seed=7, antithetic=True, n_steps=64)
     pv = float(pricer.price(trade, market))
 
     assert pv >= 0.0
@@ -941,7 +941,7 @@ def test_fx_asian_mc_is_reproducible_for_same_seed(
 
     This ensures deterministic behavior, which is important for testing and debugging.
     """
-    trade = EuropeanFxAsianOption(
+    trade = FxAsianEuropeanOption(
         option_type=option_type,  # type: ignore[arg-type]
         notional=float(base_params["notional"]),
         strike=float(base_params["strike"]),
@@ -953,8 +953,8 @@ def test_fx_asian_mc_is_reproducible_for_same_seed(
         foreign_curve_id=ids["rf"],
     )
 
-    pricer_a = FxEuropeanAsianMcPricer(n_paths=50_000, seed=999, antithetic=True, n_steps=64)
-    pricer_b = FxEuropeanAsianMcPricer(n_paths=50_000, seed=999, antithetic=True, n_steps=64)
+    pricer_a = FxAsianEuropeanOptionMcPricer(n_paths=50_000, seed=999, antithetic=True, n_steps=64)
+    pricer_b = FxAsianEuropeanOptionMcPricer(n_paths=50_000, seed=999, antithetic=True, n_steps=64)
 
     pv_a = float(pricer_a.price(trade, market))
     pv_b = float(pricer_b.price(trade, market))
@@ -976,7 +976,7 @@ def test_fx_asian_mc_scales_linearly_with_notional(
     notional_1 = float(base_params["notional"])
     notional_2 = 2.0 * notional_1
 
-    trade_1 = EuropeanFxAsianOption(
+    trade_1 = FxAsianEuropeanOption(
         option_type="call",
         notional=notional_1,
         strike=float(base_params["strike"]),
@@ -987,7 +987,7 @@ def test_fx_asian_mc_scales_linearly_with_notional(
         domestic_curve_id=ids["rd"],
         foreign_curve_id=ids["rf"],
     )
-    trade_2 = EuropeanFxAsianOption(
+    trade_2 = FxAsianEuropeanOption(
         option_type="call",
         notional=notional_2,
         strike=float(base_params["strike"]),
@@ -999,7 +999,7 @@ def test_fx_asian_mc_scales_linearly_with_notional(
         foreign_curve_id=ids["rf"],
     )
 
-    pricer = FxEuropeanAsianMcPricer(n_paths=80_000, seed=11, antithetic=True, n_steps=64)
+    pricer = FxAsianEuropeanOptionMcPricer(n_paths=80_000, seed=11, antithetic=True, n_steps=64)
     pv_1 = float(pricer.price(trade_1, market))
     pv_2 = float(pricer.price(trade_2, market))
 
@@ -1023,7 +1023,7 @@ def test_fx_asian_is_cheaper_than_vanilla(
     This is a fundamental property: averaging reduces volatility, making Asian
     options cheaper than their vanilla counterparts.
     """
-    asian_trade = EuropeanFxAsianOption(
+    asian_trade = FxAsianEuropeanOption(
         option_type=option_type,  # type: ignore[arg-type]
         notional=float(base_params["notional"]),
         strike=float(base_params["strike"]),
@@ -1035,7 +1035,7 @@ def test_fx_asian_is_cheaper_than_vanilla(
         foreign_curve_id=ids["rf"],
     )
 
-    vanilla_trade = EuropeanFxVanillaOption(
+    vanilla_trade = FxVanillaEuropeanOption(
         option_type=option_type,  # type: ignore[arg-type]
         notional=float(base_params["notional"]),
         strike=float(base_params["strike"]),
@@ -1046,8 +1046,8 @@ def test_fx_asian_is_cheaper_than_vanilla(
         foreign_curve_id=ids["rf"],
     )
 
-    asian_pricer = FxEuropeanAsianMcPricer(n_paths=100_000, seed=7, antithetic=True, n_steps=64)
-    vanilla_pricer = FxEuropeanVanillaMcPricer(n_paths=100_000, seed=7, antithetic=True)
+    asian_pricer = FxAsianEuropeanOptionMcPricer(n_paths=100_000, seed=7, antithetic=True, n_steps=64)
+    vanilla_pricer = FxVanillaEuropeanOptionMcPricer(n_paths=100_000, seed=7, antithetic=True)
 
     pv_asian = float(asian_pricer.price(asian_trade, market))
     pv_vanilla = float(vanilla_pricer.price(vanilla_trade, market))
@@ -1066,7 +1066,7 @@ def test_fx_asian_geometric_is_cheaper_than_arithmetic(
 
     This follows from Jensen's inequality: geometric mean <= arithmetic mean.
     """
-    arith_trade = EuropeanFxAsianOption(
+    arith_trade = FxAsianEuropeanOption(
         option_type="call",
         notional=float(base_params["notional"]),
         strike=float(base_params["strike"]),
@@ -1078,7 +1078,7 @@ def test_fx_asian_geometric_is_cheaper_than_arithmetic(
         foreign_curve_id=ids["rf"],
     )
 
-    geom_trade = EuropeanFxAsianOption(
+    geom_trade = FxAsianEuropeanOption(
         option_type="call",
         notional=float(base_params["notional"]),
         strike=float(base_params["strike"]),
@@ -1090,7 +1090,7 @@ def test_fx_asian_geometric_is_cheaper_than_arithmetic(
         foreign_curve_id=ids["rf"],
     )
 
-    pricer = FxEuropeanAsianMcPricer(n_paths=100_000, seed=7, antithetic=True, n_steps=64)
+    pricer = FxAsianEuropeanOptionMcPricer(n_paths=100_000, seed=7, antithetic=True, n_steps=64)
     pv_arith = float(pricer.price(arith_trade, market))
     pv_geom = float(pricer.price(geom_trade, market))
 
@@ -1112,7 +1112,7 @@ def test_fx_asian_mc_price_at_expiry_is_deterministic(
 
     At expiry (T=0), the path contains only S0, so average = S0 and payoff is deterministic.
     """
-    trade = EuropeanFxAsianOption(
+    trade = FxAsianEuropeanOption(
         option_type="call",
         notional=float(base_params["notional"]),
         strike=float(base_params["strike"]),
@@ -1124,7 +1124,7 @@ def test_fx_asian_mc_price_at_expiry_is_deterministic(
         foreign_curve_id=ids["rf"],
     )
 
-    pricer = FxEuropeanAsianMcPricer(n_paths=10_000, seed=7, antithetic=True, n_steps=1)
+    pricer = FxAsianEuropeanOptionMcPricer(n_paths=10_000, seed=7, antithetic=True, n_steps=1)
     pv = float(pricer.price(trade, market))
 
     # At expiry, average = S0 = 1.25, strike = 1.25, so payoff = max(1.25 - 1.25, 0) = 0
@@ -1138,7 +1138,7 @@ def test_fx_asian_mc_price_at_expiry_in_the_money(
     market: _DummyMarket,
 ) -> None:
     """Test Asian option at expiry when in-the-money."""
-    trade = EuropeanFxAsianOption(
+    trade = FxAsianEuropeanOption(
         option_type="call",
         notional=1_000_000.0,
         strike=1.20,  # Below spot (1.25), so in-the-money
@@ -1150,7 +1150,7 @@ def test_fx_asian_mc_price_at_expiry_in_the_money(
         foreign_curve_id=ids["rf"],
     )
 
-    pricer = FxEuropeanAsianMcPricer(n_paths=10_000, seed=7, antithetic=True, n_steps=1)
+    pricer = FxAsianEuropeanOptionMcPricer(n_paths=10_000, seed=7, antithetic=True, n_steps=1)
     pv = float(pricer.price(trade, market))
 
     # At expiry, average = S0 = 1.25, strike = 1.20, so payoff = max(1.25 - 1.20, 0) = 0.05
@@ -1164,8 +1164,8 @@ def test_fx_asian_mc_invalid_n_paths(
     market: _DummyMarket,
 ) -> None:
     """Test that invalid n_paths raises ValueError."""
-    pricer = FxEuropeanAsianMcPricer(n_paths=0, seed=7)
-    trade = EuropeanFxAsianOption(
+    pricer = FxAsianEuropeanOptionMcPricer(n_paths=0, seed=7)
+    trade = FxAsianEuropeanOption(
         option_type="call",
         notional=1_000_000.0,
         strike=1.25,
@@ -1186,8 +1186,8 @@ def test_fx_asian_mc_invalid_n_steps(
     market: _DummyMarket,
 ) -> None:
     """Test that invalid n_steps raises ValueError."""
-    pricer = FxEuropeanAsianMcPricer(n_paths=10_000, seed=7, n_steps=0)
-    trade = EuropeanFxAsianOption(
+    pricer = FxAsianEuropeanOptionMcPricer(n_paths=10_000, seed=7, n_steps=0)
+    trade = FxAsianEuropeanOption(
         option_type="call",
         notional=1_000_000.0,
         strike=1.25,
@@ -1213,7 +1213,7 @@ def test_fx_asian_mc_simulation_artifact_has_correct_structure(
     market: _DummyMarket,
 ) -> None:
     """Test that simulation artifact has correct structure and fields."""
-    trade = EuropeanFxAsianOption(
+    trade = FxAsianEuropeanOption(
         option_type="call",
         notional=float(base_params["notional"]),
         strike=float(base_params["strike"]),
@@ -1225,7 +1225,7 @@ def test_fx_asian_mc_simulation_artifact_has_correct_structure(
         foreign_curve_id=ids["rf"],
     )
 
-    pricer = FxEuropeanAsianMcPricer(n_paths=10_000, seed=7, antithetic=True, n_steps=64)
+    pricer = FxAsianEuropeanOptionMcPricer(n_paths=10_000, seed=7, antithetic=True, n_steps=64)
     sim = pricer.run(trade, market, store_paths=True, paths_keep=100)
 
     # Verify all required fields exist
@@ -1274,7 +1274,7 @@ def test_fx_lookback_mc_price_is_positive(
     # For fixed strike, use a strike price; for floating, use 0 (ignored)
     strike = float(base_params["strike"]) if lookback_type == "fixed_strike" else 0.0
 
-    trade = EuropeanFxLookbackOption(
+    trade = FxLookbackEuropeanOption(
         option_type=option_type,  # type: ignore[arg-type]
         notional=float(base_params["notional"]),
         expiry=float(base_params["t"]),
@@ -1286,7 +1286,7 @@ def test_fx_lookback_mc_price_is_positive(
         foreign_curve_id=ids["rf"],
     )
 
-    pricer = FxEuropeanLookbackMcPricer(n_paths=50_000, seed=7, antithetic=True, n_steps=64)
+    pricer = FxLookbackEuropeanOptionMcPricer(n_paths=50_000, seed=7, antithetic=True, n_steps=64)
     pv = float(pricer.price(trade, market))
 
     assert pv >= 0.0
@@ -1304,7 +1304,7 @@ def test_fx_lookback_mc_is_reproducible_for_same_seed(
 
     This ensures deterministic behavior for testing and debugging.
     """
-    trade = EuropeanFxLookbackOption(
+    trade = FxLookbackEuropeanOption(
         option_type=option_type,  # type: ignore[arg-type]
         notional=float(base_params["notional"]),
         expiry=float(base_params["t"]),
@@ -1315,8 +1315,8 @@ def test_fx_lookback_mc_is_reproducible_for_same_seed(
         foreign_curve_id=ids["rf"],
     )
 
-    pricer_a = FxEuropeanLookbackMcPricer(n_paths=50_000, seed=999, antithetic=True, n_steps=64)
-    pricer_b = FxEuropeanLookbackMcPricer(n_paths=50_000, seed=999, antithetic=True, n_steps=64)
+    pricer_a = FxLookbackEuropeanOptionMcPricer(n_paths=50_000, seed=999, antithetic=True, n_steps=64)
+    pricer_b = FxLookbackEuropeanOptionMcPricer(n_paths=50_000, seed=999, antithetic=True, n_steps=64)
 
     pv_a = float(pricer_a.price(trade, market))
     pv_b = float(pricer_b.price(trade, market))
@@ -1338,7 +1338,7 @@ def test_fx_lookback_mc_scales_linearly_with_notional(
     notional_1 = float(base_params["notional"])
     notional_2 = 2.0 * notional_1
 
-    trade_1 = EuropeanFxLookbackOption(
+    trade_1 = FxLookbackEuropeanOption(
         option_type="call",
         notional=notional_1,
         expiry=float(base_params["t"]),
@@ -1348,7 +1348,7 @@ def test_fx_lookback_mc_scales_linearly_with_notional(
         domestic_curve_id=ids["rd"],
         foreign_curve_id=ids["rf"],
     )
-    trade_2 = EuropeanFxLookbackOption(
+    trade_2 = FxLookbackEuropeanOption(
         option_type="call",
         notional=notional_2,
         expiry=float(base_params["t"]),
@@ -1359,7 +1359,7 @@ def test_fx_lookback_mc_scales_linearly_with_notional(
         foreign_curve_id=ids["rf"],
     )
 
-    pricer = FxEuropeanLookbackMcPricer(n_paths=80_000, seed=11, antithetic=True, n_steps=64)
+    pricer = FxLookbackEuropeanOptionMcPricer(n_paths=80_000, seed=11, antithetic=True, n_steps=64)
     pv_1 = float(pricer.price(trade_1, market))
     pv_2 = float(pricer.price(trade_2, market))
 
@@ -1383,7 +1383,7 @@ def test_fx_lookback_is_more_expensive_than_vanilla(
     This is a fundamental property: lookback captures optimal timing,
     so it must be worth at least as much as vanilla.
     """
-    lookback_trade = EuropeanFxLookbackOption(
+    lookback_trade = FxLookbackEuropeanOption(
         option_type=option_type,  # type: ignore[arg-type]
         notional=float(base_params["notional"]),
         expiry=float(base_params["t"]),
@@ -1395,7 +1395,7 @@ def test_fx_lookback_is_more_expensive_than_vanilla(
         foreign_curve_id=ids["rf"],
     )
 
-    vanilla_trade = EuropeanFxVanillaOption(
+    vanilla_trade = FxVanillaEuropeanOption(
         option_type=option_type,  # type: ignore[arg-type]
         notional=float(base_params["notional"]),
         strike=float(base_params["strike"]),
@@ -1406,8 +1406,8 @@ def test_fx_lookback_is_more_expensive_than_vanilla(
         foreign_curve_id=ids["rf"],
     )
 
-    lookback_pricer = FxEuropeanLookbackMcPricer(n_paths=100_000, seed=7, antithetic=True, n_steps=64)
-    vanilla_pricer = FxEuropeanVanillaMcPricer(n_paths=100_000, seed=7, antithetic=True)
+    lookback_pricer = FxLookbackEuropeanOptionMcPricer(n_paths=100_000, seed=7, antithetic=True, n_steps=64)
+    vanilla_pricer = FxVanillaEuropeanOptionMcPricer(n_paths=100_000, seed=7, antithetic=True)
 
     pv_lookback = float(lookback_pricer.price(lookback_trade, market))
     pv_vanilla = float(vanilla_pricer.price(vanilla_trade, market))
@@ -1434,7 +1434,7 @@ def test_fx_lookback_floating_equals_fixed_atm_at_zero_vol(
     t = float(base_params["t"])
     s0 = float(base_params["spot"])
 
-    floating = EuropeanFxLookbackOption(
+    floating = FxLookbackEuropeanOption(
         option_type="call",
         notional=float(base_params["notional"]),
         expiry=t,
@@ -1445,7 +1445,7 @@ def test_fx_lookback_floating_equals_fixed_atm_at_zero_vol(
         foreign_curve_id=ids["rf"],
     )
 
-    fixed = EuropeanFxLookbackOption(
+    fixed = FxLookbackEuropeanOption(
         option_type="call",
         notional=float(base_params["notional"]),
         expiry=t,
@@ -1457,7 +1457,7 @@ def test_fx_lookback_floating_equals_fixed_atm_at_zero_vol(
         foreign_curve_id=ids["rf"],
     )
 
-    pricer = FxEuropeanLookbackMcPricer(n_paths=10_000, seed=7, antithetic=True, n_steps=64, scheme="exact")  # if scheme exists
+    pricer = FxLookbackEuropeanOptionMcPricer(n_paths=10_000, seed=7, antithetic=True, n_steps=64, scheme="exact")  # if scheme exists
     pv_float = float(pricer.price(floating, mkt0))
     pv_fixed = float(pricer.price(fixed, mkt0))
 
@@ -1478,7 +1478,7 @@ def test_fx_lookback_mc_price_at_expiry_is_deterministic(
 
     At expiry (T=0), the path contains only S0, so max = min = S0 = S_T.
     """
-    trade = EuropeanFxLookbackOption(
+    trade = FxLookbackEuropeanOption(
         option_type="call",
         notional=float(base_params["notional"]),
         expiry=0.0,  # At expiry
@@ -1489,7 +1489,7 @@ def test_fx_lookback_mc_price_at_expiry_is_deterministic(
         foreign_curve_id=ids["rf"],
     )
 
-    pricer = FxEuropeanLookbackMcPricer(n_paths=10_000, seed=7, antithetic=True, n_steps=1)
+    pricer = FxLookbackEuropeanOptionMcPricer(n_paths=10_000, seed=7, antithetic=True, n_steps=1)
     pv = float(pricer.price(trade, market))
 
     # At expiry, for floating strike call: S_T - min(S_t) = S0 - S0 = 0
@@ -1502,7 +1502,7 @@ def test_fx_lookback_mc_price_at_expiry_fixed_strike_in_the_money(
     market: _DummyMarket,
 ) -> None:
     """Test fixed strike lookback at expiry when in-the-money."""
-    trade = EuropeanFxLookbackOption(
+    trade = FxLookbackEuropeanOption(
         option_type="call",
         notional=1_000_000.0,
         expiry=0.0,  # At expiry
@@ -1514,7 +1514,7 @@ def test_fx_lookback_mc_price_at_expiry_fixed_strike_in_the_money(
         foreign_curve_id=ids["rf"],
     )
 
-    pricer = FxEuropeanLookbackMcPricer(n_paths=10_000, seed=7, antithetic=True, n_steps=1)
+    pricer = FxLookbackEuropeanOptionMcPricer(n_paths=10_000, seed=7, antithetic=True, n_steps=1)
     pv = float(pricer.price(trade, market))
 
     # At expiry, max(S_t) = S0 = 1.25, so payoff = max(1.25 - 1.20, 0) = 0.05
@@ -1528,8 +1528,8 @@ def test_fx_lookback_mc_invalid_n_paths(
     market: _DummyMarket,
 ) -> None:
     """Test that invalid n_paths raises ValueError."""
-    pricer = FxEuropeanLookbackMcPricer(n_paths=0, seed=7)
-    trade = EuropeanFxLookbackOption(
+    pricer = FxLookbackEuropeanOptionMcPricer(n_paths=0, seed=7)
+    trade = FxLookbackEuropeanOption(
         option_type="call",
         notional=1_000_000.0,
         expiry=1.0,
@@ -1549,8 +1549,8 @@ def test_fx_lookback_mc_invalid_n_steps(
     market: _DummyMarket,
 ) -> None:
     """Test that invalid n_steps raises ValueError."""
-    pricer = FxEuropeanLookbackMcPricer(n_paths=10_000, seed=7, n_steps=0)
-    trade = EuropeanFxLookbackOption(
+    pricer = FxLookbackEuropeanOptionMcPricer(n_paths=10_000, seed=7, n_steps=0)
+    trade = FxLookbackEuropeanOption(
         option_type="call",
         notional=1_000_000.0,
         expiry=1.0,
@@ -1575,7 +1575,7 @@ def test_fx_lookback_mc_simulation_artifact_has_correct_structure(
     market: _DummyMarket,
 ) -> None:
     """Test that simulation artifact has correct structure and fields."""
-    trade = EuropeanFxLookbackOption(
+    trade = FxLookbackEuropeanOption(
         option_type="call",
         notional=float(base_params["notional"]),
         expiry=float(base_params["t"]),
@@ -1586,7 +1586,7 @@ def test_fx_lookback_mc_simulation_artifact_has_correct_structure(
         foreign_curve_id=ids["rf"],
     )
 
-    pricer = FxEuropeanLookbackMcPricer(n_paths=10_000, seed=7, antithetic=True, n_steps=64)
+    pricer = FxLookbackEuropeanOptionMcPricer(n_paths=10_000, seed=7, antithetic=True, n_steps=64)
     sim = pricer.run(trade, market, store_paths=True, paths_keep=100)
 
     # Verify all required fields exist

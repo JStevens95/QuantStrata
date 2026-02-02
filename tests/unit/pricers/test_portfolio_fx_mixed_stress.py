@@ -11,7 +11,7 @@ from src.portfolio.core import Portfolio, Position
 from src.portfolio.portfolio import PortfolioPricer
 
 from src.instruments.fx.linear.spot import FxSpot
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
+from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
 
 from src.pricers.registry import DefaultPricerRegistry
 
@@ -51,7 +51,7 @@ def _build_portfolio(*, market, spot_id, vol_id, rd_id, rf_id) -> Portfolio:
             ),
             Position(
                 position_id="CALL",
-                instrument=EuropeanFxVanillaOption(
+                instrument=FxVanillaEuropeanOption(
                     option_type="call",
                     notional=1_000_000.0,
                     strike=s0,      # ATM for stable monotonic behaviour

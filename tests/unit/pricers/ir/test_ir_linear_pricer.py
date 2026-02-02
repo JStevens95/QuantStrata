@@ -14,25 +14,26 @@ Author: QuantStrata Team
 """
 from __future__ import annotations
 
-import math
 import pytest
 
 from src.instruments.ir.linear.fra import (
-    ForwardRateAgreement,
-    ForwardRateAgreementSimple,
+    IrForwardRateAgreement,
+    IrForwardRateAgreementSimple,
 )
 from src.instruments.ir.linear.swap import (
-    InterestRateSwap,
-    InterestRateSwapSimple,
+    IrSwap,
+    IrSwapSimple,
     FixedLeg,
     FloatingLeg,
     generate_swap_schedule,
 )
-from src.pricers.ir.linear import (
-    FRAPricer,
-    FRAPricerSimple,
-    IRSwapPricer,
-    IRSwapPricerSimple,
+from src.pricers.ir.fra import (
+    IrFraPricer,
+    IrFraPricerSimple
+)
+from src.pricers.ir.swap import (
+    IrSwapPricer,
+    IrSwapPricerSimple,
 )
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.market import Market
@@ -62,14 +63,14 @@ def fra_params():
 @pytest.fixture
 def payer_fra(fra_params):
     """Create a payer FRA (pay fixed, receive floating)."""
-    return ForwardRateAgreementSimple(**fra_params)
+    return IrForwardRateAgreementSimple(**fra_params)
 
 
 @pytest.fixture
 def receiver_fra(fra_params):
     """Create a receiver FRA (receive fixed, pay floating)."""
     params = {**fra_params, "direction": "receiver"}
-    return ForwardRateAgreementSimple(**params)
+    return IrForwardRateAgreementSimple(**params)
 
 
 @pytest.fixture
@@ -104,7 +105,7 @@ def swap_legs():
 def receiver_swap(swap_legs):
     """Create a receiver swap (receive fixed, pay floating)."""
     fixed_legs, floating_legs = swap_legs
-    return InterestRateSwapSimple(
+    return IrSwapSimple(
         notional=1_000_000,
         fixed_rate=0.05,
         fixed_leg=fixed_legs,
@@ -117,7 +118,7 @@ def receiver_swap(swap_legs):
 def payer_swap(swap_legs):
     """Create a payer swap (pay fixed, receive floating)."""
     fixed_legs, floating_legs = swap_legs
-    return InterestRateSwapSimple(
+    return IrSwapSimple(
         notional=1_000_000,
         fixed_rate=0.05,
         fixed_leg=fixed_legs,
@@ -155,7 +156,7 @@ class TestFRAValidation:
     
     def test_valid_fra(self, fra_params):
         """Valid FRA should be created without errors."""
-        fra = ForwardRateAgreementSimple(**fra_params)
+        fra = IrForwardRateAgreementSimple(**fra_params)
         assert fra.notional == fra_params["notional"]
         assert fra.fixed_rate == fra_params["fixed_rate"]
     
@@ -163,23 +164,23 @@ class TestFRAValidation:
         """Zero notional should raise."""
         fra_params["notional"] = 0.0
         with pytest.raises(ValueError, match="notional must be non-zero"):
-            ForwardRateAgreementSimple(**fra_params)
+            IrForwardRateAgreementSimple(**fra_params)
     
     def test_payment_before_fixing_raises(self, fra_params):
         """Payment time before fixing time should raise."""
         fra_params["payment_time"] = 0.1  # Before fixing at 0.25
         with pytest.raises(ValueError, match="payment_time must be > fixing_time"):
-            ForwardRateAgreementSimple(**fra_params)
+            IrForwardRateAgreementSimple(**fra_params)
     
     def test_invalid_direction_raises(self, fra_params):
         """Invalid direction should raise."""
         fra_params["direction"] = "invalid"
         with pytest.raises(ValueError, match="direction must be"):
-            ForwardRateAgreementSimple(**fra_params)
+            IrForwardRateAgreementSimple(**fra_params)
     
     def test_tenor_description(self, curve_id):
         """Test tenor description generation."""
-        fra = ForwardRateAgreement(
+        fra = IrForwardRateAgreement(
             notional=10_000_000,
             fixed_rate=0.05,
             fixing_time=0.25,   # 3 months
@@ -200,20 +201,20 @@ class TestFRAPricing:
     def test_payer_fra_positive_when_rates_rise(self, payer_fra):
         """Payer FRA should have positive PV when forward > fixed."""
         # Forward (5.2%) > Fixed (5%), so payer benefits.
-        pricer = FRAPricerSimple()
+        pricer = IrFraPricerSimple()
         pv = pricer.price(payer_fra)
         assert pv > 0
     
     def test_receiver_fra_negative_when_rates_rise(self, receiver_fra):
         """Receiver FRA should have negative PV when forward > fixed."""
         # Forward (5.2%) > Fixed (5%), so receiver loses.
-        pricer = FRAPricerSimple()
+        pricer = IrFraPricerSimple()
         pv = pricer.price(receiver_fra)
         assert pv < 0
     
     def test_payer_receiver_opposite_sign(self, payer_fra, receiver_fra):
         """Payer and receiver PVs should be opposite."""
-        pricer = FRAPricerSimple()
+        pricer = IrFraPricerSimple()
         
         payer_pv = pricer.price(payer_fra)
         receiver_pv = pricer.price(receiver_fra)
@@ -224,17 +225,17 @@ class TestFRAPricing:
         """FRA at par rate should have zero PV."""
         # Set fixed rate = forward rate.
         params = {**fra_params, "fixed_rate": fra_params["forward_rate"]}
-        par_fra = ForwardRateAgreementSimple(**params)
+        par_fra = IrForwardRateAgreementSimple(**params)
         
-        pricer = FRAPricerSimple()
+        pricer = IrFraPricerSimple()
         pv = pricer.price(par_fra)
         
         assert abs(pv) < 1e-6
     
     def test_fra_pv_formula(self, fra_params):
         """Verify FRA PV formula directly."""
-        fra = ForwardRateAgreementSimple(**fra_params)
-        pricer = FRAPricerSimple()
+        fra = IrForwardRateAgreementSimple(**fra_params)
+        pricer = IrFraPricerSimple()
         
         pv = pricer.price(fra)
         
@@ -250,12 +251,12 @@ class TestFRAPricing:
     
     def test_fra_scales_with_notional(self, fra_params):
         """FRA PV should scale linearly with notional."""
-        pricer = FRAPricerSimple()
+        pricer = IrFraPricerSimple()
         
-        fra_1 = ForwardRateAgreementSimple(**fra_params)
+        fra_1 = IrForwardRateAgreementSimple(**fra_params)
         
         params_2 = {**fra_params, "notional": 20_000_000}
-        fra_2 = ForwardRateAgreementSimple(**params_2)
+        fra_2 = IrForwardRateAgreementSimple(**params_2)
         
         pv_1 = pricer.price(fra_1)
         pv_2 = pricer.price(fra_2)
@@ -273,7 +274,7 @@ class TestFRAGreeks:
     
     def test_greeks_exist(self, payer_fra):
         """Greeks should be computed."""
-        pricer = FRAPricerSimple()
+        pricer = IrFraPricerSimple()
         greeks = pricer.greeks(payer_fra)
         
         assert "delta" in greeks
@@ -282,34 +283,34 @@ class TestFRAGreeks:
     
     def test_payer_delta_positive(self, payer_fra):
         """Payer FRA should have positive delta (benefit from rate increase)."""
-        pricer = FRAPricerSimple()
+        pricer = IrFraPricerSimple()
         greeks = pricer.greeks(payer_fra)
         assert greeks["delta"] > 0
     
     def test_receiver_delta_negative(self, receiver_fra):
         """Receiver FRA should have negative delta."""
-        pricer = FRAPricerSimple()
+        pricer = IrFraPricerSimple()
         greeks = pricer.greeks(receiver_fra)
         assert greeks["delta"] < 0
     
     def test_dv01_positive(self, payer_fra):
         """DV01 should be positive (absolute sensitivity)."""
-        pricer = FRAPricerSimple()
+        pricer = IrFraPricerSimple()
         greeks = pricer.greeks(payer_fra)
         assert greeks["dv01"] > 0
     
     def test_delta_fd(self, fra_params):
         """Delta should match finite difference approximation."""
-        pricer = FRAPricerSimple()
+        pricer = IrFraPricerSimple()
         
         bump = 1e-4
         
         params_up = {**fra_params, "forward_rate": fra_params["forward_rate"] + bump}
         params_dn = {**fra_params, "forward_rate": fra_params["forward_rate"] - bump}
         
-        fra_up = ForwardRateAgreementSimple(**params_up)
-        fra_dn = ForwardRateAgreementSimple(**params_dn)
-        fra_mid = ForwardRateAgreementSimple(**fra_params)
+        fra_up = IrForwardRateAgreementSimple(**params_up)
+        fra_dn = IrForwardRateAgreementSimple(**params_dn)
+        fra_mid = IrForwardRateAgreementSimple(**fra_params)
         
         pv_up = pricer.price(fra_up)
         pv_dn = pricer.price(fra_dn)
@@ -339,7 +340,7 @@ class TestSwapValidation:
         """Empty fixed leg should raise."""
         _, floating_legs = swap_legs
         with pytest.raises(ValueError, match="fixed_leg must have at least one period"):
-            InterestRateSwapSimple(
+            IrSwapSimple(
                 notional=1_000_000,
                 fixed_rate=0.05,
                 fixed_leg=(),
@@ -350,7 +351,7 @@ class TestSwapValidation:
         """Empty floating leg should raise."""
         fixed_legs, _ = swap_legs
         with pytest.raises(ValueError, match="floating_leg must have at least one period"):
-            InterestRateSwapSimple(
+            IrSwapSimple(
                 notional=1_000_000,
                 fixed_rate=0.05,
                 fixed_leg=fixed_legs,
@@ -368,7 +369,7 @@ class TestSwapPricing:
     
     def test_receiver_payer_opposite_sign(self, receiver_swap, payer_swap):
         """Receiver and payer swap PVs should be opposite."""
-        pricer = IRSwapPricerSimple()
+        pricer = IrSwapPricerSimple()
         
         receiver_pv = pricer.price(receiver_swap)
         payer_pv = pricer.price(payer_swap)
@@ -377,7 +378,7 @@ class TestSwapPricing:
     
     def test_swap_pv_decomposition(self, receiver_swap):
         """Swap PV should equal fixed leg PV minus floating leg PV."""
-        pricer = IRSwapPricerSimple()
+        pricer = IrSwapPricerSimple()
         
         total_pv = pricer.price(receiver_swap)
         fixed_pv = pricer.fixed_leg_pv(receiver_swap)
@@ -390,7 +391,7 @@ class TestSwapPricing:
         fixed_legs, floating_legs = swap_legs
         
         # Create swap with arbitrary fixed rate.
-        swap = InterestRateSwapSimple(
+        swap = IrSwapSimple(
             notional=1_000_000,
             fixed_rate=0.05,
             fixed_leg=fixed_legs,
@@ -398,7 +399,7 @@ class TestSwapPricing:
             direction="receiver",
         )
         
-        pricer = IRSwapPricerSimple()
+        pricer = IrSwapPricerSimple()
         par_rate = pricer.par_rate(swap)
         
         # Create swap at par rate.
@@ -415,7 +416,7 @@ class TestSwapPricing:
             for leg in fixed_legs
         )
         
-        par_swap = InterestRateSwapSimple(
+        par_swap = IrSwapSimple(
             notional=1_000_000,
             fixed_rate=par_rate,
             fixed_leg=par_fixed_legs,
@@ -443,7 +444,7 @@ class TestSwapGreeks:
     
     def test_greeks_exist(self, receiver_swap):
         """Greeks should be computed."""
-        pricer = IRSwapPricerSimple()
+        pricer = IrSwapPricerSimple()
         greeks = pricer.greeks(receiver_swap)
         
         assert "delta" in greeks
@@ -452,19 +453,19 @@ class TestSwapGreeks:
     
     def test_receiver_delta_negative(self, receiver_swap):
         """Receiver swap should have negative delta (lose when rates rise)."""
-        pricer = IRSwapPricerSimple()
+        pricer = IrSwapPricerSimple()
         greeks = pricer.greeks(receiver_swap)
         assert greeks["delta"] < 0
     
     def test_payer_delta_positive(self, payer_swap):
         """Payer swap should have positive delta (gain when rates rise)."""
-        pricer = IRSwapPricerSimple()
+        pricer = IrSwapPricerSimple()
         greeks = pricer.greeks(payer_swap)
         assert greeks["delta"] > 0
     
     def test_dv01_formula(self, receiver_swap):
         """Test DV01 formula: N × A × 0.0001."""
-        pricer = IRSwapPricerSimple()
+        pricer = IrSwapPricerSimple()
         
         expected_dv01 = abs(receiver_swap.notional) * receiver_swap.annuity * 0.0001
         
@@ -484,7 +485,7 @@ class TestMarketDataPricers:
     
     def test_fra_market_pricer(self, market, curve_id):
         """FRA market pricer should produce reasonable price."""
-        fra = ForwardRateAgreement(
+        fra = IrForwardRateAgreement(
             notional=10_000_000,
             fixed_rate=0.05,
             fixing_time=0.25,
@@ -494,7 +495,7 @@ class TestMarketDataPricers:
             curve_id=curve_id,
         )
         
-        pricer = FRAPricer()
+        pricer = IrFraPricer()
         pv = pricer.price(fra, market)
         
         # With flat 5% curve, forward ≈ 5%, so PV should be near zero.
@@ -502,7 +503,7 @@ class TestMarketDataPricers:
     
     def test_swap_market_pricer(self, market, curve_id):
         """Swap market pricer should produce reasonable price."""
-        swap = InterestRateSwap(
+        swap =  IrSwap(
             notional=10_000_000,
             fixed_rate=0.05,
             start_time=0.0,
@@ -513,7 +514,7 @@ class TestMarketDataPricers:
             direction="receiver",
         )
         
-        pricer = IRSwapPricer()
+        pricer = IrSwapPricer()
         pv = pricer.price(swap, market)
         
         # With flat 5% curve and 5% fixed rate, PV should be near zero.
@@ -521,7 +522,7 @@ class TestMarketDataPricers:
     
     def test_swap_par_rate_near_flat_curve_rate(self, market, curve_id):
         """Par swap rate should be close to flat curve rate."""
-        swap = InterestRateSwap(
+        swap = IrSwap(
             notional=10_000_000,
             fixed_rate=0.05,
             start_time=0.0,
@@ -529,7 +530,7 @@ class TestMarketDataPricers:
             curve_id=curve_id,
         )
         
-        pricer = IRSwapPricer()
+        pricer = IrSwapPricer()
         par_rate = pricer.par_rate(swap, market)
         
         # With flat 5% curve, par rate should be close to 5%.
@@ -580,13 +581,13 @@ class TestEdgeCases:
     def test_negative_notional_fra(self, fra_params):
         """FRA with negative notional should work (reverses direction)."""
         params = {**fra_params, "notional": -10_000_000}
-        fra = ForwardRateAgreementSimple(**params)
+        fra = IrForwardRateAgreementSimple(**params)
         
-        pricer = FRAPricerSimple()
+        pricer = IrFraPricerSimple()
         pv = pricer.price(fra)
         
         # Negative notional payer should behave like positive notional receiver.
-        positive_fra = ForwardRateAgreementSimple(**fra_params)
+        positive_fra = IrForwardRateAgreementSimple(**fra_params)
         positive_pv = pricer.price(positive_fra)
         
         assert abs(pv + positive_pv) < 1e-6
@@ -594,9 +595,9 @@ class TestEdgeCases:
     def test_atm_fra(self, fra_params):
         """ATM FRA (forward = fixed) should have zero PV."""
         params = {**fra_params, "fixed_rate": fra_params["forward_rate"]}
-        fra = ForwardRateAgreementSimple(**params)
+        fra = IrForwardRateAgreementSimple(**params)
         
-        pricer = FRAPricerSimple()
+        pricer = IrFraPricerSimple()
         pv = pricer.price(fra)
         
         assert abs(pv) < 1e-10
@@ -604,10 +605,10 @@ class TestEdgeCases:
     def test_fra_is_in_the_money(self, fra_params):
         """Test ITM/OTM detection."""
         # Payer ITM when F > K.
-        payer_itm = ForwardRateAgreementSimple(**fra_params)  # F=5.2% > K=5%
+        payer_itm = IrForwardRateAgreementSimple(**fra_params)  # F=5.2% > K=5%
         assert payer_itm.is_in_the_money
         
         # Receiver ITM when F < K.
         receiver_params = {**fra_params, "direction": "receiver"}
-        receiver_otm = ForwardRateAgreementSimple(**receiver_params)
+        receiver_otm = IrForwardRateAgreementSimple(**receiver_params)
         assert not receiver_otm.is_in_the_money

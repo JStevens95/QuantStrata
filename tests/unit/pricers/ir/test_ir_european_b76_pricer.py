@@ -17,21 +17,21 @@ from __future__ import annotations
 import pytest
 
 from src.instruments.ir.options.capfloor import (
-    CapletSimple,
-    FloorletSimple,
-    CapSimple,
-    FloorSimple,
-    Cap,
-    Caplet,
+    IrCapletEuropeanOptionSimple,
+    IrFloorletEuropeanOptionSimple,
+    IrCapEuropeanOptionSimple,
+    IrFloorEuropeanOptionSimple,
+    IrCapEuropeanOption,
+    IrCapletEuropeanOption,
     compute_accrual_factor,
 )
 from src.pricers.ir.european_b76 import (
-    IrEuropeanCapletB76PricerSimple,
-    IrEuropeanFloorletB76PricerSimple,
-    IrEuropeanCapB76PricerSimple,
-    IrEuropeanFloorB76PricerSimple,
-    IrEuropeanCapletB76Pricer,
-    IrEuropeanCapB76Pricer,
+    IrCapletEuropeanOptionB76PricerSimple,
+    IrFloorletEuropeanOptionB76PricerSimple,
+    IrCapEuropeanOptionB76PricerSimple,
+    IrFloorEuropeanOptionB76PricerSimple,
+    IrCapletEuropeanOptionB76Pricer,
+    IrCapEuropeanOptionB76Pricer,
 )
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.market import Market
@@ -62,13 +62,13 @@ def base_params():
 @pytest.fixture
 def caplet(base_params):
     """Create a simple caplet."""
-    return CapletSimple(**base_params)
+    return IrCapletEuropeanOptionSimple(**base_params)
 
 
 @pytest.fixture
 def floorlet(base_params):
     """Create a simple floorlet."""
-    return FloorletSimple(**base_params)
+    return IrFloorletEuropeanOptionSimple(**base_params)
 
 
 @pytest.fixture
@@ -111,7 +111,7 @@ class TestCapletValidation:
     
     def test_valid_caplet(self, base_params):
         """Valid caplet should be created without errors."""
-        caplet = CapletSimple(**base_params)
+        caplet = IrCapletEuropeanOptionSimple(**base_params)
         assert caplet.notional == base_params["notional"]
         assert caplet.strike == base_params["strike"]
     
@@ -119,19 +119,19 @@ class TestCapletValidation:
         """Zero notional should raise."""
         base_params["notional"] = 0.0
         with pytest.raises(ValueError, match="notional must be non-zero"):
-            CapletSimple(**base_params)
+            IrCapletEuropeanOptionSimple(**base_params)
     
     def test_negative_strike_raises(self, base_params):
         """Negative strike should raise."""
         base_params["strike"] = -0.01
         with pytest.raises(ValueError, match="strike must be > 0"):
-            CapletSimple(**base_params)
+            IrCapletEuropeanOptionSimple(**base_params)
     
     def test_payment_before_fixing_raises(self, base_params):
         """Payment time before fixing time should raise."""
         base_params["payment_time"] = 0.5  # Before fixing at 1.0
         with pytest.raises(ValueError, match="payment_time must be > fixing_time"):
-            CapletSimple(**base_params)
+            IrCapletEuropeanOptionSimple(**base_params)
 
 
 class TestFloorletValidation:
@@ -139,14 +139,14 @@ class TestFloorletValidation:
     
     def test_valid_floorlet(self, base_params):
         """Valid floorlet should be created without errors."""
-        floorlet = FloorletSimple(**base_params)
+        floorlet = IrFloorletEuropeanOptionSimple(**base_params)
         assert floorlet.notional == base_params["notional"]
     
     def test_zero_notional_raises(self, base_params):
         """Zero notional should raise."""
         base_params["notional"] = 0.0
         with pytest.raises(ValueError, match="notional must be non-zero"):
-            FloorletSimple(**base_params)
+            IrFloorletEuropeanOptionSimple(**base_params)
 
 
 # =============================================================================
@@ -159,32 +159,32 @@ class TestCapletPricing:
     
     def test_caplet_price_positive(self, caplet):
         """Caplet price should be positive."""
-        pricer = IrEuropeanCapletB76PricerSimple()
+        pricer = IrCapletEuropeanOptionB76PricerSimple()
         pv = pricer.price(caplet)
         assert pv > 0
     
     def test_itm_caplet_higher_than_otm(self, base_params):
         """ITM caplet should be more valuable than OTM."""
-        pricer = IrEuropeanCapletB76PricerSimple()
+        pricer = IrCapletEuropeanOptionB76PricerSimple()
         
         # ITM: forward > strike
         itm_params = {**base_params, "forward_rate": 0.07, "strike": 0.05}
-        itm_caplet = CapletSimple(**itm_params)
+        itm_caplet = IrCapletEuropeanOptionSimple(**itm_params)
         
         # OTM: forward < strike
         otm_params = {**base_params, "forward_rate": 0.03, "strike": 0.05}
-        otm_caplet = CapletSimple(**otm_params)
+        otm_caplet = IrCapletEuropeanOptionSimple(**otm_params)
         
         assert pricer.price(itm_caplet) > pricer.price(otm_caplet)
     
     def test_caplet_price_scales_with_notional(self, base_params):
         """Price should scale linearly with notional."""
-        pricer = IrEuropeanCapletB76PricerSimple()
+        pricer = IrCapletEuropeanOptionB76PricerSimple()
         
-        caplet_1 = CapletSimple(**base_params)
+        caplet_1 = IrCapletEuropeanOptionSimple(**base_params)
         
         params_2 = {**base_params, "notional": 2_000_000}
-        caplet_2 = CapletSimple(**params_2)
+        caplet_2 = IrCapletEuropeanOptionSimple(**params_2)
         
         pv_1 = pricer.price(caplet_1)
         pv_2 = pricer.price(caplet_2)
@@ -197,21 +197,21 @@ class TestFloorletPricing:
     
     def test_floorlet_price_positive(self, floorlet):
         """Floorlet price should be positive."""
-        pricer = IrEuropeanFloorletB76PricerSimple()
+        pricer = IrFloorletEuropeanOptionB76PricerSimple()
         pv = pricer.price(floorlet)
         assert pv > 0
     
     def test_itm_floorlet_higher_than_otm(self, base_params):
         """ITM floorlet should be more valuable than OTM."""
-        pricer = IrEuropeanFloorletB76PricerSimple()
+        pricer = IrFloorletEuropeanOptionB76PricerSimple()
         
         # ITM: forward < strike
         itm_params = {**base_params, "forward_rate": 0.03, "strike": 0.05}
-        itm_floorlet = FloorletSimple(**itm_params)
+        itm_floorlet = IrFloorletEuropeanOptionSimple(**itm_params)
         
         # OTM: forward > strike
         otm_params = {**base_params, "forward_rate": 0.07, "strike": 0.05}
-        otm_floorlet = FloorletSimple(**otm_params)
+        otm_floorlet = IrFloorletEuropeanOptionSimple(**otm_params)
         
         assert pricer.price(itm_floorlet) > pricer.price(otm_floorlet)
 
@@ -230,11 +230,11 @@ class TestPutCallParity:
         
         This is the cap-floor parity for a single period.
         """
-        caplet = CapletSimple(**base_params)
-        floorlet = FloorletSimple(**base_params)
+        caplet = IrCapletEuropeanOptionSimple(**base_params)
+        floorlet = IrFloorletEuropeanOptionSimple(**base_params)
         
-        caplet_pricer = IrEuropeanCapletB76PricerSimple()
-        floorlet_pricer = IrEuropeanFloorletB76PricerSimple()
+        caplet_pricer = IrCapletEuropeanOptionB76PricerSimple()
+        floorlet_pricer = IrFloorletEuropeanOptionB76PricerSimple()
         
         caplet_pv = caplet_pricer.price(caplet)
         floorlet_pv = floorlet_pricer.price(floorlet)
@@ -263,7 +263,7 @@ class TestCapletGreeks:
     
     def test_greeks_exist(self, caplet):
         """Greeks should be computed."""
-        pricer = IrEuropeanCapletB76PricerSimple()
+        pricer = IrCapletEuropeanOptionB76PricerSimple()
         greeks = pricer.greeks(caplet)
         
         assert "delta" in greeks
@@ -274,19 +274,19 @@ class TestCapletGreeks:
     
     def test_call_delta_positive(self, caplet):
         """Caplet delta should be positive (call on forward)."""
-        pricer = IrEuropeanCapletB76PricerSimple()
+        pricer = IrCapletEuropeanOptionB76PricerSimple()
         greeks = pricer.greeks(caplet)
         assert greeks["delta"] > 0
     
     def test_gamma_positive(self, caplet):
         """Gamma should be positive (option is convex)."""
-        pricer = IrEuropeanCapletB76PricerSimple()
+        pricer = IrCapletEuropeanOptionB76PricerSimple()
         greeks = pricer.greeks(caplet)
         assert greeks["gamma"] > 0
     
     def test_vega_positive(self, caplet):
         """Vega should be positive."""
-        pricer = IrEuropeanCapletB76PricerSimple()
+        pricer = IrCapletEuropeanOptionB76PricerSimple()
         greeks = pricer.greeks(caplet)
         assert greeks["vega"] > 0
 
@@ -296,7 +296,7 @@ class TestFloorletGreeks:
     
     def test_put_delta_negative(self, floorlet):
         """Floorlet delta should be negative (put on forward)."""
-        pricer = IrEuropeanFloorletB76PricerSimple()
+        pricer = IrFloorletEuropeanOptionB76PricerSimple()
         greeks = pricer.greeks(floorlet)
         assert greeks["delta"] < 0
 
@@ -311,7 +311,7 @@ class TestFiniteDifferenceGreeks:
     
     def test_delta_fd(self, base_params):
         """Delta should match finite difference approximation."""
-        pricer = IrEuropeanCapletB76PricerSimple()
+        pricer = IrCapletEuropeanOptionB76PricerSimple()
         
         # Bump forward rate.
         bump = 1e-4
@@ -319,9 +319,9 @@ class TestFiniteDifferenceGreeks:
         params_up = {**base_params, "forward_rate": base_params["forward_rate"] + bump}
         params_dn = {**base_params, "forward_rate": base_params["forward_rate"] - bump}
         
-        caplet_up = CapletSimple(**params_up)
-        caplet_dn = CapletSimple(**params_dn)
-        caplet_mid = CapletSimple(**base_params)
+        caplet_up = IrCapletEuropeanOptionSimple(**params_up)
+        caplet_dn = IrCapletEuropeanOptionSimple(**params_dn)
+        caplet_mid = IrCapletEuropeanOptionSimple(**base_params)
         
         pv_up = pricer.price(caplet_up)
         pv_dn = pricer.price(caplet_dn)
@@ -337,16 +337,16 @@ class TestFiniteDifferenceGreeks:
     
     def test_vega_fd(self, base_params):
         """Vega should match finite difference approximation."""
-        pricer = IrEuropeanCapletB76PricerSimple()
+        pricer = IrCapletEuropeanOptionB76PricerSimple()
         
         bump = 1e-4
         
         params_up = {**base_params, "vol": base_params["vol"] + bump}
         params_dn = {**base_params, "vol": base_params["vol"] - bump}
         
-        caplet_up = CapletSimple(**params_up)
-        caplet_dn = CapletSimple(**params_dn)
-        caplet_mid = CapletSimple(**base_params)
+        caplet_up = IrCapletEuropeanOptionSimple(**params_up)
+        caplet_dn = IrCapletEuropeanOptionSimple(**params_dn)
+        caplet_mid = IrCapletEuropeanOptionSimple(**base_params)
         
         pv_up = pricer.price(caplet_up)
         pv_dn = pricer.price(caplet_dn)
@@ -371,25 +371,25 @@ class TestCapPricing:
     def test_cap_is_sum_of_caplets(self, base_params):
         """Cap price should be sum of caplet prices."""
         # Create individual caplets.
-        caplet1 = CapletSimple(**base_params)
+        caplet1 = IrCapletEuropeanOptionSimple(**base_params)
         
         params2 = {
             **base_params,
             "fixing_time": 1.25,
             "payment_time": 1.5,
         }
-        caplet2 = CapletSimple(**params2)
+        caplet2 = IrCapletEuropeanOptionSimple(**params2)
         
         # Create cap.
-        cap = CapSimple(
+        cap = IrCapEuropeanOptionSimple(
             notional=base_params["notional"],
             strike=base_params["strike"],
             caplets=(caplet1, caplet2),
         )
         
         # Price.
-        caplet_pricer = IrEuropeanCapletB76PricerSimple()
-        cap_pricer = IrEuropeanCapB76PricerSimple()
+        caplet_pricer = IrCapletEuropeanOptionB76PricerSimple()
+        cap_pricer = IrCapEuropeanOptionB76PricerSimple()
         
         caplet1_pv = caplet_pricer.price(caplet1)
         caplet2_pv = caplet_pricer.price(caplet2)
@@ -403,19 +403,19 @@ class TestFloorPricing:
     
     def test_floor_is_sum_of_floorlets(self, base_params):
         """Floor price should be sum of floorlet prices."""
-        floorlet1 = FloorletSimple(**base_params)
+        floorlet1 = IrFloorletEuropeanOptionSimple(**base_params)
         
         params2 = {**base_params, "fixing_time": 1.25, "payment_time": 1.5}
-        floorlet2 = FloorletSimple(**params2)
+        floorlet2 = IrFloorletEuropeanOptionSimple(**params2)
         
-        floor = FloorSimple(
+        floor = IrFloorEuropeanOptionSimple(
             notional=base_params["notional"],
             strike=base_params["strike"],
             floorlets=(floorlet1, floorlet2),
         )
         
-        floorlet_pricer = IrEuropeanFloorletB76PricerSimple()
-        floor_pricer = IrEuropeanFloorB76PricerSimple()
+        floorlet_pricer = IrFloorletEuropeanOptionB76PricerSimple()
+        floor_pricer = IrFloorEuropeanOptionB76PricerSimple()
         
         expected = floorlet_pricer.price(floorlet1) + floorlet_pricer.price(floorlet2)
         actual = floor_pricer.price(floor)
@@ -433,7 +433,7 @@ class TestMarketDataPricers:
     
     def test_caplet_market_pricer(self, market, curve_id, vol_id):
         """Market data pricer should produce reasonable price."""
-        caplet = Caplet(
+        caplet = IrCapletEuropeanOption(
             notional=1_000_000,
             strike=0.05,
             fixing_time=1.0,
@@ -443,7 +443,7 @@ class TestMarketDataPricers:
             vol_id=vol_id,
         )
         
-        pricer = IrEuropeanCapletB76Pricer()
+        pricer = IrCapletEuropeanOptionB76Pricer()
         pv = pricer.price(caplet, market)
         
         assert pv > 0
@@ -451,7 +451,7 @@ class TestMarketDataPricers:
     
     def test_cap_market_pricer(self, market, curve_id, vol_id):
         """Cap market pricer should produce reasonable price."""
-        cap = Cap(
+        cap = IrCapEuropeanOption(
             notional=1_000_000,
             strike=0.05,
             start_time=0.25,  # First reset in 3 months
@@ -462,7 +462,7 @@ class TestMarketDataPricers:
             vol_id=vol_id,
         )
         
-        pricer = IrEuropeanCapB76Pricer()
+        pricer = IrCapEuropeanOptionB76Pricer()
         pv = pricer.price(cap, market)
         
         assert pv > 0
@@ -479,9 +479,9 @@ class TestEdgeCases:
     def test_atm_caplet(self, base_params):
         """ATM caplet (forward = strike) should have positive value."""
         params = {**base_params, "forward_rate": base_params["strike"]}
-        caplet = CapletSimple(**params)
+        caplet = IrCapletEuropeanOptionSimple(**params)
         
-        pricer = IrEuropeanCapletB76PricerSimple()
+        pricer = IrCapletEuropeanOptionB76PricerSimple()
         pv = pricer.price(caplet)
         
         assert pv > 0
@@ -489,9 +489,9 @@ class TestEdgeCases:
     def test_deep_otm_caplet(self, base_params):
         """Deep OTM caplet should have small but non-negative value."""
         params = {**base_params, "forward_rate": 0.02, "strike": 0.10}
-        caplet = CapletSimple(**params)
+        caplet = IrCapletEuropeanOptionSimple(**params)
         
-        pricer = IrEuropeanCapletB76PricerSimple()
+        pricer = IrCapletEuropeanOptionB76PricerSimple()
         pv = pricer.price(caplet)
         
         # Allow for small floating-point errors near zero
@@ -501,9 +501,9 @@ class TestEdgeCases:
     def test_deep_itm_caplet(self, base_params):
         """Deep ITM caplet should be close to intrinsic."""
         params = {**base_params, "forward_rate": 0.10, "strike": 0.02}
-        caplet = CapletSimple(**params)
+        caplet = IrCapletEuropeanOptionSimple(**params)
         
-        pricer = IrEuropeanCapletB76PricerSimple()
+        pricer = IrCapletEuropeanOptionB76PricerSimple()
         pv = pricer.price(caplet)
         
         # Intrinsic = DF × τ × N × (F - K)
@@ -518,9 +518,9 @@ class TestEdgeCases:
     def test_zero_vol_caplet(self, base_params):
         """Zero vol caplet should equal discounted intrinsic."""
         params = {**base_params, "vol": 0.0}
-        caplet = CapletSimple(**params)
+        caplet = IrCapletEuropeanOptionSimple(**params)
         
-        pricer = IrEuropeanCapletB76PricerSimple()
+        pricer = IrCapletEuropeanOptionB76PricerSimple()
         pv = pricer.price(caplet)
         
         # With zero vol, price = intrinsic

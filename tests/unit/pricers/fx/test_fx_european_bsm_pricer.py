@@ -10,12 +10,12 @@ from src.marketdata.core.ids import MarketId
 from src.models.analytic.black_scholes_merton import vanilla_price
 from src.models.common.normal import std_norm_cdf
 
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
-from src.instruments.fx.options.digital import EuropeanFxDigitalOption
+from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
+from src.instruments.fx.options.digital import FxDigitalEuropeanOption
 
 from src.pricers.fx.european_bsm import (
-    FxEuropeanDigitalBsmPricer,
-    FxEuropeanVanillaBsmPricer,
+    FxDigitalEuropeanOptionBsmPricer,
+    FxVanillaEuropeanOptionBsmPricer,
 )
 
 
@@ -155,13 +155,13 @@ def market(ids: Dict[str, MarketId], base_params: Dict[str, float]) -> _DummyMar
 
 
 @pytest.fixture(scope="module")
-def vanilla_pricer() -> FxEuropeanVanillaBsmPricer:
-    return FxEuropeanVanillaBsmPricer()
+def vanilla_pricer() -> FxVanillaEuropeanOptionBsmPricer:
+    return FxVanillaEuropeanOptionBsmPricer()
 
 
 @pytest.fixture(scope="module")
-def digital_pricer() -> FxEuropeanDigitalBsmPricer:
-    return FxEuropeanDigitalBsmPricer()
+def digital_pricer() -> FxDigitalEuropeanOptionBsmPricer:
+    return FxDigitalEuropeanOptionBsmPricer()
 
 
 # =============================================================================
@@ -173,14 +173,14 @@ def test_fx_vanilla_price_matches_engine_scaled(
     ids: Dict[str, MarketId],
     base_params: Dict[str, float],
     market: _DummyMarket,
-    vanilla_pricer: FxEuropeanVanillaBsmPricer,
+    vanilla_pricer: FxVanillaEuropeanOptionBsmPricer,
     option_type: str,
 ) -> None:
     """
     The adapter should map FX market inputs -> (discount_rate=r_d, carry=r_d-r_f)
     and then scale PV by notional_foreign.
     """
-    trade = EuropeanFxVanillaOption(
+    trade = FxVanillaEuropeanOption(
         option_type=option_type,  # type: ignore[arg-type]
         notional=float(base_params["notional"]),
         strike=float(base_params["strike"]),
@@ -216,7 +216,7 @@ def test_fx_vanilla_put_call_parity(
     ids: Dict[str, MarketId],
     base_params: Dict[str, float],
     market: _DummyMarket,
-    vanilla_pricer: FxEuropeanVanillaBsmPricer,
+    vanilla_pricer: FxVanillaEuropeanOptionBsmPricer,
 ) -> None:
     """
     FX put-call parity under the domestic measure:
@@ -235,7 +235,7 @@ def test_fx_vanilla_put_call_parity(
     df_d = math.exp(-rd * t)
     df_f = math.exp(-rf * t)
 
-    call = EuropeanFxVanillaOption(
+    call = FxVanillaEuropeanOption(
         option_type="call",
         notional=notional,
         strike=k,
@@ -245,7 +245,7 @@ def test_fx_vanilla_put_call_parity(
         domestic_curve_id=ids["rd"],
         foreign_curve_id=ids["rf"],
     )
-    put = EuropeanFxVanillaOption(
+    put = FxVanillaEuropeanOption(
         option_type="put",
         notional=notional,
         strike=k,
@@ -267,7 +267,7 @@ def test_fx_vanilla_put_call_parity(
 def test_fx_vanilla_greeks_match_finite_differences(
     ids: Dict[str, MarketId],
     base_params: Dict[str, float],
-    vanilla_pricer: FxEuropeanVanillaBsmPricer,
+    vanilla_pricer: FxVanillaEuropeanOptionBsmPricer,
     option_type: str,
 ) -> None:
     """
@@ -286,7 +286,7 @@ def test_fx_vanilla_greeks_match_finite_differences(
     sig0 = float(base_params["sigma"])
     notional = float(base_params["notional"])
 
-    trade = EuropeanFxVanillaOption(
+    trade = FxVanillaEuropeanOption(
         option_type=option_type,  # type: ignore[arg-type]
         notional=notional,
         strike=k,
@@ -364,7 +364,7 @@ def test_fx_vanilla_greeks_match_finite_differences(
 def test_fx_digital_cash_price_matches_closed_form(
     ids: Dict[str, MarketId],
     base_params: Dict[str, float],
-    digital_pricer: FxEuropeanDigitalBsmPricer,
+    digital_pricer: FxDigitalEuropeanOptionBsmPricer,
     option_type: str,
 ) -> None:
     s = float(base_params["spot"])
@@ -380,7 +380,7 @@ def test_fx_digital_cash_price_matches_closed_form(
         spot=s, rd=rd, rf=rf, sigma=sig,
     )
 
-    trade = EuropeanFxDigitalOption(
+    trade = FxDigitalEuropeanOption(
         option_type=option_type,  # type: ignore[arg-type]
         payoff="cash",
         payout_amount=float(payout),
@@ -409,7 +409,7 @@ def test_fx_digital_cash_price_matches_closed_form(
 def test_fx_digital_asset_price_matches_closed_form(
     ids: Dict[str, MarketId],
     base_params: Dict[str, float],
-    digital_pricer: FxEuropeanDigitalBsmPricer,
+    digital_pricer: FxDigitalEuropeanOptionBsmPricer,
     option_type: str,
 ) -> None:
     s = float(base_params["spot"])
@@ -425,7 +425,7 @@ def test_fx_digital_asset_price_matches_closed_form(
         spot=s, rd=rd, rf=rf, sigma=sig,
     )
 
-    trade = EuropeanFxDigitalOption(
+    trade = FxDigitalEuropeanOption(
         option_type=option_type,  # type: ignore[arg-type]
         payoff="asset",
         payout_amount=float(payout),
@@ -451,14 +451,14 @@ def test_fx_digital_asset_price_matches_closed_form(
 
 def test_fx_digital_price_at_expiry_is_payoff(
     ids: Dict[str, MarketId],
-    digital_pricer: FxEuropeanDigitalBsmPricer,
+    digital_pricer: FxDigitalEuropeanOptionBsmPricer,
 ) -> None:
     market = _DummyMarket(
         spot_id=ids["spot"], vol_id=ids["vol"], rd_id=ids["rd"], rf_id=ids["rf"],
         spot=105.0, rd=0.03, rf=0.01, sigma=0.20,
     )
 
-    cash_call = EuropeanFxDigitalOption(
+    cash_call = FxDigitalEuropeanOption(
         option_type="call",
         payoff="cash",
         payout_amount=100.0,
@@ -469,7 +469,7 @@ def test_fx_digital_price_at_expiry_is_payoff(
         domestic_curve_id=ids["rd"],
         foreign_curve_id=ids["rf"],
     )
-    asset_put = EuropeanFxDigitalOption(
+    asset_put = FxDigitalEuropeanOption(
         option_type="put",
         payoff="asset",
         payout_amount=3.0,
@@ -490,7 +490,7 @@ def test_fx_digital_price_at_expiry_is_payoff(
 def test_fx_digital_cash_greeks_match_finite_differences(
     ids: Dict[str, MarketId],
     base_params: Dict[str, float],
-    digital_pricer: FxEuropeanDigitalBsmPricer,
+    digital_pricer: FxDigitalEuropeanOptionBsmPricer,
     option_type: str,
 ) -> None:
     s0 = float(base_params["spot"])
@@ -501,7 +501,7 @@ def test_fx_digital_cash_greeks_match_finite_differences(
     sig0 = float(base_params["sigma"])
     payout = 2500.0
 
-    trade = EuropeanFxDigitalOption(
+    trade = FxDigitalEuropeanOption(
         option_type=option_type,  # type: ignore[arg-type]
         payoff="cash",
         payout_amount=payout,

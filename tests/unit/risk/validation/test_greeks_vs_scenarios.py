@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from src.instruments.fx.linear.spot import FxSpot
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
+from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.requests import MarketRequest, Universe
 from src.marketdata.scenarios.interfaces import ScenarioPack
@@ -60,7 +60,7 @@ def _atm_call_portfolio(
 ) -> Portfolio:
     """Single ATM-ish EURUSD call (strike = current spot)."""
     spot = float(market.quote(spot_id))
-    instrument = EuropeanFxVanillaOption(
+    instrument = FxVanillaEuropeanOption(
         option_type="call",
         notional=float(notional),
         strike=float(spot),

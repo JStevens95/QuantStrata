@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from src.instruments.fx.linear.spot import FxSpot
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
+from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.requests import MarketRequest, Universe
 from src.marketdata.scenarios.interfaces import ScenarioPack
@@ -41,7 +41,7 @@ def fx_market_book_and_ids():
             ),
             Position(
                 position_id="CALL",
-                instrument=EuropeanFxVanillaOption(
+                instrument=FxVanillaEuropeanOption(
                     option_type="call",
                     notional=1_000_000.0,
                     strike=S0,

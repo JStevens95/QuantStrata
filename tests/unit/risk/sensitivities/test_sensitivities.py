@@ -5,7 +5,7 @@ import pytest
 # ---- instrument objects ----
 from src.instruments.fx.linear.spot import FxSpot
 from src.instruments.fx.linear.forward import FxForward
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
+from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
 
 # ---- marketdata objects ----
 from src.marketdata.core.ids import MarketId
@@ -19,7 +19,7 @@ from src.portfolio.portfolio import PortfolioPricer
 
 # ---- pricer objects ----
 from src.pricers.registry import DefaultPricerRegistry
-from src.pricers.fx.european_fde import FxEuropeanVanillaFdPricer
+from src.pricers.fx.european_fde import FxVanillaEuropeanOptionFdPricer
 
 # ---- sensitivity objects ----
 from src.risk.sensitivities.config import SensitivitiesBumps, SensitivitiesConfig
@@ -41,7 +41,7 @@ def pricer_fd() -> PortfolioPricer:
     registry = DefaultPricerRegistry().build()
 
     # Ensure the named FD pricer is registered (instance, not class).
-    registry.register(EuropeanFxVanillaOption, FxEuropeanVanillaFdPricer(), pricer_id="fd", overwrite=True)
+    registry.register(FxVanillaEuropeanOption, FxVanillaEuropeanOptionFdPricer(), pricer_id="fd", overwrite=True)
 
     return PortfolioPricer(pricer_registry=registry)
 
@@ -210,7 +210,7 @@ def test_fd_delta_for_vanilla_option_matches_analytic_bsm(
     K = S0  # ATM
     notional = 1_000_000.0
 
-    opt = EuropeanFxVanillaOption(
+    opt = FxVanillaEuropeanOption(
         notional=notional,
         strike=K,
         expiry=T,
@@ -261,7 +261,7 @@ def test_fd_gamma_matches_analytic_for_vanilla_option_using_bsm_pv(
     K = S0
     notional = 1_000_000.0
 
-    opt = EuropeanFxVanillaOption(
+    opt = FxVanillaEuropeanOption(
         notional=notional,
         strike=K,
         expiry=T,
@@ -308,7 +308,7 @@ def test_fd_gamma_uses_fd_pricer_routing_and_matches_manual_central_diff(
     K = S0
     notional = 1_000_000.0
 
-    opt = EuropeanFxVanillaOption(
+    opt = FxVanillaEuropeanOption(
         notional=notional,
         strike=K,
         expiry=T,

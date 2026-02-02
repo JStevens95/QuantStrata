@@ -17,12 +17,12 @@ from __future__ import annotations
 import pytest
 
 from src.instruments.ir.options.swaption import (
-    Swaption,
-    SwaptionSimple,
+    IrSwaptionEuropeanOption,
+    IrSwaptionEuropeanOptionSimple,
 )
 from src.pricers.ir.european_bch import (
-    IrEuropeanSwaptionBchPricer,
-    IrEuropeanSwaptionBchPricerSimple,
+    IrSwaptionEuropeanOptionBchPricer,
+    IrSwaptionEuropeanOptionBchPricerSimple,
 )
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.market import Market
@@ -54,14 +54,14 @@ def swaption_params():
 @pytest.fixture
 def payer_swaption(swaption_params):
     """Create a payer swaption."""
-    return SwaptionSimple(**swaption_params)
+    return IrSwaptionEuropeanOptionSimple(**swaption_params)
 
 
 @pytest.fixture
 def receiver_swaption(swaption_params):
     """Create a receiver swaption."""
     params = {**swaption_params, "swaption_type": "receiver"}
-    return SwaptionSimple(**params)
+    return IrSwaptionEuropeanOptionSimple(**params)
 
 
 @pytest.fixture
@@ -101,7 +101,7 @@ class TestSwaptionValidation:
     
     def test_valid_swaption(self, swaption_params):
         """Valid swaption should be created without errors."""
-        swaption = SwaptionSimple(**swaption_params)
+        swaption = IrSwaptionEuropeanOptionSimple(**swaption_params)
         assert swaption.notional == swaption_params["notional"]
         assert swaption.strike == swaption_params["strike"]
     
@@ -109,13 +109,13 @@ class TestSwaptionValidation:
         """Zero notional should raise."""
         swaption_params["notional"] = 0.0
         with pytest.raises(ValueError, match="notional must be non-zero"):
-            SwaptionSimple(**swaption_params)
+            IrSwaptionEuropeanOptionSimple(**swaption_params)
     
     def test_negative_expiry_raises(self, swaption_params):
         """Negative expiry should raise."""
         swaption_params["option_expiry"] = -0.1
         with pytest.raises(ValueError, match="option_expiry must be >= 0"):
-            SwaptionSimple(**swaption_params)
+            IrSwaptionEuropeanOptionSimple(**swaption_params)
     
     def test_tenor_description(self, payer_swaption):
         """Test tenor description."""
@@ -140,38 +140,38 @@ class TestSwaptionPricing:
     
     def test_payer_price_positive(self, payer_swaption):
         """Payer swaption price should be positive."""
-        pricer = IrEuropeanSwaptionBchPricerSimple()
+        pricer = IrSwaptionEuropeanOptionBchPricerSimple()
         pv = pricer.price(payer_swaption)
         assert pv > 0
     
     def test_receiver_price_positive(self, receiver_swaption):
         """Receiver swaption price should be positive."""
-        pricer = IrEuropeanSwaptionBchPricerSimple()
+        pricer = IrSwaptionEuropeanOptionBchPricerSimple()
         pv = pricer.price(receiver_swaption)
         assert pv > 0
     
     def test_itm_higher_than_otm(self, swaption_params):
         """ITM swaption should be more valuable than OTM."""
-        pricer = IrEuropeanSwaptionBchPricerSimple()
+        pricer = IrSwaptionEuropeanOptionBchPricerSimple()
         
         # ITM payer: forward > strike
         itm_params = {**swaption_params, "forward_swap_rate": 0.06, "strike": 0.04}
-        itm = SwaptionSimple(**itm_params)
+        itm = IrSwaptionEuropeanOptionSimple(**itm_params)
         
         # OTM payer: forward < strike
         otm_params = {**swaption_params, "forward_swap_rate": 0.03, "strike": 0.04}
-        otm = SwaptionSimple(**otm_params)
+        otm = IrSwaptionEuropeanOptionSimple(**otm_params)
         
         assert pricer.price(itm) > pricer.price(otm)
     
     def test_price_scales_with_notional(self, swaption_params):
         """Price should scale linearly with notional."""
-        pricer = IrEuropeanSwaptionBchPricerSimple()
+        pricer = IrSwaptionEuropeanOptionBchPricerSimple()
         
-        sw1 = SwaptionSimple(**swaption_params)
+        sw1 = IrSwaptionEuropeanOptionSimple(**swaption_params)
         
         params2 = {**swaption_params, "notional": 20_000_000}
-        sw2 = SwaptionSimple(**params2)
+        sw2 = IrSwaptionEuropeanOptionSimple(**params2)
         
         pv1 = pricer.price(sw1)
         pv2 = pricer.price(sw2)
@@ -180,12 +180,12 @@ class TestSwaptionPricing:
     
     def test_price_scales_with_annuity(self, swaption_params):
         """Price should scale linearly with annuity."""
-        pricer = IrEuropeanSwaptionBchPricerSimple()
+        pricer = IrSwaptionEuropeanOptionBchPricerSimple()
         
-        sw1 = SwaptionSimple(**swaption_params)
+        sw1 = IrSwaptionEuropeanOptionSimple(**swaption_params)
         
         params2 = {**swaption_params, "annuity": 9.0}  # Double annuity
-        sw2 = SwaptionSimple(**params2)
+        sw2 = IrSwaptionEuropeanOptionSimple(**params2)
         
         pv1 = pricer.price(sw1)
         pv2 = pricer.price(sw2)
@@ -208,11 +208,11 @@ class TestPutCallParity:
         For swaptions:
         Payer - Receiver = A × N × (F - K)
         """
-        payer = SwaptionSimple(**swaption_params)
+        payer = IrSwaptionEuropeanOptionSimple(**swaption_params)
         receiver_params = {**swaption_params, "swaption_type": "receiver"}
-        receiver = SwaptionSimple(**receiver_params)
+        receiver = IrSwaptionEuropeanOptionSimple(**receiver_params)
         
-        pricer = IrEuropeanSwaptionBchPricerSimple()
+        pricer = IrSwaptionEuropeanOptionBchPricerSimple()
         
         payer_pv = pricer.price(payer)
         receiver_pv = pricer.price(receiver)
@@ -240,7 +240,7 @@ class TestSwaptionGreeks:
     
     def test_greeks_exist(self, payer_swaption):
         """Greeks should be computed."""
-        pricer = IrEuropeanSwaptionBchPricerSimple()
+        pricer = IrSwaptionEuropeanOptionBchPricerSimple()
         greeks = pricer.greeks(payer_swaption)
         
         assert "delta" in greeks
@@ -251,31 +251,31 @@ class TestSwaptionGreeks:
     
     def test_payer_delta_positive(self, payer_swaption):
         """Payer swaption delta should be positive."""
-        pricer = IrEuropeanSwaptionBchPricerSimple()
+        pricer = IrSwaptionEuropeanOptionBchPricerSimple()
         greeks = pricer.greeks(payer_swaption)
         assert greeks["delta"] > 0
     
     def test_receiver_delta_negative(self, receiver_swaption):
         """Receiver swaption delta should be negative."""
-        pricer = IrEuropeanSwaptionBchPricerSimple()
+        pricer = IrSwaptionEuropeanOptionBchPricerSimple()
         greeks = pricer.greeks(receiver_swaption)
         assert greeks["delta"] < 0
     
     def test_gamma_positive(self, payer_swaption):
         """Gamma should be positive."""
-        pricer = IrEuropeanSwaptionBchPricerSimple()
+        pricer = IrSwaptionEuropeanOptionBchPricerSimple()
         greeks = pricer.greeks(payer_swaption)
         assert greeks["gamma"] > 0
     
     def test_vega_positive(self, payer_swaption):
         """Vega should be positive."""
-        pricer = IrEuropeanSwaptionBchPricerSimple()
+        pricer = IrSwaptionEuropeanOptionBchPricerSimple()
         greeks = pricer.greeks(payer_swaption)
         assert greeks["vega"] > 0
     
     def test_vega_bp(self, payer_swaption):
         """Vega per bp should be reasonable."""
-        pricer = IrEuropeanSwaptionBchPricerSimple()
+        pricer = IrSwaptionEuropeanOptionBchPricerSimple()
         vega_bp = pricer.vega_bp(payer_swaption)
         
         # Vega per bp should be smaller than vega per 1.0 vol
@@ -293,16 +293,16 @@ class TestFiniteDifferenceGreeks:
     
     def test_delta_fd(self, swaption_params):
         """Delta should match finite difference approximation."""
-        pricer = IrEuropeanSwaptionBchPricerSimple()
+        pricer = IrSwaptionEuropeanOptionBchPricerSimple()
         
         bump = 1e-5
         
         params_up = {**swaption_params, "forward_swap_rate": swaption_params["forward_swap_rate"] + bump}
         params_dn = {**swaption_params, "forward_swap_rate": swaption_params["forward_swap_rate"] - bump}
         
-        sw_up = SwaptionSimple(**params_up)
-        sw_dn = SwaptionSimple(**params_dn)
-        sw_mid = SwaptionSimple(**swaption_params)
+        sw_up = IrSwaptionEuropeanOptionSimple(**params_up)
+        sw_dn = IrSwaptionEuropeanOptionSimple(**params_dn)
+        sw_mid = IrSwaptionEuropeanOptionSimple(**swaption_params)
         
         pv_up = pricer.price(sw_up)
         pv_dn = pricer.price(sw_dn)
@@ -316,16 +316,16 @@ class TestFiniteDifferenceGreeks:
     
     def test_vega_fd(self, swaption_params):
         """Vega should match finite difference approximation."""
-        pricer = IrEuropeanSwaptionBchPricerSimple()
+        pricer = IrSwaptionEuropeanOptionBchPricerSimple()
         
         bump = 1e-6
         
         params_up = {**swaption_params, "vol": swaption_params["vol"] + bump}
         params_dn = {**swaption_params, "vol": swaption_params["vol"] - bump}
         
-        sw_up = SwaptionSimple(**params_up)
-        sw_dn = SwaptionSimple(**params_dn)
-        sw_mid = SwaptionSimple(**swaption_params)
+        sw_up = IrSwaptionEuropeanOptionSimple(**params_up)
+        sw_dn = IrSwaptionEuropeanOptionSimple(**params_dn)
+        sw_mid = IrSwaptionEuropeanOptionSimple(**swaption_params)
         
         pv_up = pricer.price(sw_up)
         pv_dn = pricer.price(sw_dn)
@@ -348,7 +348,7 @@ class TestMarketDataPricer:
     
     def test_swaption_market_pricer(self, market, curve_id, vol_id):
         """Market data pricer should produce reasonable price."""
-        swaption = Swaption(
+        swaption = IrSwaptionEuropeanOption(
             notional=10_000_000,
             strike=0.04,
             option_expiry=1.0,
@@ -359,7 +359,7 @@ class TestMarketDataPricer:
             vol_id=vol_id,
         )
         
-        pricer = IrEuropeanSwaptionBchPricer()
+        pricer = IrSwaptionEuropeanOptionBchPricer()
         pv = pricer.price(swaption, market)
         
         assert pv > 0
@@ -378,9 +378,9 @@ class TestEdgeCases:
     def test_atm_swaption(self, swaption_params):
         """ATM swaption should have positive value."""
         params = {**swaption_params, "forward_swap_rate": swaption_params["strike"]}
-        swaption = SwaptionSimple(**params)
+        swaption = IrSwaptionEuropeanOptionSimple(**params)
         
-        pricer = IrEuropeanSwaptionBchPricerSimple()
+        pricer = IrSwaptionEuropeanOptionBchPricerSimple()
         pv = pricer.price(swaption)
         
         assert pv > 0
@@ -388,9 +388,9 @@ class TestEdgeCases:
     def test_zero_vol_swaption(self, swaption_params):
         """Zero vol swaption should equal intrinsic."""
         params = {**swaption_params, "vol": 0.0}
-        swaption = SwaptionSimple(**params)
+        swaption = IrSwaptionEuropeanOptionSimple(**params)
         
-        pricer = IrEuropeanSwaptionBchPricerSimple()
+        pricer = IrSwaptionEuropeanOptionBchPricerSimple()
         pv = pricer.price(swaption)
         
         # Intrinsic for payer = A × N × max(F - K, 0)
@@ -405,9 +405,9 @@ class TestEdgeCases:
     def test_negative_strike(self, swaption_params):
         """Bachelier handles negative strikes (for negative rate environments)."""
         params = {**swaption_params, "strike": -0.01, "forward_swap_rate": -0.005}
-        swaption = SwaptionSimple(**params)
+        swaption = IrSwaptionEuropeanOptionSimple(**params)
         
-        pricer = IrEuropeanSwaptionBchPricerSimple()
+        pricer = IrSwaptionEuropeanOptionBchPricerSimple()
         pv = pricer.price(swaption)
         
         # Should still produce valid positive price

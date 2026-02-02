@@ -15,7 +15,7 @@ import pytest
 from scipy.stats import norm
 
 from src.pricers.fx.heston_mc import (
-    FxHestonMcPricer,
+    FxHestonEuropeanOptionMcPricer,
     HestonMcResult,
     price_heston_european,
 )
@@ -45,15 +45,15 @@ def bs_put_price(S: float, K: float, T: float, r: float, q: float, sigma: float)
 
 
 # =============================================================================
-# FxHestonMcPricer Configuration Tests
+# FxHestonEuropeanOptionMcPricer Configuration Tests
 # =============================================================================
 
-class TestFxHestonMcPricerConfig:
+class TestFxHestonEuropeanOptionMcPricerConfig:
     """Tests for pricer configuration."""
 
     def test_default_config(self) -> None:
         """Test default configuration values."""
-        pricer = FxHestonMcPricer()
+        pricer = FxHestonEuropeanOptionMcPricer()
         assert pricer.n_paths == 100_000
         assert pricer.n_steps == 252
         assert pricer.scheme == "full_truncation"
@@ -61,7 +61,7 @@ class TestFxHestonMcPricerConfig:
 
     def test_custom_config(self) -> None:
         """Test custom configuration."""
-        pricer = FxHestonMcPricer(
+        pricer = FxHestonEuropeanOptionMcPricer(
             n_paths=50000,
             n_steps=100,
             scheme="qe",
@@ -77,17 +77,17 @@ class TestFxHestonMcPricerConfig:
     def test_invalid_n_paths_zero(self) -> None:
         """Test that n_paths=0 raises ValueError."""
         with pytest.raises(ValueError, match="n_paths must be > 0"):
-            FxHestonMcPricer(n_paths=0)
+            FxHestonEuropeanOptionMcPricer(n_paths=0)
 
     def test_invalid_n_paths_negative(self) -> None:
         """Test that negative n_paths raises ValueError."""
         with pytest.raises(ValueError, match="n_paths must be > 0"):
-            FxHestonMcPricer(n_paths=-1000)
+            FxHestonEuropeanOptionMcPricer(n_paths=-1000)
 
     def test_invalid_n_steps_zero(self) -> None:
         """Test that n_steps=0 raises ValueError."""
         with pytest.raises(ValueError, match="n_steps must be > 0"):
-            FxHestonMcPricer(n_steps=0)
+            FxHestonEuropeanOptionMcPricer(n_steps=0)
 
 
 # =============================================================================
@@ -109,12 +109,12 @@ class TestHestonEuropeanPricing:
         )
 
     @pytest.fixture
-    def pricer(self) -> FxHestonMcPricer:
+    def pricer(self) -> FxHestonEuropeanOptionMcPricer:
         """Create pricer with fixed seed for reproducibility."""
-        return FxHestonMcPricer(n_paths=50000, n_steps=100, seed=42)
+        return FxHestonEuropeanOptionMcPricer(n_paths=50000, n_steps=100, seed=42)
 
     def test_call_price_positive(
-        self, pricer: FxHestonMcPricer, default_params: HestonParameters
+        self, pricer: FxHestonEuropeanOptionMcPricer, default_params: HestonParameters
     ) -> None:
         """Test that call price is positive."""
         result = pricer.price_european(
@@ -125,7 +125,7 @@ class TestHestonEuropeanPricing:
         assert result.price > 0
 
     def test_put_price_positive(
-        self, pricer: FxHestonMcPricer, default_params: HestonParameters
+        self, pricer: FxHestonEuropeanOptionMcPricer, default_params: HestonParameters
     ) -> None:
         """Test that put price is positive."""
         result = pricer.price_european(
@@ -136,7 +136,7 @@ class TestHestonEuropeanPricing:
         assert result.price > 0
 
     def test_result_contains_expected_fields(
-        self, pricer: FxHestonMcPricer, default_params: HestonParameters
+        self, pricer: FxHestonEuropeanOptionMcPricer, default_params: HestonParameters
     ) -> None:
         """Test that result contains all expected fields."""
         result = pricer.price_european(
@@ -155,7 +155,7 @@ class TestHestonEuropeanPricing:
         assert hasattr(result, "simulation")
 
     def test_std_error_positive(
-        self, pricer: FxHestonMcPricer, default_params: HestonParameters
+        self, pricer: FxHestonEuropeanOptionMcPricer, default_params: HestonParameters
     ) -> None:
         """Test that standard error is positive."""
         result = pricer.price_european(
@@ -166,7 +166,7 @@ class TestHestonEuropeanPricing:
         assert result.std_error > 0
 
     def test_confidence_interval(
-        self, pricer: FxHestonMcPricer, default_params: HestonParameters
+        self, pricer: FxHestonEuropeanOptionMcPricer, default_params: HestonParameters
     ) -> None:
         """Test 95% confidence interval calculation."""
         result = pricer.price_european(
@@ -209,7 +209,7 @@ class TestHestonConvergence:
         sigma_bs = np.sqrt(params.theta)  # Should be ~0.20.
 
         # Heston price.
-        pricer = FxHestonMcPricer(n_paths=100000, n_steps=200, seed=42)
+        pricer = FxHestonEuropeanOptionMcPricer(n_paths=100000, n_steps=200, seed=42)
         heston_result = pricer.price_european(
             spot=spot, strike=strike, maturity=T,
             domestic_rate=r, foreign_rate=q,
@@ -243,7 +243,7 @@ class TestHestonPutCallParity:
         spot, strike, T = 100.0, 100.0, 1.0
         r, q = 0.05, 0.02
 
-        pricer = FxHestonMcPricer(n_paths=100000, n_steps=200, seed=42)
+        pricer = FxHestonEuropeanOptionMcPricer(n_paths=100000, n_steps=200, seed=42)
 
         call_result = pricer.price_european(
             spot=spot, strike=strike, maturity=T,
@@ -311,7 +311,7 @@ class TestHestonGreeks:
 
     def test_greeks_computation(self, params: HestonParameters) -> None:
         """Test that Greeks are computed without error."""
-        pricer = FxHestonMcPricer(n_paths=10000, n_steps=50, seed=42)
+        pricer = FxHestonEuropeanOptionMcPricer(n_paths=10000, n_steps=50, seed=42)
 
         greeks = pricer.price_with_greeks(
             spot=100.0, strike=100.0, maturity=1.0,
@@ -329,7 +329,7 @@ class TestHestonGreeks:
 
     def test_call_delta_positive(self, params: HestonParameters) -> None:
         """Test that call delta is positive."""
-        pricer = FxHestonMcPricer(n_paths=20000, n_steps=50, seed=42)
+        pricer = FxHestonEuropeanOptionMcPricer(n_paths=20000, n_steps=50, seed=42)
 
         greeks = pricer.price_with_greeks(
             spot=100.0, strike=100.0, maturity=1.0,
@@ -342,7 +342,7 @@ class TestHestonGreeks:
 
     def test_call_gamma_positive(self, params: HestonParameters) -> None:
         """Test that call gamma is positive."""
-        pricer = FxHestonMcPricer(n_paths=20000, n_steps=50, seed=42)
+        pricer = FxHestonEuropeanOptionMcPricer(n_paths=20000, n_steps=50, seed=42)
 
         greeks = pricer.price_with_greeks(
             spot=100.0, strike=100.0, maturity=1.0,
@@ -362,9 +362,9 @@ class TestHestonPricerValidation:
     """Tests for input validation in the pricer."""
 
     @pytest.fixture
-    def pricer(self) -> FxHestonMcPricer:
+    def pricer(self) -> FxHestonEuropeanOptionMcPricer:
         """Create default pricer."""
-        return FxHestonMcPricer(n_paths=1000, n_steps=50, seed=42)
+        return FxHestonEuropeanOptionMcPricer(n_paths=1000, n_steps=50, seed=42)
 
     @pytest.fixture
     def params(self) -> HestonParameters:
@@ -374,7 +374,7 @@ class TestHestonPricerValidation:
         )
 
     def test_invalid_spot_zero(
-        self, pricer: FxHestonMcPricer, params: HestonParameters
+        self, pricer: FxHestonEuropeanOptionMcPricer, params: HestonParameters
     ) -> None:
         """Test that spot=0 raises ValueError."""
         with pytest.raises(ValueError, match="spot must be > 0"):
@@ -385,7 +385,7 @@ class TestHestonPricerValidation:
             )
 
     def test_invalid_strike_zero(
-        self, pricer: FxHestonMcPricer, params: HestonParameters
+        self, pricer: FxHestonEuropeanOptionMcPricer, params: HestonParameters
     ) -> None:
         """Test that strike=0 raises ValueError."""
         with pytest.raises(ValueError, match="strike must be > 0"):
@@ -396,7 +396,7 @@ class TestHestonPricerValidation:
             )
 
     def test_invalid_maturity_zero(
-        self, pricer: FxHestonMcPricer, params: HestonParameters
+        self, pricer: FxHestonEuropeanOptionMcPricer, params: HestonParameters
     ) -> None:
         """Test that maturity=0 raises ValueError."""
         with pytest.raises(ValueError, match="maturity must be > 0"):

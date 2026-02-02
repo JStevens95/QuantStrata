@@ -6,9 +6,9 @@ from typing import Dict
 from dataclasses import dataclass
 
 from src.marketdata.core.ids import MarketId
-from src.instruments.fx.options.vanilla import AmericanFxVanillaOption, EuropeanFxVanillaOption
-from src.pricers.fx.european_fde import FxEuropeanVanillaFdPricer
-from src.pricers.fx.american_fde import FxAmericanVanillaFdPricer
+from src.instruments.fx.options.vanilla import FxVanillaAmericanOption, FxVanillaEuropeanOption
+from src.pricers.fx.european_fde import FxVanillaEuropeanOptionFdPricer
+from src.pricers.fx.american_fde import FxVanillaAmericanOptionFdPricer
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,8 +71,8 @@ def ids() -> Dict[str, MarketId]:
     }
 
 
-def _make_euro_trade(*, option_type: str, ids: Dict[str, MarketId], notional: float, strike: float, t: float) -> EuropeanFxVanillaOption:
-    return EuropeanFxVanillaOption(
+def _make_euro_trade(*, option_type: str, ids: Dict[str, MarketId], notional: float, strike: float, t: float) -> FxVanillaEuropeanOption:
+    return FxVanillaEuropeanOption(
         option_type=option_type,  # type: ignore[arg-type]
         notional=float(notional),
         strike=float(strike),
@@ -84,8 +84,8 @@ def _make_euro_trade(*, option_type: str, ids: Dict[str, MarketId], notional: fl
     )
 
 
-def _make_amer_trade(*, option_type: str, ids: Dict[str, MarketId], notional: float, strike: float, t: float) -> AmericanFxVanillaOption:
-    return AmericanFxVanillaOption(
+def _make_amer_trade(*, option_type: str, ids: Dict[str, MarketId], notional: float, strike: float, t: float) -> FxVanillaAmericanOption:
+    return FxVanillaAmericanOption(
         option_type=option_type,  # type: ignore[arg-type]
         notional=float(notional),
         strike=float(strike),
@@ -123,8 +123,8 @@ def test_american_price_is_at_least_european(
     euro = _make_euro_trade(option_type=option_type, ids=ids, notional=notional, strike=strike, t=T)
     amer = _make_amer_trade(option_type=option_type, ids=ids, notional=notional, strike=strike, t=T)
 
-    euro_fd = FxEuropeanVanillaFdPricer(n_space=401, n_time_steps=240, n_std=6.0, theta=0.5, use_log_space=True)
-    amer_fd = FxAmericanVanillaFdPricer(n_space=401, n_time_steps=240, n_std=6.0, theta=0.5, use_log_space=True)
+    euro_fd = FxVanillaEuropeanOptionFdPricer(n_space=401, n_time_steps=240, n_std=6.0, theta=0.5, use_log_space=True)
+    amer_fd = FxVanillaAmericanOptionFdPricer(n_space=401, n_time_steps=240, n_std=6.0, theta=0.5, use_log_space=True)
 
     pv_euro = float(euro_fd.price(euro, market))
     pv_amer = float(amer_fd.price(amer, market))
@@ -164,8 +164,8 @@ def test_american_call_matches_european_call_when_rf_zero(
     euro = _make_euro_trade(option_type="call", ids=ids, notional=notional, strike=strike, t=T)
     amer = _make_amer_trade(option_type="call", ids=ids, notional=notional, strike=strike, t=T)
 
-    euro_fd = FxEuropeanVanillaFdPricer(n_space=401, n_time_steps=240, n_std=6.0, theta=0.5, use_log_space=True)
-    amer_fd = FxAmericanVanillaFdPricer(n_space=401, n_time_steps=240, n_std=6.0, theta=0.5, use_log_space=True)
+    euro_fd = FxVanillaEuropeanOptionFdPricer(n_space=401, n_time_steps=240, n_std=6.0, theta=0.5, use_log_space=True)
+    amer_fd = FxVanillaAmericanOptionFdPricer(n_space=401, n_time_steps=240, n_std=6.0, theta=0.5, use_log_space=True)
 
     pv_euro = float(euro_fd.price(euro, market))
     pv_amer = float(amer_fd.price(amer, market))
@@ -195,7 +195,7 @@ def test_american_fd_greeks_basic_sanity(
 
     trade = _make_amer_trade(option_type=option_type, ids=ids, notional=1_000_000.0, strike=1.25, t=1.0)
 
-    amer_fd = FxAmericanVanillaFdPricer(
+    amer_fd = FxVanillaAmericanOptionFdPricer(
         n_space=401,
         n_time_steps=240,
         n_std=6.0,
@@ -241,7 +241,7 @@ def test_american_fd_is_deterministic(
 
     trade = _make_amer_trade(option_type="put", ids=ids, notional=1_000_000.0, strike=1.25, t=1.0)
 
-    amer_fd = FxAmericanVanillaFdPricer(n_space=301, n_time_steps=200, n_std=6.0, theta=0.5, use_log_space=True)
+    amer_fd = FxVanillaAmericanOptionFdPricer(n_space=301, n_time_steps=200, n_std=6.0, theta=0.5, use_log_space=True)
 
     pv1 = float(amer_fd.price(trade, market))
     pv2 = float(amer_fd.price(trade, market))
