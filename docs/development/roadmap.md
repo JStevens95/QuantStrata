@@ -1,6 +1,6 @@
 # QuantStrata Development Roadmap
 
-**Last Updated:** January 27, 2026 (Phase 3.5 Complete - Hull-White Model)  
+**Last Updated:** January 27, 2026 (Phase 4.1 Complete - Advanced Stochastic Models)  
 **Current Version:** V1 (FX Derivatives Foundation)  
 **Target:** Comprehensive Professional Quant Library
 
@@ -455,22 +455,27 @@ linear products that should be implemented before options on them (swaptions).
 
 **Goal:** Add advanced quantitative methods and models
 
-### 4.1 Advanced Stochastic Models
-- [ ] **Jump-Diffusion (Merton Model)**
-  - Implement: `MertonJumpDiffusion` (GBM + Poisson jumps)
-  - MC pricer: Simulate jumps + diffusion
-  - Use case: Modeling market crashes, volatility clustering
+### 4.1 Advanced Stochastic Models ✅
 
-- [ ] **Stochastic Volatility (SABR Model)**
-  - Implement: `SabrModel` (stochastic vol for rates)
-  - Analytic: SABR formula for implied vol
-  - Calibration: To swaption smile
-  - Use case: Industry-standard rates vol model
+- [x] **Jump-Diffusion (Merton Model)**
+  - Implemented: `MertonParameters`, `MertonDynamics`, `MertonSimulation`
+  - MC pricer: Path and exact terminal simulation
+  - Analytic: Series pricing for European options
+  - Tests: 46 unit tests passing
 
-- [ ] **Variance Gamma (VG) Model**
-  - Implement: `VarianceGammaProcess` (time-changed Brownian motion)
-  - MC pricer: Simulate VG paths
-  - Use case: Alternative to GBM (fat tails)
+- [x] **Stochastic Volatility (SABR Model)**
+  - Implemented: `SabrDynamics`, `SabrSimulation`
+  - Analytic: Hagan formula for implied vol
+  - Calibration: Market smile fitting
+  - Tests: 25 unit tests passing
+
+- [x] **Variance Gamma (VG) Model**
+  - Implemented: `VarianceGammaParameters`, `VarianceGammaDynamics`
+  - MC pricer: Subordination-based simulation
+  - Characteristic function: For FFT methods
+  - Tests: 38 unit tests passing
+
+**Status:** Phase 4.1 COMPLETE. See `docs/development/progress/phase_4_1_advanced_stochastic_models.md`.
 
 ### 4.2 Advanced Numerical Methods
 - [ ] **Adaptive Mesh Refinement (FD)**
@@ -508,10 +513,9 @@ linear products that should be implemented before options on them (swaptions).
   - Use case: Structured products
 
 ### Deliverables:
-- ✅ 3+ advanced models (jump-diffusion, SABR, VG)
-- ✅ 4+ advanced numerical methods
-- ✅ Multi-asset products (basket, spread)
-- ✅ Performance comparisons
+- ✅ 3 advanced models (Merton jump-diffusion, SABR, Variance Gamma) - 109 tests
+- [ ] Advanced numerical methods (Phase 4.2)
+- [ ] Multi-asset products (Phase 4.3)
 
 **Impact:** Demonstrates advanced quantitative skills and research-level understanding.
 
