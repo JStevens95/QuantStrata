@@ -580,23 +580,44 @@ linear products that should be implemented before options on them (swaptions).
 **Documentation:**
 - Reference: `docs/reference/calibration/calibration_framework.md`
 - Guide: `docs/guides/calibration/calibration_framework.md`
+- Tutorial: `docs/tutorials/calibration/calibration_framework.ipynb`
+- Progress: `docs/development/progress/phase_5_1_calibration_framework.md`
 
-### 5.2 Backtesting Infrastructure
-- [ ] **Backtesting Framework**
-  - Implement: `BacktestEngine` (replay historical data)
-  - Support: Strategy evaluation (P&L, Sharpe, drawdowns)
-  - Support: Risk metrics (VaR, CVaR)
+### 5.2 Backtesting Infrastructure ✅
+
+**Status:** Complete (January 2026)
+
+- [x] **Backtesting Framework**
+  - Implemented: `BacktestEngine` with portfolio tracking
+  - Supported: Strategy evaluation (Sharpe, Sortino, Calmar, max drawdown)
+  - Supported: Transaction costs and slippage modeling
   - Use case: Strategy validation
 
-- [ ] **Historical Data Integration**
-  - Implement: `HistoricalDataProvider`
-  - Support: CSV, Parquet, database backends
+- [x] **Historical Data Integration**
+  - Implemented: `HistoricalDataProvider` base class
+  - Implemented: `DictDataProvider` (in-memory)
+  - Implemented: `CsvDataProvider` (wide/long formats)
   - Use case: Real-world backtesting
 
-- [ ] **Performance Attribution**
-  - Implement: P&L decomposition (delta, gamma, theta, vega)
-  - Support: Daily/weekly/monthly attribution
+- [x] **Performance Attribution**
+  - Implemented: `attribute_pnl_to_greeks()` for decomposition
+  - Implemented: `PnLAttribution` for time series tracking
+  - Supported: Daily/weekly/monthly aggregation
   - Use case: Understanding strategy performance
+
+**Components:**
+- `src/backtesting/core/engine.py` - BacktestEngine, BacktestResult
+- `src/backtesting/core/metrics.py` - PerformanceMetrics, Sharpe, Sortino, etc.
+- `src/backtesting/data/providers.py` - Data provider implementations
+- `src/backtesting/attribution/pnl.py` - P&L attribution
+
+**Tests:** 65 unit tests in `tests/unit/backtesting/`
+
+**Documentation:**
+- Reference: `docs/reference/backtesting/backtesting_framework.md`
+- Guide: `docs/guides/backtesting/backtesting_framework.md`
+- Tutorial: `docs/tutorials/backtesting/backtesting_introduction.ipynb`
+- Progress: `docs/development/progress/phase_5_2_backtesting.md`
 
 ### 5.3 Risk Infrastructure Enhancements
 - [ ] **Value-at-Risk (VaR)**
