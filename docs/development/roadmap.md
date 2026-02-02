@@ -1,6 +1,6 @@
 # QuantStrata Development Roadmap
 
-**Last Updated:** January 27, 2026 (Phase 3.3 Complete - Bachelier Pricers)  
+**Last Updated:** January 27, 2026 (Phase 3.4 Complete - Bond Instruments)  
 **Current Version:** V1 (FX Derivatives Foundation)  
 **Target:** Comprehensive Professional Quant Library
 
@@ -340,12 +340,29 @@ linear products that should be implemented before options on them (swaptions).
 
 **Status:** Phase 3.3 COMPLETE. See `docs/development/progress/phase_3_3_bachelier_pricers.md` for details.
 
-### 3.4 Bond Instruments
+### 3.4 Bond Instruments ✅
 
-- [ ] **Bond Options**
-  - Implement: `BondOption`
-  - Pricer: Black76 on bond forward price
-  - Use case: Fixed income options
+- [x] **Zero Coupon Bonds**
+  - Instruments: `IrBondZeroCoupon`, `IrBondZeroCouponSimple`
+  - Pricers: `IrBondZeroCouponPricer`, `IrBondZeroCouponPricerSimple`
+  - Greeks: DV01, modified duration, Macaulay duration, convexity
+  - Tests: 8 unit tests
+
+- [x] **Fixed Rate (Coupon) Bonds**
+  - Instruments: `IrBondFixedRate`, `IrBondFixedRateSimple`
+  - Pricers: `IrBondFixedRatePricer`, `IrBondFixedRatePricerSimple`
+  - Features: Clean/dirty price, YTM calculation
+  - Greeks: DV01, modified duration, Macaulay duration, convexity
+  - Tests: 10 unit tests
+
+- [x] **Bond Options (Black76)**
+  - Instruments: `IrBondEuropeanOption`, `IrBondEuropeanOptionSimple`
+  - Pricers: `IrBondEuropeanOptionB76Pricer`, `IrBondEuropeanOptionB76PricerSimple`
+  - Model: Black76 on forward bond price
+  - Greeks: delta, gamma, vega, theta, rho
+  - Tests: 22 unit tests
+
+**Status:** Phase 3.4 COMPLETE. See `docs/development/progress/phase_3_4_bond_instruments.md` for details.
 
 ### 3.5 Rate Models
 
@@ -388,7 +405,7 @@ linear products that should be implemented before options on them (swaptions).
 - [x] Complete Black76 pricers (FX forward options, futures options, caps/floors)
 - [x] Linear IR instruments (FRA, IRS) - 36 tests passing
 - [x] Complete Bachelier pricers (swaptions, spread options) - 45 tests passing
-- [ ] Bond instruments and options
+- [x] Bond instruments and options (zero coupon, fixed rate, bond options) - 40 tests passing
 - [ ] Hull-White model with calibration (enables IR MC/FD)
 - [ ] Rate market data infrastructure
 - [ ] Examples, tests, and documentation

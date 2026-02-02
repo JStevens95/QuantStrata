@@ -2,7 +2,7 @@
 """
 Interest Rate Black76 Pricers.
 
-Pricers for caps, floors, caplets, and floorlets using the Black76 model.
+Pricers for caps, floors, caplets, floorlets, and bond options using the Black76 model.
 
 Mathematical Framework
 ----------------------
@@ -51,6 +51,10 @@ from src.instruments.ir.options.capfloor import (
     IrFloorEuropeanOption,
     IrFloorEuropeanOptionSimple,
     compute_accrual_factor,
+)
+from src.instruments.ir.options.bond import (
+    IrBondEuropeanOption,
+    IrBondEuropeanOptionSimple,
 )
 
 # Import pure functions from the Black76 model.
@@ -725,6 +729,247 @@ class IrFloorEuropeanOptionB76Pricer:
 
 
 # =============================================================================
+# BOND OPTION PRICERS
+# =============================================================================
+
+
+@dataclass(frozen=True, slots=True)
+class IrBondEuropeanOptionB76PricerSimple:
+    """
+    Black76 pricer for a bond option with direct parameters.
+    
+    Bond options are priced using Black76 on the forward bond price.
+    
+    Call:  PV = N × DF × [F × N(d₁) - K × N(d₂)]
+    Put:   PV = N × DF × [K × N(-d₂) - F × N(-d₁)]
+    
+    Where:
+    - N = notional (number of bonds)
+    - F = forward bond price
+    - K = strike price
+    - DF = discount factor to expiry
+    - σ = bond price volatility
+    """
+    
+    def price(self, trade: IrBondEuropeanOptionSimple) -> float:
+        """
+        Price a bond option using Black76.
+        
+        Parameters
+        ----------
+        trade : IrBondEuropeanOptionSimple
+            Bond option with direct parameters.
+        
+        Returns
+        -------
+        float
+            Present value of the bond option.
+        """
+        # Extract parameters.
+        N = float(trade.notional)
+        K = float(trade.strike)
+        T = float(trade.expiry)
+        F = float(trade.forward_bond_price)
+        sigma = float(trade.vol)
+        df = float(trade.discount_factor)
+        opt_type = trade.option_type
+        
+        # Handle expired option.
+        if T <= 0.0:
+            if opt_type == "call":
+                return N * df * max(F - K, 0.0)
+            return N * df * max(K - F, 0.0)
+        
+        # Black76 price.
+        unit_pv = vanilla_price(
+            option_type=opt_type,
+            forward=F,
+            strike=K,
+            expiry=T,
+            discount_factor=df,
+            vol=sigma,
+        )
+        
+        return N * unit_pv
+    
+    def greeks(self, trade: IrBondEuropeanOptionSimple) -> Dict[GreekName, float]:
+        """
+        Compute Greeks for a bond option.
+        
+        Parameters
+        ----------
+        trade : IrBondEuropeanOptionSimple
+            Bond option with direct parameters.
+        
+        Returns
+        -------
+        dict
+            Greeks: delta, gamma, vega, theta, rho.
+        """
+        N = float(trade.notional)
+        K = float(trade.strike)
+        T = float(trade.expiry)
+        F = float(trade.forward_bond_price)
+        sigma = float(trade.vol)
+        df = float(trade.discount_factor)
+        opt_type = trade.option_type
+        
+        if T <= 0.0:
+            return {
+                "delta": 0.0,
+                "gamma": 0.0,
+                "vega": 0.0,
+                "theta": 0.0,
+                "rho": 0.0,
+            }
+        
+        # Compute discount rate for theta.
+        r = _rate_from_df(df=df, t=T)
+        
+        return {
+            "delta": N * vanilla_delta(
+                option_type=opt_type, forward=F, strike=K, expiry=T,
+                discount_factor=df, vol=sigma,
+            ),
+            "gamma": N * vanilla_gamma(
+                option_type=opt_type, forward=F, strike=K, expiry=T,
+                discount_factor=df, vol=sigma,
+            ),
+            "vega": N * vanilla_vega(
+                option_type=opt_type, forward=F, strike=K, expiry=T,
+                discount_factor=df, vol=sigma,
+            ),
+            "theta": N * vanilla_theta(
+                option_type=opt_type, forward=F, strike=K, expiry=T,
+                discount_factor=df, discount_rate=r, vol=sigma,
+            ),
+            "rho": N * vanilla_rho(
+                option_type=opt_type, forward=F, strike=K, expiry=T,
+                discount_factor=df, vol=sigma,
+            ),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class IrBondEuropeanOptionB76Pricer:
+    """
+    Black76 pricer for a bond option with market data lookup.
+    
+    The pricer computes the forward bond price from:
+    - Current spot bond price (from curve)
+    - Coupons during option life
+    - Discount factors
+    """
+    
+    def price(self, trade: IrBondEuropeanOption, market: Market) -> float:
+        """
+        Price a bond option using Black76 with market data.
+        
+        Parameters
+        ----------
+        trade : IrBondEuropeanOption
+            Bond option instrument.
+        market : Market
+            Market snapshot.
+        
+        Returns
+        -------
+        float
+            Present value of the bond option.
+        """
+        simple = self._to_simple(trade, market)
+        return IrBondEuropeanOptionB76PricerSimple().price(simple)
+    
+    def greeks(self, trade: IrBondEuropeanOption, market: Market) -> Dict[GreekName, float]:
+        """Compute Greeks for a bond option with market data."""
+        simple = self._to_simple(trade, market)
+        return IrBondEuropeanOptionB76PricerSimple().greeks(simple)
+    
+    def _to_simple(
+            self,
+            trade: IrBondEuropeanOption,
+            market: Market,
+    ) -> IrBondEuropeanOptionSimple:
+        """Convert market-based bond option to simple bond option."""
+        curve = market.curve(trade.curve_id)
+        
+        # Get discount factor to option expiry.
+        df_expiry = float(curve.df(trade.expiry))
+        
+        # Compute spot bond price.
+        spot_price = self._compute_spot_bond_price(trade, curve)
+        
+        # Compute PV of coupons during option life.
+        coupon_pv = self._compute_coupon_pv_during_option(trade, curve)
+        
+        # Forward bond price: F = (B_0 - PV_coupons) / DF(T)
+        forward_price = (spot_price - coupon_pv) / df_expiry
+        
+        # Get volatility.
+        vol_surface = market.vol_surface(trade.vol_id)
+        sigma = float(vol_surface.vol(expiry=trade.expiry, strike=trade.strike))
+        
+        return IrBondEuropeanOptionSimple(
+            notional=trade.notional,
+            strike=trade.strike,
+            expiry=trade.expiry,
+            forward_bond_price=forward_price,
+            vol=sigma,
+            discount_factor=df_expiry,
+            option_type=trade.option_type,
+        )
+    
+    def _compute_spot_bond_price(
+            self,
+            trade: IrBondEuropeanOption,
+            curve,
+    ) -> float:
+        """Compute spot price of underlying bond."""
+        face = 100.0  # Standard face value
+        
+        if trade.is_zero_coupon:
+            # Zero coupon: PV = Face × DF(maturity)
+            return face * float(curve.df(trade.underlying_maturity))
+        
+        # Coupon bond: PV = Σ(C × DF) + Face × DF(maturity)
+        period = 1.0 / trade.underlying_coupon_frequency
+        coupon = face * trade.underlying_coupon_rate / trade.underlying_coupon_frequency
+        
+        pv = 0.0
+        t = period  # First coupon time (approximate)
+        while t <= trade.underlying_maturity + 1e-9:
+            pv += coupon * float(curve.df(t))
+            t += period
+        
+        # Add face value at maturity
+        pv += face * float(curve.df(trade.underlying_maturity))
+        
+        return pv
+    
+    def _compute_coupon_pv_during_option(
+            self,
+            trade: IrBondEuropeanOption,
+            curve,
+    ) -> float:
+        """Compute PV of coupons received during option life."""
+        if trade.is_zero_coupon:
+            return 0.0
+        
+        face = 100.0
+        period = 1.0 / trade.underlying_coupon_frequency
+        coupon = face * trade.underlying_coupon_rate / trade.underlying_coupon_frequency
+        
+        pv = 0.0
+        t = period
+        while t <= trade.expiry + 1e-9:
+            if t > 0:  # Only future coupons
+                pv += coupon * float(curve.df(t))
+            t += period
+        
+        return pv
+
+
+# =============================================================================
 # EXPORTS
 # =============================================================================
 
@@ -734,9 +979,11 @@ __all__ = [
     "IrFloorletEuropeanOptionB76PricerSimple",
     "IrCapEuropeanOptionB76PricerSimple",
     "IrFloorEuropeanOptionB76PricerSimple",
+    "IrBondEuropeanOptionB76PricerSimple",
     # Market data pricers
     "IrCapletEuropeanOptionB76Pricer",
     "IrFloorletEuropeanOptionB76Pricer",
     "IrCapEuropeanOptionB76Pricer",
     "IrFloorEuropeanOptionB76Pricer",
+    "IrBondEuropeanOptionB76Pricer",
 ]

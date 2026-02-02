@@ -30,11 +30,16 @@ from src.instruments.equity.options.futures import EquityFuturesEuropeanOption, 
 # --- import ir instruments ---
 from src.instruments.ir.linear.swap import IrSwap, IrSwapSimple
 from src.instruments.ir.linear.fra import IrForwardRateAgreement, IrForwardRateAgreementSimple
+from src.instruments.ir.linear.bond import (
+    IrBondZeroCoupon, IrBondZeroCouponSimple,
+    IrBondFixedRate, IrBondFixedRateSimple,
+)
 from src.instruments.ir.options.swaption import IrSwaptionEuropeanOption, IrSwaptionEuropeanOptionSimple
 from src.instruments.ir.options.capfloor import (
     IrCapletEuropeanOption, IrCapletEuropeanOptionSimple, IrCapEuropeanOption, IrCapEuropeanOptionSimple,
     IrFloorletEuropeanOption, IrFloorletEuropeanOptionSimple, IrFloorEuropeanOption, IrFloorEuropeanOptionSimple
 )
+from src.instruments.ir.options.bond import IrBondEuropeanOption, IrBondEuropeanOptionSimple
 
 
 # --- import FX analytic pricers (linear + non-linear) ---
@@ -58,11 +63,16 @@ from src.pricers.equity.european_bch import (
 # --- import ir analytic pricers (linear + non-linear)
 from src.pricers.ir.swap import IrSwapPricer, IrSwapPricerSimple
 from src.pricers.ir.fra import IrFraPricer, IrFraPricerSimple
+from src.pricers.ir.bond import (
+    IrBondZeroCouponPricer, IrBondZeroCouponPricerSimple,
+    IrBondFixedRatePricer, IrBondFixedRatePricerSimple,
+)
 from src.pricers.ir.european_b76 import (
     IrCapletEuropeanOptionB76Pricer, IrCapletEuropeanOptionB76PricerSimple,
     IrFloorletEuropeanOptionB76Pricer, IrFloorletEuropeanOptionB76PricerSimple,
     IrCapEuropeanOptionB76Pricer, IrCapEuropeanOptionB76PricerSimple,
     IrFloorEuropeanOptionB76Pricer, IrFloorEuropeanOptionB76PricerSimple,
+    IrBondEuropeanOptionB76Pricer, IrBondEuropeanOptionB76PricerSimple,
 )
 from src.pricers.ir.european_bch import (
     IrSwaptionEuropeanOptionBchPricer, IrSwaptionEuropeanOptionBchPricerSimple,
@@ -342,6 +352,10 @@ class DefaultPricerRegistry:
         ir_fra_s = IrFraPricerSimple()
         ir_swp = IrSwapPricer()
         ir_swp_s = IrSwapPricerSimple()
+        ir_bond_zc = IrBondZeroCouponPricer()
+        ir_bond_zc_s = IrBondZeroCouponPricerSimple()
+        ir_bond_fr = IrBondFixedRatePricer()
+        ir_bond_fr_s = IrBondFixedRatePricerSimple()
 
         # ---- 3.2. non-linear analytic pricers (Black76) ----
         ir_caplet_b76 = IrCapletEuropeanOptionB76Pricer()
@@ -352,6 +366,8 @@ class DefaultPricerRegistry:
         ir_cap_b76_s = IrCapEuropeanOptionB76PricerSimple()
         ir_floor_b76 = IrFloorEuropeanOptionB76Pricer()
         ir_floor_b76_s = IrFloorEuropeanOptionB76PricerSimple()
+        ir_bond_opt_b76 = IrBondEuropeanOptionB76Pricer()
+        ir_bond_opt_b76_s = IrBondEuropeanOptionB76PricerSimple()
 
         # ---- 3.3. non-linear analytic pricers (Bachelier) ----
         ir_swaption_bch = IrSwaptionEuropeanOptionBchPricer()
@@ -392,11 +408,17 @@ class DefaultPricerRegistry:
         reg.register(EquityLookbackEuropeanOption, eq_lookback_eur_mc)
 
         # ---- Register IR defaults ----
-        # Linear pricers
+        # Linear pricers (FRA, Swap)
         reg.register(IrForwardRateAgreement, ir_fra)
         reg.register(IrForwardRateAgreementSimple, ir_fra_s)
         reg.register(IrSwap, ir_swp)
         reg.register(IrSwapSimple, ir_swp_s)
+
+        # Linear pricers (Bonds)
+        reg.register(IrBondZeroCoupon, ir_bond_zc)
+        reg.register(IrBondZeroCouponSimple, ir_bond_zc_s)
+        reg.register(IrBondFixedRate, ir_bond_fr)
+        reg.register(IrBondFixedRateSimple, ir_bond_fr_s)
 
         # Black76 pricers (caps/floors)
         reg.register(IrCapletEuropeanOption, ir_caplet_b76)
@@ -407,6 +429,10 @@ class DefaultPricerRegistry:
         reg.register(IrCapEuropeanOptionSimple, ir_cap_b76_s)
         reg.register(IrFloorEuropeanOption, ir_floor_b76)
         reg.register(IrFloorEuropeanOptionSimple, ir_floor_b76_s)
+
+        # Black76 pricers (bond options)
+        reg.register(IrBondEuropeanOption, ir_bond_opt_b76)
+        reg.register(IrBondEuropeanOptionSimple, ir_bond_opt_b76_s)
 
         # Bachelier pricers (swaptions)
         reg.register(IrSwaptionEuropeanOption, ir_swaption_bch)

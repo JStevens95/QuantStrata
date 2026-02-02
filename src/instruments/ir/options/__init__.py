@@ -6,6 +6,7 @@ This module contains interest rate options including:
 - Caplets and Floorlets
 - Caps and Floors
 - Swaptions
+- Bond Options
 """
 from src.instruments.ir.options.capfloor import (
     IrCapletEuropeanOption,
@@ -21,6 +22,10 @@ from src.instruments.ir.options.swaption import (
     IrSwaptionEuropeanOption,
     IrSwaptionEuropeanOptionSimple,
 )
+from src.instruments.ir.options.bond import (
+    IrBondEuropeanOption,
+    IrBondEuropeanOptionSimple,
+)
 
 __all__ = [
     # Caps/Floors
@@ -35,4 +40,7 @@ __all__ = [
     # Swaptions
     "IrSwaptionEuropeanOption",
     "IrSwaptionEuropeanOptionSimple",
+    # Bond Options
+    "IrBondEuropeanOption",
+    "IrBondEuropeanOptionSimple",
 ]

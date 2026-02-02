@@ -5,6 +5,7 @@ Linear Interest Rate Instruments.
 This module contains linear (non-optional) interest rate instruments:
 - Forward Rate Agreements (FRAs)
 - Interest Rate Swaps (IRS)
+- Bonds (Zero Coupon, Fixed Rate)
 """
 from src.instruments.ir.linear.fra import (
     IrForwardRateAgreement,
@@ -17,6 +18,12 @@ from src.instruments.ir.linear.swap import (
     FixedLeg,
     FloatingLeg,
 )
+from src.instruments.ir.linear.bond import (
+    IrBondZeroCoupon,
+    IrBondZeroCouponSimple,
+    IrBondFixedRate,
+    IrBondFixedRateSimple,
+)
 
 __all__ = [
     # FRA
@@ -28,4 +35,9 @@ __all__ = [
     "SwapLeg",
     "FixedLeg",
     "FloatingLeg",
+    # Bonds
+    "IrBondZeroCoupon",
+    "IrBondZeroCouponSimple",
+    "IrBondFixedRate",
+    "IrBondFixedRateSimple",
 ]
