@@ -1,13 +1,16 @@
 # Phase 4.3: Multi-Asset Products - Progress Report
 
 **Status:** COMPLETE  
-**Completed:** January 27, 2026
+**Completed:** January 27, 2026  
+**Architecture Update:** January 27, 2026 (Naming Convention Refactor)
 
 ---
 
 ## Overview
 
-Phase 4.3 implements multi-asset derivative products including basket options, spread options, and rainbow options (best-of/worst-of).
+Phase 4.3 implements multi-asset derivative products including basket options, spread options, exchange options, and rainbow options (best-of/worst-of).
+
+The architecture follows the same naming conventions as FX instruments and pricers for consistency across the library.
 
 ---
 
@@ -15,7 +18,7 @@ Phase 4.3 implements multi-asset derivative products including basket options, s
 
 ### 1. Multi-Asset Simulation Infrastructure
 
-**Location:** `src/models/multi_asset/simulation.py`
+**Location:** `src/models/numeric/monte_carlo/multi_asset.py`
 
 **Components:**
 - `CorrelationMatrix`: Validated correlation structure with Cholesky decomposition
@@ -24,80 +27,72 @@ Phase 4.3 implements multi-asset derivative products including basket options, s
 - `MultiAssetGBM`: Multi-dimensional GBM simulator
   - Methods: `simulate()` (full paths), `simulate_terminal()` (efficient for Europeans)
   - Features: Antithetic variates, Cholesky correlation
-- `MultiAssetSimulation`: Result container for simulated paths
-
-**Tests:** 17 unit tests passing
 
 ### 2. Basket Options
 
-**Location:** `src/models/multi_asset/basket.py`
+**Instruments:** `src/instruments/multi_asset/basket.py`
+- `MultiAssetBasketEuropeanOption` (with `option_type: "call" | "put"`)
 
-**Components:**
-- `BasketParameters`: Parameters for basket options
-- `basket_call_mc()`: MC pricer for basket calls
-- `basket_put_mc()`: MC pricer for basket puts
-- Convenience functions: `basket_call_simple()`, `basket_put_simple()`
+**Pricers:** `src/pricers/multi_asset/basket_european_mc.py`
+- `MultiAssetBasketEuropeanOptionMcPricer`
+- `MultiAssetBasketEuropeanOptionMcSimulation` (simulation artifact)
 
 **Payoff:**
 - Call: max(Σ wᵢSᵢ(T) - K, 0)
 - Put: max(K - Σ wᵢSᵢ(T), 0)
 
-**Tests:** 12 unit tests passing
+**Tests:** 13 unit tests passing
 
 ### 3. Spread Options
 
-**Location:** `src/models/multi_asset/spread.py`
+**Instruments:** `src/instruments/multi_asset/spread.py`
+- `MultiAssetSpreadEuropeanOption` (with `option_type: "call" | "put"`)
+- `MultiAssetExchangeEuropeanOption` (spread with K=0)
 
-**Components:**
-- `SpreadParameters`: Parameters for spread options
-- `spread_call_mc()`: MC pricer for spread calls
-- `spread_put_mc()`: MC pricer for spread puts
-- `kirk_spread_call()`: Kirk's approximation for calls
-- `kirk_spread_put()`: Kirk's approximation for puts
-- `margrabe_exchange()`: Exact formula for exchange options (K=0)
+**Pricers:** `src/pricers/multi_asset/spread_european_mc.py`
+- `MultiAssetSpreadEuropeanOptionMcPricer` (Monte Carlo)
+- `MultiAssetSpreadEuropeanOptionKirkPricer` (Kirk's approximation)
+- `MultiAssetExchangeEuropeanOptionMargrabePricer` (exact closed-form)
+- `MultiAssetSpreadEuropeanOptionMcSimulation` (simulation artifact)
 
 **Payoff:**
 - Call: max(S₁(T) - S₂(T) - K, 0)
 - Put: max(K - (S₁(T) - S₂(T)), 0)
+- Exchange: max(S₁(T) - S₂(T), 0) (K=0)
 
-**Features:**
-- Monte Carlo pricing
-- Kirk's closed-form approximation
-- Margrabe's formula for exchange options
-
-**Tests:** 17 unit tests passing
+**Tests:** 10 unit tests passing
 
 ### 4. Rainbow Options (Best-of / Worst-of)
 
-**Location:** `src/models/multi_asset/rainbow.py`
+**Instruments:** `src/instruments/multi_asset/rainbow.py`
+- `MultiAssetBestOfEuropeanOption` (with `option_type: "call" | "put"`)
+- `MultiAssetWorstOfEuropeanOption` (with `option_type: "call" | "put"`)
 
-**Components:**
-- `RainbowParameters`: Parameters for rainbow options
-- `best_of_call_mc()`: MC pricer for best-of calls
-- `best_of_put_mc()`: MC pricer for best-of puts
-- `worst_of_call_mc()`: MC pricer for worst-of calls
-- `worst_of_put_mc()`: MC pricer for worst-of puts
-- Convenience functions for simplified interfaces
+**Pricers:** `src/pricers/multi_asset/rainbow_european_mc.py`
+- `MultiAssetBestOfEuropeanOptionMcPricer`
+- `MultiAssetWorstOfEuropeanOptionMcPricer`
+- `MultiAssetBestOfEuropeanOptionMcSimulation` (simulation artifact)
+- `MultiAssetWorstOfEuropeanOptionMcSimulation` (simulation artifact)
 
 **Payoffs:**
 - Best-of Call: max(max(S₁, S₂, ..., Sₙ) - K, 0)
+- Best-of Put: max(K - max(S₁, S₂, ..., Sₙ), 0)
 - Worst-of Call: max(min(S₁, S₂, ..., Sₙ) - K, 0)
+- Worst-of Put: max(K - min(S₁, S₂, ..., Sₙ), 0)
 
-**Tests:** 16 unit tests passing
+**Tests:** 10 unit tests passing
 
 ---
 
 ## Test Summary
 
-**Total Tests:** 62 passing
+**Total Tests:** 41 passing
 
 | Component | Tests |
 |-----------|-------|
-| Simulation Infrastructure | 17 |
-| Basket Options | 12 |
-| Spread Options | 17 |
-| Rainbow Options | 16 |
-| **Total** | 62 |
+| Instrument Definitions | 24 |
+| Pricer Tests | 17 |
+| **Total** | 41 |
 
 ---
 
@@ -106,23 +101,41 @@ Phase 4.3 implements multi-asset derivative products including basket options, s
 ### Directory Structure
 
 ```
-src/models/multi_asset/
+src/instruments/multi_asset/
 ├── __init__.py
-├── simulation.py      # Core simulation infrastructure
-├── basket.py          # Basket option pricing
-├── spread.py          # Spread option pricing
-└── rainbow.py         # Rainbow option pricing
+├── basket.py          # MultiAssetBasketEuropeanOption
+├── spread.py          # MultiAssetSpreadEuropeanOption, MultiAssetExchangeEuropeanOption
+└── rainbow.py         # MultiAssetBestOfEuropeanOption, MultiAssetWorstOfEuropeanOption
+
+src/pricers/multi_asset/
+├── __init__.py
+├── basket_european_mc.py    # MultiAssetBasketEuropeanOptionMcPricer
+├── spread_european_mc.py    # MultiAssetSpreadEuropeanOptionMcPricer, Kirk, Margrabe
+└── rainbow_european_mc.py   # MultiAssetBestOfEuropeanOptionMcPricer, MultiAssetWorstOfEuropeanOptionMcPricer
+
+src/models/numeric/monte_carlo/
+└── multi_asset.py           # CorrelationMatrix, MultiAssetGBM
 ```
+
+### Naming Conventions
+
+Following FX pattern for consistency:
+
+| Component | FX Example | Multi-Asset Example |
+|-----------|------------|---------------------|
+| Instrument | `FxVanillaEuropeanOption` | `MultiAssetBasketEuropeanOption` |
+| MC Pricer | `FxVanillaEuropeanOptionMcPricer` | `MultiAssetBasketEuropeanOptionMcPricer` |
+| Simulation | `FxVanillaOptionMcSimulation` | `MultiAssetBasketEuropeanOptionMcSimulation` |
 
 ### Key Design Decisions
 
-1. **Correlation Handling**: Centralized `CorrelationMatrix` class with validation and Cholesky decomposition for efficient correlated sampling.
+1. **Unified Option Type**: All instruments use `option_type: "call" | "put"` field instead of separate classes.
 
-2. **Efficient Terminal Simulation**: `simulate_terminal()` method for European options avoids storing full paths.
+2. **Pricer Classes**: Pricers are classes with `price()`, `price_with_std_error()`, and `run()` methods (consistent with FX pricers).
 
-3. **Multiple Pricing Methods**: MC for all products, plus Kirk's approximation and Margrabe's formula for spread options.
+3. **Simulation Artifacts**: Each pricer returns a typed simulation dataclass containing all inputs, settings, and outputs.
 
-4. **Flexible Weights**: Basket options support arbitrary weights (positive or negative).
+4. **Separation of Concerns**: Instruments define contracts; pricers implement pricing logic.
 
 ---
 
@@ -131,27 +144,33 @@ src/models/multi_asset/
 ### Basket Call
 
 ```python
-from src.models.multi_asset import basket_call_simple
 import numpy as np
+from src.marketdata.core.ids import MarketId
+from src.instruments.multi_asset import MultiAssetBasketEuropeanOption
+from src.pricers.multi_asset import MultiAssetBasketEuropeanOptionMcPricer
+from src.models.numeric.monte_carlo.multi_asset import CorrelationMatrix
 
-# 3-asset basket call
-corr = np.array([
-    [1.0, 0.5, 0.3],
-    [0.5, 1.0, 0.4],
-    [0.3, 0.4, 1.0]
-])
+def make_id(name: str) -> MarketId:
+    return MarketId(asset_class="EQ", mkt_type="SPOT", name=name)
 
-price, std = basket_call_simple(
-    spots=[100.0, 100.0, 100.0],
-    weights=[0.4, 0.35, 0.25],
+# Create instrument
+basket = MultiAssetBasketEuropeanOption(
+    option_type="call",
+    underlyings=(make_id("AAPL"), make_id("GOOGL"), make_id("MSFT")),
+    weights=(0.4, 0.35, 0.25),
     strike=100.0,
-    maturity=1.0,
+    expiry=1.0,
+)
+
+# Create pricer and price
+pricer = MultiAssetBasketEuropeanOptionMcPricer(n_paths=100000, seed=42)
+price, std = pricer.price_with_std_error(
+    basket,
+    spots=np.array([100.0, 100.0, 100.0]),
     r=0.05,
-    dividends=[0.02, 0.02, 0.02],
-    volatilities=[0.2, 0.25, 0.3],
-    correlations=corr,
-    n_paths=100000,
-    seed=42,
+    dividends=np.array([0.02, 0.02, 0.02]),
+    volatilities=np.array([0.2, 0.25, 0.3]),
+    correlation=CorrelationMatrix.from_flat(0.5, n=3),
 )
 print(f"Basket Call: {price:.4f} ± {std:.4f}")
 ```
@@ -159,16 +178,31 @@ print(f"Basket Call: {price:.4f} ± {std:.4f}")
 ### Spread Option with Kirk's Approximation
 
 ```python
-from src.models.multi_asset.spread import SpreadParameters, spread_call_mc, kirk_spread_call
-
-params = SpreadParameters(
-    spot1=100.0, spot2=95.0, strike=5.0,
-    maturity=0.5, r=0.05, q1=0.02, q2=0.01,
-    sigma1=0.2, sigma2=0.25, rho=0.6
+from src.instruments.multi_asset import MultiAssetSpreadEuropeanOption
+from src.pricers.multi_asset import (
+    MultiAssetSpreadEuropeanOptionMcPricer,
+    MultiAssetSpreadEuropeanOptionKirkPricer,
 )
 
-mc_price, std = spread_call_mc(params, n_paths=100000)
-kirk_price = kirk_spread_call(params)
+spread = MultiAssetSpreadEuropeanOption(
+    option_type="call",
+    underlying1=make_id("CL"),
+    underlying2=make_id("HO"),
+    strike=5.0,
+    expiry=0.5,
+)
+
+mc_pricer = MultiAssetSpreadEuropeanOptionMcPricer(n_paths=100000, seed=42)
+kirk_pricer = MultiAssetSpreadEuropeanOptionKirkPricer()
+
+mc_price = mc_pricer.price(
+    spread, spot1=100.0, spot2=95.0, r=0.05, q1=0.02, q2=0.01,
+    sigma1=0.2, sigma2=0.25, rho=0.6
+)
+kirk_price = kirk_pricer.price(
+    spread, spot1=100.0, spot2=95.0, r=0.05, q1=0.02, q2=0.01,
+    sigma1=0.2, sigma2=0.25, rho=0.6
+)
 
 print(f"MC Price: {mc_price:.4f}")
 print(f"Kirk's Approximation: {kirk_price:.4f}")
@@ -177,36 +211,46 @@ print(f"Kirk's Approximation: {kirk_price:.4f}")
 ### Best-of / Worst-of Options
 
 ```python
-from src.models.multi_asset import best_of_call_simple, worst_of_call_simple
-import numpy as np
-
-corr = np.array([[1.0, 0.5], [0.5, 1.0]])
-
-best_price, _ = best_of_call_simple(
-    spots=[100.0, 100.0],
-    strike=100.0,
-    maturity=1.0,
-    r=0.05,
-    dividends=[0.02, 0.02],
-    volatilities=[0.25, 0.3],
-    correlations=corr,
-    n_paths=100000,
+from src.instruments.multi_asset import (
+    MultiAssetBestOfEuropeanOption,
+    MultiAssetWorstOfEuropeanOption,
+)
+from src.pricers.multi_asset import (
+    MultiAssetBestOfEuropeanOptionMcPricer,
+    MultiAssetWorstOfEuropeanOptionMcPricer,
 )
 
-worst_price, _ = worst_of_call_simple(
-    spots=[100.0, 100.0],
+best_of = MultiAssetBestOfEuropeanOption(
+    option_type="call",
+    underlyings=(make_id("A"), make_id("B")),
     strike=100.0,
-    maturity=1.0,
-    r=0.05,
-    dividends=[0.02, 0.02],
-    volatilities=[0.25, 0.3],
-    correlations=corr,
-    n_paths=100000,
+    expiry=1.0,
 )
+
+worst_of = MultiAssetWorstOfEuropeanOption(
+    option_type="call",
+    underlyings=(make_id("A"), make_id("B")),
+    strike=100.0,
+    expiry=1.0,
+)
+
+params = {
+    'spots': np.array([100.0, 100.0]),
+    'r': 0.05,
+    'dividends': np.array([0.02, 0.02]),
+    'volatilities': np.array([0.25, 0.3]),
+    'correlation': CorrelationMatrix.from_flat(0.5, n=2),
+}
+
+best_pricer = MultiAssetBestOfEuropeanOptionMcPricer(n_paths=100000, seed=42)
+worst_pricer = MultiAssetWorstOfEuropeanOptionMcPricer(n_paths=100000, seed=42)
+
+best_price = best_pricer.price(best_of, **params)
+worst_price = worst_pricer.price(worst_of, **params)
 
 print(f"Best-of Call: {best_price:.4f}")
 print(f"Worst-of Call: {worst_price:.4f}")
-print(f"Best-of always >= Worst-of: {best_price >= worst_price}")
+print(f"Best-of >= Worst-of: {best_price >= worst_price}")
 ```
 
 ---
@@ -230,22 +274,16 @@ For same parameters:
 
 ---
 
-## Performance Notes
+## Documentation
 
-### Monte Carlo Paths
+### User Guides
 
-| Accuracy | Paths | Time (3 assets) |
-|----------|-------|-----------------|
-| ~5% | 10,000 | <0.1s |
-| ~1-2% | 100,000 | ~0.5s |
-| <1% | 500,000 | ~2s |
+- `docs/guides/multi_asset/basket_options.md`
+- `docs/guides/multi_asset/spread_options.md`
+- `docs/guides/multi_asset/rainbow_options.md`
 
-### Tips
-
-- Use `simulate_terminal()` for European options (faster than full paths)
-- Kirk's approximation is fast but less accurate for extreme parameters
-- Antithetic variates are enabled by default for variance reduction
+All guides updated to reflect new naming conventions.
 
 ---
 
-*Document Version: 1.0 | QuantStrata Phase 4.3 | January 2026*
+*Document Version: 2.0 | QuantStrata Phase 4.3 | January 2026*

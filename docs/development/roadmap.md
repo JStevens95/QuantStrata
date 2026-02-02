@@ -1,6 +1,6 @@
 # QuantStrata Development Roadmap
 
-**Last Updated:** January 27, 2026 (Phase 4.3 Complete - Multi-Asset Products)  
+**Last Updated:** January 27, 2026 (Phase 4 Complete - Multi-Asset Architecture Refactored)  
 **Current Version:** V1 (FX Derivatives Foundation)  
 **Target:** Comprehensive Professional Quant Library
 
@@ -502,31 +502,45 @@ linear products that should be implemented before options on them (swaptions).
 ### 4.3 Multi-Asset Products ✅
 
 - [x] **Basket Options**
-  - Implemented: `BasketParameters`, `basket_call_mc`, `basket_put_mc`
-  - Features: Arbitrary weights, correlated simulation
-  - Tests: 12 unit tests passing
+  - Instrument: `MultiAssetBasketEuropeanOption` (option_type: call/put)
+  - Pricer: `MultiAssetBasketEuropeanOptionMcPricer`
+  - Features: Arbitrary weights, correlated simulation, simulation artifacts
+  - Tests: 13 unit tests passing
 
 - [x] **Spread Options**
-  - Implemented: `SpreadParameters`, `spread_call_mc`, `spread_put_mc`
-  - Features: Kirk's approximation, Margrabe's formula
-  - Tests: 17 unit tests passing
+  - Instrument: `MultiAssetSpreadEuropeanOption` (option_type: call/put)
+  - Pricer: `MultiAssetSpreadEuropeanOptionMcPricer`, `MultiAssetSpreadEuropeanOptionKirkPricer`
+  - Features: Kirk's approximation (analytic), Monte Carlo
+  - Tests: 8 unit tests passing
 
-- [x] **Worst-of / Best-of Options**
-  - Implemented: `RainbowParameters`, `best_of_call_mc`, `worst_of_call_mc`
-  - Features: N-asset support, correlation effects
-  - Tests: 16 unit tests passing
+- [x] **Exchange Options**
+  - Instrument: `MultiAssetExchangeEuropeanOption` (spread with K=0)
+  - Pricer: `MultiAssetExchangeEuropeanOptionMargrabePricer` (exact closed-form)
+  - Tests: 2 unit tests passing
+
+- [x] **Best-of / Worst-of Options**
+  - Instruments: `MultiAssetBestOfEuropeanOption`, `MultiAssetWorstOfEuropeanOption`
+  - Pricers: `MultiAssetBestOfEuropeanOptionMcPricer`, `MultiAssetWorstOfEuropeanOptionMcPricer`
+  - Features: N-asset support, correlation effects, simulation artifacts
+  - Tests: 10 unit tests passing
 
 - [x] **Multi-Asset Simulation Infrastructure**
-  - Implemented: `CorrelationMatrix`, `MultiAssetGBM`, `MultiAssetSimulation`
-  - Features: Cholesky correlation, terminal simulation
-  - Tests: 17 unit tests passing
+  - Implemented: `CorrelationMatrix`, `MultiAssetGBM` (in `src/models/numeric/monte_carlo/multi_asset.py`)
+  - Features: Cholesky correlation, terminal simulation, antithetic variates
+  - Tests: Integrated into pricer tests
 
 **Status:** Phase 4.3 COMPLETE. See `docs/development/progress/phase_4_3_multi_asset_products.md`.
+
+**Architecture Notes:**
+- Instruments follow FX naming convention: `MultiAsset{Product}EuropeanOption`
+- Pricers follow FX naming convention: `MultiAsset{Product}EuropeanOption{Method}Pricer`
+- All instruments use `option_type: "call" | "put"` field (consistent with `FxVanillaEuropeanOption`)
+- Files: `src/instruments/multi_asset/`, `src/pricers/multi_asset/`
 
 ### Deliverables:
 - ✅ 3 advanced models (Merton jump-diffusion, SABR, Variance Gamma) - 109 tests
 - ✅ 3 advanced numerical methods (LSM, QMC, Importance Sampling) - 54 new tests
-- ✅ 4 multi-asset products (Basket, Spread, Best-of, Worst-of) - 62 tests
+- ✅ 5 multi-asset products (Basket, Spread, Exchange, Best-of, Worst-of) - 41 tests
 
 **Impact:** Demonstrates advanced quantitative skills and research-level understanding.
 
