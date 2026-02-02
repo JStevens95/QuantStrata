@@ -39,9 +39,9 @@ Interactive Jupyter notebooks with worked examples.
 | Category | Notebooks |
 |----------|-----------|
 | **Calibration** | Curve bootstrapping, volatility surface fitting, local vol, Heston |
-| **Instruments** | Vanilla, barrier, digital, touch, Asian, lookback, double barrier |
+| **Instruments** | Vanilla, barrier, digital, touch, Asian, lookback, double barrier, forward/futures options |
 | **Market Data** | Synthetic data generation for FX, IR, and Equity |
-| **Pricing** | Equity options with BSM, Monte Carlo, and finite difference |
+| **Pricing** | FX options, Equity options, IR instruments (FRA, IRS, Caps, Swaptions), Bonds |
 
 ### Development
 
@@ -111,21 +111,30 @@ greeks = pricer.greeks(option, market)
 
 | Asset Class | Status | Models |
 |-------------|--------|--------|
-| **FX** | Complete | BSM, Monte Carlo, Finite Difference |
-| **Equity** | Complete | BSM, Monte Carlo, Finite Difference |
-| **Rates** | Phase 3 | Hull-White, Black76, Bachelier |
+| **FX** | Complete | BSM, Black76, Bachelier, Monte Carlo, Finite Difference |
+| **Equity** | Complete | BSM, Black76, Bachelier, Monte Carlo, Finite Difference |
+| **Rates** | Phase 3 Active | Black76, Bachelier |
 
 ## Instruments
 
 | Type | FX | Equity | Rates |
 |------|-----|--------|-------|
-| Vanilla | Yes | Yes | Planned |
+| Vanilla | Yes | Yes | - |
 | Barrier | Yes | Yes | - |
 | Digital | Yes | Yes | - |
 | Asian | Yes | Yes | - |
 | Lookback | Yes | Yes | - |
 | Touch | Yes | - | - |
 | American | Yes | Yes | - |
+| Forward Options | Yes | - | - |
+| Futures Options | - | Yes | - |
+| Spread Options | Yes | Yes | - |
+| FRA | - | - | Yes |
+| IRS | - | - | Yes |
+| Caps/Floors | - | - | Yes |
+| Swaptions | - | - | Yes |
+| Bonds (ZC/FR) | - | - | Yes |
+| Bond Options | - | - | Yes |
 
 ---
 
