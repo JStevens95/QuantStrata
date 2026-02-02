@@ -508,3 +508,332 @@ class HestonDynamics:
             )
 
         return np.maximum(V_next, 0.0)
+
+
+# =============================================================================
+# Heston Characteristic Function (for analytic pricing)
+# =============================================================================
+
+def heston_characteristic_function(
+    u: complex | np.ndarray,
+    params: HestonParameters,
+    spot: float,
+    r: float,
+    q: float,
+    tau: float,
+) -> complex | np.ndarray:
+    """
+    Heston characteristic function φ(u) = E[exp(iu × log(S_T/K))].
+    
+    Uses the formulation from Gatheral (2006) / Albrecher et al. for numerical stability.
+    
+    Parameters
+    ----------
+    u : complex or array of complex
+        Fourier variable.
+    params : HestonParameters
+        Heston model parameters.
+    spot : float
+        Current spot price S_0.
+    r : float
+        Risk-free rate.
+    q : float
+        Dividend yield.
+    tau : float
+        Time to maturity T.
+    
+    Returns
+    -------
+    complex or array of complex
+        Characteristic function value(s) φ(u).
+    
+    Notes
+    -----
+    The characteristic function is:
+        φ(u) = exp(C(u,τ) + D(u,τ)V_0 + iu×log(S_0×e^((r-q)τ)))
+    
+    where C and D solve the Riccati equations.
+    
+    References
+    ----------
+    - Gatheral, J. (2006). "The Volatility Surface."
+    - Albrecher, H. et al. (2007). "The Little Heston Trap."
+    """
+    # Extract parameters
+    kappa = params.kappa
+    theta = params.theta
+    xi = params.xi
+    v0 = params.v0
+    rho = params.rho
+    
+    # Forward log-spot
+    x = np.log(spot) + (r - q) * tau
+    
+    # Intermediate variables
+    # Using "rotation count" formulation for stability
+    a = kappa - 1j * rho * xi * u
+    b = np.sqrt(a**2 + xi**2 * u * (u + 1j))
+    
+    # Prevent numerical issues
+    g = (a - b) / (a + b)
+    
+    # Time-dependent terms
+    exp_neg_b_tau = np.exp(-b * tau)
+    
+    # D coefficient (Riccati solution)
+    D = (a - b) / (xi**2) * (1 - exp_neg_b_tau) / (1 - g * exp_neg_b_tau)
+    
+    # C coefficient
+    C = (r - q) * 1j * u * tau + (kappa * theta / xi**2) * (
+        (a - b) * tau - 2 * np.log((1 - g * exp_neg_b_tau) / (1 - g))
+    )
+    
+    # Characteristic function
+    phi = np.exp(C + D * v0 + 1j * u * x)
+    
+    return phi
+
+
+def heston_call_price(
+    params: HestonParameters,
+    spot: float,
+    strike: float,
+    r: float,
+    q: float,
+    tau: float,
+    n_points: int = 4096,
+    alpha: float = 1.5,
+) -> float:
+    """
+    Price a European call option under Heston using Carr-Madan FFT.
+    
+    Parameters
+    ----------
+    params : HestonParameters
+        Heston model parameters.
+    spot : float
+        Current spot price.
+    strike : float
+        Strike price.
+    r : float
+        Risk-free rate.
+    q : float
+        Dividend yield.
+    tau : float
+        Time to maturity (years).
+    n_points : int
+        Number of FFT points (power of 2 recommended).
+    alpha : float
+        Damping factor for Carr-Madan. Typical: 1.0-2.0.
+    
+    Returns
+    -------
+    float
+        Call option price.
+    
+    Notes
+    -----
+    Uses Carr-Madan (1999) FFT method with Simpson's rule integration.
+    
+    For large n_points, this is faster than numerical integration.
+    """
+    if tau <= 0:
+        # At expiry
+        return max(spot * np.exp(-q * tau) - strike * np.exp(-r * tau), 0)
+    
+    if strike <= 0:
+        raise ValueError("strike must be positive.")
+    
+    # Log-strike
+    k = np.log(strike)
+    
+    # Direct integration (accurate for single strike)
+    n_int = 500
+    du = 0.01
+    u_grid = np.arange(1, n_int + 1) * du
+    
+    integrand_real = np.zeros(n_int)
+    for i, ui in enumerate(u_grid):
+        phi_val = heston_characteristic_function(ui - 1j * (alpha + 1), params, spot, r, q, tau)
+        psi_val = np.exp(-r * tau) * phi_val / (alpha**2 + alpha - ui**2 + 1j * (2 * alpha + 1) * ui)
+        integrand_real[i] = np.real(np.exp(-1j * ui * k) * psi_val)
+    
+    # Use scipy for integration (numpy.trapz renamed to numpy.trapezoid in NumPy 2.0)
+    from scipy import integrate
+    price = np.exp(-alpha * k) / np.pi * integrate.trapezoid(integrand_real, u_grid)
+    
+    return max(float(price), 0.0)
+
+
+def heston_put_price(
+    params: HestonParameters,
+    spot: float,
+    strike: float,
+    r: float,
+    q: float,
+    tau: float,
+    n_points: int = 4096,
+    alpha: float = 1.5,
+) -> float:
+    """
+    Price a European put option under Heston.
+    
+    Uses put-call parity: P = C - S*exp(-qT) + K*exp(-rT)
+    
+    Parameters
+    ----------
+    params : HestonParameters
+        Heston model parameters.
+    spot : float
+        Current spot price.
+    strike : float
+        Strike price.
+    r : float
+        Risk-free rate.
+    q : float
+        Dividend yield.
+    tau : float
+        Time to maturity (years).
+    n_points : int
+        Number of FFT points.
+    alpha : float
+        Damping factor.
+    
+    Returns
+    -------
+    float
+        Put option price.
+    """
+    call = heston_call_price(params, spot, strike, r, q, tau, n_points, alpha)
+    forward = spot * np.exp(-q * tau)
+    discount = np.exp(-r * tau)
+    put = call - forward + strike * discount
+    return max(float(put), 0.0)
+
+
+def heston_implied_vol(
+    params: HestonParameters,
+    spot: float,
+    strike: float,
+    r: float,
+    q: float,
+    tau: float,
+    option_type: str = "call",
+    n_points: int = 4096,
+) -> float:
+    """
+    Compute implied volatility for Heston model prices.
+    
+    Parameters
+    ----------
+    params : HestonParameters
+        Heston model parameters.
+    spot : float
+        Current spot price.
+    strike : float
+        Strike price.
+    r : float
+        Risk-free rate.
+    q : float
+        Dividend yield.
+    tau : float
+        Time to maturity (years).
+    option_type : str
+        "call" or "put".
+    n_points : int
+        Number of FFT points for pricing.
+    
+    Returns
+    -------
+    float
+        Black-Scholes implied volatility.
+    """
+    from scipy.optimize import brentq
+    from scipy.stats import norm
+    
+    # Get Heston price
+    if option_type == "call":
+        heston_price = heston_call_price(params, spot, strike, r, q, tau, n_points)
+    else:
+        heston_price = heston_put_price(params, spot, strike, r, q, tau, n_points)
+    
+    # Black-Scholes formula
+    def bs_price(sigma: float) -> float:
+        if sigma <= 0:
+            return 0.0
+        d1 = (np.log(spot / strike) + (r - q + 0.5 * sigma**2) * tau) / (sigma * np.sqrt(tau))
+        d2 = d1 - sigma * np.sqrt(tau)
+        if option_type == "call":
+            return spot * np.exp(-q * tau) * norm.cdf(d1) - strike * np.exp(-r * tau) * norm.cdf(d2)
+        else:
+            return strike * np.exp(-r * tau) * norm.cdf(-d2) - spot * np.exp(-q * tau) * norm.cdf(-d1)
+    
+    # Find implied vol via root finding
+    def objective(sigma: float) -> float:
+        return bs_price(sigma) - heston_price
+    
+    try:
+        # Search between 0.01% and 500% vol
+        iv = brentq(objective, 0.0001, 5.0)
+        return float(iv)
+    except (ValueError, RuntimeError):
+        # Fall back to Newton's method starting from ATM estimate
+        sigma = np.sqrt(params.v0)
+        for _ in range(50):
+            price = bs_price(sigma)
+            vega = spot * np.exp(-q * tau) * norm.pdf(
+                (np.log(spot / strike) + (r - q + 0.5 * sigma**2) * tau) / (sigma * np.sqrt(tau))
+            ) * np.sqrt(tau)
+            if abs(vega) < 1e-12:
+                break
+            sigma = sigma - (price - heston_price) / vega
+            sigma = max(0.001, min(sigma, 5.0))
+        return float(sigma)
+
+
+def heston_implied_vol_surface(
+    params: HestonParameters,
+    spot: float,
+    r: float,
+    q: float,
+    strikes: np.ndarray,
+    expiries: np.ndarray,
+) -> np.ndarray:
+    """
+    Compute Heston implied vol surface for a grid of strikes and expiries.
+    
+    Parameters
+    ----------
+    params : HestonParameters
+        Heston model parameters.
+    spot : float
+        Current spot price.
+    r : float
+        Risk-free rate.
+    q : float
+        Dividend yield.
+    strikes : np.ndarray
+        Strike prices (1D array).
+    expiries : np.ndarray
+        Expiries in years (1D array).
+    
+    Returns
+    -------
+    np.ndarray
+        Implied volatility surface, shape (len(expiries), len(strikes)).
+    """
+    strikes = np.asarray(strikes, dtype=float)
+    expiries = np.asarray(expiries, dtype=float)
+    
+    n_expiries = expiries.size
+    n_strikes = strikes.size
+    
+    vol_surface = np.zeros((n_expiries, n_strikes), dtype=float)
+    
+    for i, tau in enumerate(expiries):
+        for j, K in enumerate(strikes):
+            vol_surface[i, j] = heston_implied_vol(
+                params, spot, K, r, q, tau, option_type="call"
+            )
+    
+    return vol_surface

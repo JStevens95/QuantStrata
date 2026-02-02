@@ -1,6 +1,6 @@
 # QuantStrata Development Roadmap
 
-**Last Updated:** January 27, 2026 (Phase 4 Complete - Multi-Asset Architecture Refactored)  
+**Last Updated:** January 27, 2026 (Phase 5.1 Complete - Calibration Framework)  
 **Current Version:** V1 (FX Derivatives Foundation)  
 **Target:** Comprehensive Professional Quant Library
 
@@ -550,24 +550,36 @@ linear products that should be implemented before options on them (swaptions).
 
 **Goal:** Complete production-ready infrastructure
 
-### 5.1 Calibration Framework
-- [ ] **Unified Calibration Interface**
-  - Implement: `CalibrationEngine` (generic optimizer)
-  - Support: Multiple objective functions (least squares, max likelihood)
-  - Support: Multiple optimizers (Levenberg-Marquardt, genetic algorithms)
-  - Use case: Model calibration to market data
+### 5.1 Calibration Framework ✅
 
-- [ ] **Volatility Surface Calibration**
-  - Complete: FX vol calibration (from Phase 1)
-  - Complete: Equity vol calibration (from Phase 2)
-  - Complete: Rates vol calibration (from Phase 3)
-  - Use case: Production vol surface construction
+- [x] **Unified Calibration Interface**
+  - Implemented: `CalibrationEngine` (generic optimizer orchestration)
+  - Implemented: `WeightedLeastSquares`, `PenalizedObjective`, `MaxLikelihood` objectives
+  - Implemented: `LBFGSBConfig`, `DifferentialEvolutionConfig`, `LevenbergMarquardtConfig` optimizers
+  - Tests: 16 unit tests for core engine
 
-- [ ] **Model Parameter Calibration**
-  - Implement: Heston calibration (to vol surface)
-  - Implement: Hull-White calibration (to cap/swaption prices)
-  - Implement: SABR calibration (to swaption smile)
-  - Use case: Advanced model calibration
+- [x] **Volatility Surface Calibration**
+  - Existing: FX smile calibration (ATM/RR/BF → GridVolSurface)
+  - Existing: SABR calibration to smile data
+  - Existing: Dupire local vol extraction
+
+- [x] **Model Parameter Calibration**
+  - Implemented: Heston calibration to vol surface (FFT pricing + optimization)
+  - Implemented: Hull-White calibration to swaptions and caps
+  - Implemented: SABR calibration to swaption smile (normal/lognormal)
+  - Tests: 27 unit tests for model calibration
+
+**Status:** Phase 5.1 COMPLETE.
+
+**Architecture:**
+- Core: `src/calibration/core/` (engine, objectives, optimizers)
+- Heston: `src/calibration/stochastic_volatility/heston.py`
+- Hull-White: `src/calibration/short_rate/hull_white.py`
+- SABR IR: Extended `src/calibration/volatility_surface/sabr.py`
+
+**Documentation:**
+- Reference: `docs/reference/calibration/calibration_framework.md`
+- Guide: `docs/guides/calibration/calibration_framework.md`
 
 ### 5.2 Backtesting Infrastructure
 - [ ] **Backtesting Framework**

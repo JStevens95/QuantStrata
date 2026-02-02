@@ -584,3 +584,194 @@ def create_sabr_vol_surface(
             return float(math.sqrt(var_interp / T))
     
     return vol_func
+
+
+# =============================================================================
+# SABR for Interest Rate Swaption Smile
+# =============================================================================
+
+def calibrate_sabr_to_swaption_smile(
+    *,
+    strikes: np.ndarray | Sequence[float],
+    market_vols: np.ndarray | Sequence[float],
+    forward_swap_rate: float,
+    expiry: float,
+    tenor: float,
+    vol_type: str = "normal",
+    config: SabrConfig = SabrConfig(beta=0.0),
+    weights: np.ndarray | Sequence[float] | None = None,
+    initial_guess: SabrParameters | None = None,
+) -> SabrParameters:
+    """
+    Calibrate SABR parameters to swaption smile data.
+    
+    This is a convenience wrapper for interest rate swaption smile calibration.
+    
+    Parameters
+    ----------
+    strikes : array-like
+        Swaption strikes (swap rates).
+    market_vols : array-like
+        Market implied volatilities at each strike.
+        For normal vols (Bachelier), values in decimal (e.g., 0.005 = 50bp).
+        For lognormal vols (Black), values in decimal (e.g., 0.20 = 20%).
+    forward_swap_rate : float
+        ATM forward swap rate.
+    expiry : float
+        Option expiry in years.
+    tenor : float
+        Underlying swap tenor in years (for documentation only).
+    vol_type : str
+        Type of volatilities:
+        - "normal": Bachelier/normal vols (typical for rates)
+        - "lognormal": Black/lognormal vols
+    config : SabrConfig
+        Calibration configuration.
+        Default beta=0 for normal SABR (handles negative rates).
+    weights : array-like, optional
+        Weights for each strike quote.
+    initial_guess : SabrParameters, optional
+        Initial parameters.
+    
+    Returns
+    -------
+    SabrParameters
+        Calibrated SABR parameters.
+    
+    Notes
+    -----
+    For interest rate swaption smile fitting:
+    - Beta = 0 (normal SABR) is typical, as it handles negative rates
+    - Beta = 0.5 (CIR-like) is sometimes used
+    - Beta = 1 (lognormal) requires positive forward rates
+    
+    The forward_swap_rate is used as the 'forward' in the SABR formula.
+    
+    Examples
+    --------
+    >>> # Calibrate 10Y10Y swaption smile
+    >>> strikes = np.array([0.02, 0.025, 0.03, 0.035, 0.04])  # 2%-4%
+    >>> market_vols = np.array([0.0050, 0.0048, 0.0045, 0.0048, 0.0052])  # ~50bp
+    >>> fwd = 0.03  # 3% forward rate
+    >>>
+    >>> params = calibrate_sabr_to_swaption_smile(
+    ...     strikes=strikes,
+    ...     market_vols=market_vols,
+    ...     forward_swap_rate=fwd,
+    ...     expiry=10.0,
+    ...     tenor=10.0,
+    ...     vol_type="normal",
+    ... )
+    >>> print(f"α={params.alpha:.4f}, ρ={params.rho:.4f}, ν={params.nu:.4f}")
+    """
+    # Validate vol_type
+    if vol_type not in ("normal", "lognormal"):
+        raise ValueError(f"vol_type must be 'normal' or 'lognormal', got {vol_type}")
+    
+    # For normal SABR, ensure beta = 0
+    if vol_type == "normal" and config.beta != 0.0:
+        # Create new config with beta=0
+        config = SabrConfig(
+            beta=0.0,
+            use_normal_approx=True,
+            max_iter=config.max_iter,
+            tol=config.tol,
+        )
+    
+    # Convert to arrays
+    strikes = np.asarray(strikes, dtype=float).reshape(-1)
+    market_vols = np.asarray(market_vols, dtype=float).reshape(-1)
+    
+    # For normal vols, we need to adjust the interpretation
+    # The standard SABR formula gives lognormal vols; for normal SABR (beta=0),
+    # we use the normal SABR approximation
+    
+    # Call the standard calibration
+    return calibrate_sabr_to_smile(
+        forward=forward_swap_rate,
+        strikes=strikes,
+        market_vols=market_vols,
+        expiry=expiry,
+        config=config,
+        weights=weights,
+        initial_guess=initial_guess,
+    )
+
+
+def calibrate_sabr_swaption_cube(
+    *,
+    expiries: Sequence[float],
+    tenors: Sequence[float],
+    strikes_by_point: dict[tuple[float, float], np.ndarray],
+    vols_by_point: dict[tuple[float, float], np.ndarray],
+    forward_by_point: dict[tuple[float, float], float],
+    vol_type: str = "normal",
+    config: SabrConfig = SabrConfig(beta=0.0),
+) -> dict[tuple[float, float], SabrParameters]:
+    """
+    Calibrate SABR parameters for each point in a swaption cube.
+    
+    Parameters
+    ----------
+    expiries : sequence of float
+        Option expiries.
+    tenors : sequence of float
+        Swap tenors.
+    strikes_by_point : dict
+        Dict mapping (expiry, tenor) -> strike array.
+    vols_by_point : dict
+        Dict mapping (expiry, tenor) -> vol array.
+    forward_by_point : dict
+        Dict mapping (expiry, tenor) -> forward swap rate.
+    vol_type : str
+        "normal" or "lognormal".
+    config : SabrConfig
+        Calibration configuration.
+    
+    Returns
+    -------
+    dict[tuple[float, float], SabrParameters]
+        Dict mapping (expiry, tenor) -> calibrated SABR parameters.
+    
+    Examples
+    --------
+    >>> # Calibrate full swaption cube
+    >>> params_cube = calibrate_sabr_swaption_cube(
+    ...     expiries=[1, 2, 5, 10],
+    ...     tenors=[5, 10, 20, 30],
+    ...     strikes_by_point=strikes,
+    ...     vols_by_point=vols,
+    ...     forward_by_point=forwards,
+    ... )
+    >>> for (exp, ten), p in params_cube.items():
+    ...     print(f"{exp}Y{ten}Y: α={p.alpha:.4f}, ρ={p.rho:.4f}")
+    """
+    result: dict[tuple[float, float], SabrParameters] = {}
+    prev_params: SabrParameters | None = None
+    
+    for T_opt in expiries:
+        for tenor in tenors:
+            key = (T_opt, tenor)
+            
+            if key not in strikes_by_point or key not in vols_by_point:
+                continue
+            
+            K = strikes_by_point[key]
+            sigma = vols_by_point[key]
+            F = forward_by_point[key]
+            
+            params = calibrate_sabr_to_swaption_smile(
+                strikes=K,
+                market_vols=sigma,
+                forward_swap_rate=F,
+                expiry=T_opt,
+                tenor=tenor,
+                vol_type=vol_type,
+                config=config,
+                initial_guess=prev_params,
+            )
+            
+            result[key] = params
+            prev_params = params
+    
+    return result
