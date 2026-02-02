@@ -30,3 +30,14 @@ CurveMethod = Literal["zeros", "bootstrap"]
 
 # define panel type.
 PanelKind = Literal["quote", "curve_params", "vol_params"]
+
+# Volatility type for IR products (normal = Bachelier, lognormal = Black)
+VolType = Literal["normal", "lognormal"]
+
+# Metadata about what the "strike axis" represents.
+StrikeSpace = Literal[
+    "absolute",              # K in price units (canonical for pricing)
+    "spot_moneyness",        # K = m * S0  (stored values are m, not K)  [NOT recommended to store long-term]
+    "forward_moneyness",     # K = m * F0(T) (stored values are m)       [NOT recommended to store in 2D strike grid]
+    "log_forward_moneyness", # log(K/F0(T))                              [NOT recommended to store in 2D strike grid]
+]

@@ -122,10 +122,13 @@ src/models/short_rate/
 src/pricers/ir/
 ├── __init__.py           # Updated to export BK pricers
 ├── european_hw.py        # Hull-White analytic
-├── european_mc.py        # Hull-White MC
-├── european_fde.py       # Hull-White FDE
-└── european_bk.py        # NEW - Black-Karasinski MC
+├── european_hw_mc.py     # Hull-White MC
+├── european_hw_fde.py    # Hull-White FDE
+└── european_bk_mc.py     # NEW - Black-Karasinski MC
 ```
+
+**Note:** Pricer files were renamed to follow consistent naming convention:
+`{exercise}_{model}_{method}.py`
 
 ## Test Results
 
