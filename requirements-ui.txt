@@ -1,5 +1,6 @@
 # Optional: Dash UIs (e.g. pricing calculator)
 # Install with: pip install -r requirements-ui.txt
-# Run pricing calculator: python -m src.ui.pricing_calculator
+# Run an app: python -m src.ui.run <app_name>  (e.g. pricing_calculator)
+# See src/ui/README.md and docs/guides/interactive_tools.md
 
 dash >= 2.0.0

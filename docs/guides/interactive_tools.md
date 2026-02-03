@@ -16,26 +16,47 @@ This installs `dash` (Plotly Dash). The rest of the library (e.g. pricers, marke
 
 ---
 
+## Layout
+
+UI apps live under `src/ui/apps/`, with shared layout, styles, and components in `src/ui/_shared/`. Run any registered app with:
+
+```bash
+python -m src.ui.run <app_name>
+```
+
+See `src/ui/README.md` for the full folder structure and how to add new apps.
+
+---
+
 ## Pricing calculator
 
-The **FX Vanilla Pricing Calculator** lets you enter spot, strike, vol, rates, expiry, notional, and option type (call/put) and see the BSM price and Greeks.
+The **FX Vanilla Pricing Calculator** (`pricing_calculator`) lets you enter spot, strike, vol, rates, expiry, notional, and option type (call/put) and see the BSM price and Greeks.
 
 ### Run from the command line
 
-From the **repository root** (so that `src` is on the path):
+From the **repository root**:
 
 ```bash
-python -m src.ui.pricing_calculator
+python -m src.ui.run pricing_calculator
 ```
 
-Then open http://127.0.0.1:8050 in your browser.
+Then open http://127.0.0.1:8050 in your browser. Optional: `python -m src.ui.run pricing_calculator --port 8051 --debug`.
 
 ### Run from code
 
 ```python
-from src.ui.pricing_calculator import create_app
+from src.ui.apps.pricing_calculator import create_app
 
 app = create_app()
+app.run_server(debug=True, port=8050)
+```
+
+Or via the package helper:
+
+```python
+from src.ui import create_pricing_calculator_app
+
+app = create_pricing_calculator_app()
 app.run_server(debug=True, port=8050)
 ```
 
@@ -43,4 +64,7 @@ app.run_server(debug=True, port=8050)
 
 ## Adding more Dash apps
 
-New UIs can be added under `src/ui/` as separate modules (e.g. `src/ui/risk_dashboard.py`). Each app should expose a `create_app()` that returns a `dash.Dash` instance. Document new apps in this guide and, if useful, add a `__main__` block so they can be run with `python -m src.ui.<module>`.
+1. Create `src/ui/apps/<name>/` with `__init__.py` and `app.py` defining `create_app() -> dash.Dash`.
+2. Use `_shared` (layout, styles, components) for a consistent look.
+3. Register in `src/ui/run.py`: add the app to `APP_REGISTRY`.
+4. Document the app in this guide.
