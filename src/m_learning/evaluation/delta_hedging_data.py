@@ -4,12 +4,12 @@ Delta hedging simulation and training data.
 Provides GBM path generation, Black-Scholes price/delta at rebalancing times,
 and dataset construction for ML-based delta hedging (features = state, target = BSM delta).
 
-Used by the ml_delta_hedging tutorial notebook.
+Used by evaluation/delta_hedging_backtest.py.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional, Tuple
 
 import numpy as np
@@ -18,11 +18,6 @@ from src.models.analytic.black_scholes_merton.base import (
     vanilla_greeks,
     vanilla_price,
 )
-
-
-# -----------------------------------------------------------------------------
-# Path and state
-# -----------------------------------------------------------------------------
 
 
 @dataclass
@@ -66,7 +61,6 @@ def _bsm_price_and_delta(
 ) -> Tuple[float, float]:
     """Return (BSM price, BSM delta). option_type_int: 1 = call, -1 = put."""
     opt = _option_type_from_int(option_type_int)
-    # Equity: carry = r (no dividend)
     pv = vanilla_price(
         option_type=opt,
         spot=spot,
@@ -96,31 +90,7 @@ def generate_gbm_path(
     n_steps: int,
     seed: Optional[int] = None,
 ) -> np.ndarray:
-    """
-    Generate one GBM path at rebalancing times 0, dt, 2*dt, ..., T.
-
-    S_{k+1} = S_k * exp((r - sigma^2/2)*dt + sigma*sqrt(dt)*Z_k).
-
-    Parameters
-    ----------
-    S0 : float
-        Initial spot.
-    r : float
-        Risk-free rate.
-    sigma : float
-        Volatility.
-    T : float
-        Maturity (years).
-    n_steps : int
-        Number of steps (so n_steps + 1 points).
-    seed : int, optional
-        Random seed.
-
-    Returns
-    -------
-    np.ndarray
-        Shape (n_steps + 1,). Spot at each time.
-    """
+    """Generate one GBM path at rebalancing times 0, dt, 2*dt, ..., T. Shape (n_steps + 1,)."""
     rng = np.random.default_rng(seed)
     dt = T / n_steps
     drift = (r - 0.5 * sigma**2) * dt
@@ -142,25 +112,7 @@ def simulate_hedging_path(
     n_steps: int,
     seed: Optional[int] = None,
 ) -> HedgingPath:
-    """
-    Simulate one path: GBM spot and BSM option value + delta at each rebalance time.
-
-    Parameters
-    ----------
-    S0, K, T, r, sigma : float
-        Option and market parameters.
-    option_type : int
-        1 = call, -1 = put.
-    n_steps : int
-        Number of rebalancing steps.
-    seed : int, optional
-        Random seed for path.
-
-    Returns
-    -------
-    HedgingPath
-        times, spot, option_value, delta arrays.
-    """
+    """Simulate one path: GBM spot and BSM option value + delta at each rebalance time."""
     spot_path = generate_gbm_path(S0, r, sigma, T, n_steps, seed=seed)
     dt = T / n_steps
     times = np.linspace(0.0, T, n_steps + 1)
@@ -203,18 +155,12 @@ def simulate_hedging_paths(
     ]
 
 
-# -----------------------------------------------------------------------------
-# Training dataset: (state -> BSM delta)
-# -----------------------------------------------------------------------------
-
-
-# Feature order for ML: moneyness S/K, time_to_expiry, vol, rate, option_type
 DELTA_HEDGE_FEATURE_NAMES = [
-    "moneyness",      # S / K
-    "time_to_expiry", # T - t (years)
+    "moneyness",
+    "time_to_expiry",
     "vol",
     "rate",
-    "option_type",    # 1 = call, -1 = put
+    "option_type",
 ]
 
 
@@ -228,19 +174,7 @@ def path_to_feature_target_arrays(
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Extract (features, targets) from one path for all rebalance points.
-
-    Features at each t_k: (S/K, T-t, sigma, r, option_type).
-    Target: BSM delta at t_k (already in path.delta).
-
-    We exclude the last time (expiry) if desired for training (delta at T is 0 or 1);
-    here we include all points so the model can learn near expiry too.
-
-    Returns
-    -------
-    features : np.ndarray
-        Shape (n_steps+1, 5).
-    targets : np.ndarray
-        Shape (n_steps+1,).
+    features: (n_steps+1, 5), targets: (n_steps+1,).
     """
     n = len(path.times)
     features = np.zeros((n, 5), dtype=np.float32)
@@ -272,29 +206,7 @@ def build_delta_hedging_dataset(
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Build feature and target arrays for delta hedging ML.
-
-    Samples paths with the given parameters; each (path, time) gives one row:
-    features = (S/K, T-t, sigma, r, option_type), target = BSM delta.
-
-    Parameters
-    ----------
-    n_paths : int
-        Number of simulated paths.
-    S0, K, T, r, sigma : float
-        Option and market parameters.
-    option_type : int
-        1 = call, -1 = put.
-    n_steps : int
-        Rebalancing steps per path.
-    seed : int, optional
-        Random seed.
-
-    Returns
-    -------
-    features : np.ndarray
-        Shape (n_samples, 5). n_samples = n_paths * (n_steps+1).
-    targets : np.ndarray
-        Shape (n_samples,).
+    Returns features (n_samples, 5), targets (n_samples,).
     """
     paths = simulate_hedging_paths(
         n_paths=n_paths,
@@ -316,3 +228,14 @@ def build_delta_hedging_dataset(
     features = np.vstack(feats_list)
     targets = np.concatenate(tgt_list)
     return features, targets
+
+
+__all__ = [
+    "HedgingPath",
+    "generate_gbm_path",
+    "simulate_hedging_path",
+    "simulate_hedging_paths",
+    "DELTA_HEDGE_FEATURE_NAMES",
+    "path_to_feature_target_arrays",
+    "build_delta_hedging_dataset",
+]

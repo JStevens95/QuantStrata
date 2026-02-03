@@ -82,9 +82,13 @@ from src.m_learning.data import (
     NormalizationStats,
     create_pricing_dataset,
     create_calibration_dataset,
-    # Legacy
     MLDataset,
-    build_pricing_dataset_from_mc,
+    build_pricing_data,
+    build_gnn_data,
+    PricingDataResult,
+    GnnDataResult,
+    TradeAttributeEncoder,
+    TradeGraphBuilder,
 )
 
 # Models
@@ -137,7 +141,12 @@ __all__ = [
     "create_pricing_dataset",
     "create_calibration_dataset",
     "MLDataset",
-    "build_pricing_dataset_from_mc",
+    "build_pricing_data",
+    "build_gnn_data",
+    "PricingDataResult",
+    "GnnDataResult",
+    "TradeAttributeEncoder",
+    "TradeGraphBuilder",
     # Models
     "MLPPricer",
     "create_mlp_pricer",

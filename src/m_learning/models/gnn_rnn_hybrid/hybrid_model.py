@@ -109,14 +109,33 @@ class HybridGnnRnn(tf.keras.Model):
         :param training: whether in training mode.
         :return:
         """
-        # validate inputs and extract components.
-        self._validate_inputs(inputs)
-
         # extract tensors from inputs
         trade_features = inputs['trade_features']
         pnl_history = inputs['pnl_history']
         adjacency = inputs['adjacency_matrix']
         target_indices = tf.cast(inputs['target_indices'], dtype=tf.int32)
+
+        # When tf.data.Dataset yields batched dicts, trade_features/adjacency/target_indices
+        # have an extra batch dim (same graph for all samples). Squeeze to rank-2/rank-1 for the model.
+        if len(trade_features.shape) == 3:
+            trade_features = trade_features[0]
+        if len(adjacency.shape) == 3:
+            adjacency = adjacency[0]
+        if len(target_indices.shape) == 2:
+            target_indices = target_indices[0]
+        elementary_indices = inputs.get('elementary_indices')
+        if elementary_indices is not None and len(elementary_indices.shape) == 2:
+            elementary_indices = elementary_indices[0]
+
+        model_inputs = {
+            'trade_features': trade_features,
+            'pnl_history': pnl_history,
+            'adjacency_matrix': adjacency,
+            'target_indices': target_indices,
+        }
+        if elementary_indices is not None:
+            model_inputs['elementary_indices'] = elementary_indices
+        self._validate_inputs(model_inputs)
 
         # run different orchestration depending on mode.
         architecture = self.general_config.get('architecture', 'default').lower()
@@ -125,7 +144,8 @@ class HybridGnnRnn(tf.keras.Model):
             return output
         elif architecture == 'default':
             output = self.run_default_model(
-                inputs=(trade_features, pnl_history, adjacency, target_indices), training=training
+                inputs=(trade_features, pnl_history, adjacency, target_indices),
+                training=training,
             )
             return output
         else:

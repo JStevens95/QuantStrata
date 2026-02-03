@@ -13,13 +13,13 @@ from typing import Any, Dict, Optional, Tuple
 import numpy as np
 import tensorflow as tf
 
-from src.m_learning.data.gnn_synthetic import SyntheticGnnData, generate_synthetic_gnn_data
-from src.m_learning.data.portfolio_builder import (
+from src.m_learning.data.gnn_rnn_hybrid.synthetic import SyntheticGnnData, generate_synthetic_gnn_data
+from src.m_learning.data.gnn_rnn_hybrid.portfolio_builder import (
     GnnPortfolioData,
     build_fx_gnn_data,
     train_val_projection_split,
 )
-from src.m_learning.data.portfolio import gnn_inputs_to_tf_dataset
+from src.m_learning.data.gnn_rnn_hybrid.dataset_utils import gnn_inputs_to_tf_dataset
 
 
 @dataclass

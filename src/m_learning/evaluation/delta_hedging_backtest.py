@@ -12,7 +12,7 @@ from typing import Callable, List, Optional
 
 import numpy as np
 
-from src.m_learning.data.delta_hedging import HedgingPath, path_to_feature_target_arrays
+from src.m_learning.evaluation.delta_hedging_data import HedgingPath, path_to_feature_target_arrays
 
 
 def _payoff(spot: float, strike: float, option_type: int) -> float:

@@ -1,8 +1,8 @@
 """
-Synthetic data generation for GNN-LSTM hybrid model tutorial.
+Synthetic data generation for GNN-RNN hybrid model.
 
 Generates trade features, k-NN adjacency, PnL history, and targets
-for demonstrating the HybridGnnRnn model end-to-end.
+for the HybridGnnRnn model. Used by data/gnn_rnn_hybrid/build.py.
 """
 
 from __future__ import annotations
@@ -85,7 +85,6 @@ def generate_synthetic_trade_features(
     ttm = rng.uniform(0.1, 2.0, n_trades)
     delta = rng.uniform(-1.0, 1.0, n_trades)
     vega = rng.uniform(0.0, 50.0, n_trades)
-    # Product type: one-hot encode 3 types
     prod_idx = rng.integers(0, 3, n_trades)
     prod_onehot = np.eye(3)[prod_idx]
 
@@ -125,12 +124,10 @@ def build_knn_adjacency(
         Shape (n, n). Row-normalised adjacency.
     """
     n = features.shape[0]
-    # k+1 because kneighbors includes the query itself
     nn = NearestNeighbors(n_neighbors=min(k + 1, n), metric="euclidean")
     nn.fit(features)
     distances, indices = nn.kneighbors(features)
 
-    # Build sparse adjacency
     rows = []
     cols = []
     for i in range(n):
@@ -142,7 +139,6 @@ def build_knn_adjacency(
     data = np.ones(len(rows), dtype=np.float32)
     adj_sparse = csr_matrix((data, (rows, cols)), shape=(n, n))
 
-    # Row-normalise
     row_sums = np.array(adj_sparse.sum(axis=1)).flatten()
     row_sums[row_sums == 0] = 1.0
     adj_dense = adj_sparse.toarray() / row_sums[:, None]
@@ -155,25 +151,7 @@ def generate_pnl_history(
     n_elementary: int,
     seed: Optional[int] = None,
 ) -> np.ndarray:
-    """
-    Generate synthetic PnL history (random walk).
-
-    Parameters
-    ----------
-    n_samples : int
-        Number of samples (scenarios).
-    n_timesteps : int
-        Number of time steps.
-    n_elementary : int
-        Number of elementary trades.
-    seed : int, optional
-        Random seed.
-
-    Returns
-    -------
-    pnl_history : np.ndarray
-        Shape (n_samples, n_timesteps, n_elementary).
-    """
+    """Generate synthetic PnL history (random walk). Shape (n_samples, n_timesteps, n_elementary)."""
     rng = np.random.default_rng(seed)
     increments = rng.normal(0.0, 1.0, (n_samples, n_timesteps, n_elementary))
     pnl = np.cumsum(increments, axis=1)
@@ -187,40 +165,15 @@ def generate_targets(
     noise_std: float = 0.5,
     seed: Optional[int] = None,
 ) -> np.ndarray:
-    """
-    Generate target PnL as linear combination of final elementary PnL + noise.
-
-    Parameters
-    ----------
-    pnl_history : np.ndarray
-        Shape (n_samples, n_timesteps, n_elementary).
-    elementary_indices : np.ndarray
-        Shape (n_elementary,).
-    target_indices : np.ndarray
-        Shape (n_targets,).
-    noise_std : float
-        Standard deviation of noise added to targets.
-    seed : int, optional
-        Random seed.
-
-    Returns
-    -------
-    targets : np.ndarray
-        Shape (n_samples, n_targets).
-    """
+    """Generate target PnL as linear combination of final elementary PnL + noise. Shape (n_samples, n_targets)."""
     rng = np.random.default_rng(seed)
     n_samples = pnl_history.shape[0]
     n_elementary = pnl_history.shape[2]
     n_targets = len(target_indices)
 
-    # Final PnL of elementary trades: (n_samples, n_elementary)
     final_pnl = pnl_history[:, -1, :]
-
-    # Random weights mapping elementary to target (for synthetic relationship)
     weights = rng.uniform(0.1, 1.0, (n_elementary, n_targets))
     weights = weights / weights.sum(axis=0, keepdims=True)
-
-    # Targets = weighted sum of final elementary PnL + noise
     targets = final_pnl @ weights + rng.normal(0.0, noise_std, (n_samples, n_targets))
     return targets.astype(np.float32)
 
@@ -236,26 +189,7 @@ def generate_synthetic_gnn_data(
     seed: Optional[int] = None,
 ) -> SyntheticGnnData:
     """
-    Generate a complete synthetic dataset for GNN-LSTM hybrid model.
-
-    Parameters
-    ----------
-    n_trades : int
-        Total number of trades in the portfolio.
-    n_elementary : int
-        Number of elementary trades (must be <= n_trades).
-    n_targets : int
-        Number of target trades (must be <= n_trades).
-    n_samples : int
-        Number of samples (scenarios).
-    n_timesteps : int
-        Number of time steps in PnL history.
-    k_neighbours : int
-        k for k-NN adjacency.
-    noise_std : float
-        Noise on targets.
-    seed : int, optional
-        Random seed.
+    Generate a complete synthetic dataset for GNN-RNN hybrid model.
 
     Returns
     -------
@@ -264,24 +198,18 @@ def generate_synthetic_gnn_data(
     """
     rng = np.random.default_rng(seed)
 
-    # Trade features and adjacency
     features, feature_names = generate_synthetic_trade_features(n_trades, seed=seed)
     adjacency = build_knn_adjacency(features, k=k_neighbours, include_self=True)
 
-    # Elementary and target indices (disjoint for simplicity)
     all_indices = np.arange(n_trades)
     rng.shuffle(all_indices)
     elementary_indices = np.sort(all_indices[:n_elementary])
     target_indices = np.sort(all_indices[n_elementary : n_elementary + n_targets])
 
-    # Ensure we have enough trades
     if n_elementary + n_targets > n_trades:
         raise ValueError("n_elementary + n_targets must be <= n_trades")
 
-    # PnL history for elementary trades
     pnl_history = generate_pnl_history(n_samples, n_timesteps, n_elementary, seed=seed)
-
-    # Targets
     targets = generate_targets(
         pnl_history, elementary_indices, target_indices, noise_std, seed=seed
     )
@@ -297,110 +225,11 @@ def generate_synthetic_gnn_data(
     )
 
 
-def default_hybrid_model_config(
-    gnn_units: int = 32,
-    rnn_units: int = 32,
-    fusion_units: int = 32,
-    attention_units: int = 32,
-    projection_units: int = 32,
-    n_targets: int = 10,
-) -> Dict:
-    """
-    Return a minimal valid model_config for HybridGnnRnn.
-
-    Parameters
-    ----------
-    gnn_units, rnn_units, fusion_units, attention_units, projection_units : int
-        Hidden units for each block.
-    n_targets : int
-        Number of target trades (for projection baseline_trade_count).
-
-    Returns
-    -------
-    dict
-        model_config ready for HybridGnnRnn(model_config=...).
-    """
-    return {
-        "general": {
-            "architecture": "default",
-        },
-        "gnn_model": {
-            "general": {
-                "layers": 2,
-                "layer_type": "graph_sage",
-                "dropout_rate": 0.1,
-                "use_bias": True,
-                "use_residual": True,
-                "layer_norm": True,
-            },
-            "parameters": {
-                "units": gnn_units,
-                "activation": "relu",
-                "kernel_initializer": "glorot_uniform",
-                "bias_initializer": "zeros",
-            },
-        },
-        "rnn_model": {
-            "general": {
-                "layers": 2,
-                "layer_type": "lstm",
-                "dropout_rate": 0.1,
-            },
-            "parameters": {
-                "units": rnn_units,
-                "activation": "tanh",
-                "recurrent_activation": "sigmoid",
-                "kernel_initializer": "glorot_uniform",
-                "recurrent_initializer": "orthogonal",
-                "bias_initializer": "zeros",
-            },
-        },
-        "fusion_model": {
-            "general": {
-                "dropout_rate": 0.1,
-                "fusion_mode": "gate",
-                "num_heads": 2,
-            },
-            "parameters": {
-                "units": fusion_units,
-                "activation": "relu",
-                "kernel_initializer": "glorot_uniform",
-                "bias_initializer": "zeros",
-            },
-        },
-        "attention_model": {
-            "general": {
-                "dropout_rate": 0.1,
-                "num_heads": 2,
-            },
-            "parameters": {
-                "units": attention_units,
-                "activation": "relu",
-                "kernel_initializer": "glorot_uniform",
-                "bias_initializer": "zeros",
-            },
-        },
-        "projection_model": {
-            "general": {
-                "baseline_new_mode": "output_mix",
-                "baseline_trade_count": n_targets,
-                "dropout_rate": 0.1,
-                "new_target_mode": "knn",
-                "use_baseline_norm": True,
-                "use_attn_scale": True,
-                "use_attn_bias": True,
-                "residual_new_damp": 1.0,
-                "knn_k": 4,
-                "knn_power": 2.0,
-                "knn_temperature": 5.0,
-                "knn_mode": "cosine_softmax",
-                "knn_eps": 1e-8,
-            },
-            "parameters": {
-                "units": projection_units,
-                "activation": None,
-                "kernel_initializer": "glorot_uniform",
-                "bias_initializer": "zeros",
-            },
-        },
-    }
+__all__ = [
+    "SyntheticGnnData",
+    "generate_synthetic_trade_features",
+    "build_knn_adjacency",
+    "generate_pnl_history",
+    "generate_targets",
+    "generate_synthetic_gnn_data",
+]
