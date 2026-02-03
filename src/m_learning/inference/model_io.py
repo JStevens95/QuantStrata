@@ -46,6 +46,25 @@ import tensorflow as tf
 from src.m_learning.data.dataset import NormalizationStats
 
 
+def _save_keras_model(model: tf.keras.Model, path: Path, include_optimizer: bool) -> None:
+    """Save Keras model to .keras path (Keras 3 compatible: no deprecated save_format)."""
+    path = Path(path)
+    kwargs = {}
+    if include_optimizer:
+        kwargs["include_optimizer"] = True
+    # Keras 3: format is inferred from path (.keras or .h5); do not pass save_format
+    model.save(str(path), **kwargs)
+
+
+def _load_keras_model(path: Path, custom_objects: Optional[Dict], compile_model: bool) -> tf.keras.Model:
+    """Load Keras model from .keras file or SavedModel directory."""
+    return tf.keras.models.load_model(
+        str(path),
+        custom_objects=custom_objects or {},
+        compile=compile_model,
+    )
+
+
 @dataclass
 class ModelArtifact:
     """
@@ -99,7 +118,7 @@ def save_model(
     feature_stats: Optional[NormalizationStats] = None,
     target_stats: Optional[NormalizationStats] = None,
     training_history: Optional[Dict[str, Any]] = None,
-    save_format: str = "tf",
+    save_format: str = "keras",
     include_optimizer: bool = False,
 ) -> Path:
     """
@@ -119,24 +138,28 @@ def save_model(
         feature_stats: Feature normalization statistics
         target_stats: Target normalization statistics
         training_history: Training history dict
-        save_format: 'tf' (SavedModel) or 'keras' (native Keras)
-        include_optimizer: Whether to save optimizer state
+        save_format: 'keras' (default, .keras file, Keras 3 compatible) or 'tf' (SavedModel)
+        include_optimizer: Whether to save optimizer state (keras format only)
     
     Returns:
         Path to saved model directory
+    
+    Note:
+        With Keras 3 / TensorFlow 2.16+, the default 'keras' format uses a .keras path
+        and avoids deprecated save_format. Use 'tf' for TensorFlow Serving.
     """
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
     
-    # 1. Save model
+    # 1. Save model (Keras 3 / TF 2.16+ compatible: no save_format, use path extension)
     if save_format == "tf":
-        # TensorFlow SavedModel format
-        model_path = path / "saved_model"
-        model.save(str(model_path), save_format="tf", include_optimizer=include_optimizer)
+        # TensorFlow SavedModel format (e.g. for serving)
+        model_dir = path / "saved_model"
+        tf.saved_model.save(model, str(model_dir))
     else:
-        # Keras native format
+        # Keras native format (.keras) — recommended, works with Keras 3
         model_path = path / "model.keras"
-        model.save(str(model_path), save_format="keras", include_optimizer=include_optimizer)
+        _save_keras_model(model, model_path, include_optimizer)
     
     # 2. Save configuration
     if config is not None:
@@ -212,22 +235,14 @@ def load_model(
     if not path.exists():
         raise FileNotFoundError(f"Model path not found: {path}")
     
-    # 1. Load model
+    # 1. Load model (.keras preferred for Keras 3 compatibility)
     saved_model_path = path / "saved_model"
     keras_path = path / "model.keras"
     
-    if saved_model_path.exists():
-        model = tf.keras.models.load_model(
-            str(saved_model_path),
-            custom_objects=custom_objects,
-            compile=compile_model,
-        )
-    elif keras_path.exists():
-        model = tf.keras.models.load_model(
-            str(keras_path),
-            custom_objects=custom_objects,
-            compile=compile_model,
-        )
+    if keras_path.exists():
+        model = _load_keras_model(keras_path, custom_objects, compile_model)
+    elif saved_model_path.exists():
+        model = _load_keras_model(saved_model_path, custom_objects, compile_model)
     else:
         raise FileNotFoundError(f"No model found in {path}")
     
