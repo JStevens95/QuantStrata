@@ -23,6 +23,12 @@ from src.m_learning.evaluation.metrics import (
     PricingMetrics,
     CalibrationMetrics,
 )
+from src.m_learning.evaluation.delta_hedging_backtest import (
+    BacktestResult,
+    run_delta_hedging_backtest,
+    run_single_path_backtest,
+    backtest_summary_stats,
+)
 
 __all__ = [
     "Evaluator",
@@ -31,4 +37,8 @@ __all__ = [
     "compute_metrics",
     "PricingMetrics",
     "CalibrationMetrics",
+    "BacktestResult",
+    "run_delta_hedging_backtest",
+    "run_single_path_backtest",
+    "backtest_summary_stats",
 ]

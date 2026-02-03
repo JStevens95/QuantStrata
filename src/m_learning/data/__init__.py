@@ -50,6 +50,13 @@ from src.m_learning.data.portfolio import (
     build_gnn_dataset_from_portfolio,
     gnn_inputs_to_tf_dataset,
 )
+from src.m_learning.data.delta_hedging import (
+    HedgingPath,
+    build_delta_hedging_dataset,
+    generate_gbm_path,
+    simulate_hedging_path,
+    simulate_hedging_paths,
+)
 
 __all__ = [
     # New TF-native API
@@ -66,4 +73,9 @@ __all__ = [
     "build_calibration_dataset",
     "build_gnn_dataset_from_portfolio",
     "gnn_inputs_to_tf_dataset",
+    "HedgingPath",
+    "build_delta_hedging_dataset",
+    "generate_gbm_path",
+    "simulate_hedging_path",
+    "simulate_hedging_paths",
 ]
