@@ -57,6 +57,15 @@ from src.m_learning.data.delta_hedging import (
     simulate_hedging_path,
     simulate_hedging_paths,
 )
+from src.m_learning.data.gnn_synthetic import (
+    SyntheticGnnData,
+    generate_synthetic_gnn_data,
+    generate_synthetic_trade_features,
+    build_knn_adjacency,
+    generate_pnl_history,
+    generate_targets,
+    default_hybrid_model_config,
+)
 
 __all__ = [
     # New TF-native API
@@ -78,4 +87,12 @@ __all__ = [
     "generate_gbm_path",
     "simulate_hedging_path",
     "simulate_hedging_paths",
+    # GNN synthetic data
+    "SyntheticGnnData",
+    "generate_synthetic_gnn_data",
+    "generate_synthetic_trade_features",
+    "build_knn_adjacency",
+    "generate_pnl_history",
+    "generate_targets",
+    "default_hybrid_model_config",
 ]
