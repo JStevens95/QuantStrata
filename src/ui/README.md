@@ -6,6 +6,8 @@ Optional **Plotly Dash** UIs for browser-based interaction (e.g. pricing calcula
 pip install -r requirements-ui.txt
 ```
 
+For a full tutorial on running apps, building a new app, and tuning styling/layouts, see **`docs/guides/dash_ui_tutorial.md`**.
+
 ## Layout
 
 ```

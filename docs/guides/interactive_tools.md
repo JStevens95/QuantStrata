@@ -24,7 +24,7 @@ UI apps live under `src/ui/apps/`, with shared layout, styles, and components in
 python -m src.ui.run <app_name>
 ```
 
-See `src/ui/README.md` for the full folder structure and how to add new apps.
+See `src/ui/README.md` for the full folder structure and how to add new apps. For a step-by-step tutorial on building an app and tuning styling/layouts, see [Building Dash UIs (tutorial)](dash_ui_tutorial.md).
 
 ---
 

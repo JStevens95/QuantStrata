@@ -11,6 +11,7 @@ Optional Dash UIs (e.g. pricing calculator) in `src/ui/`.
 | Guide | Description |
 |-------|-------------|
 | [Interactive Tools](interactive_tools.md) | Dash UIs: pricing calculator, how to run and extend |
+| [Building Dash UIs (tutorial)](dash_ui_tutorial.md) | Run apps; build a new app; tune styling and layouts |
 
 ---
 
