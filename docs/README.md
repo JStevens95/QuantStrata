@@ -55,6 +55,16 @@ Interactive Jupyter notebooks with worked examples.
 | **Instruments** | [Vanilla](tutorials/instruments/vanilla_options_analysis.ipynb), [Barrier](tutorials/instruments/barrier_options_analysis.ipynb), [Digital](tutorials/instruments/digital_options_analysis.ipynb), [Touch](tutorials/instruments/touch_options_analysis.ipynb), [Asian](tutorials/instruments/asian_options_analysis.ipynb), [Lookback](tutorials/instruments/lookback_options_analysis.ipynb) |
 | **Market Data** | [Synthetic Data](tutorials/market-data/synthetic_data_generation.ipynb), [IR Vol Surfaces](tutorials/market-data/ir_volatility_surfaces.ipynb) |
 
+### Architecture
+
+Visual and detailed documentation of library structure and component interactions.
+
+| Document | Description |
+|----------|-------------|
+| [Architecture Overview](architecture/README.md) | Design principles and layer overview |
+| [Ecosystem Diagrams](architecture/ecosystem_diagrams.md) | Visual diagrams: module interactions, data flows, workflows |
+| [Component Reference](architecture/component_reference.md) | Detailed reference: what each module provides and requires |
+
 ### Development
 
 Internal documentation for contributors.
