@@ -4,6 +4,16 @@ Interactive Jupyter notebooks with worked examples covering calibration, pricing
 
 ---
 
+## Advanced Analytics & Reporting
+
+Front-office risk reports and publication-quality plots.
+
+| Tutorial | Description |
+|----------|-------------|
+| [Advanced Analytics & Reporting](analytics/advanced_analytics_reporting.ipynb) | VaR summary, RiskReport, Greeks surface, PnL by scenario, figure export |
+
+---
+
 ## Streaming and Live Data
 
 Streaming protocol, paper brokerage adapter, and StreamingEngine.

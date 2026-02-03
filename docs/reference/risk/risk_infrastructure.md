@@ -2,7 +2,7 @@
 
 **Module:** `src.risk`
 
-This document describes the risk infrastructure: Value-at-Risk (VaR), Greeks aggregation, and stress testing (scenario generation).
+This document describes the risk infrastructure: Value-at-Risk (VaR), Greeks aggregation, and stress testing (scenario generation). For front-office risk reports (VaR summary, combined RiskReport, Greeks surfaces, PnL-by-scenario plots, styling and export), see [Advanced Analytics & Reporting](../advanced_analytics_reporting.md).
 
 ---
 

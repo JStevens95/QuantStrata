@@ -5,6 +5,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from typing import Optional, Tuple
 
+from src.core.reporting.plots.style import apply_report_style
 from src.marketdata.core.interfaces import VolSurface
 
 
@@ -84,6 +85,7 @@ def plot_vol_surface_heatmap(surface: VolSurface, title: str = "Vol surface") ->
     ax.set_xlabel("Strike K")
     ax.set_ylabel("Expiry T")
     fig.colorbar(im, ax=ax, label="Implied vol")
+    apply_report_style(ax)
     fig.tight_layout()
     return fig
 
@@ -108,6 +110,7 @@ def plot_vol_smile_slices(surface: VolSurface, title: str = "Smile slices") -> p
     ax.set_ylabel("Implied vol")
     ax.grid(True)
     ax.legend()
+    apply_report_style(ax)
     fig.tight_layout()
     return fig
 

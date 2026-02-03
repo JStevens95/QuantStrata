@@ -693,12 +693,13 @@ linear products that should be implemented before options on them (swaptions).
 - Tutorial: `docs/tutorials/streaming/streaming_and_live_data.ipynb`
 
 ### 5.6 Advanced Analytics & Reporting
-- [ ] **Front-Office Risk Reports**
+- [x] **Front-Office Risk Reports**
   - Implement: Greeks surfaces, PnL attribution reports, VaR/CVaR summaries
   - Support: Portfolio-level and instrument-level breakdowns
   - Use case: Hedge fund risk management reporting
+  - Docs: [Advanced Analytics & Reporting (reference)](../reference/advanced_analytics_reporting.md), [guide](../guides/analytics/advanced_analytics_reporting.md), [tutorial](../tutorials/analytics/advanced_analytics_reporting.ipynb)
 
-- [ ] **Publication-Quality Visualisation**
+- [x] **Publication-Quality Visualisation**
   - Enhance: Plotting utilities for advanced analytics (vol surfaces, Greeks heatmaps, scenario fan charts)
   - Support: Consistent styling, export for reports
   - Use case: Option pricing analytic reports, risk dashboards
@@ -709,7 +710,7 @@ linear products that should be implemented before options on them (swaptions).
 - ✅ Backtesting infrastructure
 - ✅ Risk infrastructure (VaR, Greeks aggregation, stress testing)
 - [x] Streaming & live data (5.5): streaming provider, event-driven engine, brokerage adapter interface
-- [ ] Advanced analytics & reporting (5.6): front-office risk reports, publication-quality visualisation
+- [x] Advanced analytics & reporting (5.6): front-office risk reports, publication-quality visualisation
 - [x] Performance optimizations (5.4)
 
 **Impact:** Transforms library from "demonstration" to "production-ready" system and supports application projects (algo bot, option analytics, GNN-LSTM pricer, Q-learning orchestrator).

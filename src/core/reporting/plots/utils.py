@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 from pathlib import Path
-from typing import Union, Optional
+from typing import List, Optional, Tuple, Union
+
 from dataclasses import dataclass
 from matplotlib.figure import Figure
 
@@ -18,6 +19,7 @@ class PlotConfig:
     dpi: int = 150
     block: bool = True               # keeps IDE windows alive
     close: bool = False              # close figures after rendering
+    save_pdf: bool = True            # when save=True, also save PDF for report quality
 
 def ensure_dir(path: PathLike) -> Path:
     out = Path(path)
@@ -47,7 +49,11 @@ def render_fig(fig, *, cfg: PlotConfig, filename: Optional[str] = None) -> None:
         if not name:
             raise ValueError("render_fig: filename must be provided when cfg.save=True.")
 
-        fig.savefig(str(out_dir / name), dpi=int(cfg.dpi), bbox_inches="tight")
+        base_path = out_dir / name
+        fig.savefig(str(base_path), dpi=int(cfg.dpi), bbox_inches="tight")
+        if cfg.save_pdf:
+            pdf_path = base_path.with_suffix(".pdf")
+            fig.savefig(str(pdf_path), bbox_inches="tight")
 
     # ---- Show (optional) ----
     if cfg.show:
@@ -77,3 +83,30 @@ def close_fig(fig: Figure) -> None:
         plt.close(fig)
     except Exception:
         pass
+
+
+def save_report_figures(
+    figures: List[Tuple[Figure, str]],
+    out_dir: PathLike,
+    *,
+    prefix: str = "report",
+    dpi: int = 160,
+    save_pdf: bool = True,
+) -> List[Path]:
+    """
+    Save a batch of figures with consistent naming for reports.
+
+    Names are prefix_01_name.pdf, prefix_02_name.pdf, ... (and .png if dpi used).
+    Returns list of saved paths (first format per figure).
+    """
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    saved: List[Path] = []
+    for i, (fig, name) in enumerate(figures, start=1):
+        stem = f"{prefix}_{i:02d}_{name}"
+        png_path = out / f"{stem}.png"
+        fig.savefig(str(png_path), dpi=int(dpi), bbox_inches="tight")
+        saved.append(png_path)
+        if save_pdf:
+            fig.savefig(str(out / f"{stem}.pdf"), bbox_inches="tight")
+    return saved

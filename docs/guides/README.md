@@ -4,6 +4,16 @@ This section contains user-focused documentation for working with QuantStrata.
 
 ---
 
+## Advanced Analytics & Reporting
+
+Guides for front-office risk reports and publication-quality visualisation.
+
+| Guide | Description |
+|-------|-------------|
+| [Advanced Analytics & Reporting](analytics/advanced_analytics_reporting.md) | VaR summary, RiskReport, Greeks surface, PnL by scenario, styling and export |
+
+---
+
 ## Streaming and Live Data
 
 Guides for streaming market data and live/paper trading.
