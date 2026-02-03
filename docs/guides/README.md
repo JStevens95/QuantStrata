@@ -45,6 +45,16 @@ Guides for performance and scalability: backend selection, parallel pricing, and
 
 ---
 
+## Machine Learning (Phase 7.1)
+
+Guides for the ML framework: data preparation, training, evaluation, and inference.
+
+| Guide | Description |
+|-------|-------------|
+| [ML Framework](machine_learning/ml_framework.md) | When to use what; quick start (Hybrid GNN-LSTM, pricing); links to tutorials and reference |
+
+---
+
 ## Risk
 
 Guides for risk management: VaR, Greeks aggregation, and stress testing.

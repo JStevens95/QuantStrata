@@ -1,7 +1,8 @@
 # Phase 7.1: Machine Learning Integration - Progress Report
 
-**Status:** In Progress (Tasks 1–4 Complete)  
-**Started:** January 2026
+**Status:** COMPLETE (Phase 7.1)  
+**Started:** January 2026  
+**Completed:** January 2026
 
 ---
 
@@ -17,29 +18,32 @@ The goal is: **build model instance → prepare data → generic training loop �
 
 ```
 src/machine_learning/
-├── __init__.py
-├── core/                          # Protocols and types
-│   ├── __init__.py
-│   ├── protocols.py               # Trainable protocol
-│   └── types.py                   # TrainingConfig, EvaluationResult, etc.
-├── pipeline/                      # Generic ML pipeline
-│   ├── __init__.py
+├── core/                          # Protocols, types, config
+│   ├── protocols.py               # Trainable protocol, KerasTrainableAdapter
+│   ├── types.py                   # TrainingConfig, EvaluationResult (pipeline)
+│   └── config.py                  # TF/Keras training config
+├── pipelines/                     # Generic ML pipeline (Trainable + NumPy)
 │   ├── training.py                # run_training(), TrainingLoop
-│   ├── evaluation.py              # evaluate_model(), metrics
-│   └── inference.py               # load_model(), predict()
-├── data/                          # Data preparation
-│   ├── __init__.py
-│   ├── types.py                   # MLDataset, feature/target schemas
-│   ├── pricing.py                 # MC/analytic → pricing dataset
-│   ├── calibration.py             # Market → calibration dataset
-│   └── portfolio.py               # Portfolio → GNN inputs
-├── calibration/                   # (existing) TrainingManager
+│   ├── evaluation.py             # evaluate_model()
+│   ├── inference.py              # save_model(), load_model(), predict()
+│   └── tuning.py
+├── training/                      # TensorFlow-native Trainer
+│   └── trainer.py
+├── evaluation/                    # Evaluator, metrics
+├── inference/                     # model_io (TF/Keras save/load), predictor
+├── data/
+│   ├── dataset.py                # TFDataset, create_pricing_dataset, create_calibration_dataset
+│   ├── types.py                  # MLDataset, feature/target schemas
+│   ├── pricing/                  # build_pricing_data, from_mc, from_analytic
+│   ├── calibration/              # build_calibration_dataset
+│   ├── portfolio.py              # build_gnn_dataset_from_portfolio, gnn_inputs_to_tf_dataset
+│   └── gnn_rnn_hybrid/           # build_gnn_data, synthetic, dataset_utils
+├── calibration/                   # TrainingManager (Keras/HybridGnnRnn)
 │   └── training_manager.py
-├── models/                        # (existing) GNN-RNN hybrid
-│   └── gnn_rnn_hybrid/
-└── utilities/                     # (existing) TradeGraphBuilder, encoder
-    ├── trade_attribute_encoder.py
-    └── trade_graph_builder.py
+├── models/
+│   ├── pricing/                  # NN pricer
+│   └── gnn_rnn_hybrid/           # Hybrid GNN-RNN
+└── utilities/                     # TradeGraphBuilder, TradeAttributeEncoder
 ```
 
 ---

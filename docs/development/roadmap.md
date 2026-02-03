@@ -779,41 +779,43 @@ For both **machine learning** and **Q-learning / reinforcement learning**, the l
 
 This keeps the framework **model-agnostic** and **reusable** across ML-based pricing, calibration, GNN-LSTM pricer, and Q-learning agents.
 
-### 7.1 Machine Learning Integration
-- [ ] **Generic ML Training Pipeline**
-  - Implement: Reusable training loop (data → model → loss → optimizer step); checkpointing, logging
-  - Support: Any model that conforms to a minimal trainable interface (forward, loss, optional validation)
-  - Use case: Train NN pricers, calibration nets, GNN-LSTM, etc. through one pipeline
+### 7.1 Machine Learning Integration ✅
+- [x] **Generic ML Training Pipeline**
+  - Implemented: `pipelines/training.py` (Trainable + NumPy), `training/trainer.py` (TensorFlow-native), `calibration/training_manager.py` (Keras/HybridGnnRnn)
+  - Support: Trainable protocol, KerasTrainableAdapter; checkpointing, logging, early stopping
+  - Use case: Train NN pricers, calibration nets, GNN-LSTM through one pipeline or model-specific manager
 
-- [ ] **Data Preparation for ML**
-  - Implement: Fetch/prepare input data from market data, MC paths, or portfolio representation
-  - Support: Standardised feature/target format for pricing and calibration tasks
-  - Use case: Feed generic training pipeline
+- [x] **Data Preparation for ML**
+  - Implemented: `data/dataset.py` (TFDataset, create_pricing_dataset, create_calibration_dataset), `data/pricing/build.py`, `data/calibration/build.py`, `data/portfolio.py`, `data/gnn_rnn_hybrid/build.py`
+  - Support: build_pricing_data, build_pricing_dataset_from_mc/from_analytic, build_calibration_dataset, build_gnn_data, build_gnn_dataset_from_portfolio
+  - Use case: Feed generic training pipeline with standardised feature/target format
 
-- [ ] **Standardised ML Evaluation Outputs**
-  - Implement: Common metrics (loss curves, validation error, pricing error vs. benchmark)
-  - Support: Logging and serialisation so any ML model reports in a consistent way
-  - Use case: Compare and monitor models
+- [x] **Standardised ML Evaluation Outputs**
+  - Implemented: `pipelines/evaluation.py`, `evaluation/evaluator.py`, `evaluation/metrics.py`
+  - Support: Common metrics (loss curves, validation error, pricing error vs. benchmark), logging
+  - Use case: Compare and monitor models in a consistent way
 
-- [ ] **Generalised ML Inference Pipeline**
-  - Implement: Load trained model → run inference (e.g. price, implied vol) in a model-agnostic way
-  - Support: Integration with pricers, reports, and downstream applications
+- [x] **Generalised ML Inference Pipeline**
+  - Implemented: `pipelines/inference.py` (Trainable + JSON), `inference/model_io.py` (TF/Keras save/load), `inference/predictor.py`
+  - Support: Load trained model → run inference in a model-agnostic way; integration with pricers and reports
   - Use case: Deploy trained ML pricer or calibration model
 
-- [ ] **ML-Based Pricing**
-  - Implement: Neural network pricers (train on MC data) via the generic pipeline above
-  - Use case: Fast approximate pricing
+- [x] **ML-Based Pricing**
+  - Implemented: `models/pricing/`, `create_pricing_dataset`, `build_pricing_data`, `build_pricing_dataset_from_mc/from_analytic`
+  - Use case: Fast approximate pricing (train on MC or analytic data)
 
-- [ ] **ML Calibration**
-  - Implement: ML-based model calibration via the generic pipeline above
-  - Use case: Fast calibration
+- [x] **ML Calibration**
+  - Implemented: `create_calibration_dataset`, `data/calibration/build_calibration_dataset`
+  - Use case: ML-based model calibration (IV surface → model parameters)
 
-- [ ] **Hybrid GNN-LSTM Full Revaluation Pricer** (Partially built)
+- [x] **Hybrid GNN-LSTM Full Revaluation Pricer**
   - Complete: `src/machine_learning/models/gnn_rnn_hybrid/` (attention, fusion, GNN/RNN layers, projection)
-  - Integrate: Trade graph builder, attribute encoder, training manager with portfolio pricing
-  - Train/evaluate/deploy via the generic ML pipeline (build instance → data → train → evaluate → inference)
+  - Integrated: Trade graph builder, attribute encoder, TrainingManager with portfolio-style data (`build_gnn_data`, FX/synthetic)
+  - Train/evaluate/deploy: build instance → data → TrainingManager.run() or generic pipeline → evaluate → inference (save/load weights)
   - Deliverable: Full revaluation pricer using graph + time-series representation of portfolio
   - Use case: Fast portfolio-level pricing and risk
+
+**Status:** Phase 7.1 COMPLETE. See `docs/development/progress/phase_7_1_implementation_notes.md` and `docs/development/progress/phase_7_1_machine_learning_integration.md`. Technical reference: `docs/reference/machine_learning/ml_framework.md`. Tutorials: `docs/tutorials/machine_learning/` (ML lifecycle, Hybrid GNN-LSTM).
 
 ### 7.2 Exotic Products
 - [ ] **Cliquet Options**

@@ -103,6 +103,19 @@ Detailed analysis of specific instrument types.
 
 ---
 
+## Machine Learning
+
+ML framework: data preparation, training, evaluation, and inference (Phase 7.1).
+
+| Tutorial | Description |
+|----------|-------------|
+| [ML Model Lifecycle](machine_learning/ml_model_lifecycle.ipynb) | Config → data → model → training → evaluation → tuning → deployment (generic pipeline) |
+| [Hybrid GNN-LSTM](machine_learning/hybrid_gnn_lstm_tutorial.ipynb) | End-to-end Hybrid GNN-LSTM: graph + PnL data, architecture, TrainingManager, evaluation, deployment |
+
+*See also: [ML Framework Guide](../guides/machine_learning/ml_framework.md) | [ML Framework Reference](../reference/machine_learning/ml_framework.md)*
+
+---
+
 ## Market Data
 
 Working with market data infrastructure.

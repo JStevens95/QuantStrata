@@ -486,20 +486,36 @@ orchestrator/
 machine_learning/
 ├── core/
 │   ├── protocols.py      # Trainable protocol, KerasTrainableAdapter
-│   └── types.py          # TrainingConfig, TrainingResult, EvaluationResult
-├── pipeline/
-│   ├── training.py       # run_training(), TrainingLoop
+│   ├── types.py          # TrainingConfig, TrainingResult, EvaluationResult (pipeline)
+│   ├── config.py         # TrainingConfig (TF/Keras), EarlyStoppingConfig, CheckpointConfig
+│   ├── base.py           # Base classes
+│   └── callbacks.py      # Callback utilities
+├── pipelines/
+│   ├── training.py       # run_training(), TrainingLoop (Trainable + NumPy)
 │   ├── evaluation.py     # evaluate_model()
-│   └── inference.py      # save_model(), load_model(), predict()
+│   ├── inference.py      # save_model(), load_model(), predict() (Trainable + JSON)
+│   └── tuning.py         # Hyperparameter tuning
+├── training/
+│   └── trainer.py        # Trainer (TensorFlow-native training loop)
+├── evaluation/
+│   ├── evaluator.py      # Model evaluation
+│   └── metrics.py        # Standardised metrics
+├── inference/
+│   ├── model_io.py       # save_model(), load_model() (TF/Keras SavedModel)
+│   └── predictor.py      # Inference utilities
 ├── data/
+│   ├── dataset.py        # TFDataset, create_pricing_dataset, create_calibration_dataset
 │   ├── types.py          # MLDataset, PricingFeatures, CalibrationFeatures
-│   ├── pricing.py        # build_pricing_dataset_from_mc/analytic
-│   ├── calibration.py    # build_calibration_dataset
-│   └── portfolio.py      # build_gnn_dataset_from_portfolio
+│   ├── common/           # TradeAttributeEncoder, TradeGraphBuilder (re-export)
+│   ├── pricing/          # build_pricing_data, build_pricing_dataset_from_mc/analytic
+│   ├── calibration/      # build_calibration_dataset, CalibrationDataResult
+│   ├── portfolio.py      # build_gnn_dataset_from_portfolio, gnn_inputs_to_tf_dataset (re-export)
+│   └── gnn_rnn_hybrid/   # build_gnn_data, GnnDataResult, synthetic, dataset_utils
 ├── models/
-│   └── gnn_rnn_hybrid/   # GNN-RNN model (attention, fusion, projection)
+│   ├── pricing/          # NN pricer model
+│   └── gnn_rnn_hybrid/   # Hybrid GNN-RNN (attention, fusion, projection)
 ├── calibration/
-│   └── training_manager.py  # Keras-specific training manager
+│   └── training_manager.py  # TrainingManager (Keras/HybridGnnRnn-specific)
 └── utilities/
     ├── trade_graph_builder.py
     └── trade_attribute_encoder.py
@@ -509,13 +525,22 @@ machine_learning/
 
 | Class/Function | Description |
 |----------------|-------------|
-| `Trainable` (protocol) | Model interface for training |
-| `TrainingConfig` | Training configuration |
-| `run_training()` | Generic training loop |
-| `evaluate_model()` | Model evaluation |
-| `save_model()`, `load_model()`, `predict()` | Inference pipeline |
+| `Trainable` (protocol) | Model interface for pipeline training |
+| `TrainingConfig` (core/types) | Pipeline training configuration |
+| `TrainingConfig` (core/config) | TF/Keras training configuration |
+| `run_training()` | Generic training loop (pipelines) |
+| `Trainer` | TensorFlow-native training (training/) |
+| `TrainingManager` | Keras/HybridGnnRnn training (calibration/) |
+| `evaluate_model()` | Model evaluation (pipelines) |
+| `save_model()`, `load_model()`, `predict()` | Inference (pipelines — Trainable + JSON) |
+| `inference/model_io` | TF/Keras save/load (SavedModel, weights) |
 | `MLDataset` | Feature/target container |
-| `build_pricing_dataset_from_mc()` | MC → pricing dataset |
+| `build_pricing_data()` | Train/val/test tf.data.Dataset for pricing |
+| `build_pricing_dataset_from_mc()` | MC → pricing MLDataset |
+| `build_pricing_dataset_from_analytic()` | Analytic pricer → pricing MLDataset |
+| `build_calibration_dataset()` | Calibration MLDataset (IV → params) |
+| `build_gnn_dataset_from_portfolio()`, `gnn_inputs_to_tf_dataset()` | Portfolio → GNN inputs |
+| `build_gnn_data()` | GNN-RNN train/val/proj datasets (synthetic or FX) |
 
 ### Dependencies
 

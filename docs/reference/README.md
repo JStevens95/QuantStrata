@@ -103,4 +103,12 @@ See the sections below for the full reference index.
 
 ---
 
+## Machine Learning (Phase 7.1)
+
+| Reference | Description |
+|-----------|-------------|
+| [ML Framework](machine_learning/ml_framework.md) | Pipelines, data preparation, training paths, inference, configuration |
+
+---
+
 *See also: [User Guides](../guides/) | [Tutorials](../tutorials/)*
