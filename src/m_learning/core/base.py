@@ -43,8 +43,16 @@ except ImportError:
         "Install with: pip install tensorflow"
     )
 
+# Keras 3 uses standalone keras.saving; older TF uses tf.keras.saving
+try:
+    from keras.saving import register_keras_serializable
+except ImportError:
+    register_keras_serializable = tf.keras.saving.register_keras_serializable
 
-@tf.keras.saving.register_keras_serializable(package="QuantStrata.m_learning")
+_REGISTER_PACKAGE = "QuantStrata.m_learning"
+
+
+@register_keras_serializable(package=_REGISTER_PACKAGE)
 class BaseModel(tf.keras.Model):
     """
     Abstract base class for all ML models in the library.
@@ -121,7 +129,7 @@ class BaseModel(tf.keras.Model):
         }
 
 
-@tf.keras.saving.register_keras_serializable(package="QuantStrata.m_learning")
+@register_keras_serializable(package=_REGISTER_PACKAGE)
 class PricingModel(BaseModel):
     """
     Base class for option/derivative pricing models.
@@ -211,7 +219,7 @@ class PricingModel(BaseModel):
         }
 
 
-@tf.keras.saving.register_keras_serializable(package="QuantStrata.m_learning")
+@register_keras_serializable(package=_REGISTER_PACKAGE)
 class CalibrationModel(BaseModel):
     """
     Base class for model calibration networks.
@@ -290,7 +298,7 @@ class CalibrationModel(BaseModel):
         return raw_params
 
 
-@tf.keras.saving.register_keras_serializable(package="QuantStrata.m_learning")
+@register_keras_serializable(package=_REGISTER_PACKAGE)
 class PortfolioModel(BaseModel):
     """
     Base class for portfolio-level ML models.
