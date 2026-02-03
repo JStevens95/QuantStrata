@@ -55,6 +55,16 @@ Guides for the ML framework: data preparation, training, evaluation, and inferen
 
 ---
 
+## Q-Learning & RL (Phase 7.2)
+
+Guides for the RL framework: agents, environments, training, evaluation, and deployment.
+
+| Guide | Description |
+|-------|-------------|
+| [RL Framework](q_learning/rl_framework.md) | When to use what; quick start (minimal agent + BaseEnv); implementing agent/environment |
+
+---
+
 ## Risk
 
 Guides for risk management: VaR, Greeks aggregation, and stress testing.

@@ -111,4 +111,12 @@ See the sections below for the full reference index.
 
 ---
 
+## Q-Learning & RL (Phase 7.2)
+
+| Reference | Description |
+|-----------|-------------|
+| [RL Framework](q_learning/rl_framework.md) | Agent/environment protocols, training/evaluation/inference pipelines, BaseEnv, metrics |
+
+---
+
 *See also: [User Guides](../guides/) | [Tutorials](../tutorials/)*

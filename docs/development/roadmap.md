@@ -817,7 +817,48 @@ This keeps the framework **model-agnostic** and **reusable** across ML-based pri
 
 **Status:** Phase 7.1 COMPLETE. See `docs/development/progress/phase_7_1_implementation_notes.md` and `docs/development/progress/phase_7_1_machine_learning_integration.md`. Technical reference: `docs/reference/machine_learning/ml_framework.md`. Tutorials: `docs/tutorials/machine_learning/` (ML lifecycle, Hybrid GNN-LSTM).
 
-### 7.2 Exotic Products
+### 7.2 Q-Learning & Reinforcement Learning Agents
+
+The same **general framework** as ML applies: build agent instance → fetch/prepare data (e.g. environments) → generic RL training pipeline → standardised evaluation (returns, risk metrics) → generalised inference (action selection in backtest/live).
+
+- [x] **Generic Q-Learning / RL Training Pipeline**
+  - Implement: Reusable RL training loop (environment → agent → reward → update); support for standard algorithms (e.g. DQN, policy gradient)
+  - Support: Any agent that conforms to a minimal interface (select action, update from transition/batch)
+  - Use case: Train delta-hedging agent, algo-trading agent, or other RL policies through one pipeline
+  - **Implemented:** `src/q_learning/pipelines/training.py` — `run_training()`, `RLTrainingLoop`; checkpointing, eval episodes.
+
+- [x] **Environment & Data for RL**
+  - Implement: Fetch/prepare environments (e.g. trading sim, hedging sim) from library pricers, market data, backtesting
+  - Support: Standardised state/action/reward interface so different agents can plug in
+  - Use case: Feed generic RL training pipeline
+  - **Implemented:** `RLEnvironment` protocol; `BaseEnv` in `src/q_learning/environments/base.py` (minimal env for tests/template). Trading/hedging sims to wrap backtesting/pricers in future.
+
+- [x] **Standardised RL Evaluation Outputs**
+  - Implement: Common metrics (returns, Sharpe, drawdown, episode stats) and logging
+  - Support: Same evaluation format across agents for comparison and monitoring
+  - Use case: Compare and monitor RL agents
+  - **Implemented:** `evaluate_agent()` in `pipelines/evaluation.py`; `RLEvaluationResult`; `sharpe_ratio`, `max_drawdown`, `win_rate` in `evaluation/metrics.py`.
+
+- [x] **Generalised RL Inference / Deployment**
+  - Implement: Load trained agent → select actions in a model-agnostic way (backtest or live)
+  - Support: Integration with backtesting engine, streaming engine, and orchestrator
+  - Use case: Deploy delta-hedging or algo-trading agent
+  - **Implemented:** `save_agent()`, `load_agent()`, `select_action()` in `pipelines/inference.py`; artifact layout (parameters.json, config.json, metadata.json).
+
+- [x] **Q-Learning Framework** (stub: `src/q_learning/`)
+  - Implement: Agent interface, environment wrapper for trading/hedging
+  - Support: Discrete/continuous action spaces (e.g. hedge ratio, trade size)
+  - Use case: Delta hedging agent, algo trading agent
+  - **Implemented:** `RLAgent`, `RLEnvironment` in `core/protocols.py`; `Transition`, `RLTrainingConfig`, `RLTrainingResult`, `RLEvaluationResult` in `core/types.py`; pipelines and BaseEnv as above.
+
+- [ ] **RL Orchestrator**
+  - Implement: Orchestrator that deploys RL agents (delta hedging, algo trading) using the generic inference pipeline
+  - Integrate: With backtesting, streaming engine, and library pricers/risk
+  - Use case: Automated hedging, strategy deployment, cutting-edge applications
+
+**Status:** Phase 7.2 core complete (training, evaluation, inference, protocols, BaseEnv, metrics). RL Orchestrator not yet implemented. See `docs/development/progress/phase_7_2_q_learning.md`. Technical reference: `docs/reference/q_learning/rl_framework.md`. Guide: `docs/guides/q_learning/rl_framework.md`.
+
+### 7.3 Exotic Products
 - [ ] **Cliquet Options**
   - Implement: `CliquetOption` (periodic resets)
   - Pricer: MC (required)
@@ -833,7 +874,7 @@ This keeps the framework **model-agnostic** and **reusable** across ML-based pri
   - Pricer: MC (required)
   - Use case: Interest rate structured product
 
-### 7.3 Credit Derivatives (Optional)
+### 7.4 Credit Derivatives (Optional)
 - [ ] **Credit Default Swaps (CDS)**
   - Implement: `CreditDefaultSwap`
   - Model: Reduced-form credit model
@@ -843,45 +884,11 @@ This keeps the framework **model-agnostic** and **reusable** across ML-based pri
   - Implement: Options on CDS
   - Use case: Credit volatility trading
 
-### 7.4 Commodities (Optional)
+### 7.5 Commodities (Optional)
 - [ ] **Commodity Options**
   - Implement: `CommodityOption`
   - Model: GBM with convenience yield
   - Use case: Energy/agricultural derivatives
-
-### 7.5 Q-Learning & Reinforcement Learning Agents
-
-The same **general framework** applies: build agent instance → fetch/prepare data (e.g. environments) → generic RL training pipeline → standardised evaluation (returns, risk metrics) → generalised inference (action selection in backtest/live).
-
-- [ ] **Generic Q-Learning / RL Training Pipeline**
-  - Implement: Reusable RL training loop (environment → agent → reward → update); support for standard algorithms (e.g. DQN, policy gradient)
-  - Support: Any agent that conforms to a minimal interface (select action, update from transition/batch)
-  - Use case: Train delta-hedging agent, algo-trading agent, or other RL policies through one pipeline
-
-- [ ] **Environment & Data for RL**
-  - Implement: Fetch/prepare environments (e.g. trading sim, hedging sim) from library pricers, market data, backtesting
-  - Support: Standardised state/action/reward interface so different agents can plug in
-  - Use case: Feed generic RL training pipeline
-
-- [ ] **Standardised RL Evaluation Outputs**
-  - Implement: Common metrics (returns, Sharpe, drawdown, episode stats) and logging
-  - Support: Same evaluation format across agents for comparison and monitoring
-  - Use case: Compare and monitor RL agents
-
-- [ ] **Generalised RL Inference / Deployment**
-  - Implement: Load trained agent → select actions in a model-agnostic way (backtest or live)
-  - Support: Integration with backtesting engine, streaming engine, and orchestrator
-  - Use case: Deploy delta-hedging or algo-trading agent
-
-- [ ] **Q-Learning Framework** (stub: `src/q_learning/`)
-  - Implement: Agent interface, environment wrapper for trading/hedging
-  - Support: Discrete/continuous action spaces (e.g. hedge ratio, trade size)
-  - Use case: Delta hedging agent, algo trading agent
-
-- [ ] **RL Orchestrator**
-  - Implement: Orchestrator that deploys RL agents (delta hedging, algo trading) using the generic inference pipeline
-  - Integrate: With backtesting, streaming engine, and library pricers/risk
-  - Use case: Automated hedging, strategy deployment, cutting-edge applications
 
 ### Deliverables:
 - ✅ ML integration (pricing, calibration)
@@ -1013,7 +1020,7 @@ Once the core library is complete (Phases 1–8), the following **orchestrator/a
 ### Application Project 2: Algorithmic Trading Bot
 - **Goal:** Algo trading bot connected to practice/live brokerage, with streaming data, strategy deployment, backtesting, and performance evaluation.
 - **Scope:** Streaming tick/bar data; connect to practice/live brokerage (paper and live modes); deploy strategies; backtest and evaluate performance; reports and plots; strategies can use ML/Q-learning from the library.
-- **Library dependency:** Backtesting (Phase 5.2), streaming & live data (Phase 5.5), brokerage adapter (Phase 5.5), machine_learning/q_learning (Phase 7).
+- **Library dependency:** Backtesting (Phase 5.2), streaming & live data (Phase 5.5), brokerage adapter (Phase 5.5), machine_learning (Phase 7.1), q_learning (Phase 7.2).
 - **Deliverable:** Trading bot application: data feed → StreamingEngine → strategy (incl. ML/RL) → order execution (paper/live) → performance reports and visualisations.
 
 ### Application Project 3: Hybrid GNN-LSTM Full Revaluation Pricer
@@ -1025,7 +1032,7 @@ Once the core library is complete (Phases 1–8), the following **orchestrator/a
 ### Application Project 4: Q-Learning Orchestrator Agent
 - **Goal:** Q-learning (RL) orchestrator that acts as an agent for delta hedging, algorithmic trading, and other cutting-edge applications.
 - **Scope:** RL agent(s) for delta hedging (e.g. minimise PnL variance vs. cost); algo trading agent (e.g. execution, strategy selection); orchestrator that runs agents against live/backtest environments using library pricers and risk.
-- **Library dependency:** q_learning (Phase 7.5), backtesting, streaming engine, pricers, risk.
+- **Library dependency:** q_learning (Phase 7.2), backtesting, streaming engine, pricers, risk.
 - **Deliverable:** RL agent framework + orchestrator scripts for delta hedging, algo trading, and extensible agent-based use cases.
 
 ---
@@ -1045,7 +1052,7 @@ Once the core library is complete (Phases 1–8), the following **orchestrator/a
 ### Application Project 7: Options Market-Making Simulator
 - **Goal:** Market-making simulator with inventory risk, bid/ask around fair value, and optional RL quoting agent.
 - **Scope:** Spread and inventory model; quoting logic (library pricers for fair value); optional RL agent for quote placement; backtest/simulate market-making PnL.
-- **Library dependency:** Phase 8.8 (spread/inventory model), pricers, calibration, risk, q_learning (7.5), backtesting.
+- **Library dependency:** Phase 8.8 (spread/inventory model), pricers, calibration, risk, q_learning (7.2), backtesting.
 - **Deliverable:** Market-making simulator application: fair value → spread/inventory → quotes → optional RL → PnL and risk analytics.
 
 ### Application Project 8: Volatility Trading & Variance Swap Analytics
@@ -1159,7 +1166,7 @@ Once the core library is complete (Phases 1–8), the following **orchestrator/a
 | Phase 4 | Weeks 19-24 | Advanced Models | Jump-diffusion, SABR, multi-asset |
 | Phase 5 | Weeks 25-30+ | Production | Calibration, backtesting, risk, **streaming/live (5.5)**, **analytics/reports (5.6)** |
 | Phase 6 | Ongoing | Education | Tutorials, notebooks, docs |
-| Phase 7 | Weeks 31-36+ | Advanced Topics | ML, **GNN-LSTM pricer**, **Q-learning/RL agents (7.5)**, exotics, credit/commodities |
+| Phase 7 | Weeks 31-36+ | Advanced Topics | ML (7.1), **GNN-LSTM pricer**, **Q-learning/RL (7.2)**, exotics (7.3), credit/commodities (7.4/7.5) |
 | Phase 8 | After 7 | **Quant HF & Execution** | Execution/TCA (8.1), factor risk (8.2), vol trading (8.3), portfolio opt (8.4), tail risk (8.5), limit monitoring (8.6), alt data (8.7), market-making (8.8) |
 | *After library* | — | **Application Projects 1–12** | Option analytics, Algo bot, GNN-LSTM pricer, Q-learning orchestrator; **5** Execution/TCA, **6** Factor risk, **7** Market-making, **8** Vol trading, **9** Portfolio opt, **10** Tail risk, **11** Real-time risk, **12** Alt data alpha |
 
