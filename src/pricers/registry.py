@@ -83,7 +83,8 @@ from src.pricers.fx.european_bsm_mc import (
     FxVanillaEuropeanOptionMcPricer, FxDigitalEuropeanOptionMcPricer, FxBarrierEuropeanOptionMcPricer,
     FxAsianEuropeanOptionMcPricer, FxLookbackEuropeanOptionMcPricer, FxDoubleBarrierEuropeanOptionMcPricer,
     FxTouchEuropeanOptionMcPricer
-    )
+)
+from src.core.performance.backend import jax_available
 from src.pricers.fx.european_bsm_fde import (
     FxVanillaEuropeanOptionFdPricer, FxDigitalEuropeanOptionFdPricer
     )
@@ -454,6 +455,12 @@ class DefaultPricerRegistry:
         reg.register(FxVanillaEuropeanOption, fx_van_eur_fd, pricer_id="fd")
         reg.register(FxDigitalEuropeanOption, fx_dig_eur_fd, pricer_id="fd")
         reg.register(FxVanillaAmericanOption, fx_van_am_fd, pricer_id="fd")
+
+        # ---- JAX MC pricer (optional, when JAX is installed) ----
+        if jax_available():
+            from src.pricers.fx.european_bsm_jax_mc import FxVanillaEuropeanJaxMcPricer
+            fx_van_eur_jax_mc = FxVanillaEuropeanJaxMcPricer()
+            reg.register(FxVanillaEuropeanOption, fx_van_eur_jax_mc, pricer_id="jax_mc")
 
         # ---- named aliases - Equity ----
         reg.register(EquityVanillaEuropeanOption, eq_van_eur_mc, pricer_id="mc")

@@ -14,7 +14,10 @@ This document covers the theory and implementation of performance optimizations 
 4. [Finite Difference Optimization](#4-finite-difference-optimization)
 5. [Parallelization Strategies](#5-parallelization-strategies)
 6. [Benchmarking](#6-benchmarking)
-7. [Interview Key Points](#7-interview-key-points)
+7. [JAX Backend (Optional)](#7-jax-backend-optional)
+8. [Parallel Portfolio Pricing](#8-parallel-portfolio-pricing)
+9. [Caching (Market Data and Pricer Results)](#9-caching-market-data-and-pricer-results)
+10. [Interview Key Points](#10-interview-key-points)
 
 ---
 
@@ -317,7 +320,106 @@ def benchmark(func, args, n_runs=10, n_warmup=3):
 
 ---
 
-## 7. Interview Key Points
+## 7. JAX Backend (Optional)
+
+### Overview
+
+JAX is an optional backend for CPU/GPU-accelerated Monte Carlo. When installed, it is used automatically when the backend is set to `"jax"` or `"auto"` (and Numba is not available). JAX runs on GPU if `jaxlib` is installed with CUDA or ROCm support; no code change is required.
+
+### Backend Selection
+
+```python
+from src.core.performance.backend import get_backend, Backend, jax_available, get_jax_version
+
+# Check if JAX is available
+if jax_available():
+    print("JAX version:", get_jax_version())
+
+# Select backend: "numpy", "numba", "jax", or "auto"
+backend = get_backend("auto")  # Prefer NUMBA > JAX > NUMPY
+```
+
+### JAX MC Pricer (FX Vanilla)
+
+A JAX-based Monte Carlo pricer for FX European vanilla options is available when JAX is installed. Use `pricer_id="jax_mc"` when resolving the pricer:
+
+```python
+from src.pricers.registry import DefaultPricerRegistry
+
+reg = DefaultPricerRegistry().build()
+# Resolve JAX MC pricer (raises if JAX not installed and pricer not registered)
+pricer = reg.resolve(vanilla_option, pricer_id="jax_mc")
+pv = pricer.price(vanilla_option, market)
+```
+
+### JAX Kernels
+
+The module `src.core.performance.jax_kernels` provides JAX implementations of GBM terminal spot generation and vanilla/digital payoffs. These are used internally by the JAX MC pricer; device (CPU/GPU) is determined by JAX’s default backend.
+
+---
+
+## 8. Parallel Portfolio Pricing
+
+### Design
+
+Portfolio pricing can run positions in parallel via a wrapper that uses `ThreadPoolExecutor`. The same `PortfolioResult` is returned as for sequential pricing, so callers need not change when not using parallel.
+
+### Thread Safety
+
+Parallel pricing assumes that for each call to `price(instrument, market)` the pricer and market are **read-only** and do not mutate shared state. If a pricer or market is not thread-safe, use `max_workers=1` or the sequential pricer.
+
+### Usage
+
+```python
+from src.portfolio.portfolio import PortfolioPricer
+from src.portfolio.parallel import ParallelPortfolioPricer
+
+base = PortfolioPricer(pricer_registry=reg)
+parallel_pricer = ParallelPortfolioPricer(portfolio_pricer=base, max_workers=4)
+result = parallel_pricer.price(portfolio, market)
+```
+
+`max_workers=None` uses a default (e.g. CPU count); `max_workers=1` delegates to the underlying sequential pricer.
+
+---
+
+## 9. Caching (Market Data and Pricer Results)
+
+### Market Data Cache
+
+A wrapper around any `MarketDataProvider` caches `get_market(request)` by a stable key derived from the request (e.g. asof, universe ids). Eviction is LRU by `max_size`; optional TTL (seconds) makes entries expire.
+
+```python
+from src.marketdata.cache import CachingMarketDataProvider
+
+caching_provider = CachingMarketDataProvider(
+    provider=my_provider,
+    max_size=512,
+    ttl_seconds=300.0,
+)
+market = caching_provider.get_market(request)
+```
+
+### Pricer Result Cache
+
+A wrapper around a portfolio pricer caches `PortfolioResult` by `(portfolio_key, market_key)`. Eviction is LRU by `max_size`; optional TTL. Key functions can be customized (default: `id(portfolio)`, `id(market)`).
+
+```python
+from src.portfolio.caching import CachingPortfolioPricer
+
+caching_pricer = CachingPortfolioPricer(
+    portfolio_pricer=base_pricer,
+    max_size=1024,
+    ttl_seconds=60.0,
+)
+result = caching_pricer.price(portfolio, market)
+```
+
+Cache hit: second call with same key returns the cached result without calling the underlying provider/pricer. Cache miss: first call or different key computes and stores the result.
+
+---
+
+## 10. Interview Key Points
 
 ### Performance Questions
 

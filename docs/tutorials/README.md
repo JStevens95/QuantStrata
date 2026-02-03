@@ -4,6 +4,16 @@ Interactive Jupyter notebooks with worked examples covering calibration, pricing
 
 ---
 
+## Performance
+
+Performance and scalability: benchmarking, parallel pricing, caching, optional JAX MC.
+
+| Tutorial | Description |
+|----------|-------------|
+| [Performance and Scalability](performance/performance_and_scalability.ipynb) | Backend selection, parallel portfolio pricing, pricer cache, JAX MC pricer (optional) |
+
+---
+
 ## Risk
 
 Risk infrastructure: VaR, Greeks aggregation, and stress testing.

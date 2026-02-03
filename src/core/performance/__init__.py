@@ -25,6 +25,8 @@ from src.core.performance.backend import (
     set_default_backend,
     numba_available,
     get_numba_version,
+    jax_available,
+    get_jax_version,
 )
 
 __all__ = [
@@ -34,4 +36,6 @@ __all__ = [
     "set_default_backend",
     "numba_available",
     "get_numba_version",
+    "jax_available",
+    "get_jax_version",
 ]

@@ -649,19 +649,26 @@ linear products that should be implemented before options on them (swaptions).
 - Guide: `docs/guides/risk/risk_framework.md`
 - Tutorial: `docs/tutorials/risk/risk_introduction.ipynb`
 
-### 5.4 Performance & Scalability
-- [ ] **JAX Backend** (Optional, Advanced)
-  - Implement: JAX-based MC pricer (GPU acceleration)
-  - Use case: High-performance computing
+### 5.4 Performance & Scalability ✅
+- [x] **JAX Backend** (Optional, Advanced)
+  - Implemented: JAX backend in `src/core/performance/backend.py` (Backend.JAX, jax_available, get_jax_version)
+  - Implemented: JAX kernels in `src/core/performance/jax_kernels.py` (GBM path/terminal, vanilla/digital payoff)
+  - Implemented: JAX MC pricer for FX vanilla in `src/pricers/fx/european_bsm_jax_mc.py` (pricer_id="jax_mc")
+  - Use case: High-performance computing (CPU/GPU when jaxlib with CUDA/ROCm)
 
-- [ ] **Parallel Portfolio Pricing**
-  - Implement: Multi-threaded portfolio pricing
+- [x] **Parallel Portfolio Pricing**
+  - Implemented: `src/portfolio/parallel.py` — ParallelPortfolioPricer (ThreadPoolExecutor)
   - Use case: Large portfolio performance
 
-- [ ] **Caching & Memoization**
-  - Implement: Market data caching
-  - Implement: Pricer result caching
+- [x] **Caching & Memoization**
+  - Implemented: Market data cache in `src/marketdata/cache.py` — CachingMarketDataProvider
+  - Implemented: Pricer result cache in `src/portfolio/caching.py` — CachingPortfolioPricer
   - Use case: Performance optimization
+
+**Documentation:**
+- Reference: `docs/reference/performance_optimisation.md` (JAX, parallel, caching sections)
+- Guide: `docs/guides/performance/performance_and_scalability.md`
+- Tutorial: `docs/tutorials/performance/performance_and_scalability.ipynb`
 
 ### 5.5 Streaming & Live Data (for Algo Trading)
 - [ ] **Streaming Data Provider**
@@ -699,7 +706,7 @@ linear products that should be implemented before options on them (swaptions).
 - ✅ Risk infrastructure (VaR, Greeks aggregation, stress testing)
 - [ ] Streaming & live data (5.5): streaming provider, event-driven engine, brokerage adapter interface
 - [ ] Advanced analytics & reporting (5.6): front-office risk reports, publication-quality visualisation
-- [ ] Performance optimizations (5.4)
+- [x] Performance optimizations (5.4)
 
 **Impact:** Transforms library from "demonstration" to "production-ready" system and supports application projects (algo bot, option analytics, GNN-LSTM pricer, Q-learning orchestrator).
 

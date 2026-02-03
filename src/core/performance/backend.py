@@ -43,17 +43,23 @@ class Backend(str, Enum):
         - Pro: 10-100x speedup for numerical loops
         - Con: Requires Numba installation, compilation overhead
         
+    JAX:
+        JAX implementation (optional; CPU/GPU).
+        - Pro: GPU acceleration when available, JIT, autodiff
+        - Con: Requires JAX/jaxlib installation
+
     AUTO:
         Automatically select best available backend.
-        Priority: NUMBA > NUMPY
+        Priority: NUMBA > JAX > NUMPY
     """
     NUMPY = "numpy"
     NUMBA = "numba"
+    JAX = "jax"
     AUTO = "auto"
 
 
 # Type alias for backend specification
-BackendStr = Literal["numpy", "numba", "auto"]
+BackendStr = Literal["numpy", "numba", "jax", "auto"]
 
 
 # =============================================================================
@@ -102,6 +108,41 @@ def get_numba_version() -> Optional[str]:
     """
     numba_available()  # Ensure detection has run
     return _NUMBA_VERSION
+
+
+# =============================================================================
+# JAX Detection
+# =============================================================================
+
+_JAX_AVAILABLE: Optional[bool] = None
+_JAX_VERSION: Optional[str] = None
+
+
+def jax_available() -> bool:
+    """
+    Check if JAX is available for import.
+
+    Returns
+    -------
+    bool
+        True if JAX is installed and importable.
+    """
+    global _JAX_AVAILABLE, _JAX_VERSION
+    if _JAX_AVAILABLE is None:
+        try:
+            import jax
+            _JAX_AVAILABLE = True
+            _JAX_VERSION = getattr(jax, "__version__", None)
+        except ImportError:
+            _JAX_AVAILABLE = False
+            _JAX_VERSION = None
+    return _JAX_AVAILABLE
+
+
+def get_jax_version() -> Optional[str]:
+    """Get the installed JAX version string, or None if not available."""
+    jax_available()  # Ensure detection has run
+    return _JAX_VERSION
 
 
 # =============================================================================
@@ -183,32 +224,46 @@ def get_backend(preferred: BackendStr = "auto") -> Backend:
     if preferred == "auto":
         preferred = config.default_backend
         
-    # Still auto? Select best available
+    # Still auto? Select best available (NUMBA > JAX > NUMPY)
     if preferred == "auto":
         if numba_available():
             return Backend.NUMBA
+        if jax_available():
+            return Backend.JAX
         return Backend.NUMPY
-        
+
     # Explicit NumPy request
     if preferred == "numpy":
         return Backend.NUMPY
-        
+
     # Explicit Numba request
     if preferred == "numba":
         if numba_available():
             return Backend.NUMBA
-        else:
-            if config.warn_on_fallback:
-                warnings.warn(
-                    "Numba requested but not available. Falling back to NumPy. "
-                    "Install Numba for better performance: pip install numba",
-                    UserWarning,
-                    stacklevel=2,
-                )
-            return Backend.NUMPY
-            
+        if config.warn_on_fallback:
+            warnings.warn(
+                "Numba requested but not available. Falling back to NumPy. "
+                "Install Numba for better performance: pip install numba",
+                UserWarning,
+                stacklevel=2,
+            )
+        return Backend.NUMPY
+
+    # Explicit JAX request
+    if preferred == "jax":
+        if jax_available():
+            return Backend.JAX
+        if config.warn_on_fallback:
+            warnings.warn(
+                "JAX requested but not available. Falling back to NumPy. "
+                "Install JAX: pip install jax jaxlib",
+                UserWarning,
+                stacklevel=2,
+            )
+        return Backend.NUMPY
+
     # Unknown backend
-    raise ValueError(f"Unknown backend: {preferred!r}. Use 'numpy', 'numba', or 'auto'.")
+    raise ValueError(f"Unknown backend: {preferred!r}. Use 'numpy', 'numba', 'jax', or 'auto'.")
 
 
 def set_default_backend(backend: BackendStr) -> None:
@@ -227,7 +282,7 @@ def set_default_backend(backend: BackendStr) -> None:
     >>> set_default_backend("auto")   # Auto-select (default)
     """
     config = get_config()
-    if backend not in ("numpy", "numba", "auto"):
+    if backend not in ("numpy", "numba", "jax", "auto"):
         raise ValueError(f"Unknown backend: {backend!r}")
     config.default_backend = backend
 
@@ -263,6 +318,10 @@ def get_backend_info() -> dict:
         "numba": {
             "available": numba_available(),
             "version": get_numba_version(),
+        },
+        "jax": {
+            "available": jax_available(),
+            "version": get_jax_version(),
         },
         "default": get_config().default_backend,
         "selected": get_backend("auto").value,

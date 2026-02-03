@@ -4,6 +4,16 @@ This section contains user-focused documentation for working with QuantStrata.
 
 ---
 
+## Performance
+
+Guides for performance and scalability: backend selection, parallel pricing, and caching.
+
+| Guide | Description |
+|-------|-------------|
+| [Performance and Scalability](performance/performance_and_scalability.md) | Backend (NumPy/Numba/JAX), parallel portfolio pricing, market and pricer caching |
+
+---
+
 ## Risk
 
 Guides for risk management: VaR, Greeks aggregation, and stress testing.
