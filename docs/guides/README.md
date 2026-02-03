@@ -55,6 +55,16 @@ Guides for risk management: VaR, Greeks aggregation, and stress testing.
 
 ---
 
+## Machine Learning
+
+Guides for ML-based pricing, calibration, and the generic training pipeline.
+
+| Guide | Description |
+|-------|-------------|
+| [ML Pipeline Tutorial](../tutorials/m_learning/ml_pipeline_introduction.ipynb) | Data → Training → Evaluation → Inference (notebook) |
+
+---
+
 ## Calibration
 
 Guides for calibrating models to market data.

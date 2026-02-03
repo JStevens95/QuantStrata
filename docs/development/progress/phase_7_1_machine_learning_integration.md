@@ -166,8 +166,47 @@ src/m_learning/
 
 ## Documentation
 
+- Tutorial (TensorFlow): `docs/tutorials/m_learning/ml_pipeline_tensorflow.ipynb` ✅
+- Tutorial (NumPy): `docs/tutorials/m_learning/ml_pipeline_introduction.ipynb` ✅
 - Reference: `docs/reference/m_learning/ml_framework.md` (planned)
 - Guide: `docs/guides/m_learning/ml_pipeline.md` (planned)
+
+## TensorFlow-Native Refactoring (Completed)
+
+The ML module has been refactored to be fully TensorFlow-native:
+
+### New Structure
+```
+src/m_learning/
+├── core/
+│   ├── base.py         # BaseModel, PricingModel, CalibrationModel, PortfolioModel
+│   ├── config.py       # TrainingConfig, OptimizerConfig, LRScheduleConfig, etc.
+│   ├── callbacks.py    # MetricsLogger, PricingErrorCallback, TrainingProgressCallback
+│   └── types.py        # Legacy types (backward compatibility)
+├── data/
+│   ├── dataset.py      # TFDataset, NormalizationStats, create_pricing_dataset
+│   └── ...             # Legacy adapters
+├── models/
+│   ├── pricing/
+│   │   └── mlp_pricer.py  # MLPPricer, ResidualMLPPricer
+│   └── gnn_rnn_hybrid/    # Fixed imports
+├── training/
+│   └── trainer.py      # Trainer class, TrainingResult
+├── evaluation/
+│   ├── evaluator.py    # Evaluator class, EvaluationResult
+│   └── metrics.py      # PricingMetrics, CalibrationMetrics
+└── inference/
+    ├── model_io.py     # save_model, load_model, ModelArtifact
+    └── predictor.py    # Predictor, BatchPredictor
+```
+
+### Key Features
+- `tf.data.Dataset` integration for efficient batching
+- `tf.keras.Model` base classes with metadata tracking
+- TensorFlow SavedModel format for serialization
+- Automatic normalization/denormalization
+- Greeks via automatic differentiation
+- Uncertainty estimation via MC Dropout
 
 ---
 
