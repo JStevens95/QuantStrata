@@ -19,6 +19,9 @@ Usage:
     
     # Load config
     loaded = TrainingConfig.from_json("config.json")
+
+Note:
+    Requires TensorFlow. Install with: pip install tensorflow
 """
 from __future__ import annotations
 
@@ -26,6 +29,14 @@ import json
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
+
+try:
+    import tensorflow as tf
+except ImportError:
+    raise ImportError(
+        "TensorFlow is required for the ML config module. "
+        "Install with: pip install tensorflow"
+    )
 
 
 @dataclass
@@ -441,10 +452,3 @@ class ModelConfig:
         """Load configuration from JSON file."""
         with open(path, "r") as f:
             return cls.from_dict(json.load(f))
-
-
-# Import tensorflow for WarmupCosineSchedule
-try:
-    import tensorflow as tf
-except ImportError:
-    tf = None  # Will fail at runtime if TF not installed
