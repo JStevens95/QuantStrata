@@ -16,5 +16,5 @@ matplotlib >= 3.8.0
 # Optional: QuantLib for validation
 QuantLib >= 1.40
 
-# Optional: Machine learning
-tensorflow >= 2.15.0
+# Optional: Machine learning (Python 3.12 recommended; TF 2.20+ for stability)
+tensorflow >= 2.20.0
