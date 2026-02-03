@@ -119,9 +119,14 @@ class KerasTrainableAdapter:
         if self._loss_fn is not None:
             loss = self._loss_fn(y_true, y_pred)
         elif self.model.loss is not None:
-            loss = self.model.loss(y_true, y_pred)
+            # In Keras 3.0, model.loss is a string; convert to callable
+            if isinstance(self.model.loss, str):
+                loss_fn = tf.keras.losses.get(self.model.loss)
+                loss = loss_fn(y_true, y_pred)
+            else:
+                loss = self.model.loss(y_true, y_pred)
         else:
-            loss = tf.keras.losses.mean_squared_error(y_true, y_pred)
+            loss = tf.keras.losses.MeanSquaredError()(y_true, y_pred)
         return float(tf.reduce_mean(loss).numpy())
 
     def get_parameters(self) -> Dict[str, Any]:
@@ -147,10 +152,26 @@ class KerasTrainableAdapter:
 
         with tf.GradientTape() as tape:
             y_pred = self.model(inputs, training=True)
-            loss = self.compute_loss(targets, y_pred)
-        grads = tape.gradient(loss, self.model.trainable_weights)
+            # Compute loss as tensor for gradient tracking
+            loss_tensor = self._compute_loss_tensor(targets, y_pred)
+        grads = tape.gradient(loss_tensor, self.model.trainable_weights)
         self.model.optimizer.apply_gradients(zip(grads, self.model.trainable_weights))
-        return float(loss)
+        return float(tf.reduce_mean(loss_tensor).numpy())
+
+    def _compute_loss_tensor(self, y_true: Any, y_pred: Any) -> "tf.Tensor":
+        """Compute loss as a tensor (for gradient tracking)."""
+        import tensorflow as tf
+
+        if self._loss_fn is not None:
+            return self._loss_fn(y_true, y_pred)
+        elif self.model.loss is not None:
+            if isinstance(self.model.loss, str):
+                loss_fn = tf.keras.losses.get(self.model.loss)
+                return loss_fn(y_true, y_pred)
+            else:
+                return self.model.loss(y_true, y_pred)
+        else:
+            return tf.keras.losses.MeanSquaredError()(y_true, y_pred)
 
 
 __all__ = ["Trainable", "KerasTrainableAdapter"]

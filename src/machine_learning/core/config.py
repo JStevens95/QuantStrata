@@ -244,16 +244,18 @@ class WarmupCosineSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
     def __call__(self, step):
         import tensorflow as tf
         step = tf.cast(step, tf.float32)
+        warmup_steps = tf.cast(self.warmup_steps, tf.float32)
+        decay_steps = tf.cast(self.decay_steps, tf.float32)
         
         # Linear warmup
-        warmup_lr = self.initial_lr * (step / tf.maximum(self.warmup_steps, 1.0))
+        warmup_lr = self.initial_lr * (step / tf.maximum(warmup_steps, 1.0))
         
         # Cosine decay
-        progress = (step - self.warmup_steps) / tf.maximum(self.decay_steps, 1.0)
+        progress = (step - warmup_steps) / tf.maximum(decay_steps, 1.0)
         progress = tf.clip_by_value(progress, 0.0, 1.0)
         cosine_lr = self.min_lr + 0.5 * (self.initial_lr - self.min_lr) * (1 + tf.cos(3.14159 * progress))
         
-        return tf.where(step < self.warmup_steps, warmup_lr, cosine_lr)
+        return tf.where(step < warmup_steps, warmup_lr, cosine_lr)
     
     def get_config(self):
         return {

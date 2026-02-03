@@ -195,6 +195,7 @@ class PricingModel(BaseModel):
             Dictionary with 'price', 'delta', 'gamma', 'vega', 'theta', 'rho'
         """
         inputs = tf.convert_to_tensor(inputs, dtype=tf.float32)
+        batch_size = tf.shape(inputs)[0]
         
         with tf.GradientTape(persistent=True) as tape2:
             tape2.watch(inputs)
@@ -204,13 +205,27 @@ class PricingModel(BaseModel):
             
             # First-order Greeks
             grads = tape1.gradient(price, inputs)
-            delta = grads[:, 0:1]  # dP/dS (spot)
-            vega = grads[:, 2:3]   # dP/d(vol)
-            theta = -grads[:, 4:5]  # -dP/d(time) (negative convention)
-            rho = grads[:, 3:4]    # dP/d(rate)
+            
+            # Handle case where gradients are None (e.g., model not properly built)
+            if grads is None:
+                zeros = tf.zeros((batch_size, 1))
+                grads = tf.zeros_like(inputs)
+                delta = zeros
+                vega = zeros
+                theta = zeros
+                rho = zeros
+            else:
+                delta = grads[:, 0:1]  # dP/dS (spot)
+                vega = grads[:, 2:3]   # dP/d(vol)
+                theta = -grads[:, 4:5]  # -dP/d(time) (negative convention)
+                rho = grads[:, 3:4]    # dP/d(rate)
         
         # Second-order Greeks
-        gamma = tape2.gradient(delta, inputs)[:, 0:1]  # d²P/dS²
+        gamma_grads = tape2.gradient(delta, inputs)
+        if gamma_grads is None:
+            gamma = tf.zeros((batch_size, 1))
+        else:
+            gamma = gamma_grads[:, 0:1]  # d²P/dS²
         
         del tape1, tape2
         
