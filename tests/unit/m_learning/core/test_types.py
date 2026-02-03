@@ -11,6 +11,7 @@ from src.m_learning.core.types import (
     TrainingResult,
     EvaluationResult,
     CheckpointInfo,
+    TuningResult,
 )
 
 
@@ -137,3 +138,61 @@ class TestEvaluationResult:
             restored = EvaluationResult.from_json(f.name)
         assert restored.loss == result.loss
         assert restored.metrics == result.metrics
+
+    def test_summary(self):
+        """Test summary string generation."""
+        result = EvaluationResult(
+            loss=0.05,
+            metrics={"mse": 0.001, "mae": 0.02},
+        )
+        s = result.summary()
+        assert "EVALUATION RESULTS" in s
+        assert "0.050000" in s or "0.05" in s
+        assert "mse" in s and "mae" in s
+
+    def test_to_dict_excludes_arrays(self):
+        """Test that to_dict excludes predictions/targets/residuals for serialisation."""
+        result = EvaluationResult(
+            loss=0.1,
+            metrics={"mse": 0.01},
+            predictions=[1.0, 2.0],
+            targets=[1.1, 2.1],
+        )
+        d = result.to_dict()
+        assert "predictions" not in d
+        assert "targets" not in d
+        assert d["loss"] == 0.1
+        assert d["metrics"]["mse"] == 0.01
+
+
+class TestTuningResult:
+    """Tests for TuningResult."""
+
+    def test_creation(self):
+        """Test tuning result creation."""
+        result = TuningResult(
+            best_config={"lr": 0.01, "units": 64},
+            best_score=0.05,
+            trials=[
+                {"config": {"lr": 0.001}, "score": 0.1, "metadata": {}},
+                {"config": {"lr": 0.01}, "score": 0.05, "metadata": {}},
+            ],
+            metadata={"method": "grid", "n_trials": 2},
+        )
+        assert result.best_config["lr"] == 0.01
+        assert result.best_score == 0.05
+        assert len(result.trials) == 2
+
+    def test_json_round_trip(self):
+        """Test JSON serialisation round-trip."""
+        result = TuningResult(
+            best_config={"lr": 0.01},
+            best_score=0.05,
+            metadata={"method": "grid"},
+        )
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            result.to_json(f.name)
+            restored = TuningResult.from_json(f.name)
+        assert restored.best_config == result.best_config
+        assert restored.best_score == result.best_score
+        assert restored.metadata["method"] == "grid"

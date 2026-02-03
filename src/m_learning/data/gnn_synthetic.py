@@ -358,7 +358,7 @@ def default_hybrid_model_config(
         "fusion_model": {
             "general": {
                 "dropout_rate": 0.1,
-                "fusion_mode": "cross_attention",
+                "fusion_mode": "gate",
                 "num_heads": 2,
             },
             "parameters": {

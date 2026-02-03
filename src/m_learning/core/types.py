@@ -173,7 +173,7 @@ class TrainingResult:
 @dataclass
 class EvaluationResult:
     """
-    Output of model evaluation.
+    Canonical output of model evaluation.
 
     Parameters
     ----------
@@ -185,6 +185,12 @@ class EvaluationResult:
         Training/validation loss curves (from TrainingResult.history).
     pricing_error : float, optional
         Pricing error vs. benchmark (e.g. analytic or MC pricer).
+    predictions : ndarray, optional
+        Model predictions (for residual analysis, serialisation excluded by default).
+    targets : ndarray, optional
+        Ground-truth targets.
+    residuals : ndarray, optional
+        targets - predictions.
     metadata : dict
         Additional metadata (e.g. model name, dataset info).
     """
@@ -193,10 +199,36 @@ class EvaluationResult:
     metrics: Dict[str, float] = field(default_factory=dict)
     loss_curves: Optional[Dict[str, List[float]]] = None
     pricing_error: Optional[float] = None
+    predictions: Optional[Any] = None
+    targets: Optional[Any] = None
+    residuals: Optional[Any] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        """Convert to dict (excludes large arrays for serialisation)."""
+        d = asdict(self).copy()
+        d.pop("predictions", None)
+        d.pop("targets", None)
+        d.pop("residuals", None)
+        return d
+
+    def summary(self) -> str:
+        """Formatted summary string for reporting."""
+        lines = [
+            "=" * 50,
+            "EVALUATION RESULTS",
+            "=" * 50,
+            f"Loss: {self.loss:.6f}",
+            "",
+            "Metrics:",
+            "-" * 30,
+        ]
+        for name, value in sorted(self.metrics.items()):
+            lines.append(f"  {name:20s}: {value:12.6f}")
+        if self.pricing_error is not None:
+            lines.append(f"  {'pricing_error':20s}: {self.pricing_error:12.6f}")
+        lines.append("=" * 50)
+        return "\n".join(lines)
 
     def to_json(self, path: str) -> None:
         """Save to JSON file."""
@@ -210,9 +242,50 @@ class EvaluationResult:
             return cls(**json.load(f))
 
 
+@dataclass
+class TuningResult:
+    """
+    Output of hyperparameter tuning.
+
+    Parameters
+    ----------
+    best_config : dict
+        Best hyperparameter configuration found.
+    best_score : float
+        Best metric value (e.g. validation loss or negative MAE).
+    best_checkpoint_path : str, optional
+        Path to best model checkpoint if saved.
+    trials : list of dict
+        Each entry: {"config": dict, "score": float, "metadata": dict}.
+    metadata : dict
+        Tuning run metadata (e.g. search strategy, n_trials).
+    """
+
+    best_config: Dict[str, Any]
+    best_score: float
+    best_checkpoint_path: Optional[str] = None
+    trials: List[Dict[str, Any]] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    def to_json(self, path: str) -> None:
+        """Save to JSON file."""
+        with open(path, "w") as f:
+            json.dump(self.to_dict(), f, indent=2)
+
+    @classmethod
+    def from_json(cls, path: str) -> "TuningResult":
+        """Load from JSON file."""
+        with open(path) as f:
+            return cls(**json.load(f))
+
+
 __all__ = [
     "TrainingConfig",
     "TrainingResult",
     "EvaluationResult",
     "CheckpointInfo",
+    "TuningResult",
 ]

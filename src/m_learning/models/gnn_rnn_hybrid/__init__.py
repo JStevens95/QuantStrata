@@ -18,20 +18,26 @@ Usage:
     model = BatchedHybridGnnRnn(model_config, name="hybrid_pnl")
 """
 from src.m_learning.models.gnn_rnn_hybrid.hybrid_model import HybridGnnRnn
+from src.m_learning.models.gnn_rnn_hybrid.config import default_hybrid_model_config
 from src.m_learning.models.gnn_rnn_hybrid.wrapper import (
     BatchedHybridGnnRnn,
     create_gnn_tf_dataset,
     train_val_split_gnn,
 )
-from src.m_learning.models.gnn_rnn_hybrid.gnn_layers import GnnBlock, GraphSage, MixedGraphSage
-from src.m_learning.models.gnn_rnn_hybrid.rnn_layers import RnnBlock
-from src.m_learning.models.gnn_rnn_hybrid.fusion_layer import FusionLayer
-from src.m_learning.models.gnn_rnn_hybrid.attention_layer import TargetAttentionLayer
-from src.m_learning.models.gnn_rnn_hybrid.projection_layer import TargetPnlOutput
+from src.m_learning.models.gnn_rnn_hybrid.layers import (
+    GnnBlock,
+    GraphSage,
+    MixedGraphSage,
+    RnnBlock,
+    FusionLayer,
+    TargetAttentionLayer,
+    TargetPnlOutput,
+)
 
 __all__ = [
     "HybridGnnRnn",
     "BatchedHybridGnnRnn",
+    "default_hybrid_model_config",
     "create_gnn_tf_dataset",
     "train_val_split_gnn",
     "GnnBlock",

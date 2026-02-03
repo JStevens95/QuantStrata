@@ -38,7 +38,15 @@ from src.m_learning.core.callbacks import (
     get_standard_callbacks,
 )
 
-# Legacy exports for backward compatibility
+# Result types (used by pipelines)
+from src.m_learning.core.types import (
+    TrainingConfig as TypesTrainingConfig,
+    TrainingResult,
+    EvaluationResult,
+    CheckpointInfo,
+    TuningResult,
+)
+# Legacy aliases
 from src.m_learning.core.types import (
     TrainingResult as LegacyTrainingResult,
     EvaluationResult as LegacyEvaluationResult,
@@ -64,6 +72,12 @@ __all__ = [
     "TrainingProgressCallback",
     "GradientMonitorCallback",
     "get_standard_callbacks",
+    # Result types
+    "TypesTrainingConfig",
+    "TrainingResult",
+    "EvaluationResult",
+    "CheckpointInfo",
+    "TuningResult",
     # Legacy
     "LegacyTrainingResult",
     "LegacyEvaluationResult",

@@ -9,6 +9,7 @@ Generic ML pipeline for QuantStrata.
 from src.m_learning.pipeline.training import run_training, TrainingLoop
 from src.m_learning.pipeline.evaluation import evaluate_model
 from src.m_learning.pipeline.inference import load_model, predict, save_model
+from src.m_learning.pipeline.tuning import run_tuning
 
 __all__ = [
     "run_training",
@@ -17,4 +18,5 @@ __all__ = [
     "load_model",
     "predict",
     "save_model",
+    "run_tuning",
 ]

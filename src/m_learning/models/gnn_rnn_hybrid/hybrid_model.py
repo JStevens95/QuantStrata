@@ -1,11 +1,13 @@
 import logging
 import tensorflow as tf
 from typing import Dict, Any, Union, Tuple
-from src.m_learning.models.gnn_rnn_hybrid.gnn_layers import GnnBlock
-from src.m_learning.models.gnn_rnn_hybrid.rnn_layers import RnnBlock
-from src.m_learning.models.gnn_rnn_hybrid.fusion_layer import FusionLayer
-from src.m_learning.models.gnn_rnn_hybrid.attention_layer import TargetAttentionLayer
-from src.m_learning.models.gnn_rnn_hybrid.projection_layer import TargetPnlOutput
+from src.m_learning.models.gnn_rnn_hybrid.layers import (
+    GnnBlock,
+    RnnBlock,
+    FusionLayer,
+    TargetAttentionLayer,
+    TargetPnlOutput,
+)
 
 # define logging at module level.
 logger = logging.getLogger(__name__)
