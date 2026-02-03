@@ -4,6 +4,16 @@ Interactive Jupyter notebooks with worked examples covering calibration, pricing
 
 ---
 
+## Streaming and Live Data
+
+Streaming protocol, paper brokerage adapter, and StreamingEngine.
+
+| Tutorial | Description |
+|----------|-------------|
+| [Streaming and Live Data](streaming/streaming_and_live_data.ipynb) | Replay stream + paper adapter + StreamingEngine; same strategy signature as backtest |
+
+---
+
 ## Performance
 
 Performance and scalability: benchmarking, parallel pricing, caching, optional JAX MC.

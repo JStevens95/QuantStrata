@@ -670,23 +670,27 @@ linear products that should be implemented before options on them (swaptions).
 - Guide: `docs/guides/performance/performance_and_scalability.md`
 - Tutorial: `docs/tutorials/performance/performance_and_scalability.ipynb`
 
-### 5.5 Streaming & Live Data (for Algo Trading)
-- [ ] **Streaming Data Provider**
-  - Implement: `StreamingMarketDataProvider` (or feed) protocol
-  - Support: Tick/bar stream (async iterator or callback)
-  - Output: Same `Market` snapshot type as pull-based providers
-  - Use case: Algorithmic trading, paper/live trading
+### 5.5 Streaming & Live Data (for Algo Trading) ✅
+- [x] **Streaming Data Provider**
+  - Implemented: `StreamingMarketDataProtocol` in `src/marketdata/providers/streaming/protocol.py` (async `stream()` yielding (timestamp, Market))
+  - Implemented: `ReplayStreamProvider` in `src/marketdata/providers/streaming/replay.py` (replay from MarketDataset or list of (timestamp, Market))
+  - Use case: Algorithmic trading, paper/live trading; modeled on Alpaca/IBKR patterns; first impl simulated
 
-- [ ] **Event-Driven Engine**
-  - Implement: `StreamingEngine` or `LiveEngine` consuming stream of (timestamp, Market)
-  - Reuse: Same strategy signature `(market, portfolio, context) -> orders`
-  - Support: Paper vs live execution mode (adapter interface)
+- [x] **Event-Driven Engine**
+  - Implemented: `StreamingEngine` in `src/streaming/engine.py` consuming stream of (timestamp, Market)
+  - Reuse: Same strategy signature `(market, portfolio, context) -> orders` as backtesting
+  - Support: Paper vs live via injected brokerage adapter
   - Use case: Deploy strategies on streaming data
 
-- [ ] **Brokerage Adapter Interface**
-  - Define: Abstract interface for order execution (submit, cancel, positions)
-  - Support: Paper (simulated) and live brokerage adapters (future integration)
-  - Use case: Connect algo bot to practice/live brokerage accounts
+- [x] **Brokerage Adapter Interface**
+  - Implemented: `BrokerageAdapter` protocol in `src/streaming/brokerage/protocol.py` (submit_order, cancel_order, get_positions)
+  - Implemented: `PaperBrokerageAdapter` in `src/streaming/brokerage/paper.py` (in-memory execution simulation; apply_market for fills)
+  - Use case: Connect algo bot to practice/live brokerage accounts; real Alpaca/IBKR adapters implement same protocol (future)
+
+**Documentation:**
+- Reference: `docs/reference/streaming_live_data.md`
+- Guide: `docs/guides/streaming/streaming_and_live_data.md`
+- Tutorial: `docs/tutorials/streaming/streaming_and_live_data.ipynb`
 
 ### 5.6 Advanced Analytics & Reporting
 - [ ] **Front-Office Risk Reports**
@@ -704,7 +708,7 @@ linear products that should be implemented before options on them (swaptions).
 - ✅ Complete calibration framework
 - ✅ Backtesting infrastructure
 - ✅ Risk infrastructure (VaR, Greeks aggregation, stress testing)
-- [ ] Streaming & live data (5.5): streaming provider, event-driven engine, brokerage adapter interface
+- [x] Streaming & live data (5.5): streaming provider, event-driven engine, brokerage adapter interface
 - [ ] Advanced analytics & reporting (5.6): front-office risk reports, publication-quality visualisation
 - [x] Performance optimizations (5.4)
 

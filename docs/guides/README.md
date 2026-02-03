@@ -4,6 +4,16 @@ This section contains user-focused documentation for working with QuantStrata.
 
 ---
 
+## Streaming and Live Data
+
+Guides for streaming market data and live/paper trading.
+
+| Guide | Description |
+|-------|-------------|
+| [Streaming and Live Data](streaming/streaming_and_live_data.md) | Replay stream, paper adapter, StreamingEngine; same strategy as backtesting; paper vs live |
+
+---
+
 ## Performance
 
 Guides for performance and scalability: backend selection, parallel pricing, and caching.
