@@ -61,7 +61,7 @@ Guides for ML-based pricing, calibration, and the generic training pipeline.
 
 | Guide | Description |
 |-------|-------------|
-| [ML Pipeline Tutorial](../tutorials/m_learning/ml_pipeline_introduction.ipynb) | Data → Training → Evaluation → Inference (notebook) |
+| [ML Pipeline Tutorial](../tutorials/machine_learning/ml_lifecycle_tutorial.ipynb) | Data → Training → Evaluation → Inference (notebook) |
 
 ---
 

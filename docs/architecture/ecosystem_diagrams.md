@@ -26,7 +26,7 @@ graph TB
         RISK[risk]
         BT[backtesting]
         STR[streaming]
-        ML[m_learning]
+        ML[machine_learning]
     end
 
     subgraph orchestration [Orchestration Layer]
@@ -884,7 +884,7 @@ flowchart TB
 | **backtesting** | Historical strategy testing | `BacktestEngine`, `PerformanceMetrics` |
 | **streaming** | Live/paper trading | `StreamingEngine`, `BrokerageAdapter` |
 | **orchestrator** | Workflow coordination | `Pipeline`, `PipelineRunner`, `Context` |
-| **m_learning** | ML training/inference | `Trainable`, `run_training()`, `evaluate_model()`, `predict()` |
+| **machine_learning** | ML training/inference | `Trainable`, `run_training()`, `evaluate_model()`, `predict()` |
 | **core** | Utilities and plotting | `style`, `utils`, risk/marketdata/pricer plots |
 | **ui** | Dash UIs | `create_app()`, shared components |
 
@@ -903,7 +903,7 @@ Level 3: pricers (fx, equity, ir, registry)
     ↓
 Level 4: portfolio, calibration
     ↓
-Level 5: risk, backtesting, streaming, m_learning
+Level 5: risk, backtesting, streaming, machine_learning
     ↓
 Level 6: orchestrator, ui
 ```

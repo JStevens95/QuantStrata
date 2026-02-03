@@ -1,13 +1,15 @@
 # Machine Learning Module Design
 
-This document reviews the current `src/m_learning` structure and proposes a design that separates **generic ML infrastructure** (pipelines, datasets, evaluation, tuning) from **model-specific** components under `models/`, with a plug-and-play layout per model.
+**Status:** ✅ IMPLEMENTED (January 2026) — See `m_learning_design_alignment.md` for implementation notes.
+
+This document describes the `src/machine_learning` structure that separates **generic ML infrastructure** (pipelines, datasets, evaluation, tuning) from **model-specific** components under `models/`, with a plug-and-play layout per model.
 
 ---
 
 ## 1. Current structure (review)
 
 ```
-src/m_learning/
+src/machine_learning/
 ├── __init__.py
 ├── core/           # Base classes, config, protocols, types, callbacks
 ├── data/            # TFDataset, normalization; pricing/calibration/portfolio/gnn data builders
@@ -40,7 +42,7 @@ src/m_learning/
 
 ## 2. Target design principles
 
-- **Top level (`src/m_learning/`)**  
+- **Top level (`src/machine_learning/`)**  
   Contains only **generic** components: pipelines (training, evaluation, inference, **tuning**), TF dataset building, core types/protocols, evaluation scripts and **standardised result** types, and shared utilities. No model-specific logic at this level.
 
 - **`models/`**  
@@ -85,7 +87,7 @@ So the contract for `data/<model>/` is: **build and preprocess model-specific da
 ## 4. Proposed layout
 
 ```
-src/m_learning/
+src/machine_learning/
 ├── __init__.py                 # Public API: core, data, pipelines, evaluation, inference, tuning
 ├── core/                       # Base, config, protocols, types, callbacks
 │   ├── base.py, config.py, callbacks.py, protocols.py, types.py
@@ -217,7 +219,7 @@ The same design applies to **reinforcement learning** (`src/q_learning/`): gener
 
 **Mapping from ML to RL**
 
-| ML (m_learning) | RL (q_learning) |
+| ML (machine_learning) | RL (q_learning) |
 |-----------------|------------------|
 | **data/<model>/** | **data/<agent>/** (or **env/<agent>/**) – environment setup, experience collection, replay/trajectory building for that agent. Output: a **consistent interface** the pipeline consumes (e.g. `tf.data.Dataset` over transitions, or Env + replay buffer sampler). |
 | **models/<model>/** | **agents/<agent>/** – one agent class per algorithm (e.g. DQN, Double DQN). Architecture, config, layers only. No environment or data construction. Batching/minibatch size is defined by the experience side. |
@@ -231,7 +233,7 @@ The same design applies to **reinforcement learning** (`src/q_learning/`): gener
 - **One agent class per algorithm:** Same as ML: one `DQN` (or `DqnAgent`) class, not separate “batched” vs “unbatched” variants; minibatch size and sampling are decided by the experience/data side.
 - **Standardised results:** TrainingResult (episode returns, loss curves, steps), EvaluationResult (mean return, std, etc.), TuningResult (best config, best return). Same serialisation pattern as ML.
 
-**Proposed q_learning layout (mirroring m_learning)**
+**Proposed q_learning layout (mirroring machine_learning)**
 
 ```
 src/q_learning/

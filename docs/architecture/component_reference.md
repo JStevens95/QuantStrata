@@ -263,7 +263,7 @@ portfolio/
 
 ### Dependents
 
-- risk, backtesting, streaming, orchestrator, m_learning
+- risk, backtesting, streaming, orchestrator, machine_learning
 
 ---
 
@@ -476,14 +476,14 @@ orchestrator/
 
 ---
 
-## 11. m_learning
+## 11. machine_learning
 
 **Purpose:** ML framework — training, evaluation, inference pipelines.
 
 ### Structure
 
 ```
-m_learning/
+machine_learning/
 ├── core/
 │   ├── protocols.py      # Trainable protocol, KerasTrainableAdapter
 │   └── types.py          # TrainingConfig, TrainingResult, EvaluationResult

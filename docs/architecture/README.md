@@ -26,7 +26,7 @@ QuantStrata is organised into layers:
    - Pricing adapters connecting instruments + market to models
    - Model calibration to market data
 
-3. **Execution Layer** — `portfolio`, `risk`, `backtesting`, `streaming`, `m_learning`
+3. **Execution Layer** — `portfolio`, `risk`, `backtesting`, `streaming`, `machine_learning`
    - Portfolio management and pricing
    - Risk computation (VaR, sensitivities, scenarios)
    - Historical backtesting and live trading

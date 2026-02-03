@@ -54,8 +54,7 @@ Interactive Jupyter notebooks with worked examples.
 | **Models** | [SABR](tutorials/pricing/sabr_model.ipynb), [LMM](tutorials/pricing/lmm_pricing.ipynb), [Jump/Lévy](tutorials/pricing/jump_levy_models.ipynb), [Advanced MC](tutorials/pricing/advanced_mc_methods.ipynb) |
 | **Instruments** | [Vanilla](tutorials/instruments/vanilla_options_analysis.ipynb), [Barrier](tutorials/instruments/barrier_options_analysis.ipynb), [Digital](tutorials/instruments/digital_options_analysis.ipynb), [Touch](tutorials/instruments/touch_options_analysis.ipynb), [Asian](tutorials/instruments/asian_options_analysis.ipynb), [Lookback](tutorials/instruments/lookback_options_analysis.ipynb) |
 | **Market Data** | [Synthetic Data](tutorials/market-data/synthetic_data_generation.ipynb), [IR Vol Surfaces](tutorials/market-data/ir_volatility_surfaces.ipynb) |
-| **Machine Learning** | [ML Pipeline (TensorFlow)](tutorials/m_learning/ml_pipeline_tensorflow.ipynb) — Comprehensive TF-native tutorial |
-| | [ML Pipeline (NumPy)](tutorials/m_learning/ml_pipeline_introduction.ipynb) — Simple NumPy-only introduction |
+| **Machine Learning** | [ML Pipeline (TensorFlow)](tutorials/machine_learning/ml_lifecycle_tutorial.ipynb) — Comprehensive TF-native tutorial |
 
 ### Architecture
 

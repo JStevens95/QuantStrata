@@ -16,7 +16,7 @@ The goal is: **build model instance → prepare data → generic training loop �
 ## Architecture
 
 ```
-src/m_learning/
+src/machine_learning/
 ├── __init__.py
 ├── core/                          # Protocols and types
 │   ├── __init__.py
@@ -52,12 +52,12 @@ src/m_learning/
 
 | Component | File | Status |
 |-----------|------|--------|
-| Trainable protocol | `src/m_learning/core/protocols.py` | ✅ |
-| KerasTrainableAdapter | `src/m_learning/core/protocols.py` | ✅ |
-| Training config types | `src/m_learning/core/types.py` | ✅ |
-| Generic training loop | `src/m_learning/pipeline/training.py` | ✅ |
-| Unit tests | `tests/unit/m_learning/pipeline/test_training.py` | ✅ |
-| Unit tests | `tests/unit/m_learning/core/test_types.py` | ✅ |
+| Trainable protocol | `src/machine_learning/core/protocols.py` | ✅ |
+| KerasTrainableAdapter | `src/machine_learning/core/protocols.py` | ✅ |
+| Training config types | `src/machine_learning/core/types.py` | ✅ |
+| Generic training loop | `src/machine_learning/pipeline/training.py` | ✅ |
+| Unit tests | `tests/unit/machine_learning/pipeline/test_training.py` | ✅ |
+| Unit tests | `tests/unit/machine_learning/core/test_types.py` | ✅ |
 
 **Deliverables:**
 - [x] `Trainable` protocol (forward/call, compute_loss, get/set_parameters)
@@ -78,14 +78,14 @@ src/m_learning/
 
 | Component | File | Status |
 |-----------|------|--------|
-| MLDataset type | `src/m_learning/data/types.py` | ✅ |
-| PricingFeatures schema | `src/m_learning/data/types.py` | ✅ |
-| CalibrationFeatures schema | `src/m_learning/data/types.py` | ✅ |
-| Pricing data adapter (MC) | `src/m_learning/data/pricing.py` | ✅ |
-| Pricing data adapter (analytic) | `src/m_learning/data/pricing.py` | ✅ |
-| Calibration data adapter | `src/m_learning/data/calibration.py` | ✅ |
-| Portfolio/GNN adapter | `src/m_learning/data/portfolio.py` | ✅ |
-| Unit tests | `tests/unit/m_learning/data/` | ✅ |
+| MLDataset type | `src/machine_learning/data/types.py` | ✅ |
+| PricingFeatures schema | `src/machine_learning/data/types.py` | ✅ |
+| CalibrationFeatures schema | `src/machine_learning/data/types.py` | ✅ |
+| Pricing data adapter (MC) | `src/machine_learning/data/pricing.py` | ✅ |
+| Pricing data adapter (analytic) | `src/machine_learning/data/pricing.py` | ✅ |
+| Calibration data adapter | `src/machine_learning/data/calibration.py` | ✅ |
+| Portfolio/GNN adapter | `src/machine_learning/data/portfolio.py` | ✅ |
+| Unit tests | `tests/unit/machine_learning/data/` | ✅ |
 
 **Deliverables:**
 - [x] `MLDataset` (features, targets, feature_names, split method)
@@ -106,11 +106,11 @@ src/m_learning/
 
 | Component | File | Status |
 |-----------|------|--------|
-| EvaluationResult type | `src/m_learning/core/types.py` | ✅ |
-| evaluate_model() | `src/m_learning/pipeline/evaluation.py` | ✅ |
-| Metric functions | `src/m_learning/pipeline/evaluation.py` | ✅ |
-| Serialisation | `src/m_learning/core/types.py` | ✅ |
-| Unit tests | `tests/unit/m_learning/pipeline/test_evaluation.py` | ✅ |
+| EvaluationResult type | `src/machine_learning/core/types.py` | ✅ |
+| evaluate_model() | `src/machine_learning/pipeline/evaluation.py` | ✅ |
+| Metric functions | `src/machine_learning/pipeline/evaluation.py` | ✅ |
+| Serialisation | `src/machine_learning/core/types.py` | ✅ |
+| Unit tests | `tests/unit/machine_learning/pipeline/test_evaluation.py` | ✅ |
 
 **Deliverables:**
 - [x] `EvaluationResult` (loss, metrics, loss_curves, pricing_error, metadata)
@@ -128,11 +128,11 @@ src/m_learning/
 
 | Component | File | Status |
 |-----------|------|--------|
-| save_model() | `src/m_learning/pipeline/inference.py` | ✅ |
-| load_model() | `src/m_learning/pipeline/inference.py` | ✅ |
-| predict() | `src/m_learning/pipeline/inference.py` | ✅ |
-| Artifact convention | `src/m_learning/pipeline/inference.py` (docstring) | ✅ |
-| Integration test | `tests/unit/m_learning/pipeline/test_inference.py` | ✅ |
+| save_model() | `src/machine_learning/pipeline/inference.py` | ✅ |
+| load_model() | `src/machine_learning/pipeline/inference.py` | ✅ |
+| predict() | `src/machine_learning/pipeline/inference.py` | ✅ |
+| Artifact convention | `src/machine_learning/pipeline/inference.py` (docstring) | ✅ |
+| Integration test | `tests/unit/machine_learning/pipeline/test_inference.py` | ✅ |
 
 **Deliverables:**
 - [x] `save_model(model, artifact_dir, config, metadata)` — save parameters + config + metadata
@@ -166,10 +166,10 @@ src/m_learning/
 
 ## Documentation
 
-- Tutorial (TensorFlow): `docs/tutorials/m_learning/ml_pipeline_tensorflow.ipynb` ✅
-- Tutorial (NumPy): `docs/tutorials/m_learning/ml_pipeline_introduction.ipynb` ✅
-- Reference: `docs/reference/m_learning/ml_framework.md` (planned)
-- Guide: `docs/guides/m_learning/ml_pipeline.md` (planned)
+- Tutorial (TensorFlow): `docs/tutorials/machine_learning/ml_pipeline_tensorflow.ipynb` ✅
+- Tutorial (NumPy): `docs/tutorials/machine_learning/ml_pipeline_introduction.ipynb` ✅
+- Reference: `docs/reference/machine_learning/ml_framework.md` (planned)
+- Guide: `docs/guides/machine_learning/ml_pipeline.md` (planned)
 
 ## TensorFlow-Native Refactoring (Completed)
 
@@ -177,7 +177,7 @@ The ML module has been refactored to be fully TensorFlow-native:
 
 ### New Structure
 ```
-src/m_learning/
+src/machine_learning/
 ├── core/
 │   ├── base.py         # BaseModel, PricingModel, CalibrationModel, PortfolioModel
 │   ├── config.py       # TrainingConfig, OptimizerConfig, LRScheduleConfig, etc.
@@ -213,28 +213,28 @@ src/m_learning/
 ## Files Changed
 
 ### New Files (Tasks 1–4)
-- `src/m_learning/core/__init__.py` — Core exports
-- `src/m_learning/core/protocols.py` — Trainable protocol, KerasTrainableAdapter
-- `src/m_learning/core/types.py` — TrainingConfig, TrainingResult, EvaluationResult, CheckpointInfo
-- `src/m_learning/pipeline/__init__.py` — Pipeline exports
-- `src/m_learning/pipeline/training.py` — run_training(), TrainingLoop
-- `src/m_learning/pipeline/evaluation.py` — evaluate_model(), metric functions
-- `src/m_learning/pipeline/inference.py` — save_model(), load_model(), predict()
-- `src/m_learning/data/__init__.py` — Data exports
-- `src/m_learning/data/types.py` — MLDataset, PricingFeatures, CalibrationFeatures
-- `src/m_learning/data/pricing.py` — build_pricing_dataset_from_mc/analytic
-- `src/m_learning/data/calibration.py` — build_calibration_dataset
-- `src/m_learning/data/portfolio.py` — build_gnn_dataset_from_portfolio, gnn_inputs_to_tf_dataset
-- `tests/unit/m_learning/__init__.py`
-- `tests/unit/m_learning/core/__init__.py`
-- `tests/unit/m_learning/core/test_types.py` — 9 tests
-- `tests/unit/m_learning/pipeline/__init__.py`
-- `tests/unit/m_learning/pipeline/test_training.py` — 10 tests
-- `tests/unit/m_learning/pipeline/test_evaluation.py` — 10 tests
-- `tests/unit/m_learning/pipeline/test_inference.py` — 10 tests
-- `tests/unit/m_learning/data/__init__.py`
-- `tests/unit/m_learning/data/test_types.py` — 10 tests
-- `tests/unit/m_learning/data/test_pricing.py` — 9 tests
+- `src/machine_learning/core/__init__.py` — Core exports
+- `src/machine_learning/core/protocols.py` — Trainable protocol, KerasTrainableAdapter
+- `src/machine_learning/core/types.py` — TrainingConfig, TrainingResult, EvaluationResult, CheckpointInfo
+- `src/machine_learning/pipeline/__init__.py` — Pipeline exports
+- `src/machine_learning/pipeline/training.py` — run_training(), TrainingLoop
+- `src/machine_learning/pipeline/evaluation.py` — evaluate_model(), metric functions
+- `src/machine_learning/pipeline/inference.py` — save_model(), load_model(), predict()
+- `src/machine_learning/data/__init__.py` — Data exports
+- `src/machine_learning/data/types.py` — MLDataset, PricingFeatures, CalibrationFeatures
+- `src/machine_learning/data/pricing.py` — build_pricing_dataset_from_mc/analytic
+- `src/machine_learning/data/calibration.py` — build_calibration_dataset
+- `src/machine_learning/data/portfolio.py` — build_gnn_dataset_from_portfolio, gnn_inputs_to_tf_dataset
+- `tests/unit/machine_learning/__init__.py`
+- `tests/unit/machine_learning/core/__init__.py`
+- `tests/unit/machine_learning/core/test_types.py` — 9 tests
+- `tests/unit/machine_learning/pipeline/__init__.py`
+- `tests/unit/machine_learning/pipeline/test_training.py` — 10 tests
+- `tests/unit/machine_learning/pipeline/test_evaluation.py` — 10 tests
+- `tests/unit/machine_learning/pipeline/test_inference.py` — 10 tests
+- `tests/unit/machine_learning/data/__init__.py`
+- `tests/unit/machine_learning/data/test_types.py` — 10 tests
+- `tests/unit/machine_learning/data/test_pricing.py` — 9 tests
 
 ### Modified Files
 - `docs/development/roadmap.md` (to be updated with checkboxes)

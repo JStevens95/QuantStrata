@@ -809,7 +809,7 @@ This keeps the framework **model-agnostic** and **reusable** across ML-based pri
   - Use case: Fast calibration
 
 - [ ] **Hybrid GNN-LSTM Full Revaluation Pricer** (Partially built)
-  - Complete: `src/m_learning/models/gnn_rnn_hybrid/` (attention, fusion, GNN/RNN layers, projection)
+  - Complete: `src/machine_learning/models/gnn_rnn_hybrid/` (attention, fusion, GNN/RNN layers, projection)
   - Integrate: Trade graph builder, attribute encoder, training manager with portfolio pricing
   - Train/evaluate/deploy via the generic ML pipeline (build instance → data → train → evaluate → inference)
   - Deliverable: Full revaluation pricer using graph + time-series representation of portfolio
@@ -1011,13 +1011,13 @@ Once the core library is complete (Phases 1–8), the following **orchestrator/a
 ### Application Project 2: Algorithmic Trading Bot
 - **Goal:** Algo trading bot connected to practice/live brokerage, with streaming data, strategy deployment, backtesting, and performance evaluation.
 - **Scope:** Streaming tick/bar data; connect to practice/live brokerage (paper and live modes); deploy strategies; backtest and evaluate performance; reports and plots; strategies can use ML/Q-learning from the library.
-- **Library dependency:** Backtesting (Phase 5.2), streaming & live data (Phase 5.5), brokerage adapter (Phase 5.5), m_learning/q_learning (Phase 7).
+- **Library dependency:** Backtesting (Phase 5.2), streaming & live data (Phase 5.5), brokerage adapter (Phase 5.5), machine_learning/q_learning (Phase 7).
 - **Deliverable:** Trading bot application: data feed → StreamingEngine → strategy (incl. ML/RL) → order execution (paper/live) → performance reports and visualisations.
 
 ### Application Project 3: Hybrid GNN-LSTM Full Revaluation Pricer
 - **Goal:** Production implementation of the Hybrid GNN-LSTM full revaluation pricer (partially built in the library).
-- **Scope:** Complete and harden `src/m_learning/models/gnn_rnn_hybrid/`; integrate with portfolio representation (trade graph, attributes); train and serve as full revaluation pricer; validate vs. library pricers.
-- **Library dependency:** m_learning (Phase 7.1), portfolio, pricers, market data.
+- **Scope:** Complete and harden `src/machine_learning/models/gnn_rnn_hybrid/`; integrate with portfolio representation (trade graph, attributes); train and serve as full revaluation pricer; validate vs. library pricers.
+- **Library dependency:** machine_learning (Phase 7.1), portfolio, pricers, market data.
 - **Deliverable:** Trained GNN-LSTM pricer service/model that can revalue portfolios using graph + time-series representation.
 
 ### Application Project 4: Q-Learning Orchestrator Agent
