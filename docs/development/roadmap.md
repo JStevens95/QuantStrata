@@ -1,6 +1,6 @@
 # QuantStrata Development Roadmap
 
-**Last Updated:** January 27, 2026 (Phase 5.1 Complete - Calibration Framework)  
+**Last Updated:** January 27, 2026 (Phase 7.2 Core Complete; added Phases 7.6-7.8: Deep Hedging, Neural SDE, Rough Volatility)  
 **Current Version:** V1 (FX Derivatives Foundation)  
 **Target:** Comprehensive Professional Quant Library
 
@@ -901,6 +901,237 @@ The same **general framework** as ML applies: build agent instance → fetch/pre
 
 ---
 
+## Phase 7.6: Deep Hedging & Neural Optimal Control
+
+**Goal:** Implement a deep hedging framework that trains RL agents to learn optimal hedging strategies accounting for transaction costs, discrete rehedging, and market impact — going beyond classical delta hedging.
+
+**Research Foundation:** Bühler et al. (2019) "Deep Hedging", Horvath et al. (2021) "Deep Hedging under Rough Volatility"
+
+### 7.6.1 Hedging Environment
+- [ ] **HedgingEnv**
+  - Implement: RL environment wrapping pricers and market simulation for hedging
+  - State: spot price, time to expiry, current position, Greeks (delta, gamma, vega), recent volatility, PnL
+  - Action: hedge ratio (continuous) or discrete hedge amounts
+  - Reward: risk-adjusted P&L minus transaction costs
+  - Support: Configurable transaction cost model (proportional, fixed, market impact)
+  - Use case: Train deep hedging agents
+
+- [ ] **Transaction Cost Model**
+  - Implement: Proportional spread, fixed cost, temporary/permanent market impact
+  - Support: Parameterised by asset, size, volatility
+  - Use case: Realistic hedging simulation, execution cost awareness
+
+- [ ] **Market Simulation for Hedging**
+  - Implement: Simulate underlying paths (GBM, Heston, or learned dynamics) with discrete rehedging
+  - Support: Multiple paths per episode for variance reduction
+  - Use case: Generate training data for deep hedging
+
+### 7.6.2 Deep Hedging Agent
+- [ ] **Hedging Policy Network**
+  - Implement: Neural network policy that outputs hedge ratio given state
+  - Architecture: MLP or recurrent (LSTM) for path-dependent hedging
+  - Support: Continuous action space (hedge ratio as fraction of delta)
+  - Use case: Learn non-linear hedging policy
+
+- [ ] **Risk-Aware Loss Function**
+  - Implement: Loss based on distribution of terminal P&L (CVaR, variance, utility)
+  - Support: Configurable risk measure (variance penalty, CVaR, exponential utility)
+  - Use case: Train agents with different risk preferences
+
+- [ ] **Training Pipeline Integration**
+  - Implement: Integrate with existing RL training pipeline (run_training, evaluate_agent)
+  - Support: Checkpointing, logging, evaluation against delta-hedging benchmark
+  - Use case: End-to-end deep hedging training
+
+### 7.6.3 Evaluation & Benchmarking
+- [ ] **Delta Hedging Benchmark**
+  - Implement: Classical delta-hedging agent for comparison
+  - Support: With and without transaction costs
+  - Use case: Benchmark deep hedging against standard approach
+
+- [ ] **Hedging Performance Metrics**
+  - Implement: P&L distribution stats (mean, std, Sharpe, max drawdown, CVaR)
+  - Support: Cost breakdown (hedging cost vs tracking error)
+  - Use case: Compare hedging strategies
+
+- [ ] **Backtesting Integration**
+  - Implement: Run trained hedging agent in backtesting framework
+  - Support: Historical data replay, out-of-sample evaluation
+  - Use case: Validate deep hedging on real data
+
+### 7.6.4 Advanced Deep Hedging
+- [ ] **Multi-Asset Hedging**
+  - Implement: Hedge portfolio of options with multiple underlyings
+  - Support: Cross-gamma, correlation hedging
+  - Use case: Portfolio-level deep hedging
+
+- [ ] **Model-Agnostic Hedging**
+  - Implement: Train hedging agent without assuming specific dynamics
+  - Support: Learn from historical data directly
+  - Use case: Robust hedging under model uncertainty
+
+**Status:** Not started. See `docs/development/progress/phase_7_6_deep_hedging.md` (to be created).
+
+**Dependencies:** Phase 7.2 (RL framework), pricers (Greeks), MC simulation, backtesting.
+
+---
+
+## Phase 7.7: Neural SDE & Generative Market Simulation
+
+**Goal:** Implement neural stochastic differential equations that learn drift and diffusion functions from data, enabling more realistic market simulation than parametric models (GBM, Heston).
+
+**Research Foundation:** Kidger et al. (2021) "Neural SDEs", Gierjatowicz et al. (2020) "Robust pricing and hedging via neural SDEs"
+
+### 7.7.1 Neural SDE Framework
+- [ ] **Neural Drift and Diffusion**
+  - Implement: Neural networks μ_θ(S, t) and σ_θ(S, t) for SDE: dS = μ_θ dt + σ_θ dW
+  - Architecture: MLP with positivity constraints for diffusion
+  - Support: Time-dependent and state-dependent dynamics
+  - Use case: Learn realistic price dynamics from data
+
+- [ ] **SDE Solver Integration**
+  - Implement: Euler-Maruyama and Milstein solvers for neural SDEs
+  - Support: Batched simulation for efficiency
+  - Use case: Generate paths from learned dynamics
+
+- [ ] **Adjoint Sensitivity Method**
+  - Implement: Memory-efficient backpropagation through SDE solver
+  - Support: Gradient computation for long paths
+  - Use case: Train neural SDE on long time series
+
+### 7.7.2 Training Neural SDEs
+- [ ] **Score Matching / Maximum Likelihood**
+  - Implement: Train neural SDE by matching marginal distributions
+  - Support: Score matching loss, Wasserstein distance, MMD
+  - Use case: Learn dynamics from historical returns
+
+- [ ] **Calibration to Options**
+  - Implement: Calibrate neural SDE to match implied volatility surface
+  - Support: Joint calibration to spot dynamics and vol surface
+  - Use case: Risk-neutral dynamics for pricing
+
+- [ ] **Training Pipeline**
+  - Implement: Data pipeline (historical returns → training batches)
+  - Support: Validation, early stopping, checkpointing
+  - Use case: End-to-end neural SDE training
+
+### 7.7.3 Integration with Pricing
+- [ ] **Neural SDE Monte Carlo Pricer**
+  - Implement: MC pricer using learned neural SDE dynamics
+  - Support: Any payoff from existing payoff framework
+  - Use case: Price options under learned dynamics
+
+- [ ] **Greeks via Automatic Differentiation**
+  - Implement: Compute Greeks by differentiating through neural SDE
+  - Support: Delta, gamma, vega (w.r.t. initial vol)
+  - Use case: Risk management with neural dynamics
+
+### 7.7.4 Generative Scenario Simulation
+- [ ] **Conditional Generation**
+  - Implement: Generate paths conditioned on regime (e.g., high vol, crisis)
+  - Support: Conditioning on VIX level, macro variables
+  - Use case: Stress testing with realistic conditional scenarios
+
+- [ ] **Synthetic Data Augmentation**
+  - Implement: Generate synthetic market data for training other models
+  - Support: Preserve statistical properties (vol clustering, fat tails)
+  - Use case: Data augmentation for ML models
+
+**Status:** Not started. See `docs/development/progress/phase_7_7_neural_sde.md` (to be created).
+
+**Dependencies:** MC framework, calibration engine, ML pipelines (7.1).
+
+---
+
+## Phase 7.8: Rough Volatility Models
+
+**Goal:** Implement rough volatility models (rough Bergomi, rough Heston) that capture the empirically observed roughness of volatility paths (Hurst parameter H ≈ 0.1), providing better fit to short-dated ATM skew and vol term structure.
+
+**Research Foundation:** Gatheral, Jaisson & Rosenbaum (2018) "Volatility is Rough", Bayer, Friz & Gatheral (2016) "Pricing under Rough Volatility"
+
+### 7.8.1 Fractional Brownian Motion
+- [ ] **Fractional BM Sampler**
+  - Implement: Efficient simulation of fractional Brownian motion with H ∈ (0, 1)
+  - Methods: Cholesky decomposition, Hosking method, hybrid schemes
+  - Support: Configurable Hurst parameter, batch generation
+  - Use case: Foundation for rough vol models
+
+- [ ] **Volterra Process**
+  - Implement: Volterra-type integral for rough volatility: V_t = ∫ K(t-s) dW_s
+  - Support: Power-law kernel K(t) = t^{H-1/2}
+  - Use case: Rough Bergomi variance process
+
+### 7.8.2 Rough Bergomi Model
+- [ ] **Rough Bergomi Dynamics**
+  - Implement: dS/S = √V dW, V_t = ξ(t) exp(η W^H_t - η²t^{2H}/2)
+  - Parameters: Forward variance curve ξ(t), vol-of-vol η, Hurst H
+  - Support: Correlation between spot and vol
+  - Use case: State-of-the-art rough vol model
+
+- [ ] **Rough Bergomi MC Pricer**
+  - Implement: Monte Carlo pricer with rough Bergomi paths
+  - Support: European, barrier, and path-dependent options
+  - Use case: Price under rough vol dynamics
+
+- [ ] **Hybrid Simulation Scheme**
+  - Implement: Efficient simulation combining exact and approximate methods
+  - Support: Turbocharging (variance reduction via conditioning)
+  - Use case: Fast rough Bergomi simulation
+
+### 7.8.3 Rough Heston Model
+- [ ] **Rough Heston Dynamics**
+  - Implement: Heston with fractional kernel: V_t = V_0 + ∫ K(t-s)(θ - V_s) ds + ∫ K(t-s) ν√V_s dW_s
+  - Parameters: Mean reversion θ, vol-of-vol ν, Hurst H
+  - Support: Affine structure for semi-analytic pricing
+  - Use case: Rough vol with mean reversion
+
+- [ ] **Characteristic Function (Adams Method)**
+  - Implement: Solve fractional Riccati equation for characteristic function
+  - Support: Fourier pricing for European options
+  - Use case: Fast rough Heston pricing
+
+### 7.8.4 Calibration
+- [ ] **Rough Vol Calibration**
+  - Implement: Calibrate rough Bergomi / rough Heston to vol surface
+  - Support: Fit to ATM skew term structure, smile
+  - Use case: Market-consistent rough vol parameters
+
+- [ ] **Hurst Parameter Estimation**
+  - Implement: Estimate H from realised volatility time series
+  - Methods: Variogram, R/S analysis, wavelets
+  - Use case: Empirical validation, model selection
+
+### 7.8.5 Integration
+- [ ] **Vol Surface Infrastructure**
+  - Implement: Extend vol surface to support rough vol model outputs
+  - Support: Rough vol implied vol computation
+  - Use case: Consistent vol surface representation
+
+- [ ] **Greeks under Rough Vol**
+  - Implement: Delta, gamma, vega under rough vol (via bump-and-reval or AD)
+  - Support: Path-wise and likelihood ratio methods
+  - Use case: Risk management with rough vol
+
+**Status:** Not started. See `docs/development/progress/phase_7_8_rough_volatility.md` (to be created).
+
+**Dependencies:** MC framework, vol surface infrastructure, calibration engine.
+
+---
+
+### Phase 7 Extended Deliverables:
+- ✅ ML integration (pricing, calibration) — 7.1
+- ✅ Hybrid GNN-LSTM full revaluation pricer — 7.1
+- ✅ Q-learning / RL agent framework — 7.2
+- ✅ Deep hedging framework with transaction costs — 7.6
+- ✅ Neural SDE for learned market dynamics — 7.7
+- ✅ Rough volatility models (rough Bergomi, rough Heston) — 7.8
+- ✅ 3+ exotic products — 7.3
+- ✅ Optional: Credit/commodities — 7.4/7.5
+
+**Impact:** Demonstrates **cutting-edge research-level** capabilities in modern quantitative finance: deep hedging, neural SDEs, and rough volatility.
+
+---
+
 ## Phase 8: Quant Hedge Fund & Execution Extensions
 
 **Goal:** Add library components required for execution, factor risk, vol trading, portfolio optimisation, tail risk, real-time monitoring, and alternative data so that the additional application projects (5–12 below) can build on the library.
@@ -1166,11 +1397,15 @@ Once the core library is complete (Phases 1–8), the following **orchestrator/a
 | Phase 4 | Weeks 19-24 | Advanced Models | Jump-diffusion, SABR, multi-asset |
 | Phase 5 | Weeks 25-30+ | Production | Calibration, backtesting, risk, **streaming/live (5.5)**, **analytics/reports (5.6)** |
 | Phase 6 | Ongoing | Education | Tutorials, notebooks, docs |
-| Phase 7 | Weeks 31-36+ | Advanced Topics | ML (7.1), **GNN-LSTM pricer**, **Q-learning/RL (7.2)**, exotics (7.3), credit/commodities (7.4/7.5) |
+| Phase 7.1-7.2 | Weeks 31-34 | ML & RL | ML pipelines (7.1), GNN-LSTM pricer, Q-learning/RL framework (7.2) |
+| Phase 7.3-7.5 | Weeks 35-36+ | Exotics & Extensions | Exotic products (7.3), credit (7.4), commodities (7.5) |
+| **Phase 7.6** | Weeks 37-38 | **Deep Hedging** | HedgingEnv, transaction costs, hedging policy network, benchmarking |
+| **Phase 7.7** | Weeks 39-40 | **Neural SDE** | Neural drift/diffusion, SDE training, generative scenarios |
+| **Phase 7.8** | Weeks 41-42 | **Rough Volatility** | Fractional BM, rough Bergomi, rough Heston, calibration |
 | Phase 8 | After 7 | **Quant HF & Execution** | Execution/TCA (8.1), factor risk (8.2), vol trading (8.3), portfolio opt (8.4), tail risk (8.5), limit monitoring (8.6), alt data (8.7), market-making (8.8) |
 | *After library* | — | **Application Projects 1–12** | Option analytics, Algo bot, GNN-LSTM pricer, Q-learning orchestrator; **5** Execution/TCA, **6** Factor risk, **7** Market-making, **8** Vol trading, **9** Portfolio opt, **10** Tail risk, **11** Real-time risk, **12** Alt data alpha |
 
-**Total Timeline:** ~9 months for core functionality, ongoing for education/advanced topics; **Phase 8** (quant hedge fund & execution extensions) follows Phase 7; **application projects 1–12** (option report, algo bot, GNN-LSTM pricer, Q-learning orchestrator, execution/TCA, factor risk, market-making, vol trading, portfolio opt, tail risk, real-time risk, alt data alpha) follow library completion.
+**Total Timeline:** ~10-11 months for core functionality (including new Phases 7.6-7.8), ongoing for education/advanced topics; **Phase 8** (quant hedge fund & execution extensions) follows Phase 7; **application projects 1–12** (option report, algo bot, GNN-LSTM pricer, Q-learning orchestrator, execution/TCA, factor risk, market-making, vol trading, portfolio opt, tail risk, real-time risk, alt data alpha) follow library completion.
 
 ---
 
@@ -1207,8 +1442,9 @@ This roadmap provides a **structured path** to building a **comprehensive, profe
 **Next Steps:**
 1. Review and prioritize phases
 2. Complete remaining Phase 5 (risk, streaming 5.5, analytics 5.6, performance) and Phase 6–7
-3. Iterate based on learnings
-4. Maintain quality standards throughout
-5. **After library completion:** Complete Phase 8 (quant hedge fund & execution extensions) then build application projects 1–12 (option analytics, algo bot, GNN-LSTM pricer, Q-learning orchestrator, execution/TCA, factor risk, market-making, vol trading, portfolio opt, tail risk, real-time risk, alt data alpha)
+3. **Implement cutting-edge research phases:** Deep Hedging (7.6), Neural SDE (7.7), Rough Volatility (7.8)
+4. Iterate based on learnings
+5. Maintain quality standards throughout
+6. **After library completion:** Complete Phase 8 (quant hedge fund & execution extensions) then build application projects 1–12 (option analytics, algo bot, GNN-LSTM pricer, Q-learning orchestrator, execution/TCA, factor risk, market-making, vol trading, portfolio opt, tail risk, real-time risk, alt data alpha)
 
 **The foundation is excellent. Time to build! 🚀**
