@@ -68,6 +68,9 @@ class BaseModel(tf.keras.Model):
     """
     
     def __init__(self, name: str = "base_model", **kwargs):
+        # Keras 3 deserialization passes full get_config() as kwargs; pop our custom keys
+        # so they are not passed to tf.keras.Model (which would raise ValueError).
+        metadata = kwargs.pop("metadata", None)
         super().__init__(name=name, **kwargs)
         self._model_metadata: Dict[str, Any] = {
             "model_name": name,
@@ -76,6 +79,8 @@ class BaseModel(tf.keras.Model):
             "framework": "tensorflow",
             "framework_version": tf.__version__,
         }
+        if metadata is not None:
+            self._model_metadata.update(metadata)
         self._is_built = False
     
     @property
