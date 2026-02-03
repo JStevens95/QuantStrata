@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from src.orchestrator.artifacts.manifest import RunManifest
 from src.orchestrator.artifacts.store import ArtifactStore
@@ -16,7 +16,12 @@ from src.orchestrator.logging.setup import build_run_logger
 from src.orchestrator.runtime import discovery
 
 
-def run_pipeline_from_config(cfg: RunConfig, *, run_id: Optional[str] = None) -> Context:
+def run_pipeline_from_config(
+    cfg: RunConfig,
+    *,
+    run_id: Optional[str] = None,
+    initial_state: Optional[Dict[str, Any]] = None,
+) -> Context:
     """
     Build and run a pipeline from a RunConfig.
 
@@ -26,6 +31,9 @@ def run_pipeline_from_config(cfg: RunConfig, *, run_id: Optional[str] = None) ->
         Fully-validated run configuration.
     run_id:
         Optional explicit run identifier. If not provided, a UTC timestamp-based id is used.
+    initial_state:
+        Optional state to seed the context with (e.g. from a previous pipeline run).
+        Used by workflow scripts that chain pipelines; keys must match StateKeys.
 
     Returns
     -------
@@ -60,14 +68,15 @@ def run_pipeline_from_config(cfg: RunConfig, *, run_id: Optional[str] = None) ->
     # --- Build pipeline from config (builder decides how to interpret cfg.params) ---
     pipeline = builder(cfg)
 
-    # --- Create the base execution context ---
+    # --- Create the base execution context (optionally seeded for workflow chaining) ---
+    state = dict(initial_state) if initial_state else {}
     ctx = Context(
         run_id=resolved_run_id,
         cfg=cfg,
         logger=logger,
         artifact_store=store,
         provider=None,
-        state={},
+        state=state,
     )
 
     # --- Execute pipeline ---
