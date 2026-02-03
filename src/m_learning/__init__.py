@@ -53,6 +53,11 @@ Quick Start:
                feature_stats=dataset.feature_stats,
                target_stats=dataset.target_stats)
 
+Plug-and-play:
+    The same pipeline (Trainer, Evaluator, save_model/load_model, Predictor) works
+    for any tf.keras.Model. Subclass BaseModel or PricingModel for optional metadata
+    and helpers; custom_objects is used when loading custom classes.
+
 See Also:
     - Tutorial: docs/tutorials/m_learning/ml_pipeline_tensorflow.ipynb
     - Architecture: docs/architecture/ecosystem_diagrams.md
