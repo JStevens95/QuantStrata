@@ -14,7 +14,7 @@ pytest >= 8.0.0
 matplotlib >= 3.8.0
 
 # Optional: QuantLib for validation
-# QuantLib >= 1.40
+QuantLib >= 1.40
 
 # Optional: Machine learning
-# tensorflow >= 2.15.0
+tensorflow >= 2.15.0
