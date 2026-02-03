@@ -135,7 +135,7 @@ _GBM_STEP_FUNCTIONS: dict[GbmScheme, _GbmStepFn] = {
 # Public dynamics object
 # --------------------------------------------------------------------------------------
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class GbmDynamicsSimulator:
     """
     Geometric Brownian Motion (GBM) dynamics simulator.

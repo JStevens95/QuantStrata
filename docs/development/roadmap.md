@@ -908,51 +908,59 @@ The same **general framework** as ML applies: build agent instance → fetch/pre
 **Research Foundation:** Bühler et al. (2019) "Deep Hedging", Horvath et al. (2021) "Deep Hedging under Rough Volatility"
 
 ### 7.6.1 Hedging Environment
-- [ ] **HedgingEnv**
+- [x] **HedgingEnv**
   - Implement: RL environment wrapping pricers and market simulation for hedging
   - State: spot price, time to expiry, current position, Greeks (delta, gamma, vega), recent volatility, PnL
   - Action: hedge ratio (continuous) or discrete hedge amounts
   - Reward: risk-adjusted P&L minus transaction costs
   - Support: Configurable transaction cost model (proportional, fixed, market impact)
   - Use case: Train deep hedging agents
+  - **Implemented:** `src/deep_hedging/core/protocols.py` (HedgingEnvironment, BaseHedgingEnv), `src/deep_hedging/environments/gbm.py` (GBMHedgingEnv)
 
-- [ ] **Transaction Cost Model**
+- [x] **Transaction Cost Model**
   - Implement: Proportional spread, fixed cost, temporary/permanent market impact
   - Support: Parameterised by asset, size, volatility
   - Use case: Realistic hedging simulation, execution cost awareness
+  - **Implemented:** `src/deep_hedging/core/costs.py` (ProportionalCost, FixedCost, MarketImpactCost, CombinedCost)
 
-- [ ] **Market Simulation for Hedging**
+- [x] **Market Simulation for Hedging**
   - Implement: Simulate underlying paths (GBM, Heston, or learned dynamics) with discrete rehedging
   - Support: Multiple paths per episode for variance reduction
   - Use case: Generate training data for deep hedging
+  - **Implemented:** `src/deep_hedging/environments/gbm.py` (reuses GbmDynamicsSimulator), antithetic variates for variance reduction
 
 ### 7.6.2 Deep Hedging Agent
-- [ ] **Hedging Policy Network**
+- [x] **Hedging Policy Network**
   - Implement: Neural network policy that outputs hedge ratio given state
   - Architecture: MLP or recurrent (LSTM) for path-dependent hedging
   - Support: Continuous action space (hedge ratio as fraction of delta)
   - Use case: Learn non-linear hedging policy
+  - **Implemented:** `src/deep_hedging/agents/deep.py` (MLPPolicy, DeepHedgingAgent)
 
-- [ ] **Risk-Aware Loss Function**
+- [x] **Risk-Aware Loss Function**
   - Implement: Loss based on distribution of terminal P&L (CVaR, variance, utility)
   - Support: Configurable risk measure (variance penalty, CVaR, exponential utility)
   - Use case: Train agents with different risk preferences
+  - **Implemented:** `src/deep_hedging/core/risk_measures.py` (VarianceRisk, MeanVarianceRisk, CVaRRisk, EntropicRisk)
 
-- [ ] **Training Pipeline Integration**
+- [x] **Training Pipeline Integration**
   - Implement: Integrate with existing RL training pipeline (run_training, evaluate_agent)
   - Support: Checkpointing, logging, evaluation against delta-hedging benchmark
   - Use case: End-to-end deep hedging training
+  - **Implemented:** `src/deep_hedging/training/trainer.py` (HedgingTrainer, train_deep_hedging)
 
 ### 7.6.3 Evaluation & Benchmarking
-- [ ] **Delta Hedging Benchmark**
+- [x] **Delta Hedging Benchmark**
   - Implement: Classical delta-hedging agent for comparison
   - Support: With and without transaction costs
   - Use case: Benchmark deep hedging against standard approach
+  - **Implemented:** `src/deep_hedging/agents/delta.py` (DeltaHedgingAgent, NoHedgingAgent)
 
-- [ ] **Hedging Performance Metrics**
+- [x] **Hedging Performance Metrics**
   - Implement: P&L distribution stats (mean, std, Sharpe, max drawdown, CVaR)
   - Support: Cost breakdown (hedging cost vs tracking error)
   - Use case: Compare hedging strategies
+  - **Implemented:** `src/deep_hedging/evaluation/evaluator.py` (compute_hedging_metrics, HedgingEvaluator, compare_agents)
 
 - [ ] **Backtesting Integration**
   - Implement: Run trained hedging agent in backtesting framework
@@ -970,7 +978,11 @@ The same **general framework** as ML applies: build agent instance → fetch/pre
   - Support: Learn from historical data directly
   - Use case: Robust hedging under model uncertainty
 
-**Status:** Not started. See `docs/development/progress/phase_7_6_deep_hedging.md` (to be created).
+**Status:** ✅ **Core complete.** Environments, agents, training, evaluation implemented. Advanced features (multi-asset, backtesting integration, model-agnostic) pending. See `docs/development/progress/phase_7_6_deep_hedging.md`.
+
+**Documentation:**
+- Theory: `docs/reference/deep_hedging/theory.md` (PhD-level technical reference)
+- Tutorial: `docs/tutorials/deep_hedging/deep_hedging_tutorial.ipynb`
 
 **Dependencies:** Phase 7.2 (RL framework), pricers (Greeks), MC simulation, backtesting.
 
