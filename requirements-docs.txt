@@ -1,0 +1,6 @@
+# Documentation build (Sphinx API reference)
+# Install with: pip install -r requirements-docs.txt
+# Build with: sphinx-build -b html docs/source docs/build/html
+
+sphinx >= 7.0.0
+sphinx-rtd-theme >= 2.0.0

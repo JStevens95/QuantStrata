@@ -1,0 +1,5 @@
+# Optional: Dash UIs (e.g. pricing calculator)
+# Install with: pip install -r requirements-ui.txt
+# Run pricing calculator: python -m src.ui.pricing_calculator
+
+dash >= 2.0.0

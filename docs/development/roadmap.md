@@ -722,50 +722,35 @@ linear products that should be implemented before options on them (swaptions).
 **Goal:** Enhance educational value and usability
 
 ### 6.1 Tutorials & Examples
-- [ ] **Quick Start Guide**
-  - Create: `docs/QUICKSTART.md`
-  - Content: Install, first pricing example, basic concepts
+- [x] **Quick Start Guide**
+  - Created: [docs/QUICKSTART.md](../QUICKSTART.md) — install, venv, first pricing example; links to full docs and tutorials.
   - Use case: Onboarding new users
 
-- [ ] **Jupyter Notebooks**
-  - Create: `examples/notebooks/`
-  - Content:
-    - BSM derivation walkthrough
-    - FD vs MC comparison
-    - Calibration tutorial
-    - Risk analysis tutorial
+- [x] **Jupyter Notebooks**
+  - Tutorials live in `docs/tutorials/` (canonical location; no separate `examples/notebooks/`).
+  - Content: calibration, pricing (FD/MC, SABR, LMM, etc.), instruments, risk, streaming, analytics. See [docs/tutorials/README.md](../tutorials/README.md).
   - Use case: Interactive learning
 
-- [ ] **Video Tutorials** (Optional)
-  - Create: Screen recordings of key workflows
-  - Use case: Visual learners
-
 ### 6.2 Documentation Enhancements
-- [ ] **API Reference**
-  - Generate: Sphinx/autodoc documentation
+- [x] **API Reference**
+  - Sphinx/autodoc in [docs/source/](../source/); build with `sphinx-build -b html docs/source docs/build/html`. See [requirements-docs.txt](../../requirements-docs.txt).
   - Use case: Developer reference
 
-- [ ] **Mathematical Appendices**
-  - Create: `docs/mathematics/`
-  - Content:
-    - FD method derivations
-    - MC variance reduction theory
-    - Model derivations (Heston, Hull-White, etc.)
+- [x] **Mathematical Appendices**
+  - Content lives under [docs/reference/models/](../reference/models/) and is indexed in [docs/reference/README.md](../reference/README.md) (Mathematical appendices section): FD, MC, Heston, Hull-White, SABR, local vol, curve bootstrapping, volatility calibration.
   - Use case: Deep dive into methodology
 
-- [ ] **Best Practices Guide**
-  - Create: `docs/BEST_PRACTICES.md`
-  - Content: Coding standards, testing patterns, performance tips
+- [x] **Best Practices Guide**
+  - Created: [docs/BEST_PRACTICES.md](../BEST_PRACTICES.md) — coding standards, testing, performance, project conventions.
   - Use case: Contributor guide
 
 ### 6.3 Interactive Tools
-- [ ] **Pricing Calculator** (Web App)
-  - Create: Simple web interface for pricing
+- [x] **Pricing Calculator** (Dash UI)
+  - Dash apps in `src/ui/`; FX vanilla pricing calculator. Run: `python -m src.ui.pricing_calculator`. See [docs/guides/interactive_tools.md](../guides/interactive_tools.md).
   - Use case: Non-technical users
 
-- [ ] **Visualization Tools**
-  - Enhance: Plotting utilities
-  - Add: Interactive plots (Plotly/Bokeh)
+- [x] **Visualization**
+  - Publication-quality matplotlib plots in Phase 5.6; interactive Dash UIs (e.g. pricing calculator) in `src/ui/` with optional `requirements-ui.txt`.
   - Use case: Better visualizations
 
 ### Deliverables:

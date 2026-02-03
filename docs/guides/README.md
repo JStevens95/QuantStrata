@@ -4,6 +4,16 @@ This section contains user-focused documentation for working with QuantStrata.
 
 ---
 
+## Interactive Tools
+
+Optional Dash UIs (e.g. pricing calculator) in `src/ui/`.
+
+| Guide | Description |
+|-------|-------------|
+| [Interactive Tools](interactive_tools.md) | Dash UIs: pricing calculator, how to run and extend |
+
+---
+
 ## Advanced Analytics & Reporting
 
 Guides for front-office risk reports and publication-quality visualisation.

@@ -6,6 +6,8 @@
 **Python:** 3.12+ required  
 **Tests:** 1,787 passing
 
+**New here?** See the [Quick Start](QUICKSTART.md) to install and run your first pricing example. Contributors: see [Best Practices](BEST_PRACTICES.md). API reference (Sphinx): build with `pip install -r requirements-docs.txt` then `sphinx-build -b html docs/source docs/build/html`; output in `docs/build/html/`.
+
 ---
 
 ## Documentation Structure

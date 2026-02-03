@@ -4,6 +4,25 @@ This section contains mathematical foundations, derivations, and detailed model 
 
 ---
 
+## Mathematical appendices
+
+The following reference docs under [models/](models/) and [calibration/](calibration/) serve as mathematical appendices: derivations, PDE/numerical methods, and model specifications.
+
+| Topic | Document | Description |
+|-------|----------|-------------|
+| Finite difference methods | [finite_difference_methods.md](models/finite_difference_methods.md) | PDE discretization, schemes, boundaries |
+| Monte Carlo methods | [monte_carlo_methods.md](models/monte_carlo_methods.md) | Path generation, variance reduction |
+| Heston | [heston_volatility.md](models/heston_volatility.md) | Stochastic vol SDE, characteristic function |
+| Hull-White | [hull_white.md](models/hull_white.md) | One-factor short rate, bond options |
+| SABR | [sabr.md](models/sabr.md) | Hagan formula, calibration |
+| Local volatility | [local_volatility.md](models/local_volatility.md) | Dupire equation, surface construction |
+| Curve bootstrapping | [curve_bootstrapping.md](models/curve_bootstrapping.md) | Discount curves, interpolation |
+| Volatility calibration | [volatility_calibration.md](models/volatility_calibration.md) | Surface fitting, arbitrage-free conditions |
+
+See the sections below for the full reference index.
+
+---
+
 ## Calibration
 
 | Reference | Description |
