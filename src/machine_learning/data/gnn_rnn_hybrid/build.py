@@ -61,12 +61,13 @@ def _split_gnn_data(
     def slice_data(start: int, length: int) -> Tuple[Dict[str, np.ndarray], np.ndarray]:
         pnl = data.pnl_history[start : start + length]
         tgt = data.targets[start : start + length]
+        # Static graph/indices (no sample dim); gnn_inputs_to_tf_dataset tiles these by n_samples
         inputs = {
-            "trade_features": np.tile(data.trade_features, (length, 1, 1)),
-            "adjacency_matrix": np.tile(data.adjacency_matrix, (length, 1, 1)),
+            "trade_features": data.trade_features,
+            "adjacency_matrix": data.adjacency_matrix,
             "pnl_history": pnl,
-            "target_indices": np.tile(data.target_indices, (length, 1)),
-            "elementary_indices": np.tile(data.elementary_indices, (length, 1)),
+            "target_indices": data.target_indices,
+            "elementary_indices": data.elementary_indices,
         }
         return inputs, tgt.astype(np.float32)
 

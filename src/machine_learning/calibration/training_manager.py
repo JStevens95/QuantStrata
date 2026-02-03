@@ -86,10 +86,10 @@ class TrainingManager:
         """
         # 0. define list to hold training callbacks & paths.
         callbacks = []
-        ext = 'weights.h5' if stage.save_weights_only else '.keras'
+        ext = '.weights.h5' if stage.save_weights_only else '.keras'
         checkpoint_path = os.path.join(stage.model_dir, stage.model, 'mlearn',
-                                       f'{stage.name}_checkpoint_{datetime.now().strftime("%Y%m%d_%H%M%S")}_{ext}')
-        Path(checkpoint_path).mkdir(parents=True, exist_ok=True)
+                                       f'{stage.name}_checkpoint_{datetime.now().strftime("%Y%m%d_%H%M%S")}{ext}')
+        Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
 
         # 1. define model checkpoint callback.
         callbacks.append(
@@ -112,8 +112,10 @@ class TrainingManager:
         if stage.reduce_lr_on_plateau:
             callbacks.append(
                 tf.keras.callbacks.ReduceLROnPlateau(
-                    monitor='val_loss' if self.validation_ds is not None else 'loss', factor=stage.reduce_lr_factor,
-                    patience=stage.reduce_lr_patience, mode='min', min_lr=stage.min_lr
+                    monitor='val_loss' if self.validation_ds is not None else 'loss',
+                    factor=stage.reduce_lr_factor if stage.reduce_lr_factor is not None else 0.5,
+                    patience=stage.reduce_lr_patience if stage.reduce_lr_patience is not None else 10,
+                    mode='min', min_lr=stage.min_lr
                 )
             )
         callbacks.extend(self.custom_callbacks)
