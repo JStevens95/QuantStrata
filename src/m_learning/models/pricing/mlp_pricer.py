@@ -44,6 +44,7 @@ from src.m_learning.core.base import PricingModel
 from src.m_learning.core.config import ModelConfig
 
 
+@tf.keras.saving.register_keras_serializable(package="QuantStrata.m_learning")
 class MLPPricer(PricingModel):
     """
     Multi-Layer Perceptron for option pricing.
@@ -295,6 +296,7 @@ def create_mlp_pricer(
     return model
 
 
+@tf.keras.saving.register_keras_serializable(package="QuantStrata.m_learning")
 class ResidualMLPPricer(PricingModel):
     """
     Residual MLP Pricer with deep skip connections.
@@ -365,6 +367,7 @@ class ResidualMLPPricer(PricingModel):
         return self.output_layer(x)
 
 
+@tf.keras.saving.register_keras_serializable(package="QuantStrata.m_learning")
 class ResidualBlock(layers.Layer):
     """Residual block with two dense layers and skip connection."""
     

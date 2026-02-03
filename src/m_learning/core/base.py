@@ -44,6 +44,7 @@ except ImportError:
     )
 
 
+@tf.keras.saving.register_keras_serializable(package="QuantStrata.m_learning")
 class BaseModel(tf.keras.Model):
     """
     Abstract base class for all ML models in the library.
@@ -120,6 +121,7 @@ class BaseModel(tf.keras.Model):
         }
 
 
+@tf.keras.saving.register_keras_serializable(package="QuantStrata.m_learning")
 class PricingModel(BaseModel):
     """
     Base class for option/derivative pricing models.
@@ -209,6 +211,7 @@ class PricingModel(BaseModel):
         }
 
 
+@tf.keras.saving.register_keras_serializable(package="QuantStrata.m_learning")
 class CalibrationModel(BaseModel):
     """
     Base class for model calibration networks.
@@ -287,6 +290,7 @@ class CalibrationModel(BaseModel):
         return raw_params
 
 
+@tf.keras.saving.register_keras_serializable(package="QuantStrata.m_learning")
 class PortfolioModel(BaseModel):
     """
     Base class for portfolio-level ML models.

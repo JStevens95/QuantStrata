@@ -38,12 +38,24 @@ import shutil
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union
+
+if TYPE_CHECKING:
+    from src.m_learning.core.config import TrainingConfig
 
 import numpy as np
 import tensorflow as tf
 
 from src.m_learning.data.dataset import NormalizationStats
+
+
+def _ensure_custom_models_registered() -> None:
+    """Import modules that define custom Keras models so @register_keras_serializable runs."""
+    try:
+        import src.m_learning.core.base  # noqa: F401
+        import src.m_learning.models.pricing.mlp_pricer  # noqa: F401
+    except ImportError:
+        pass
 
 
 def _save_keras_model(model: tf.keras.Model, path: Path, include_optimizer: bool) -> None:
@@ -58,6 +70,7 @@ def _save_keras_model(model: tf.keras.Model, path: Path, include_optimizer: bool
 
 def _load_keras_model(path: Path, custom_objects: Optional[Dict], compile_model: bool) -> tf.keras.Model:
     """Load Keras model from .keras file or SavedModel directory."""
+    _ensure_custom_models_registered()
     return tf.keras.models.load_model(
         str(path),
         custom_objects=custom_objects or {},
