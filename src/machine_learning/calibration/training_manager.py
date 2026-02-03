@@ -53,7 +53,8 @@ class TrainingManager:
 
     def __init__(
             self, training_ds: tf.data.Dataset, model_config: Dict[str, Any],
-            validation_ds: tf.data.Dataset = None, tf_strategy: Optional[Any] = None
+            validation_ds: tf.data.Dataset = None, tf_strategy: Optional[Any] = None,
+            custom_callbacks: Optional[List[tf.keras.callbacks.Callback]] = None,
     ) -> None:
         """
         Initiate the training manager.
@@ -61,12 +62,15 @@ class TrainingManager:
         :param training_ds: tensorflow dataset for training data
         :param model_config: dictionary configuration for machine learning model.
         :param validation_ds: tensorflow dataset for validation data.
+        :param tf_strategy: optional distribution strategy
+        :param custom_callbacks: optional list of Keras callbacks to add to every training stage
         """
         # initiate required variables
         self.training_ds = training_ds
         self.validation_ds = validation_ds
         self.model_config = model_config
         self.tf_strategy = tf_strategy if tf_strategy else tf.distribute.get_strategy()
+        self.custom_callbacks = custom_callbacks or []
 
         # initiate derived variables.
         self.model: tf.keras.Model | None = None
@@ -112,6 +116,7 @@ class TrainingManager:
                     patience=stage.reduce_lr_patience, mode='min', min_lr=stage.min_lr
                 )
             )
+        callbacks.extend(self.custom_callbacks)
         return callbacks
 
     def build_model(self, stage: TrainingConfiguration) -> Union[HybridGnnRnn]:

@@ -93,7 +93,7 @@ class KerasTrainableAdapter:
     Adapter to wrap a Keras model as a Trainable.
 
     This allows Keras models (e.g. HybridGnnRnn) to be used with the generic
-    training pipeline. For full Keras training with callbacks, use TrainingManager.
+    training pipeline. For full Keras training with callbacks, use Trainer (any model) or TrainingManager (e.g. HybridGnnRnn); both accept custom_callbacks.
     """
 
     def __init__(self, keras_model: Any, loss_fn: Any = None) -> None:
