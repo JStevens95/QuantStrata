@@ -772,6 +772,7 @@ def run_optuna_tuning(
     timeout: Optional[float] = None,
     callbacks: Optional[List[Callable]] = None,
     show_progress_bar: bool = True,
+    seed: Optional[int] = None,
 ) -> TuningResult:
     """
     Run hyperparameter tuning with Optuna.
@@ -805,6 +806,8 @@ def run_optuna_tuning(
         Callback functions called after each trial.
     show_progress_bar : bool
         Show progress bar during optimization.
+    seed : int, optional
+        Random seed for reproducibility (passed to Optuna sampler).
         
     Returns
     -------
@@ -835,12 +838,13 @@ def run_optuna_tuning(
         ) from e
     
     # Configure sampler
+    sampler_kw: Dict[str, Any] = {} if seed is None else {"seed": seed}
     if sampler == "tpe":
-        optuna_sampler = optuna.samplers.TPESampler()
+        optuna_sampler = optuna.samplers.TPESampler(**sampler_kw)
     elif sampler == "random":
-        optuna_sampler = optuna.samplers.RandomSampler()
+        optuna_sampler = optuna.samplers.RandomSampler(**sampler_kw)
     elif sampler == "cmaes":
-        optuna_sampler = optuna.samplers.CmaEsSampler()
+        optuna_sampler = optuna.samplers.CmaEsSampler(**sampler_kw)
     elif sampler == "grid":
         # Grid sampler requires explicit search space
         raise NotImplementedError(
