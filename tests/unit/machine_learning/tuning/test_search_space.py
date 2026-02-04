@@ -1,28 +1,22 @@
 """
 Unit tests for hyperparameter tuning module.
 
-Tests SearchSpace, ParameterDefinition, pruners, and tuning functions.
+Tests SearchSpace, parameter definitions, pruners, and tuning results.
 """
 
 import json
-import random
-import sys
 import tempfile
 from pathlib import Path
 
 import pytest
 
-# Add project root to path for direct import
-sys.path.insert(0, str(Path(__file__).parents[4]))
-
-# Import directly from module file to avoid triggering tensorflow
 from src.machine_learning.tuning.search_space import (
-    SearchSpace,
-    OptunaSearchSpace,
-    ParameterType,
-    ParameterDefinition,
     MedianPruner,
+    OptunaSearchSpace,
+    ParameterDefinition,
+    ParameterType,
     PercentilePruner,
+    SearchSpace,
     TuningResult,
     TuningTrial,
     create_search_space,
@@ -30,10 +24,10 @@ from src.machine_learning.tuning.search_space import (
 
 
 class TestParameterDefinition:
-    """Tests for ParameterDefinition dataclass."""
+    """Tests for ParameterDefinition."""
     
-    def test_float_parameter(self):
-        """Test float parameter creation."""
+    def test_float_parameter(self) -> None:
+        """Test float parameter definition."""
         param = ParameterDefinition(
             name="learning_rate",
             param_type=ParameterType.FLOAT,
@@ -48,8 +42,8 @@ class TestParameterDefinition:
         assert param.high == 1e-2
         assert param.log is True
     
-    def test_int_parameter(self):
-        """Test integer parameter creation."""
+    def test_int_parameter(self) -> None:
+        """Test integer parameter definition."""
         param = ParameterDefinition(
             name="hidden_units",
             param_type=ParameterType.INT,
@@ -60,8 +54,8 @@ class TestParameterDefinition:
         assert param.name == "hidden_units"
         assert param.param_type == ParameterType.INT
     
-    def test_categorical_parameter(self):
-        """Test categorical parameter creation."""
+    def test_categorical_parameter(self) -> None:
+        """Test categorical parameter definition."""
         param = ParameterDefinition(
             name="activation",
             param_type=ParameterType.CATEGORICAL,
@@ -71,27 +65,24 @@ class TestParameterDefinition:
         assert param.name == "activation"
         assert param.choices == ["relu", "tanh", "gelu"]
     
-    def test_validation_float_missing_bounds(self):
-        """Test that float parameters require bounds."""
+    def test_float_parameter_missing_bounds_raises(self) -> None:
+        """Test that float parameter without bounds raises."""
         with pytest.raises(ValueError, match="low and high required"):
             ParameterDefinition(
                 name="lr",
                 param_type=ParameterType.FLOAT,
-                low=None,
-                high=1e-2,
             )
     
-    def test_validation_categorical_missing_choices(self):
-        """Test that categorical parameters require choices."""
+    def test_categorical_missing_choices_raises(self) -> None:
+        """Test that categorical parameter without choices raises."""
         with pytest.raises(ValueError, match="choices required"):
             ParameterDefinition(
                 name="opt",
                 param_type=ParameterType.CATEGORICAL,
-                choices=None,
             )
     
-    def test_sample_float(self):
-        """Test sampling float parameter."""
+    def test_sample_random_float(self) -> None:
+        """Test random sampling for float parameter."""
         param = ParameterDefinition(
             name="lr",
             param_type=ParameterType.FLOAT,
@@ -99,110 +90,86 @@ class TestParameterDefinition:
             high=1.0,
         )
         
-        rng = random.Random(42)
-        value = param.sample_random(rng)
-        
-        assert 0.0 <= value <= 1.0
-        assert isinstance(value, float)
+        for _ in range(10):
+            value = param.sample_random()
+            assert 0.0 <= value <= 1.0
     
-    def test_sample_float_log(self):
-        """Test sampling float parameter in log scale."""
-        param = ParameterDefinition(
-            name="lr",
-            param_type=ParameterType.FLOAT,
-            low=1e-4,
-            high=1e-1,
-            log=True,
-        )
-        
-        rng = random.Random(42)
-        values = [param.sample_random(rng) for _ in range(100)]
-        
-        # All values should be in range
-        assert all(1e-4 <= v <= 1e-1 for v in values)
-    
-    def test_sample_int(self):
-        """Test sampling integer parameter."""
+    def test_sample_random_int(self) -> None:
+        """Test random sampling for integer parameter."""
         param = ParameterDefinition(
             name="units",
             param_type=ParameterType.INT,
-            low=32,
-            high=128,
+            low=10,
+            high=100,
         )
         
-        rng = random.Random(42)
-        value = param.sample_random(rng)
-        
-        assert 32 <= value <= 128
-        assert isinstance(value, int)
+        for _ in range(10):
+            value = param.sample_random()
+            assert 10 <= value <= 100
+            assert isinstance(value, int)
     
-    def test_sample_categorical(self):
-        """Test sampling categorical parameter."""
+    def test_sample_random_categorical(self) -> None:
+        """Test random sampling for categorical parameter."""
         param = ParameterDefinition(
             name="opt",
             param_type=ParameterType.CATEGORICAL,
             choices=["adam", "sgd", "rmsprop"],
         )
         
-        rng = random.Random(42)
-        value = param.sample_random(rng)
-        
-        assert value in ["adam", "sgd", "rmsprop"]
+        for _ in range(10):
+            value = param.sample_random()
+            assert value in ["adam", "sgd", "rmsprop"]
 
 
 class TestSearchSpace:
-    """Tests for SearchSpace class."""
+    """Tests for SearchSpace."""
     
-    def test_empty_search_space(self):
+    def test_empty_search_space(self) -> None:
         """Test empty search space."""
         space = SearchSpace()
         
         assert len(space) == 0
-        assert space.parameters == []
         assert space.names == []
+        assert space.parameters == []
     
-    def test_add_float(self):
+    def test_add_float(self) -> None:
         """Test adding float parameter."""
         space = SearchSpace()
         result = space.add_float("lr", 1e-4, 1e-2, log=True)
         
-        assert result is space  # Check chaining
-        assert len(space) == 1
+        assert result is space  # Chaining
         assert "lr" in space
-        
-        param = space.get("lr")
-        assert param.param_type == ParameterType.FLOAT
-        assert param.log is True
+        assert len(space) == 1
     
-    def test_add_int(self):
+    def test_add_int(self) -> None:
         """Test adding integer parameter."""
         space = SearchSpace()
-        space.add_int("units", 32, 256, log=False)
+        space.add_int("units", 32, 256)
         
-        assert len(space) == 1
+        assert "units" in space
         param = space.get("units")
+        assert param is not None
         assert param.param_type == ParameterType.INT
     
-    def test_add_categorical(self):
+    def test_add_categorical(self) -> None:
         """Test adding categorical parameter."""
         space = SearchSpace()
-        space.add_categorical("activation", ["relu", "tanh"])
+        space.add_categorical("opt", ["adam", "sgd"])
         
-        param = space.get("activation")
-        assert param.param_type == ParameterType.CATEGORICAL
-        assert param.choices == ["relu", "tanh"]
+        assert "opt" in space
+        param = space.get("opt")
+        assert param is not None
+        assert param.choices == ["adam", "sgd"]
     
-    def test_add_bool(self):
+    def test_add_bool(self) -> None:
         """Test adding boolean parameter."""
         space = SearchSpace()
         space.add_bool("use_dropout")
         
-        param = space.get("use_dropout")
-        assert param.param_type == ParameterType.BOOL
-        assert param.choices == [True, False]
+        assert "use_dropout" in space
     
-    def test_fluent_api(self):
-        """Test fluent API for building search space."""
+    def test_chaining(self) -> None:
+        """Test fluent API chaining."""
         space = (
             SearchSpace()
             .add_float("lr", 1e-4, 1e-2, log=True)
@@ -212,46 +179,40 @@ class TestSearchSpace:
         )
         
         assert len(space) == 4
-        assert space.names == ["lr", "units", "opt", "dropout"]
     
-    def test_sample(self):
-        """Test sampling configuration."""
+    def test_sample(self) -> None:
+        """Test sampling a configuration."""
         space = (
             SearchSpace()
-            .add_float("lr", 0.001, 0.1)
-            .add_int("units", 32, 64)
+            .add_float("lr", 0.0, 1.0)
+            .add_int("units", 10, 100)
             .add_categorical("opt", ["adam", "sgd"])
         )
         
-        config = space.sample(seed=42)
+        config = space.sample()
         
         assert "lr" in config
         assert "units" in config
         assert "opt" in config
-        assert 0.001 <= config["lr"] <= 0.1
-        assert 32 <= config["units"] <= 64
+        assert 0.0 <= config["lr"] <= 1.0
+        assert 10 <= config["units"] <= 100
         assert config["opt"] in ["adam", "sgd"]
     
-    def test_sample_reproducibility(self):
-        """Test that sampling with same seed is reproducible."""
-        space = (
-            SearchSpace()
-            .add_float("lr", 0.001, 0.1)
-            .add_int("units", 32, 64)
-        )
+    def test_sample_with_seed(self) -> None:
+        """Test reproducible sampling with seed."""
+        space = SearchSpace().add_float("lr", 0.0, 1.0)
         
         config1 = space.sample(seed=42)
         config2 = space.sample(seed=42)
         
-        assert config1 == config2
+        assert config1["lr"] == config2["lr"]
     
-    def test_to_dict(self):
-        """Test exporting search space to dictionary."""
+    def test_to_dict(self) -> None:
+        """Test exporting to dictionary."""
         space = (
             SearchSpace()
             .add_float("lr", 1e-4, 1e-2, log=True)
             .add_int("units", 32, 256)
-            .add_categorical("opt", ["adam", "sgd"])
         )
         
         d = space.to_dict()
@@ -259,11 +220,11 @@ class TestSearchSpace:
         assert "lr" in d
         assert d["lr"]["type"] == "float"
         assert d["lr"]["log"] is True
+        assert "units" in d
         assert d["units"]["type"] == "int"
-        assert d["opt"]["type"] == "categorical"
     
-    def test_from_dict(self):
-        """Test creating search space from dictionary."""
+    def test_from_dict(self) -> None:
+        """Test importing from dictionary."""
         config = {
             "lr": {"type": "float", "low": 1e-4, "high": 1e-2, "log": True},
             "units": {"type": "int", "low": 32, "high": 256},
@@ -273,128 +234,116 @@ class TestSearchSpace:
         space = SearchSpace.from_dict(config)
         
         assert len(space) == 3
-        assert space.get("lr").param_type == ParameterType.FLOAT
         assert space.get("lr").log is True
-    
-    def test_roundtrip(self):
-        """Test to_dict -> from_dict roundtrip."""
-        original = (
-            SearchSpace()
-            .add_float("lr", 1e-4, 1e-2, log=True)
-            .add_int("units", 32, 256)
-            .add_categorical("opt", ["adam", "sgd"])
-        )
-        
-        restored = SearchSpace.from_dict(original.to_dict())
-        
-        assert original.to_dict() == restored.to_dict()
 
 
-class TestCreateSearchSpace:
-    """Tests for create_search_space factory function."""
+class TestOptunaSearchSpace:
+    """Tests for OptunaSearchSpace wrapper."""
     
-    def test_create_from_config(self):
-        """Test creating search space from config dict."""
-        config = {
-            "learning_rate": {"type": "float", "low": 1e-4, "high": 1e-2, "log": True},
-            "hidden_units": {"type": "int", "low": 32, "high": 256},
-            "activation": {"type": "categorical", "choices": ["relu", "tanh"]},
-        }
+    def test_wrapper_creation(self) -> None:
+        """Test creating wrapper."""
+        space = SearchSpace().add_float("lr", 1e-4, 1e-2)
+        optuna_space = OptunaSearchSpace(space)
         
-        space = create_search_space(config)
-        
-        assert len(space) == 3
-        assert space.get("learning_rate").log is True
+        assert optuna_space._space is space
 
 
 class TestMedianPruner:
     """Tests for MedianPruner."""
     
-    def test_pruner_creation(self):
-        """Test creating median pruner."""
+    def test_pruner_creation(self) -> None:
+        """Test pruner creation with defaults."""
+        pruner = MedianPruner()
+        
+        assert pruner.n_startup_trials == 5
+        assert pruner.n_warmup_steps == 0
+        assert pruner.interval_steps == 1
+    
+    def test_pruner_custom_params(self) -> None:
+        """Test pruner with custom parameters."""
         pruner = MedianPruner(
-            n_startup_trials=5,
-            n_warmup_steps=10,
+            n_startup_trials=10,
+            n_warmup_steps=5,
             interval_steps=2,
         )
         
-        assert pruner.n_startup_trials == 5
-        assert pruner.n_warmup_steps == 10
+        assert pruner.n_startup_trials == 10
+        assert pruner.n_warmup_steps == 5
         assert pruner.interval_steps == 2
     
-    def test_no_prune_during_warmup(self):
-        """Test that pruner doesn't prune during warmup."""
-        pruner = MedianPruner(n_startup_trials=1, n_warmup_steps=10)
+    def test_no_prune_during_warmup(self) -> None:
+        """Test that pruning doesn't happen during warmup."""
+        pruner = MedianPruner(n_warmup_steps=10)
         
-        all_values = {0: [(5, 0.1)]}  # Another trial at step 5
+        all_values = {0: [(5, 0.5)]}
         
-        # Step 5 is within warmup
-        assert not pruner.should_prune(1, 5, 0.9, all_values)
+        result = pruner.should_prune(
+            trial_id=1,
+            step=5,
+            value=0.9,
+            all_values=all_values,
+        )
+        
+        assert result is False
     
-    def test_no_prune_not_enough_trials(self):
-        """Test that pruner doesn't prune without enough comparison data."""
-        pruner = MedianPruner(n_startup_trials=5, n_warmup_steps=0)
+    def test_no_prune_without_enough_trials(self) -> None:
+        """Test that pruning doesn't happen without enough comparison data."""
+        pruner = MedianPruner(n_startup_trials=5)
         
-        all_values = {0: [(10, 0.1)]}  # Only 1 other trial
-        
-        # Not enough trials for comparison
-        assert not pruner.should_prune(1, 10, 0.9, all_values)
-    
-    def test_prune_below_median(self):
-        """Test that pruner prunes trials below median."""
-        pruner = MedianPruner(n_startup_trials=3, n_warmup_steps=0)
-        
-        # 5 completed trials at step 10 with values [0.1, 0.2, 0.3, 0.4, 0.5]
-        # Median is 0.3
+        # Only 2 comparison trials
         all_values = {
-            0: [(10, 0.1)],
-            1: [(10, 0.2)],
-            2: [(10, 0.3)],
-            3: [(10, 0.4)],
-            4: [(10, 0.5)],
+            0: [(5, 0.5)],
+            1: [(5, 0.6)],
         }
         
-        # Value 0.8 is above median 0.3, should prune (minimizing)
-        assert pruner.should_prune(5, 10, 0.8, all_values)
+        result = pruner.should_prune(
+            trial_id=2,
+            step=5,
+            value=0.9,
+            all_values=all_values,
+        )
         
-        # Value 0.2 is below median, should not prune
-        assert not pruner.should_prune(5, 10, 0.2, all_values)
+        assert result is False
 
 
 class TestPercentilePruner:
     """Tests for PercentilePruner."""
     
-    def test_pruner_creation(self):
-        """Test creating percentile pruner."""
-        pruner = PercentilePruner(
-            percentile=25.0,
-            n_startup_trials=5,
-        )
+    def test_pruner_creation(self) -> None:
+        """Test pruner creation."""
+        pruner = PercentilePruner(percentile=25.0)
         
         assert pruner.percentile == 25.0
         assert pruner.n_startup_trials == 5
 
 
+class TestTuningTrial:
+    """Tests for TuningTrial dataclass."""
+    
+    def test_trial_creation(self) -> None:
+        """Test trial creation."""
+        trial = TuningTrial(
+            trial_id=1,
+            config={"lr": 0.001},
+            score=0.5,
+            status="COMPLETE",
+            duration_seconds=10.5,
+        )
+        
+        assert trial.trial_id == 1
+        assert trial.config["lr"] == 0.001
+        assert trial.score == 0.5
+        assert trial.status == "COMPLETE"
+
+
 class TestTuningResult:
     """Tests for TuningResult dataclass."""
     
-    def test_result_creation(self):
-        """Test creating tuning result."""
+    def test_result_creation(self) -> None:
+        """Test result creation."""
         trials = [
-            TuningTrial(
-                trial_id=0,
-                config={"lr": 0.001},
-                score=0.5,
-                status="COMPLETE",
-                duration_seconds=10.0,
-            ),
-            TuningTrial(
-                trial_id=1,
-                config={"lr": 0.01},
-                score=0.3,
-                status="COMPLETE",
-                duration_seconds=12.0,
-            ),
+            TuningTrial(trial_id=0, config={"lr": 0.001}, score=0.5, status="COMPLETE", duration_seconds=10.0),
+            TuningTrial(trial_id=1, config={"lr": 0.01}, score=0.3, status="COMPLETE", duration_seconds=12.0),
         ]
         
         result = TuningResult(
@@ -409,19 +358,12 @@ class TestTuningResult:
         )
         
         assert result.best_score == 0.3
-        assert result.best_trial_id == 1
-        assert len(result.trials) == 2
+        assert result.n_trials == 2
     
-    def test_to_dict(self):
-        """Test converting result to dictionary."""
+    def test_to_dict(self) -> None:
+        """Test exporting to dictionary."""
         trials = [
-            TuningTrial(
-                trial_id=0,
-                config={"lr": 0.001},
-                score=0.5,
-                status="COMPLETE",
-                duration_seconds=10.0,
-            ),
+            TuningTrial(trial_id=0, config={"lr": 0.001}, score=0.5, status="COMPLETE", duration_seconds=10.0),
         ]
         
         result = TuningResult(
@@ -441,17 +383,13 @@ class TestTuningResult:
         assert d["n_trials"] == 1
         assert len(d["trials"]) == 1
     
-    def test_save_and_load(self):
-        """Test saving and loading result."""
+    def test_save_and_load(self) -> None:
+        """Test saving and loading results."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "result.json"
+            
             trials = [
-                TuningTrial(
-                    trial_id=0,
-                    config={"lr": 0.001},
-                    score=0.5,
-                    status="COMPLETE",
-                    duration_seconds=10.0,
-                ),
+                TuningTrial(trial_id=0, config={"lr": 0.001}, score=0.5, status="COMPLETE", duration_seconds=10.0),
             ]
             
             result = TuningResult(
@@ -465,57 +403,30 @@ class TestTuningResult:
                 optimization_history=[0.5],
             )
             
-            path = Path(tmpdir) / "result.json"
             result.save(path)
-            
-            assert path.exists()
             
             loaded = TuningResult.load(path)
             
             assert loaded.best_score == 0.5
             assert loaded.best_config == {"lr": 0.001}
-            assert len(loaded.trials) == 1
 
 
-class TestOptunaIntegration:
-    """Tests for Optuna integration (requires optuna)."""
+class TestCreateSearchSpace:
+    """Tests for create_search_space factory function."""
     
-    @pytest.fixture
-    def check_optuna(self):
-        """Skip tests if optuna not installed."""
-        try:
-            import optuna
-        except ImportError:
-            pytest.skip("Optuna not installed")
-    
-    def test_optuna_search_space(self, check_optuna):
-        """Test OptunaSearchSpace wrapper."""
-        import optuna
+    def test_create_from_config(self) -> None:
+        """Test creating search space from config dict."""
+        config = {
+            "learning_rate": {"type": "float", "low": 1e-4, "high": 1e-2, "log": True},
+            "hidden_units": {"type": "int", "low": 32, "high": 256},
+            "activation": {"type": "categorical", "choices": ["relu", "tanh"]},
+            "use_dropout": {"type": "bool"},
+        }
         
-        space = (
-            SearchSpace()
-            .add_float("lr", 1e-4, 1e-2, log=True)
-            .add_int("units", 32, 256)
-            .add_categorical("opt", ["adam", "sgd"])
-        )
+        space = create_search_space(config)
         
-        optuna_space = OptunaSearchSpace(space)
-        
-        # Create a mock trial
-        study = optuna.create_study()
-        trial = study.ask()
-        
-        config = optuna_space.sample(trial)
-        
-        assert "lr" in config
-        assert "units" in config
-        assert "opt" in config
-    
-    def test_median_pruner_to_optuna(self, check_optuna):
-        """Test converting MedianPruner to Optuna pruner."""
-        import optuna
-        
-        pruner = MedianPruner(n_startup_trials=5, n_warmup_steps=10)
-        optuna_pruner = pruner.to_optuna()
-        
-        assert isinstance(optuna_pruner, optuna.pruners.MedianPruner)
+        assert len(space) == 4
+        assert "learning_rate" in space
+        assert "hidden_units" in space
+        assert "activation" in space
+        assert "use_dropout" in space

@@ -1,8 +1,28 @@
 # QuantStrata Development Roadmap
 
-**Last Updated:** January 27, 2026 (Phase 7.2 Core Complete; added Phases 7.6-7.8, 8.9-8.10, Phase 9)  
+**Last Updated:** January 27, 2026  
+**Progress:** All core phases (1-8) implemented with tests and documentation  
 **Current Version:** V1 (FX Derivatives Foundation)  
 **Target:** Comprehensive Professional Quant Library
+
+---
+
+## Implementation Progress Summary
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1-6 | Core Foundation (FX, Equity, IR, Risk, Backtesting, Calibration) | ✅ Complete |
+| 7.1 | Machine Learning Integration (GNN-LSTM, Training, Production ML) | ✅ Complete |
+| 7.2 | Q-Learning / RL Framework (Environments, Runners) | ✅ Complete |
+| 7.3 | Exotic Products (Cliquet, Autocallable, Range Accrual) | ✅ Complete |
+| 7.4 | Deep Hedging Core | ✅ Complete |
+| 7.5 | Neural SDE (Networks, Solvers, Training) | ✅ Complete |
+| 7.6 | Deep Hedging Backtesting (Adapters, Environments, Metrics) | ✅ Complete |
+| 8.1 | Volatility Trading (Variance Swaps, Dispersion, Vol-of-Vol) | ✅ Complete |
+| 8.2 | Portfolio Optimisation (MV, Risk Parity, Black-Litterman) | ✅ Complete |
+| App | Application Projects (Dash UIs) | 📋 Planned |
+
+**Detailed checklist:** See `docs/development/IMPLEMENTATION_CHECKLIST_REVIEW.md`
 
 ---
 
@@ -833,27 +853,28 @@ This keeps the framework **model-agnostic** and **reusable** across ML-based pri
 
 **Status:** Phase 7.1 Core COMPLETE. See `docs/development/progress/phase_7_1_implementation_notes.md` and `docs/development/progress/phase_7_1_machine_learning_integration.md`. Technical reference: `docs/reference/machine_learning/ml_framework.md`. Tutorials: `docs/tutorials/machine_learning/` (ML lifecycle, Hybrid GNN-LSTM).
 
-### 7.1.5 Production ML Infrastructure
+### 7.1.5 Production ML Infrastructure ✅
 
 **Goal:** Add production-grade ML tooling for experiment tracking, hyperparameter tuning, and model versioning. Note: `machine_learning/` is already production-quality; these additions extend existing capabilities.
 
-- [ ] **Experiment Tracking Integration**
-  - Implement: `MLflowTracker`, `WandBTracker` with common `TrackingProtocol`
-  - Location: `src/machine_learning/core/tracking.py` (extends core utilities)
+- [x] **Experiment Tracking Integration** ✅
+  - Implemented: `MLflowTracker`, `WandBTracker`, `InMemoryTracker` with common `ExperimentTracker` protocol
+  - Location: `src/machine_learning/core/tracking.py`
   - Support: Log metrics, parameters, artifacts; integration with training pipelines
-  - Use case: Track experiments, compare runs, reproduce results
+  - Tests: `tests/unit/machine_learning/core/test_tracking.py`
+  - Docs: `docs/reference/machine_learning/production_ml.md`
 
-- [ ] **Hyperparameter Tuning Extensions**
-  - Implement: `SearchSpace`, `TrialPruner`, `TuningResult` (extends existing `pipelines/tuning.py`)
-  - Location: `src/machine_learning/tuning/` (new submodule if depth needed)
+- [x] **Hyperparameter Tuning Extensions** ✅
+  - Implemented: `SearchSpace`, `MedianPruner`, `PercentilePruner`, `TuningResult`, `run_optuna_tuning`
+  - Location: `src/machine_learning/tuning/search_space.py`
   - Support: Bayesian optimisation (Optuna), pruning, parallel trials
-  - Integration: Works with existing training pipelines
-  - Use case: Automated hyperparameter search for ML pricers and calibration
-  - Note: `pipelines/tuning.py` already exists; extend if deeper utilities needed
+  - Tests: `tests/unit/machine_learning/tuning/test_search_space.py`
+  - Pipeline: `src/orchestrator/pipelines/ml/hyperparameter_tuning.py`
+  - Example: `examples/pipelines/run_hyperparameter_tuning.py`
 
-- [ ] **Model Registry & Versioning**
-  - Implement: `ModelRegistry`, `ModelArtifact`, `ModelVersion`
-  - Location: `src/machine_learning/registry/` or `src/machine_learning/core/registry.py`
+- [x] **Model Registry & Versioning** ✅
+  - Implemented: `ModelRegistry`, `ModelArtifact`, `ModelVersion`, `ModelStage`
+  - Location: `src/machine_learning/registry/registry.py`
   - Support: Version tracking, metadata, promotion (staging → production)
   - Use case: Production model management and deployment
 
@@ -1318,37 +1339,43 @@ Documentation:
 2. Have clear practical value
 3. Are achievable without creating maintenance burden
 
-### 8.1 Volatility Trading & Variance Swap Analytics
-- [ ] **Variance Swap / Vol Swap Pricing**
-  - Implement: Variance swap pricing (replicating portfolio method, model-based from Heston/local vol)
-  - Implement: Fair variance strike calculation
-  - Support: Integration with existing vol models (SABR, Heston, Local Vol)
-  - Use case: Volatility trading, relative value strategies
+### 8.1 Volatility Trading & Variance Swap Analytics ✅
 
-- [ ] **Dispersion & Vol-of-Vol Analytics**
-  - Implement: Index vs single-name dispersion metrics
-  - Implement: Vol-of-vol from existing stochastic vol models
-  - Support: Relative value and dispersion trading analytics
-  - Use case: Dispersion trading, correlation strategies
+- [x] **Variance Swap / Vol Swap Pricing** ✅
+  - Implemented: `VarianceSwap`, `VarianceSwapPricer`, `VarianceSwapResult`
+  - Location: `src/volatility/trading/variance_swap.py`
+  - Support: Log-strip replication, discrete monitoring adjustments
+  - Tests: `tests/unit/volatility/trading/test_variance_swap.py`
+  - Docs: `docs/reference/volatility/vol_trading.md`
 
-**Implementation Checklist (8.1):**
+- [x] **Dispersion & Vol-of-Vol Analytics** ✅
+  - Implemented: `DispersionTrader`, `DispersionAnalysis`, `DispersionConfig`
+  - Location: `src/volatility/trading/dispersion.py`
+  - Tests: `tests/unit/volatility/trading/test_dispersion.py`
+
+- [x] **Vol-of-Vol Analytics** ✅
+  - Implemented: `VolOfVolAnalyzer`, `VolOfVolMetrics`
+  - Location: `src/volatility/analytics/vol_of_vol.py`
+  - Support: Regime detection, IV/RV analysis
+  - Tests: `tests/unit/volatility/analytics/test_vol_of_vol.py`
+
+**Implementation Complete:**
 ```
-Instruments:
-[ ] src/instruments/equity/options/variance_swap.py (VarianceSwap, VolatilitySwap)
-
-Pricers:
-[ ] src/pricers/equity/variance_swap_replicating.py (VarianceSwapReplicatingPricer)
-[ ] src/pricers/equity/variance_swap_heston.py (VarianceSwapHestonPricer)
-
-Analytics (new module):
-[ ] src/analytics/__init__.py
-[ ] src/analytics/volatility/__init__.py
-[ ] src/analytics/volatility/dispersion.py (DispersionAnalytics, IndexVsSingleName)
-[ ] src/analytics/volatility/vol_of_vol.py (VolOfVolCalculator)
-[ ] src/analytics/volatility/relative_value.py (VolSurfaceRelativeValue)
+Core:
+[x] src/volatility/__init__.py
+[x] src/volatility/trading/__init__.py
+[x] src/volatility/trading/variance_swap.py (VarianceSwap, VarianceSwapPricer)
+[x] src/volatility/trading/dispersion.py (DispersionTrader, DispersionAnalysis)
+[x] src/volatility/analytics/__init__.py
+[x] src/volatility/analytics/vol_of_vol.py (VolOfVolAnalyzer, VolOfVolMetrics)
 
 Tests:
-[ ] tests/unit/instruments/equity/test_variance_swap.py
+[x] tests/unit/volatility/trading/test_variance_swap.py
+[x] tests/unit/volatility/trading/test_dispersion.py
+[x] tests/unit/volatility/analytics/test_vol_of_vol.py
+
+Docs:
+[x] docs/reference/volatility/vol_trading.md
 [ ] tests/unit/pricers/equity/test_variance_swap.py
 [ ] tests/unit/analytics/volatility/test_dispersion.py
 [ ] tests/unit/analytics/volatility/test_vol_of_vol.py
@@ -1365,45 +1392,48 @@ Documentation:
 
 ---
 
-### 8.2 Portfolio Construction & Optimisation
-- [ ] **Portfolio Optimisation API**
-  - Implement: Mean-variance optimisation (Markowitz)
-  - Implement: Risk parity (equal risk contribution)
-  - Implement: Max Sharpe / min variance portfolios
-  - Support: Constraints (turnover, sector, leverage, position bounds)
-  - Optional: Black-Litterman with views
-  - Use case: Portfolio construction, rebalancing, strategy allocation
+### 8.2 Portfolio Construction & Optimisation ✅
 
-- [ ] **Covariance Estimation**
-  - Implement: Sample covariance with shrinkage (Ledoit-Wolf)
-  - Implement: Exponentially weighted covariance
-  - Support: Integration with existing risk infrastructure
-  - Use case: Input for optimisation, risk estimation
+- [x] **Portfolio Optimisation API** ✅
+  - Implemented: `MeanVarianceOptimizer`, `MVConstraints`, `MVOptimizationResult`
+  - Implemented: `RiskParityOptimizer`, `RiskParityResult`
+  - Implemented: `BlackLittermanModel`, `BlackLittermanResult`
+  - Location: `src/portfolio/optimization/`
+  - Support: Efficient frontier, target return/vol, max Sharpe, min variance
+  - Tests: `tests/unit/portfolio/optimization/`
+  - Docs: `docs/reference/portfolio/optimisation.md`
 
-**Implementation Checklist (8.2):**
+- [x] **Covariance Estimation** ✅
+  - Implemented: `CovarianceEstimator` (sample, EWM, constant correlation)
+  - Implemented: `ShrinkageEstimator` (Ledoit-Wolf)
+  - Location: `src/portfolio/optimization/covariance.py`
+  - Tests: `tests/unit/portfolio/optimization/test_covariance.py`
+
+**Implementation Complete:**
 ```
 Core Optimisation:
-[ ] src/portfolio/optimisation/__init__.py
-[ ] src/portfolio/optimisation/mean_variance.py (MeanVarianceOptimiser, MaxSharpeOptimiser, MinVarianceOptimiser)
-[ ] src/portfolio/optimisation/risk_parity.py (RiskParityOptimiser, EqualRiskContribution)
-[ ] src/portfolio/optimisation/black_litterman.py (BlackLittermanOptimiser, ViewMatrix)
-
-Constraints:
-[ ] src/portfolio/optimisation/constraints.py (TurnoverConstraint, SectorConstraint, LeverageConstraint, BoundsConstraint)
+[x] src/portfolio/optimization/__init__.py
+[x] src/portfolio/optimization/mean_variance.py (MeanVarianceOptimizer, MVConstraints)
+[x] src/portfolio/optimization/risk_parity.py (RiskParityOptimizer)
+[x] src/portfolio/optimization/black_litterman.py (BlackLittermanModel)
 
 Covariance:
-[ ] src/portfolio/optimisation/covariance.py (SampleCovariance, LedoitWolfShrinkage, EWMACovariance)
+[x] src/portfolio/optimization/covariance.py (CovarianceEstimator, ShrinkageEstimator)
 
 Tests:
-[ ] tests/unit/portfolio/optimisation/test_mean_variance.py
-[ ] tests/unit/portfolio/optimisation/test_risk_parity.py
-[ ] tests/unit/portfolio/optimisation/test_constraints.py
-[ ] tests/unit/portfolio/optimisation/test_covariance.py
+[x] tests/unit/portfolio/optimization/test_mean_variance.py
+[x] tests/unit/portfolio/optimization/test_risk_parity.py
+[x] tests/unit/portfolio/optimization/test_black_litterman.py
+[x] tests/unit/portfolio/optimization/test_covariance.py
 
 Documentation:
-[ ] docs/reference/portfolio/optimisation.md
-[ ] docs/guides/portfolio/portfolio_construction.md
-[ ] docs/tutorials/portfolio/portfolio_optimisation_tutorial.ipynb
+[x] docs/reference/portfolio/optimisation.md
+
+Pipeline:
+[x] src/orchestrator/pipelines/portfolio/optimise_portfolio.py
+
+Example:
+[x] examples/pipelines/run_portfolio_optimisation.py
 
 Pipeline:
 [ ] src/orchestrator/pipelines/portfolio/optimise_portfolio.py

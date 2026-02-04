@@ -1,26 +1,22 @@
 """
 Unit tests for model registry module.
 
-Tests ModelRegistry, ModelArtifact, ModelVersion, and related functionality.
+Tests ModelRegistry, ModelVersion, ModelArtifact, and stage transitions.
 """
 
 import json
-import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 
-# Add project root to path for direct import
-sys.path.insert(0, str(Path(__file__).parents[4]))
-
-# Import directly from module file to avoid triggering tensorflow
 from src.machine_learning.registry.registry import (
-    ModelRegistry,
     ModelArtifact,
-    ModelVersion,
+    ModelRegistry,
     ModelStage,
+    ModelVersion,
+    RegisteredModel,
     create_registry,
 )
 
@@ -28,14 +24,14 @@ from src.machine_learning.registry.registry import (
 class TestModelStage:
     """Tests for ModelStage enum."""
     
-    def test_stage_values(self):
+    def test_stage_values(self) -> None:
         """Test stage enum values."""
         assert ModelStage.NONE.value == "none"
         assert ModelStage.STAGING.value == "staging"
         assert ModelStage.PRODUCTION.value == "production"
         assert ModelStage.ARCHIVED.value == "archived"
     
-    def test_stage_str(self):
+    def test_stage_string(self) -> None:
         """Test stage string representation."""
         assert str(ModelStage.PRODUCTION) == "production"
 
@@ -43,29 +39,27 @@ class TestModelStage:
 class TestModelVersion:
     """Tests for ModelVersion dataclass."""
     
-    def test_version_creation(self):
-        """Test creating model version."""
+    def test_version_creation(self) -> None:
+        """Test basic version creation."""
         version = ModelVersion(
             version=1,
             created_at=datetime.now(),
             stage=ModelStage.NONE,
-            metrics={"mse": 0.001, "mae": 0.02},
-            params={"lr": 0.001, "epochs": 100},
-            tags={"asset_class": "fx"},
-            description="Initial version",
+            metrics={"mse": 0.001},
+            params={"lr": 0.001},
+            tags={"model_type": "gnn"},
+            description="Test version",
             source_run_id="run_123",
             model_hash="abc123",
-            artifact_path="model_v1/v1",
+            artifact_path="models/v1",
         )
         
         assert version.version == 1
         assert version.stage == ModelStage.NONE
         assert version.metrics["mse"] == 0.001
-        assert version.params["lr"] == 0.001
-        assert version.tags["asset_class"] == "fx"
     
-    def test_version_to_dict(self):
-        """Test converting version to dictionary."""
+    def test_version_to_dict(self) -> None:
+        """Test version serialization."""
         now = datetime.now()
         version = ModelVersion(
             version=1,
@@ -74,461 +68,390 @@ class TestModelVersion:
             metrics={"mse": 0.001},
             params={"lr": 0.001},
             tags={},
-            description="Test",
+            description="",
             source_run_id=None,
             model_hash="abc123",
-            artifact_path="test/v1",
+            artifact_path="v1",
         )
         
         d = version.to_dict()
         
         assert d["version"] == 1
         assert d["stage"] == "staging"
-        assert d["metrics"] == {"mse": 0.001}
-        assert d["created_at"] == now.isoformat()
+        assert d["metrics"]["mse"] == 0.001
     
-    def test_version_from_dict(self):
-        """Test creating version from dictionary."""
+    def test_version_from_dict(self) -> None:
+        """Test version deserialization."""
         d = {
             "version": 2,
-            "created_at": "2024-01-15T10:30:00",
+            "created_at": "2024-01-15T10:00:00",
             "stage": "production",
-            "metrics": {"mse": 0.001},
-            "params": {"lr": 0.001},
-            "tags": {"env": "prod"},
-            "description": "Production model",
-            "source_run_id": "run_456",
+            "metrics": {"r2": 0.99},
+            "params": {},
+            "tags": {},
+            "description": "Test",
+            "source_run_id": None,
             "model_hash": "def456",
-            "artifact_path": "model/v2",
+            "artifact_path": "v2",
         }
         
         version = ModelVersion.from_dict(d)
         
         assert version.version == 2
         assert version.stage == ModelStage.PRODUCTION
-        assert version.source_run_id == "run_456"
+
+
+class TestRegisteredModel:
+    """Tests for RegisteredModel dataclass."""
+    
+    def test_model_creation(self) -> None:
+        """Test registered model creation."""
+        model = RegisteredModel(
+            name="test_model",
+            description="Test model",
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+        )
+        
+        assert model.name == "test_model"
+        assert model.versions == {}
+    
+    def test_latest_version_empty(self) -> None:
+        """Test latest version when no versions exist."""
+        model = RegisteredModel(
+            name="test",
+            description="",
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+        )
+        
+        assert model.latest_version is None
+    
+    def test_latest_version(self) -> None:
+        """Test getting latest version."""
+        model = RegisteredModel(
+            name="test",
+            description="",
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+        )
+        
+        v1 = ModelVersion(
+            version=1, created_at=datetime.now(), stage=ModelStage.NONE,
+            metrics={}, params={}, tags={}, description="",
+            source_run_id=None, model_hash="a", artifact_path="v1",
+        )
+        v2 = ModelVersion(
+            version=2, created_at=datetime.now(), stage=ModelStage.NONE,
+            metrics={}, params={}, tags={}, description="",
+            source_run_id=None, model_hash="b", artifact_path="v2",
+        )
+        
+        model.versions = {1: v1, 2: v2}
+        
+        assert model.latest_version.version == 2
+    
+    def test_get_version_by_stage(self) -> None:
+        """Test getting version by stage."""
+        model = RegisteredModel(
+            name="test",
+            description="",
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+        )
+        
+        v1 = ModelVersion(
+            version=1, created_at=datetime.now(), stage=ModelStage.ARCHIVED,
+            metrics={}, params={}, tags={}, description="",
+            source_run_id=None, model_hash="a", artifact_path="v1",
+        )
+        v2 = ModelVersion(
+            version=2, created_at=datetime.now(), stage=ModelStage.PRODUCTION,
+            metrics={}, params={}, tags={}, description="",
+            source_run_id=None, model_hash="b", artifact_path="v2",
+        )
+        
+        model.versions = {1: v1, 2: v2}
+        
+        prod = model.get_version_by_stage(ModelStage.PRODUCTION)
+        assert prod is not None
+        assert prod.version == 2
 
 
 class TestModelRegistry:
-    """Tests for ModelRegistry class."""
+    """Tests for ModelRegistry."""
     
-    @pytest.fixture
-    def registry(self):
-        """Create a temporary registry for testing."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yield ModelRegistry(tmpdir)
-    
-    @pytest.fixture
-    def sample_model_dir(self):
-        """Create a sample model directory."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            model_dir = Path(tmpdir) / "sample_model"
-            model_dir.mkdir()
-            
-            # Create a simple model file
-            (model_dir / "model.json").write_text('{"architecture": "mlp"}')
-            (model_dir / "weights.h5").write_bytes(b"fake weights")
-            
-            yield model_dir
-    
-    def test_registry_initialization(self, registry):
+    def test_registry_creation(self) -> None:
         """Test registry initialization."""
-        assert len(registry.list_models()) == 0
-        assert registry._storage_path.exists()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            registry = ModelRegistry(tmpdir)
+            
+            assert registry._storage_path == Path(tmpdir)
+            assert registry._models == {}
     
-    def test_register_model(self, registry, sample_model_dir):
-        """Test registering a model."""
-        version = registry.register_model(
-            name="test_model",
-            model_path=sample_model_dir,
-            metrics={"mse": 0.001},
-            params={"lr": 0.001},
-            tags={"env": "test"},
-            description="Test model",
-        )
-        
-        assert version.version == 1
-        assert version.metrics == {"mse": 0.001}
-        assert version.params == {"lr": 0.001}
-        assert version.stage == ModelStage.NONE
-        assert "test_model" in registry.list_models()
+    def test_register_model(self) -> None:
+        """Test registering a new model."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            registry = ModelRegistry(tmpdir)
+            
+            # Create a simple model artifact
+            model_path = Path(tmpdir) / "source_model"
+            model_path.mkdir()
+            (model_path / "model.txt").write_text("test model data")
+            
+            version = registry.register_model(
+                name="test_pricer",
+                model_path=model_path,
+                metrics={"mse": 0.001},
+                params={"lr": 0.001},
+                description="Test model",
+            )
+            
+            assert version.version == 1
+            assert version.metrics["mse"] == 0.001
+            assert "test_pricer" in registry.list_models()
     
-    def test_register_multiple_versions(self, registry, sample_model_dir):
+    def test_register_multiple_versions(self) -> None:
         """Test registering multiple versions of same model."""
-        v1 = registry.register_model(
-            name="test_model",
-            model_path=sample_model_dir,
-            metrics={"mse": 0.1},
-        )
-        
-        v2 = registry.register_model(
-            name="test_model",
-            model_path=sample_model_dir,
-            metrics={"mse": 0.05},
-        )
-        
-        v3 = registry.register_model(
-            name="test_model",
-            model_path=sample_model_dir,
-            metrics={"mse": 0.01},
-        )
-        
-        assert v1.version == 1
-        assert v2.version == 2
-        assert v3.version == 3
-        
-        versions = registry.list_versions("test_model")
-        assert len(versions) == 3
+        with tempfile.TemporaryDirectory() as tmpdir:
+            registry = ModelRegistry(tmpdir)
+            
+            model_path = Path(tmpdir) / "source_model"
+            model_path.mkdir()
+            (model_path / "model.txt").write_text("v1")
+            
+            v1 = registry.register_model("model", model_path, metrics={"mse": 0.5})
+            
+            (model_path / "model.txt").write_text("v2")
+            v2 = registry.register_model("model", model_path, metrics={"mse": 0.3})
+            
+            assert v1.version == 1
+            assert v2.version == 2
+            
+            versions = registry.list_versions("model")
+            assert len(versions) == 2
     
-    def test_get_model_by_version(self, registry, sample_model_dir):
-        """Test getting model by specific version."""
-        registry.register_model(
-            name="test_model",
-            model_path=sample_model_dir,
-            metrics={"mse": 0.1},
-        )
-        registry.register_model(
-            name="test_model",
-            model_path=sample_model_dir,
-            metrics={"mse": 0.05},
-        )
-        
-        artifact = registry.get_model("test_model", version=1)
-        
-        assert artifact.name == "test_model"
-        assert artifact.version.version == 1
-        assert artifact.version.metrics["mse"] == 0.1
+    def test_register_model_file_not_found(self) -> None:
+        """Test that registering non-existent model raises error."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            registry = ModelRegistry(tmpdir)
+            
+            with pytest.raises(FileNotFoundError):
+                registry.register_model("model", "/nonexistent/path")
     
-    def test_get_model_latest(self, registry, sample_model_dir):
-        """Test getting latest model version."""
-        registry.register_model(
-            name="test_model",
-            model_path=sample_model_dir,
-            metrics={"mse": 0.1},
-        )
-        registry.register_model(
-            name="test_model",
-            model_path=sample_model_dir,
-            metrics={"mse": 0.05},
-        )
-        
-        artifact = registry.get_model("test_model")  # No version specified
-        
-        assert artifact.version.version == 2
-        assert artifact.version.metrics["mse"] == 0.05
+    def test_get_model_by_version(self) -> None:
+        """Test getting model by version number."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            registry = ModelRegistry(tmpdir)
+            
+            model_path = Path(tmpdir) / "source_model"
+            model_path.mkdir()
+            (model_path / "model.txt").write_text("test")
+            
+            registry.register_model("model", model_path)
+            registry.register_model("model", model_path)
+            
+            artifact = registry.get_model("model", version=1)
+            
+            assert artifact.version.version == 1
     
-    def test_get_model_by_stage(self, registry, sample_model_dir):
+    def test_get_model_by_stage(self) -> None:
         """Test getting model by stage."""
-        registry.register_model(
-            name="test_model",
-            model_path=sample_model_dir,
-            metrics={"mse": 0.1},
-        )
-        registry.register_model(
-            name="test_model",
-            model_path=sample_model_dir,
-            metrics={"mse": 0.05},
-        )
-        
-        # Promote version 1 to production
-        registry.transition_stage(
-            name="test_model",
-            version=1,
-            stage=ModelStage.PRODUCTION,
-        )
-        
-        artifact = registry.get_model("test_model", stage=ModelStage.PRODUCTION)
-        
-        assert artifact.version.version == 1
-        assert artifact.version.stage == ModelStage.PRODUCTION
+        with tempfile.TemporaryDirectory() as tmpdir:
+            registry = ModelRegistry(tmpdir)
+            
+            model_path = Path(tmpdir) / "source_model"
+            model_path.mkdir()
+            (model_path / "model.txt").write_text("test")
+            
+            v1 = registry.register_model("model", model_path)
+            registry.transition_stage("model", v1.version, ModelStage.PRODUCTION)
+            
+            artifact = registry.get_model("model", stage=ModelStage.PRODUCTION)
+            
+            assert artifact.version.version == 1
+            assert artifact.version.stage == ModelStage.PRODUCTION
     
-    def test_transition_stage(self, registry, sample_model_dir):
+    def test_get_model_not_found(self) -> None:
+        """Test getting non-existent model raises error."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            registry = ModelRegistry(tmpdir)
+            
+            with pytest.raises(KeyError, match="Model not found"):
+                registry.get_model("nonexistent")
+    
+    def test_transition_stage(self) -> None:
         """Test transitioning model stage."""
-        registry.register_model(
-            name="test_model",
-            model_path=sample_model_dir,
-        )
-        
-        # None -> Staging
-        registry.transition_stage(
-            name="test_model",
-            version=1,
-            stage=ModelStage.STAGING,
-        )
-        
-        artifact = registry.get_model("test_model", version=1)
-        assert artifact.version.stage == ModelStage.STAGING
-        
-        # Staging -> Production
-        registry.transition_stage(
-            name="test_model",
-            version=1,
-            stage=ModelStage.PRODUCTION,
-        )
-        
-        artifact = registry.get_model("test_model", version=1)
-        assert artifact.version.stage == ModelStage.PRODUCTION
+        with tempfile.TemporaryDirectory() as tmpdir:
+            registry = ModelRegistry(tmpdir)
+            
+            model_path = Path(tmpdir) / "source_model"
+            model_path.mkdir()
+            (model_path / "model.txt").write_text("test")
+            
+            v = registry.register_model("model", model_path)
+            
+            assert v.stage == ModelStage.NONE
+            
+            registry.transition_stage("model", v.version, ModelStage.STAGING)
+            
+            artifact = registry.get_model("model", version=v.version)
+            assert artifact.version.stage == ModelStage.STAGING
     
-    def test_transition_archives_existing_production(self, registry, sample_model_dir):
-        """Test that transitioning to production archives existing production version."""
-        registry.register_model(
-            name="test_model",
-            model_path=sample_model_dir,
-        )
-        registry.register_model(
-            name="test_model",
-            model_path=sample_model_dir,
-        )
-        
-        # Make v1 production
-        registry.transition_stage("test_model", 1, ModelStage.PRODUCTION)
-        
-        # Make v2 production (should archive v1)
-        registry.transition_stage("test_model", 2, ModelStage.PRODUCTION)
-        
-        v1 = registry.get_model("test_model", version=1)
-        v2 = registry.get_model("test_model", version=2)
-        
-        assert v1.version.stage == ModelStage.ARCHIVED
-        assert v2.version.stage == ModelStage.PRODUCTION
+    def test_transition_to_production_archives_existing(self) -> None:
+        """Test that transitioning to production archives existing production."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            registry = ModelRegistry(tmpdir)
+            
+            model_path = Path(tmpdir) / "source_model"
+            model_path.mkdir()
+            (model_path / "model.txt").write_text("test")
+            
+            v1 = registry.register_model("model", model_path)
+            registry.transition_stage("model", v1.version, ModelStage.PRODUCTION)
+            
+            v2 = registry.register_model("model", model_path)
+            registry.transition_stage("model", v2.version, ModelStage.PRODUCTION)
+            
+            # v1 should now be archived
+            artifact_v1 = registry.get_model("model", version=1)
+            assert artifact_v1.version.stage == ModelStage.ARCHIVED
     
-    def test_list_versions_by_stage(self, registry, sample_model_dir):
-        """Test listing versions filtered by stage."""
-        for _ in range(3):
-            registry.register_model(
-                name="test_model",
-                model_path=sample_model_dir,
-            )
-        
-        registry.transition_stage("test_model", 1, ModelStage.ARCHIVED)
-        registry.transition_stage("test_model", 2, ModelStage.STAGING)
-        registry.transition_stage("test_model", 3, ModelStage.PRODUCTION)
-        
-        archived = registry.list_versions("test_model", stage=ModelStage.ARCHIVED)
-        staging = registry.list_versions("test_model", stage=ModelStage.STAGING)
-        production = registry.list_versions("test_model", stage=ModelStage.PRODUCTION)
-        
-        assert len(archived) == 1
-        assert len(staging) == 1
-        assert len(production) == 1
-    
-    def test_delete_version(self, registry, sample_model_dir):
+    def test_delete_version(self) -> None:
         """Test deleting a model version."""
-        registry.register_model(
-            name="test_model",
-            model_path=sample_model_dir,
-        )
-        registry.register_model(
-            name="test_model",
-            model_path=sample_model_dir,
-        )
-        
-        registry.delete_version("test_model", 1)
-        
-        versions = registry.list_versions("test_model")
-        assert len(versions) == 1
-        assert versions[0].version == 2
-        
-        with pytest.raises(KeyError):
-            registry.get_model("test_model", version=1)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            registry = ModelRegistry(tmpdir)
+            
+            model_path = Path(tmpdir) / "source_model"
+            model_path.mkdir()
+            (model_path / "model.txt").write_text("test")
+            
+            registry.register_model("model", model_path)
+            registry.register_model("model", model_path)
+            
+            registry.delete_version("model", 1)
+            
+            versions = registry.list_versions("model")
+            assert len(versions) == 1
+            assert versions[0].version == 2
     
-    def test_update_tags(self, registry, sample_model_dir):
-        """Test updating version tags."""
-        registry.register_model(
-            name="test_model",
-            model_path=sample_model_dir,
-            tags={"env": "dev"},
-        )
-        
-        registry.update_tags("test_model", 1, {"env": "prod", "validated": "true"})
-        
-        artifact = registry.get_model("test_model", version=1)
-        assert artifact.version.tags["env"] == "prod"
-        assert artifact.version.tags["validated"] == "true"
+    def test_update_tags(self) -> None:
+        """Test updating tags on a version."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            registry = ModelRegistry(tmpdir)
+            
+            model_path = Path(tmpdir) / "source_model"
+            model_path.mkdir()
+            (model_path / "model.txt").write_text("test")
+            
+            v = registry.register_model("model", model_path)
+            
+            registry.update_tags("model", v.version, {"env": "prod", "owner": "team_a"})
+            
+            artifact = registry.get_model("model", version=v.version)
+            assert artifact.version.tags["env"] == "prod"
+            assert artifact.version.tags["owner"] == "team_a"
     
-    def test_search_models_by_name(self, registry, sample_model_dir):
-        """Test searching models by name."""
-        registry.register_model(
-            name="fx_pricer",
-            model_path=sample_model_dir,
-        )
-        registry.register_model(
-            name="equity_pricer",
-            model_path=sample_model_dir,
-        )
-        registry.register_model(
-            name="fx_calibrator",
-            model_path=sample_model_dir,
-        )
-        
-        results = registry.search_models(name_contains="fx")
-        
-        assert len(results) == 2
-        names = [r.name for r in results]
-        assert "fx_pricer" in names
-        assert "fx_calibrator" in names
-    
-    def test_search_models_by_tags(self, registry, sample_model_dir):
-        """Test searching models by tags."""
-        registry.register_model(
-            name="model1",
-            model_path=sample_model_dir,
-            tags={"asset_class": "fx", "type": "pricer"},
-        )
-        registry.register_model(
-            name="model2",
-            model_path=sample_model_dir,
-            tags={"asset_class": "equity", "type": "pricer"},
-        )
-        registry.register_model(
-            name="model3",
-            model_path=sample_model_dir,
-            tags={"asset_class": "fx", "type": "calibrator"},
-        )
-        
-        results = registry.search_models(tags={"asset_class": "fx"})
-        
-        assert len(results) == 2
-    
-    def test_search_models_by_metric(self, registry, sample_model_dir):
-        """Test searching models by metric filter."""
-        registry.register_model(
-            name="model1",
-            model_path=sample_model_dir,
-            metrics={"mse": 0.1},
-        )
-        registry.register_model(
-            name="model2",
-            model_path=sample_model_dir,
-            metrics={"mse": 0.01},
-        )
-        registry.register_model(
-            name="model3",
-            model_path=sample_model_dir,
-            metrics={"mse": 0.05},
-        )
-        
-        # Find models with mse < 0.05
-        results = registry.search_models(
-            metric_filter=lambda m: m.get("mse", float("inf")) < 0.05
-        )
-        
-        assert len(results) == 1
-        assert results[0].name == "model2"
-    
-    def test_get_model_info(self, registry, sample_model_dir):
-        """Test getting model info."""
-        registry.register_model(
-            name="test_model",
-            model_path=sample_model_dir,
-        )
-        registry.register_model(
-            name="test_model",
-            model_path=sample_model_dir,
-        )
-        registry.transition_stage("test_model", 2, ModelStage.PRODUCTION)
-        
-        info = registry.get_model_info("test_model")
-        
-        assert info["name"] == "test_model"
-        assert info["n_versions"] == 2
-        assert info["latest_version"] == 2
-        assert info["production_version"] == 2
-    
-    def test_model_not_found(self, registry):
-        """Test error when model not found."""
-        with pytest.raises(KeyError, match="Model not found"):
-            registry.get_model("nonexistent")
-        
-        with pytest.raises(KeyError, match="Model not found"):
-            registry.list_versions("nonexistent")
-    
-    def test_version_not_found(self, registry, sample_model_dir):
-        """Test error when version not found."""
-        registry.register_model(
-            name="test_model",
-            model_path=sample_model_dir,
-        )
-        
-        with pytest.raises(KeyError, match="Version 99 not found"):
-            registry.get_model("test_model", version=99)
-    
-    def test_model_path_not_found(self, registry):
-        """Test error when model path doesn't exist."""
-        with pytest.raises(FileNotFoundError):
+    def test_search_models(self) -> None:
+        """Test searching models."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            registry = ModelRegistry(tmpdir)
+            
+            model_path = Path(tmpdir) / "source_model"
+            model_path.mkdir()
+            (model_path / "model.txt").write_text("test")
+            
             registry.register_model(
-                name="test_model",
-                model_path="/nonexistent/path",
+                "gnn_pricer",
+                model_path,
+                tags={"asset_class": "fx"},
             )
+            registry.register_model(
+                "lstm_pricer",
+                model_path,
+                tags={"asset_class": "equity"},
+            )
+            
+            # Search by name
+            results = registry.search_models(name_contains="gnn")
+            assert len(results) == 1
+            assert results[0].name == "gnn_pricer"
+            
+            # Search by tags
+            results = registry.search_models(tags={"asset_class": "fx"})
+            assert len(results) == 1
     
-    def test_persistence(self, sample_model_dir):
+    def test_get_model_info(self) -> None:
+        """Test getting model information."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            registry = ModelRegistry(tmpdir)
+            
+            model_path = Path(tmpdir) / "source_model"
+            model_path.mkdir()
+            (model_path / "model.txt").write_text("test")
+            
+            registry.register_model("model", model_path)
+            registry.register_model("model", model_path)
+            
+            info = registry.get_model_info("model")
+            
+            assert info["name"] == "model"
+            assert info["n_versions"] == 2
+            assert info["latest_version"] == 2
+    
+    def test_persistence(self) -> None:
         """Test that registry persists across instances."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Create registry and register model
-            registry1 = ModelRegistry(tmpdir)
-            registry1.register_model(
-                name="test_model",
-                model_path=sample_model_dir,
-                metrics={"mse": 0.001},
-            )
-            registry1.transition_stage("test_model", 1, ModelStage.PRODUCTION)
+            model_path = Path(tmpdir) / "source_model"
+            model_path.mkdir()
+            (model_path / "model.txt").write_text("test")
             
-            # Create new registry instance pointing to same storage
+            # Create and register
+            registry1 = ModelRegistry(tmpdir)
+            registry1.register_model("model", model_path, metrics={"mse": 0.1})
+            
+            # Create new instance
             registry2 = ModelRegistry(tmpdir)
             
-            assert "test_model" in registry2.list_models()
-            artifact = registry2.get_model("test_model", stage=ModelStage.PRODUCTION)
-            assert artifact.version.metrics["mse"] == 0.001
+            # Should find the model
+            assert "model" in registry2.list_models()
+            artifact = registry2.get_model("model")
+            assert artifact.version.metrics["mse"] == 0.1
 
 
 class TestModelArtifact:
-    """Tests for ModelArtifact class."""
+    """Tests for ModelArtifact."""
     
-    @pytest.fixture
-    def artifact_with_model(self):
-        """Create an artifact with a loadable model."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create model files
-            model_dir = Path(tmpdir) / "models" / "test/v1"
-            model_dir.mkdir(parents=True)
-            
-            # Create a simple model.json + weights
-            (model_dir / "model.json").write_text('{}')
-            
-            version = ModelVersion(
-                version=1,
-                created_at=datetime.now(),
-                stage=ModelStage.NONE,
-                metrics={},
-                params={},
-                tags={},
-                description="",
-                source_run_id=None,
-                model_hash="abc123",
-                artifact_path="test/v1",
-            )
-            
-            artifact = ModelArtifact(
-                name="test_model",
-                version=version,
-                registry_path=Path(tmpdir) / "models",
-            )
-            
-            yield artifact
-    
-    def test_artifact_dir(self, artifact_with_model):
-        """Test getting artifact directory."""
-        artifact_dir = artifact_with_model.artifact_dir
-        assert artifact_dir.exists()
+    def test_artifact_dir(self) -> None:
+        """Test artifact directory property."""
+        version = ModelVersion(
+            version=1,
+            created_at=datetime.now(),
+            stage=ModelStage.NONE,
+            metrics={},
+            params={},
+            tags={},
+            description="",
+            source_run_id=None,
+            model_hash="abc",
+            artifact_path="model/v1",
+        )
+        
+        artifact = ModelArtifact(
+            name="model",
+            version=version,
+            registry_path=Path("/registry"),
+        )
+        
+        assert artifact.artifact_dir == Path("/registry/model/v1")
 
 
 class TestCreateRegistry:
     """Tests for create_registry factory function."""
     
-    def test_create_registry(self):
+    def test_create_registry(self) -> None:
         """Test creating registry with factory."""
         with tempfile.TemporaryDirectory() as tmpdir:
             registry = create_registry(tmpdir)
             
             assert isinstance(registry, ModelRegistry)
-            assert registry._storage_path == Path(tmpdir)

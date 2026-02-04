@@ -20,6 +20,7 @@ QuantLib >= 1.40
 tensorflow >= 2.20.0
 mlflow >= 2.0.0
 wandb >= 0.16.0
+optuna >= 4.0.0
 
 # Optional: PyTorch for training
 torch >= 2.0.0
