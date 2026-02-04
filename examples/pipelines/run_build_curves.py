@@ -172,7 +172,7 @@ def main() -> None:
     print("[1/4] Building configuration...")
     cfg = build_config()
     print(f"      Pipeline: {cfg.pipeline}")
-    print(f"      Artifacts: {cfg.io.get('artifacts_dir', 'N/A')}")
+    print(f"      Artifacts: {cfg.io.workdir}")
     print()
     
     # -------------------------------------------------------------------------
@@ -244,7 +244,7 @@ def main() -> None:
     print(f"  Long rate (30Y):    {term_structure.zero_rate(30.0):.4%}")
     print(f"  Curve shape:        {'Inverted' if term_structure.zero_rate(0.25) > term_structure.zero_rate(30.0) else 'Normal'}")
     print()
-    print("Artifacts saved to:", cfg.io.get("artifacts_dir", "N/A"))
+    print("Artifacts saved to:", cfg.io.workdir)
     print()
 
 

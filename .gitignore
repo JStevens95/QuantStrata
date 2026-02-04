@@ -63,6 +63,7 @@ desktop.ini
 # Project specific outputs
 outputs/
 runs/
+artifacts/
 *.log
 *.log.*
 
@@ -89,6 +90,4 @@ runs/
 models/checkpoints/
 wandb/
 
-# QuantStrata specific
-archive_delete_later/
 EOF

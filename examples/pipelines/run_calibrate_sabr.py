@@ -58,7 +58,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from src.orchestrator.config.schemas import RunConfig
+from src.orchestrator.config.schemas import RunConfig, IOConfig
 from src.orchestrator.config.validate import validate_run_config
 from src.orchestrator.runtime.entrypoints import run_pipeline_from_config
 from src.orchestrator.core.state_keys import StateKeys as Keys
@@ -117,10 +117,7 @@ def build_config() -> RunConfig:
     config = RunConfig(
         pipeline="calibration.volatility_surface",
         
-        io={
-            "artifacts_dir": "./artifacts/sabr_calibration",
-            "enable_save": True,
-        },
+        io=IOConfig(workdir="./artifacts/sabr_calibration"),
         
         params={
             "calibration": {
@@ -309,7 +306,7 @@ def main() -> None:
     print("-" * 60)
     print()
     
-    print("Artifacts saved to:", cfg.io.get("artifacts_dir", "N/A"))
+    print("Artifacts saved to:", cfg.io.workdir)
     print()
 
 

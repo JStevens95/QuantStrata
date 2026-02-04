@@ -17,6 +17,7 @@ This folder contains **interactive Jupyter notebooks** that demonstrate QuantStr
 | `02_volatility_surfaces.ipynb` | Vol surface construction | Smile, term structure, arbitrage, SABR calibration |
 | `03_scenario_analysis.ipynb` | Portfolio risk analysis | Stress testing, spot/vol shocks, P&L decomposition |
 | `04_multi_pipeline_workflow.ipynb` | End-to-end workflow | Pipeline chaining, market→portfolio→pricing→risk |
+| `05_deep_hedging.ipynb` | Machine learning for hedging | Deep hedging, neural networks, risk measures |
 
 ## Prerequisites
 
@@ -129,6 +130,22 @@ End-to-end orchestration:
 - Position-level breakdown
 - Greek exposure
 - Comprehensive risk dashboard
+
+### 05_deep_hedging.ipynb
+**Level**: Advanced
+
+Machine learning for optimal hedging:
+- Deep hedging theory and motivation
+- Neural network policy learning
+- Risk measures (Mean-Variance, CVaR)
+- Transaction cost optimization
+- Comparison with delta hedging
+
+**Visualizations**:
+- P&L distributions (delta vs deep)
+- Trading cost comparison
+- Training curves
+- Risk metric comparison
 
 ## Tips for Learning
 

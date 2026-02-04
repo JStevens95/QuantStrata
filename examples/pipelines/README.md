@@ -54,6 +54,12 @@ python examples/pipelines/run_compute_greeks.py
 |--------|---------------|-------------|
 | `run_backtest_strategy.py` | `backtest.run_strategy` | Run strategy backtest with performance analytics |
 
+### Machine Learning Pipelines
+
+| Script | Pipeline Name | Description |
+|--------|---------------|-------------|
+| `run_train_gnn_pricer.py` | `ml.train_gnn_pricer` | Train GNN-RNN hybrid model for portfolio P&L prediction |
+
 ## Script Structure
 
 Each example script follows a consistent pattern:

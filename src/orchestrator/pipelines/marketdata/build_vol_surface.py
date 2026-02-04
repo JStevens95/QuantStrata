@@ -384,7 +384,7 @@ class BuildRawSurfaceStep(Step):
         vol_surface = GridVolSurface(
             expiries=np.array(expiries),
             strikes=np.array(strikes),
-            vols=vol_grid,
+            implied_vols=vol_grid,
             extrapolation="flat",
         )
         
