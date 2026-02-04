@@ -1276,261 +1276,155 @@ Documentation:
 
 ---
 
-## Phase 7.8: Rough Volatility Models
+## Phase 7.8: Rough Volatility Models [DEFERRED]
 
-**Goal:** Implement rough volatility models (rough Bergomi, rough Heston) that capture the empirically observed roughness of volatility paths (Hurst parameter H ≈ 0.1), providing better fit to short-dated ATM skew and vol term structure.
+**Status:** 🔲 **DEFERRED** - Research-level topic, not essential for library completion.
 
-**Research Foundation:** Gatheral, Jaisson & Rosenbaum (2018) "Volatility is Rough", Bayer, Friz & Gatheral (2016) "Pricing under Rough Volatility"
+**Rationale for Deferral:**
+- Rough volatility is cutting-edge research (2016-2018 papers)
+- Complex implementation (~25 files, ~6,000 lines)
+- Limited practical use outside academic research
+- Library already has Heston, SABR, Local Vol for production needs
 
-### 7.8.1 Fractional Brownian Motion
-- [ ] **Fractional BM Sampler**
-  - Implement: Efficient simulation of fractional Brownian motion with H ∈ (0, 1)
-  - Methods: Cholesky decomposition, Hosking method, hybrid schemes
-  - Support: Configurable Hurst parameter, batch generation
-  - Use case: Foundation for rough vol models
-
-- [ ] **Volterra Process**
-  - Implement: Volterra-type integral for rough volatility: V_t = ∫ K(t-s) dW_s
-  - Support: Power-law kernel K(t) = t^{H-1/2}
-  - Use case: Rough Bergomi variance process
-
-### 7.8.2 Rough Bergomi Model
-- [ ] **Rough Bergomi Dynamics**
-  - Implement: dS/S = √V dW, V_t = ξ(t) exp(η W^H_t - η²t^{2H}/2)
-  - Parameters: Forward variance curve ξ(t), vol-of-vol η, Hurst H
-  - Support: Correlation between spot and vol
-  - Use case: State-of-the-art rough vol model
-
-- [ ] **Rough Bergomi MC Pricer**
-  - Implement: Monte Carlo pricer with rough Bergomi paths
-  - Support: European, barrier, and path-dependent options
-  - Use case: Price under rough vol dynamics
-
-- [ ] **Hybrid Simulation Scheme**
-  - Implement: Efficient simulation combining exact and approximate methods
-  - Support: Turbocharging (variance reduction via conditioning)
-  - Use case: Fast rough Bergomi simulation
-
-### 7.8.3 Rough Heston Model
-- [ ] **Rough Heston Dynamics**
-  - Implement: Heston with fractional kernel: V_t = V_0 + ∫ K(t-s)(θ - V_s) ds + ∫ K(t-s) ν√V_s dW_s
-  - Parameters: Mean reversion θ, vol-of-vol ν, Hurst H
-  - Support: Affine structure for semi-analytic pricing
-  - Use case: Rough vol with mean reversion
-
-- [ ] **Characteristic Function (Adams Method)**
-  - Implement: Solve fractional Riccati equation for characteristic function
-  - Support: Fourier pricing for European options
-  - Use case: Fast rough Heston pricing
-
-### 7.8.4 Calibration
-- [ ] **Rough Vol Calibration**
-  - Implement: Calibrate rough Bergomi / rough Heston to vol surface
-  - Support: Fit to ATM skew term structure, smile
-  - Use case: Market-consistent rough vol parameters
-
-- [ ] **Hurst Parameter Estimation**
-  - Implement: Estimate H from realised volatility time series
-  - Methods: Variogram, R/S analysis, wavelets
-  - Use case: Empirical validation, model selection
-
-### 7.8.5 Integration
-- [ ] **Vol Surface Infrastructure**
-  - Implement: Extend vol surface to support rough vol model outputs
-  - Support: Rough vol implied vol computation
-  - Use case: Consistent vol surface representation
-
-- [ ] **Greeks under Rough Vol**
-  - Implement: Delta, gamma, vega under rough vol (via bump-and-reval or AD)
-  - Support: Path-wise and likelihood ratio methods
-  - Use case: Risk management with rough vol
-
-**Implementation Checklist:**
-```
-Fractional Brownian Motion (7.8.1):
-[ ] src/models/rough_volatility/fbm/sampler.py (FractionalBMSampler)
-[ ] src/models/rough_volatility/fbm/cholesky.py (CholeskyFBM)
-[ ] src/models/rough_volatility/fbm/hosking.py (HoskingFBM)
-[ ] src/models/rough_volatility/volterra.py (VolterraProcess)
-[ ] tests/unit/models/rough_volatility/test_fbm.py
-
-Rough Bergomi (7.8.2):
-[ ] src/models/rough_volatility/rough_bergomi/dynamics.py (RoughBergomiDynamics)
-[ ] src/models/rough_volatility/rough_bergomi/simulator.py (RoughBergomiSimulator)
-[ ] src/models/rough_volatility/rough_bergomi/hybrid_scheme.py (HybridSimulationScheme)
-[ ] src/pricers/rough_volatility/rough_bergomi_mc.py (RoughBergomiMcPricer)
-[ ] tests/unit/models/rough_volatility/test_rough_bergomi.py
-[ ] tests/unit/pricers/rough_volatility/test_rough_bergomi_mc.py
-
-Rough Heston (7.8.3):
-[ ] src/models/rough_volatility/rough_heston/dynamics.py (RoughHestonDynamics)
-[ ] src/models/rough_volatility/rough_heston/char_func.py (RoughHestonCharFunc, AdamsMethod)
-[ ] src/models/rough_volatility/rough_heston/fourier_pricer.py (RoughHestonFourierPricer)
-[ ] tests/unit/models/rough_volatility/test_rough_heston.py
-
-Calibration (7.8.4):
-[ ] src/calibration/rough_volatility/rough_bergomi.py (RoughBergomiCalibrator)
-[ ] src/calibration/rough_volatility/rough_heston.py (RoughHestonCalibrator)
-[ ] src/calibration/rough_volatility/hurst_estimation.py (HurstEstimator)
-[ ] tests/unit/calibration/rough_volatility/test_calibrators.py
-[ ] tests/unit/calibration/rough_volatility/test_hurst.py
-
-Integration (7.8.5):
-[ ] src/models/rough_volatility/vol_surface.py (RoughVolSurface)
-[ ] src/models/rough_volatility/greeks.py (RoughVolGreeks)
-[ ] tests/unit/models/rough_volatility/test_integration.py
-
-Documentation:
-[ ] docs/reference/models/rough_volatility.md
-[ ] docs/guides/models/rough_vol_calibration.md
-[ ] docs/tutorials/models/rough_volatility_tutorial.ipynb
-[ ] Pipeline: src/orchestrator/pipelines/calibration/rough_vol.py
-[ ] Example: examples/pipelines/run_calibrate_rough_bergomi.py
-```
-
-**Status:** Not started. See `docs/development/progress/phase_7_8_rough_volatility.md` (to be created).
-
-**Dependencies:** MC framework, vol surface infrastructure, calibration engine.
+**If Revisited Later:**
+- Research Foundation: Gatheral, Jaisson & Rosenbaum (2018) "Volatility is Rough"
+- Key components: Fractional BM, Rough Bergomi, Rough Heston, Calibration
+- See archived roadmap notes for full specification
 
 ---
 
-### Phase 7 Extended Deliverables:
+### Phase 7 Deliverables Summary:
 - ✅ ML integration (pricing, calibration) — 7.1
 - ✅ Hybrid GNN-LSTM full revaluation pricer — 7.1
-- ✅ Q-learning / RL agent framework — 7.2
-- ✅ Deep hedging framework with transaction costs — 7.6
-- ✅ Neural SDE for learned market dynamics — 7.7
-- ✅ Rough volatility models (rough Bergomi, rough Heston) — 7.8
-- ✅ 3+ exotic products — 7.3
-- ✅ Optional: Credit/commodities — 7.4/7.5
+- ⬜ Production ML infrastructure (tracking, tuning) — 7.1.5
+- ⚠️ Q-learning / RL agent framework — 7.2 (core complete, environments pending)
+- ⬜ Exotic products (Cliquet, Autocallable, Range Accrual) — 7.3
+- 🔲 Credit derivatives — 7.4 (optional, deferred)
+- 🔲 Commodities — 7.5 (optional, deferred)
+- ⚠️ Deep hedging framework — 7.6 (core complete, backtesting pending)
+- ⬜ Neural SDE for learned market dynamics — 7.7
+- 🔲 Rough volatility — 7.8 (deferred)
 
-**Impact:** Demonstrates **cutting-edge research-level** capabilities in modern quantitative finance: deep hedging, neural SDEs, and rough volatility.
+**Impact:** Demonstrates **cutting-edge ML/RL capabilities** in modern quantitative finance: deep hedging, neural SDEs, and hybrid GNN-LSTM pricing.
 
 ---
 
-## Phase 8: Quant Hedge Fund & Execution Extensions
+## Phase 8: Focused Extensions (Vol Trading & Portfolio Construction)
 
-**Goal:** Add library components required for execution, factor risk, vol trading, portfolio optimisation, tail risk, real-time monitoring, and alternative data so that the additional application projects (5–12 below) can build on the library.
+**Goal:** Add two high-value, focused extensions that naturally complement the existing library.
 
-*These items are not yet implemented or not yet planned in Phases 1–7.*
+**Scope Rationale:** Phase 8 was originally much larger (10 sub-phases). After project assessment, the scope has been reduced to two focused areas that:
+1. Build directly on existing infrastructure (vol models, portfolio module)
+2. Have clear practical value
+3. Are achievable without creating maintenance burden
 
-### 8.1 Execution & Transaction Cost Analytics (TCA)
-- [ ] **Execution Cost Models**
-  - Implement: Market impact models (e.g. temporary/permanent), spread models
-  - Support: Parameterised by size, volatility, liquidity proxy
-  - Use case: Backtesting with realistic execution cost, TCA reporting
+### 8.1 Volatility Trading & Variance Swap Analytics
+- [ ] **Variance Swap / Vol Swap Pricing**
+  - Implement: Variance swap pricing (replicating portfolio method, model-based from Heston/local vol)
+  - Implement: Fair variance strike calculation
+  - Support: Integration with existing vol models (SABR, Heston, Local Vol)
+  - Use case: Volatility trading, relative value strategies
 
-- [ ] **Optimal Execution**
-  - Implement: Optimal execution framework (e.g. Almgren-Chriss-style or similar)
-  - Support: Trade-off between market impact and timing risk; TWAP/VWAP-style targets
-  - Use case: Execution & TCA application project, algo bot execution layer
-
-- [ ] **TCA Metrics & Reporting**
-  - Implement: Implementation shortfall, slippage vs benchmark, arrival price, volume participation
-  - Support: Standardised TCA output for comparison and reporting
-  - Use case: Execution & TCA application project
+- [ ] **Dispersion & Vol-of-Vol Analytics**
+  - Implement: Index vs single-name dispersion metrics
+  - Implement: Vol-of-vol from existing stochastic vol models
+  - Support: Relative value and dispersion trading analytics
+  - Use case: Dispersion trading, correlation strategies
 
 **Implementation Checklist (8.1):**
 ```
-[ ] src/execution/costs/market_impact.py (TemporaryImpact, PermanentImpact, AlmgrenChrissImpact)
-[ ] src/execution/costs/spread.py (SpreadModel, LiquidityAdjustedSpread)
-[ ] src/execution/optimal/almgren_chriss.py (AlmgrenChrissSolver, OptimalTrajectory)
-[ ] src/execution/optimal/twap_vwap.py (TWAPSchedule, VWAPSchedule)
-[ ] src/execution/tca/metrics.py (ImplementationShortfall, ArrivalPrice, Slippage)
-[ ] src/execution/tca/report.py (TCAReport, TCAReportGenerator)
-[ ] tests/unit/execution/test_market_impact.py
-[ ] tests/unit/execution/test_optimal_execution.py
-[ ] tests/unit/execution/test_tca_metrics.py
-[ ] docs/reference/execution/tca.md
-[ ] docs/guides/execution/optimal_execution.md
-[ ] docs/tutorials/execution/tca_tutorial.ipynb
-[ ] Pipeline: src/orchestrator/pipelines/execution/compute_tca.py
-[ ] Example: examples/pipelines/run_tca_analysis.py
-```
-
-### 8.2 Factor Risk Model & Factor Attribution
-- [ ] **Factor Exposure Computation**
-  - Implement: Compute portfolio exposures to risk factors (e.g. rates, vol, sector, style)
-  - Support: Factor definitions from library risk factors (Greeks, curves) or external factor returns
-  - Use case: Factor risk report, portfolio optimisation
-
-- [ ] **Factor Covariance / Factor Returns Interface**
-  - Implement: Interface for factor covariance matrix or factor return series
-  - Support: Sample or external factor model; integration with risk aggregation
-  - Use case: Factor VaR, portfolio optimisation
-
-- [ ] **Factor PnL Attribution**
-  - Implement: PnL attribution by factor (exposure × factor return) alongside existing scenario attribution
-  - Support: Portfolio-level and instrument-level factor breakdown
-  - Use case: Factor risk & attribution application project, risk reports
-
-**Implementation Checklist (8.2):**
-```
-[ ] src/risk/factor/exposure.py (FactorExposureCalculator, FactorDefinition)
-[ ] src/risk/factor/covariance.py (FactorCovarianceMatrix, FactorReturns)
-[ ] src/risk/factor/attribution.py (FactorPnLAttribution, FactorAttributionReport)
-[ ] src/risk/factor/factor_var.py (FactorVaR)
-[ ] tests/unit/risk/factor/test_exposure.py
-[ ] tests/unit/risk/factor/test_attribution.py
-[ ] docs/reference/risk/factor_model.md
-[ ] docs/guides/risk/factor_risk.md
-[ ] docs/tutorials/risk/factor_attribution_tutorial.ipynb
-[ ] Pipeline: src/orchestrator/pipelines/risk/compute_factor_risk.py
-[ ] Example: examples/pipelines/run_factor_attribution.py
-```
-
-### 8.3 Volatility Trading & Variance Swap Analytics
-- [ ] **Variance Swap / Vol Swap Pricing**
-  - Implement: Variance swap pricing (e.g. model-based from Heston/local vol), fair variance strike
-  - Support: Integration with existing vol models
-  - Use case: Volatility trading application project
-
-- [ ] **Dispersion & Vol-of-Vol Analytics**
-  - Implement: Index vs single-name dispersion metrics, vol-of-vol from existing models
-  - Support: Relative value and dispersion trading analytics
-  - Use case: Volatility trading application project
-
-**Implementation Checklist (8.3):**
-```
+Instruments:
 [ ] src/instruments/equity/options/variance_swap.py (VarianceSwap, VolatilitySwap)
-[ ] src/pricers/equity/variance_swap.py (VarianceSwapPricer, VarianceSwapReplicator)
+
+Pricers:
+[ ] src/pricers/equity/variance_swap_replicating.py (VarianceSwapReplicatingPricer)
+[ ] src/pricers/equity/variance_swap_heston.py (VarianceSwapHestonPricer)
+
+Analytics (new module):
+[ ] src/analytics/__init__.py
+[ ] src/analytics/volatility/__init__.py
 [ ] src/analytics/volatility/dispersion.py (DispersionAnalytics, IndexVsSingleName)
 [ ] src/analytics/volatility/vol_of_vol.py (VolOfVolCalculator)
+[ ] src/analytics/volatility/relative_value.py (VolSurfaceRelativeValue)
+
+Tests:
 [ ] tests/unit/instruments/equity/test_variance_swap.py
+[ ] tests/unit/pricers/equity/test_variance_swap.py
 [ ] tests/unit/analytics/volatility/test_dispersion.py
+[ ] tests/unit/analytics/volatility/test_vol_of_vol.py
+
+Documentation:
 [ ] docs/reference/instruments/variance_swaps.md
 [ ] docs/guides/volatility/vol_trading_analytics.md
 [ ] docs/tutorials/volatility/variance_swap_tutorial.ipynb
 ```
 
-### 8.4 Portfolio Construction & Optimisation
+**Status:** Not started.
+
+**Dependencies:** Vol surface calibration, Heston model, multi-asset infrastructure.
+
+---
+
+### 8.2 Portfolio Construction & Optimisation
 - [ ] **Portfolio Optimisation API**
-  - Implement: Mean-variance optimisation, risk parity, max Sharpe / min variance
-  - Support: Constraints (turnover, sector, leverage, bounds); optional Black-Litterman
-  - Use case: Portfolio optimisation application project, algo bot rebalance
+  - Implement: Mean-variance optimisation (Markowitz)
+  - Implement: Risk parity (equal risk contribution)
+  - Implement: Max Sharpe / min variance portfolios
+  - Support: Constraints (turnover, sector, leverage, position bounds)
+  - Optional: Black-Litterman with views
+  - Use case: Portfolio construction, rebalancing, strategy allocation
 
-- [ ] **Covariance / Risk Input for Optimisation**
-  - Implement: Portfolio covariance from library (e.g. Greeks + factor cov, or sample)
-  - Support: Same risk inputs as VaR and factor model where applicable
-  - Use case: Portfolio optimisation, factor-aware optimisation
+- [ ] **Covariance Estimation**
+  - Implement: Sample covariance with shrinkage (Ledoit-Wolf)
+  - Implement: Exponentially weighted covariance
+  - Support: Integration with existing risk infrastructure
+  - Use case: Input for optimisation, risk estimation
 
-**Implementation Checklist (8.4):**
+**Implementation Checklist (8.2):**
 ```
-[ ] src/portfolio/optimisation/mean_variance.py (MeanVarianceOptimiser)
-[ ] src/portfolio/optimisation/risk_parity.py (RiskParityOptimiser)
-[ ] src/portfolio/optimisation/black_litterman.py (BlackLittermanOptimiser)
-[ ] src/portfolio/optimisation/constraints.py (TurnoverConstraint, SectorConstraint, LeverageConstraint)
-[ ] src/portfolio/optimisation/covariance.py (CovarianceEstimator, ShrinkageEstimator)
+Core Optimisation:
+[ ] src/portfolio/optimisation/__init__.py
+[ ] src/portfolio/optimisation/mean_variance.py (MeanVarianceOptimiser, MaxSharpeOptimiser, MinVarianceOptimiser)
+[ ] src/portfolio/optimisation/risk_parity.py (RiskParityOptimiser, EqualRiskContribution)
+[ ] src/portfolio/optimisation/black_litterman.py (BlackLittermanOptimiser, ViewMatrix)
+
+Constraints:
+[ ] src/portfolio/optimisation/constraints.py (TurnoverConstraint, SectorConstraint, LeverageConstraint, BoundsConstraint)
+
+Covariance:
+[ ] src/portfolio/optimisation/covariance.py (SampleCovariance, LedoitWolfShrinkage, EWMACovariance)
+
+Tests:
 [ ] tests/unit/portfolio/optimisation/test_mean_variance.py
 [ ] tests/unit/portfolio/optimisation/test_risk_parity.py
+[ ] tests/unit/portfolio/optimisation/test_constraints.py
+[ ] tests/unit/portfolio/optimisation/test_covariance.py
+
+Documentation:
 [ ] docs/reference/portfolio/optimisation.md
 [ ] docs/guides/portfolio/portfolio_construction.md
 [ ] docs/tutorials/portfolio/portfolio_optimisation_tutorial.ipynb
-[ ] Pipeline: src/orchestrator/pipelines/portfolio/optimise_portfolio.py
+
+Pipeline:
+[ ] src/orchestrator/pipelines/portfolio/optimise_portfolio.py
 [ ] Example: examples/pipelines/run_portfolio_optimisation.py
 ```
 
-### 8.5 Tail Risk & Crisis Analytics
+**Status:** Not started.
+
+**Dependencies:** Portfolio module, risk infrastructure.
+
+---
+
+### Phase 8 Deliverables:
+- [ ] Variance swap pricing (replicating, Heston-based) — 8.1
+- [ ] Dispersion & vol-of-vol analytics — 8.1
+- [ ] Mean-variance, risk parity, Black-Litterman optimisation — 8.2
+- [ ] Covariance estimation with shrinkage — 8.2
+
+**Estimated Effort:** ~2 weeks total
+
+**Impact:** Enables volatility trading strategies and systematic portfolio construction.
 - [ ] **CVaR / Expected Shortfall**
   - Implement: Conditional VaR (expected shortfall) alongside VaR
   - Support: Historical, parametric, or simulation-based
@@ -2093,7 +1987,7 @@ Once the core library is complete (Phases 1–8), the following **orchestrator/a
 
 ---
 
-## Timeline Summary
+## Timeline Summary (Revised Scope)
 
 | Phase | Status | Focus | Key Deliverables |
 |-------|--------|-------|-----------------|
@@ -2104,158 +1998,121 @@ Once the core library is complete (Phases 1–8), the following **orchestrator/a
 | Phase 5 | ✅ Complete | Production | Calibration, backtesting, risk, streaming, analytics |
 | Phase 6 | ✅ Complete | Education | Tutorials, notebooks, docs |
 | Phase 7.1 | ✅ Complete | ML Integration | ML pipelines, GNN-LSTM pricer |
-| Phase 7.1.5 | ⬜ Pending | Production ML | MLflow, Optuna, Model Registry |
-| Phase 7.2 | ⚠️ Core Complete | Q-Learning/RL | RL framework, RL Orchestrator pending |
+| Phase 7.1.5 | ⬜ Pending | Production ML | Tracking, tuning, registry |
+| Phase 7.2 | ⚠️ Core Complete | Q-Learning/RL | RL framework (environments pending) |
 | Phase 7.3 | ⬜ Pending | Exotics | Cliquet, Autocallable, Range Accrual |
-| Phase 7.4-7.5 | ⬜ Optional | Extensions | Credit derivatives, Commodities |
-| Phase 7.6 | ⚠️ Core Complete | Deep Hedging | Environments, agents, backtesting pending |
-| Phase 7.7 | ⬜ Pending | Neural SDE | Neural drift/diffusion, SDE training |
-| Phase 7.8 | ⬜ Pending | Rough Volatility | Fractional BM, rough Bergomi/Heston |
-| Phase 8.1 | ⬜ Pending | Execution/TCA | Market impact, optimal execution |
-| Phase 8.2 | ⬜ Pending | Factor Risk | Factor exposure, factor attribution |
-| Phase 8.3 | ⬜ Pending | Vol Trading | Variance swaps, dispersion |
-| Phase 8.4 | ⬜ Pending | Portfolio Opt | Mean-variance, risk parity |
-| Phase 8.5 | ⬜ Pending | Tail Risk | CVaR, crisis scenarios |
-| Phase 8.6 | ⬜ Pending | Limit Monitoring | Real-time risk, alerts |
-| Phase 8.7 | ⬜ Pending | Alt Data | Data adapters, featurisation |
-| Phase 8.8 | ⬜ Pending | Market-Making | Spread/inventory models |
-| Phase 8.9 | ⬜ Pending | XVA | CVA, DVA, FVA |
-| Phase 8.10 | ⬜ Pending | Regulatory | FRTB SA, SIMM |
-| Phase 9 | ⬜ Pending | Services | FastAPI, gRPC, WebSocket |
-| *After library* | — | Applications | Projects 1–12 |
+| Phase 7.6 | ⚠️ Core Complete | Deep Hedging | Core complete (backtesting pending) |
+| Phase 7.7 | ⬜ Pending | Neural SDE | Neural drift/diffusion, training |
+| Phase 8.1 | ⬜ Pending | Vol Trading | Variance swaps, dispersion |
+| Phase 8.2 | ⬜ Pending | Portfolio Opt | Mean-variance, risk parity |
+| **LIBRARY COMPLETE** | — | — | — |
+| Applications | — | Usage Examples | Option Analytics, Algo Bot, etc. |
+
+### Deferred/Removed Items
+
+| Item | Status | Reason |
+|------|--------|--------|
+| Phase 7.8 Rough Vol | 🔲 Deferred | Research-level, complex, not essential |
+| Phase 8 (old scope) | ❌ Removed | XVA, FRTB, TCA, etc. were overambitious |
+| Phase 9 Services | ❌ Removed | Infrastructure work, not core quant |
 
 ### Recommended Implementation Order
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  IMMEDIATE: Complete Core Gaps                                   │
+│  PHASE A: Complete Core (Priority)                   ~2-3 weeks  │
 ├──────────────────────────────────────────────────────────────────┤
-│  7.2   RL Orchestrator (completes RL framework)                  │
-│  7.3   Exotic Products (Cliquet, Autocallable, Range Accrual)    │
-│  7.6   Deep Hedging Backtesting Integration                      │
+│  7.1.5  Production ML (tracking, tuning)                         │
+│  7.2    RL Environments (trading, hedging)                       │
+│  7.3    Exotic Products (Cliquet, Autocallable, Range)           │
+│  7.6    Deep Hedging backtesting adapter                         │
 └──────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│  SHORT-TERM: Production ML & Research Models                     │
+│  PHASE B: Focused Extensions                         ~2 weeks    │
 ├──────────────────────────────────────────────────────────────────┤
-│  7.1.5 Production ML (MLflow, Optuna, Registry)                  │
-│  7.7   Neural SDE                                                │
-│  7.8   Rough Volatility                                          │
+│  7.7    Neural SDE (optional, research interest)                 │
+│  8.1    Vol Trading (variance swaps, dispersion)                 │
+│  8.2    Portfolio Optimisation (mean-variance, risk parity)      │
 └──────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│  MEDIUM-TERM: Quant HF Extensions                                │
-├──────────────────────────────────────────────────────────────────┤
-│  8.1   Execution & TCA                                           │
-│  8.2   Factor Risk                                               │
-│  8.4   Portfolio Optimisation                                    │
-│  8.5   Tail Risk (CVaR)                                          │
-│  8.9   XVA Framework                                             │
-│  8.10  Regulatory Capital (FRTB/SIMM)                            │
+│  LIBRARY COMPLETE - DECLARE VICTORY                              │
 └──────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│  LONGER-TERM: Services & Remaining Extensions                    │
+│  APPLICATION PROJECTS (as needed)                                │
 ├──────────────────────────────────────────────────────────────────┤
-│  8.3   Vol Trading Analytics                                     │
-│  8.6   Real-Time Limit Monitoring                                │
-│  8.7   Alternative Data                                          │
-│  8.8   Market-Making Simulator                                   │
-│  9     Deployment & Services                                     │
+│  Option Analytics Dashboard                                      │
+│  Algorithmic Trading Bot                                         │
+│  Vol Trading Tool                                                │
+│  Portfolio Optimiser                                             │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-**Total Timeline:** Library core (Phases 1-7) substantially complete; remaining items add ~6-8 months for Phases 7.x completion, 8.x extensions, and Phase 9 services. Application projects follow library completion.
+**Total Timeline:** ~4-5 weeks for library completion. Application projects built as needed.
 
 ---
 
 ## Risk Mitigation
+
+### Scope Management (Key Learning)
+- **Original roadmap was overambitious** - Phases 8-9 alone would have doubled the codebase
+- **Revised scope is achievable** - Focused on high-value additions
+- **Application projects are separate** - Don't add to library maintenance burden
 
 ### Technical Risks
 - **Complexity Creep**: Maintain interface contracts, avoid over-engineering
 - **Performance**: Profile early, optimize bottlenecks
 - **Testing**: Maintain high test coverage, parity tests prevent regressions
 
-### Scope Risks
-- **Feature Creep**: Stick to roadmap, defer nice-to-haves
-- **Time Management**: Prioritize high-impact features first
-- **Quality vs Speed**: Maintain quality standards, don't rush
-
-### Mitigation Strategies
-- **Incremental Development**: Small, testable increments
-- **Regular Reviews**: Assess progress against roadmap
-- **Flexibility**: Adjust roadmap based on learnings
+### Quality Standards
+- **Every component needs:** Tests, docs, guides, examples
+- **No half-finished features** - Complete or defer
+- **Maintenance burden considered** - Only add what can be maintained
 
 ---
 
 ## Conclusion
 
-This roadmap provides a **structured path** to building a **comprehensive, professional quant library** that:
+### What We've Built
 
-1. ✅ **Builds on existing strengths** (FX foundation)
-2. ✅ **Maintains architectural coherence** (interface contracts)
-3. ✅ **Demonstrates breadth** (multiple asset classes)
-4. ✅ **Demonstrates depth** (advanced models, methods)
-5. ✅ **Enhances educational value** (tutorials, notebooks)
-6. ✅ **Achieves production readiness** (calibration, backtesting)
+QuantStrata is a **comprehensive, professional quant library** with:
 
-### Current Status
+| Dimension | Achievement |
+|-----------|-------------|
+| **Asset Classes** | FX, Equity, IR, Multi-Asset |
+| **Pricing Models** | 15+ (BSM, Heston, Hull-White, LMM, etc.) |
+| **Numerical Methods** | Analytic, MC, FDE, LSM, QMC |
+| **ML/RL** | GNN-LSTM, Deep Hedging, Q-Learning |
+| **Infrastructure** | Calibration, Backtesting, Streaming, Risk |
+| **Code Quality** | ~87K LOC, ~40K test LOC, clean architecture |
 
-The library has achieved **substantial completion** of Phases 1-7 core functionality:
-- ✅ FX, Equity, IR derivatives with multiple pricing methods
-- ✅ Advanced models (Heston, SABR, Hull-White, LMM, Merton, VG)
-- ✅ Production infrastructure (calibration, backtesting, streaming, risk)
-- ✅ ML integration with GNN-LSTM pricer
-- ✅ Deep hedging framework (core complete)
+### What Remains (Focused Scope)
 
-### Immediate Next Steps
+| Item | Effort | Value |
+|------|--------|-------|
+| 7.1.5 Production ML | ~3 days | Medium |
+| 7.2 RL Environments | ~4 days | High |
+| 7.3 Exotic Products | ~5 days | High |
+| 7.6 Backtesting Adapter | ~2 days | Medium |
+| 7.7 Neural SDE | ~2 weeks | Medium (research) |
+| 8.1 Vol Trading | ~1 week | High |
+| 8.2 Portfolio Opt | ~1 week | High |
 
-1. **Complete Core Gaps:**
-   - 7.2: RL Orchestrator (deploy RL agents to backtest/live)
-   - 7.3: Exotic Products (Cliquet, Autocallable, Range Accrual)
-   - 7.6: Deep Hedging backtesting integration
+### Library Completion Criteria
 
-2. **Production ML Enhancement (7.1.5):**
-   - Experiment tracking (MLflow/W&B)
-   - Hyperparameter tuning (Optuna)
-   - Model registry and versioning
+The library will be considered **complete** when:
+1. ✅ Phases 1-6 (done)
+2. ✅ Phase 7.1 ML Integration (done)
+3. ⬜ Phase 7.1.5, 7.2, 7.3, 7.6, 7.7 (remaining core)
+4. ⬜ Phase 8.1, 8.2 (focused extensions)
 
-3. **Research-Level Models:**
-   - 7.7: Neural SDE (learned market dynamics)
-   - 7.8: Rough Volatility (rough Bergomi, rough Heston)
-
-### Medium-Term Goals
-
-4. **Quant HF Extensions (Phase 8):**
-   - Execution/TCA, Factor Risk, Portfolio Optimisation
-   - XVA Framework (8.9), Regulatory Capital (8.10)
-   - Vol Trading, Market-Making, Alternative Data
-
-5. **Deployment & Services (Phase 9):**
-   - FastAPI pricing/risk services
-   - gRPC low-latency services
-   - WebSocket streaming
-
-### Long-Term Vision
-
-6. **Application Projects 1-12:**
-   - Option Analytics, Algo Bot, GNN-LSTM Pricer
-   - Q-Learning Orchestrator, Execution/TCA
-   - Factor Risk, Market-Making, Vol Trading
-   - Portfolio Optimisation, Tail Risk, Real-Time Risk
-   - Alternative Data Alpha
+After that: **Build application projects as needed, not as library features.**
 
 ---
 
-**Implementation Standard:** For every new component, deliver:
-- Implementation with type hints and docstrings
-- Unit tests (>90% coverage)
-- Reference documentation
-- Guide documentation
-- Tutorial notebook (where applicable)
-- Pipeline check → example script if pipeline exists
-
-**The foundation is excellent. Time to build!**
+**The foundation is excellent. The scope is now manageable. Time to finish!**
