@@ -1,8 +1,24 @@
 # QuantStrata Development Roadmap
 
-**Last Updated:** January 27, 2026 (Phase 7.2 Core Complete; added Phases 7.6-7.8: Deep Hedging, Neural SDE, Rough Volatility)  
+**Last Updated:** January 27, 2026 (Phase 7.2 Core Complete; added Phases 7.6-7.8, 8.9-8.10, Phase 9)  
 **Current Version:** V1 (FX Derivatives Foundation)  
 **Target:** Comprehensive Professional Quant Library
+
+---
+
+## Implementation Checklist Standard
+
+For every new component, the following deliverables are required:
+
+| Deliverable | Location | Description |
+|-------------|----------|-------------|
+| **Implementation** | `src/<module>/` | Core code with type hints and docstrings |
+| **Unit Tests** | `tests/unit/<module>/` | Comprehensive test coverage (>90%) |
+| **Reference Doc** | `docs/reference/<module>/` | Technical specification and API reference |
+| **Guide Doc** | `docs/guides/<module>/` | How-to guide with examples |
+| **Tutorial Notebook** | `docs/tutorials/<module>/` | Interactive Jupyter notebook (where applicable) |
+| **Pipeline Check** | `src/orchestrator/pipelines/` | Assess if orchestrator pipeline needed |
+| **Example Script** | `examples/pipelines/` | If pipeline exists, add example script |
 
 ---
 
@@ -815,7 +831,49 @@ This keeps the framework **model-agnostic** and **reusable** across ML-based pri
   - Deliverable: Full revaluation pricer using graph + time-series representation of portfolio
   - Use case: Fast portfolio-level pricing and risk
 
-**Status:** Phase 7.1 COMPLETE. See `docs/development/progress/phase_7_1_implementation_notes.md` and `docs/development/progress/phase_7_1_machine_learning_integration.md`. Technical reference: `docs/reference/machine_learning/ml_framework.md`. Tutorials: `docs/tutorials/machine_learning/` (ML lifecycle, Hybrid GNN-LSTM).
+**Status:** Phase 7.1 Core COMPLETE. See `docs/development/progress/phase_7_1_implementation_notes.md` and `docs/development/progress/phase_7_1_machine_learning_integration.md`. Technical reference: `docs/reference/machine_learning/ml_framework.md`. Tutorials: `docs/tutorials/machine_learning/` (ML lifecycle, Hybrid GNN-LSTM).
+
+### 7.1.5 Production ML Infrastructure
+
+**Goal:** Add production-grade ML tooling for experiment tracking, hyperparameter tuning, and model versioning. Note: `machine_learning/` is already production-quality; these additions extend existing capabilities.
+
+- [ ] **Experiment Tracking Integration**
+  - Implement: `MLflowTracker`, `WandBTracker` with common `TrackingProtocol`
+  - Location: `src/machine_learning/core/tracking.py` (extends core utilities)
+  - Support: Log metrics, parameters, artifacts; integration with training pipelines
+  - Use case: Track experiments, compare runs, reproduce results
+
+- [ ] **Hyperparameter Tuning Extensions**
+  - Implement: `SearchSpace`, `TrialPruner`, `TuningResult` (extends existing `pipelines/tuning.py`)
+  - Location: `src/machine_learning/tuning/` (new submodule if depth needed)
+  - Support: Bayesian optimisation (Optuna), pruning, parallel trials
+  - Integration: Works with existing training pipelines
+  - Use case: Automated hyperparameter search for ML pricers and calibration
+  - Note: `pipelines/tuning.py` already exists; extend if deeper utilities needed
+
+- [ ] **Model Registry & Versioning**
+  - Implement: `ModelRegistry`, `ModelArtifact`, `ModelVersion`
+  - Location: `src/machine_learning/registry/` or `src/machine_learning/core/registry.py`
+  - Support: Version tracking, metadata, promotion (staging → production)
+  - Use case: Production model management and deployment
+
+**Implementation Checklist:**
+```
+[ ] src/machine_learning/core/tracking.py (MLflowTracker, WandBTracker, TrackingProtocol)
+[ ] src/machine_learning/tuning/search_space.py (SearchSpace, TrialPruner) — if pipelines/tuning.py insufficient
+[ ] src/machine_learning/registry/registry.py (ModelRegistry, ModelArtifact, ModelVersion)
+[ ] tests/unit/machine_learning/core/test_tracking.py
+[ ] tests/unit/machine_learning/tuning/test_search_space.py
+[ ] tests/unit/machine_learning/registry/test_registry.py
+[ ] docs/reference/machine_learning/production_ml.md
+[ ] docs/guides/machine_learning/experiment_tracking.md
+[ ] docs/guides/machine_learning/hyperparameter_tuning.md
+[ ] docs/tutorials/machine_learning/ml_production.ipynb
+[ ] Pipeline: extends src/machine_learning/pipelines/tuning.py
+[ ] Example: examples/pipelines/run_tune_gnn_pricer.py
+```
+
+**Status:** Not started. Dependencies: Phase 7.1 complete.
 
 ### 7.2 Q-Learning & Reinforcement Learning Agents
 
@@ -851,28 +909,110 @@ The same **general framework** as ML applies: build agent instance → fetch/pre
   - Use case: Delta hedging agent, algo trading agent
   - **Implemented:** `RLAgent`, `RLEnvironment` in `core/protocols.py`; `Transition`, `RLTrainingConfig`, `RLTrainingResult`, `RLEvaluationResult` in `core/types.py`; pipelines and BaseEnv as above.
 
-- [ ] **RL Orchestrator**
-  - Implement: Orchestrator that deploys RL agents (delta hedging, algo trading) using the generic inference pipeline
-  - Integrate: With backtesting, streaming engine, and library pricers/risk
+- [ ] **RL Agent Deployment & Environments**
+  - Implement: Trading and hedging environments that wrap backtesting/streaming infrastructure
+  - Implement: Agent runners that execute trained agents in backtest or live contexts
+  - Integrate: With backtesting engine, streaming engine, and library pricers/risk
   - Use case: Automated hedging, strategy deployment, cutting-edge applications
+  - Note: Orchestrator pipelines go in `src/orchestrator/pipelines/rl/`; q_learning module provides environments and runners
+
+**RL Deployment Implementation Checklist:**
+```
+Environments (extend existing q_learning/environments/):
+[ ] src/q_learning/environments/trading.py (TradingEnvironment wrapping backtesting)
+[ ] src/q_learning/environments/hedging.py (HedgingEnvironment wrapping pricers)
+[ ] src/q_learning/environments/streaming.py (StreamingEnvironment for live execution)
+
+Runners (agent execution utilities):
+[ ] src/q_learning/runners/backtest.py (BacktestRunner - run agent in backtesting framework)
+[ ] src/q_learning/runners/live.py (LiveRunner - run agent with streaming engine)
+[ ] src/q_learning/runners/base.py (BaseRunner protocol)
+
+Orchestrator Pipelines (in src/orchestrator/pipelines/):
+[ ] src/orchestrator/pipelines/rl/deploy_agent.py (orchestrator-level deployment)
+[ ] src/orchestrator/pipelines/rl/backtest_agent.py (orchestrator-level backtesting)
+
+Tests:
+[ ] tests/unit/q_learning/environments/test_trading.py
+[ ] tests/unit/q_learning/environments/test_hedging.py
+[ ] tests/unit/q_learning/runners/test_backtest.py
+
+Documentation:
+[ ] docs/reference/q_learning/environments.md
+[ ] docs/reference/q_learning/runners.md
+[ ] docs/guides/q_learning/deploying_rl_agents.md
+[ ] docs/tutorials/q_learning/rl_deployment_tutorial.ipynb
+[ ] Example: examples/pipelines/run_deploy_rl_agent.py
+```
 
 **Status:** Phase 7.2 core complete (training, evaluation, inference, protocols, BaseEnv, metrics). RL Orchestrator not yet implemented. See `docs/development/progress/phase_7_2_q_learning.md`. Technical reference: `docs/reference/q_learning/rl_framework.md`. Guide: `docs/guides/q_learning/rl_framework.md`.
 
 ### 7.3 Exotic Products
+
+**Goal:** Implement structured products commonly traded by hedge funds and investment banks.
+
 - [ ] **Cliquet Options**
-  - Implement: `CliquetOption` (periodic resets)
-  - Pricer: MC (required)
-  - Use case: Structured products
+  - Instrument: `CliquetOption` (periodic resets with local/global caps and floors)
+  - Parameters: reset_dates, local_cap, local_floor, global_cap, global_floor, participation
+  - Payoff: `CliquetPayoff` (path-dependent, sum of capped/floored periodic returns)
+  - Pricer: `CliquetMcPricer` (MC required for path-dependency)
+  - Greeks: Delta, gamma, vega (bump-and-reval), rho
+  - Use case: Equity-linked structured notes, guaranteed return products
 
 - [ ] **Autocallable Products**
-  - Implement: `AutocallableOption` (auto-exercise on barrier)
-  - Pricer: MC (required)
-  - Use case: Popular structured product
+  - Instrument: `AutocallableOption` (barrier observation dates, coupon, early redemption)
+  - Parameters: observation_dates, autocall_barrier, coupon_barrier, put_barrier, coupon_rate
+  - Payoff: `AutocallablePayoff` (early termination on barrier breach with coupon)
+  - Pricer: `AutocallableMcPricer` (MC required)
+  - Greeks: Delta, gamma, vega, autocall probability
+  - Use case: Most popular structured product globally (>$100B annual issuance)
 
 - [ ] **Range Accrual**
-  - Implement: `RangeAccrual` (payout based on range)
-  - Pricer: MC (required)
-  - Use case: Interest rate structured product
+  - Instrument: `RangeAccrualNote` (IR or FX underlying)
+  - Parameters: range_lower, range_upper, observation_freq, notional, accrual_rate
+  - Payoff: `RangeAccrualPayoff` (accrues on days within range)
+  - Pricer: `RangeAccrualMcPricer` (MC required)
+  - Greeks: Delta, range sensitivity
+  - Use case: Yield enhancement, low-vol betting
+
+**Implementation Checklist:**
+
+**Pricer Naming Convention:** `{product}_{model}_{method}.py`
+- Follows existing pattern: `european_bsm_mc.py`, `european_heston_mc.py`
+- For exotics: `cliquet_gbm_mc.py`, `autocallable_gbm_mc.py` (allows future model variants)
+
+```
+Cliquet Options:
+[ ] src/instruments/equity/options/cliquet.py (EquityCliquetOption)
+[ ] src/instruments/fx/options/cliquet.py (FxCliquetOption)
+[ ] src/models/payoffs/cliquet.py (CliquetPayoff)
+[ ] src/pricers/equity/cliquet_gbm_mc.py (EquityCliquetGbmMcPricer)
+[ ] src/pricers/fx/cliquet_gbm_mc.py (FxCliquetGbmMcPricer)
+[ ] tests/unit/instruments/equity/test_cliquet.py
+[ ] tests/unit/pricers/equity/test_cliquet_gbm_mc.py
+
+Autocallable Products:
+[ ] src/instruments/equity/options/autocallable.py (EquityAutocallableOption)
+[ ] src/models/payoffs/autocallable.py (AutocallablePayoff)
+[ ] src/pricers/equity/autocallable_gbm_mc.py (EquityAutocallableGbmMcPricer)
+[ ] src/pricers/equity/autocallable_localvol_mc.py (EquityAutocallableLocalvolMcPricer) — optional
+[ ] tests/unit/instruments/equity/test_autocallable.py
+[ ] tests/unit/pricers/equity/test_autocallable_gbm_mc.py
+
+Range Accrual:
+[ ] src/instruments/ir/options/range_accrual.py (IrRangeAccrualNote)
+[ ] src/models/payoffs/range_accrual.py (RangeAccrualPayoff)
+[ ] src/pricers/ir/range_accrual_hw_mc.py (IrRangeAccrualHwMcPricer) — Hull-White model
+[ ] tests/unit/instruments/ir/test_range_accrual.py
+[ ] tests/unit/pricers/ir/test_range_accrual_hw_mc.py
+
+Documentation:
+[ ] docs/reference/instruments/exotic_products.md
+[ ] docs/guides/instruments/pricing_exotics.md
+[ ] docs/tutorials/pricing/exotic_options.ipynb
+```
+
+**Status:** Not started.
 
 ### 7.4 Credit Derivatives (Optional)
 - [ ] **Credit Default Swaps (CDS)**
@@ -966,6 +1106,36 @@ The same **general framework** as ML applies: build agent instance → fetch/pre
   - Implement: Run trained hedging agent in backtesting framework
   - Support: Historical data replay, out-of-sample evaluation
   - Use case: Validate deep hedging on real data
+  - Note: Uses existing `src/backtesting/` infrastructure; deep_hedging provides adapters
+
+**Backtesting Integration Implementation Checklist:**
+```
+Adapters (bridge deep_hedging agents to backtesting framework):
+[ ] src/deep_hedging/adapters/backtesting.py (BacktestEngineAdapter - adapts hedging agent to backtesting.Strategy interface)
+[ ] src/deep_hedging/adapters/historical_data.py (HistoricalDataAdapter - prepares historical data for hedging env)
+
+Results (hedging-specific result processing):
+[ ] src/deep_hedging/evaluation/backtest_metrics.py (HedgingBacktestMetrics - extends evaluation with backtest-specific metrics)
+
+Tests:
+[ ] tests/unit/deep_hedging/adapters/test_backtesting.py
+[ ] tests/unit/deep_hedging/evaluation/test_backtest_metrics.py
+
+Documentation:
+[ ] docs/guides/deep_hedging/backtesting_hedging_agents.md
+[ ] Update: docs/tutorials/deep_hedging/deep_hedging_tutorial.ipynb (add backtesting section)
+
+Pipeline:
+[ ] src/orchestrator/pipelines/deep_hedging/backtest_agent.py
+[ ] Example: examples/pipelines/run_backtest_hedging_agent.py
+```
+
+**Note on Deep Hedging Architecture:**
+Deep hedging is fundamentally an RL application (agents, environments, training). It's kept as a separate module because:
+1. It's a recognised research field with specific terminology (Bühler et al. "Deep Hedging")
+2. Contains domain-specific components: transaction costs, risk measures (CVaR, entropic), hedging evaluation metrics
+3. Users searching for "deep hedging" expect a dedicated module
+The structure mirrors `q_learning/` but with hedging-specific components.
 
 ### 7.6.4 Advanced Deep Hedging
 - [ ] **Multi-Asset Hedging**
@@ -975,8 +1145,25 @@ The same **general framework** as ML applies: build agent instance → fetch/pre
 
 - [ ] **Model-Agnostic Hedging**
   - Implement: Train hedging agent without assuming specific dynamics
-  - Support: Learn from historical data directly
+  - Support: Learn from historical data directly (uses historical data adapter from 7.6.3)
   - Use case: Robust hedging under model uncertainty
+
+**Implementation Checklist:**
+```
+Multi-Asset (extends existing environments/agents):
+[ ] src/deep_hedging/environments/multi_asset.py (MultiAssetHedgingEnv)
+[ ] src/deep_hedging/agents/multi_asset.py (MultiAssetDeepHedgingAgent)
+[ ] tests/unit/deep_hedging/environments/test_multi_asset.py
+[ ] tests/unit/deep_hedging/agents/test_multi_asset.py
+
+Model-Agnostic (uses historical adapter):
+[ ] src/deep_hedging/environments/historical.py (HistoricalHedgingEnv - wraps historical data)
+[ ] tests/unit/deep_hedging/environments/test_historical.py
+
+Documentation:
+[ ] docs/guides/deep_hedging/multi_asset_hedging.md
+[ ] docs/guides/deep_hedging/model_agnostic_hedging.md
+```
 
 **Status:** ✅ **Core complete.** Environments, agents, training, evaluation implemented. Advanced features (multi-asset, backtesting integration, model-agnostic) pending. See `docs/development/progress/phase_7_6_deep_hedging.md`.
 
@@ -1048,6 +1235,40 @@ The same **general framework** as ML applies: build agent instance → fetch/pre
   - Implement: Generate synthetic market data for training other models
   - Support: Preserve statistical properties (vol clustering, fat tails)
   - Use case: Data augmentation for ML models
+
+**Implementation Checklist:**
+```
+Neural SDE Framework (7.7.1):
+[ ] src/models/neural_sde/networks.py (NeuralDriftNetwork, NeuralDiffusionNetwork)
+[ ] src/models/neural_sde/solvers.py (EulerMaruyamaSolver, MilsteinSolver)
+[ ] src/models/neural_sde/adjoint.py (AdjointSDEMethod)
+[ ] src/models/neural_sde/dynamics.py (NeuralSDEDynamics)
+[ ] tests/unit/models/neural_sde/test_networks.py
+[ ] tests/unit/models/neural_sde/test_solvers.py
+
+Training (7.7.2):
+[ ] src/models/neural_sde/training/score_matching.py (ScoreMatchingTrainer)
+[ ] src/models/neural_sde/training/calibration.py (NeuralSDECalibrator)
+[ ] src/models/neural_sde/training/pipeline.py (NeuralSDETrainingPipeline)
+[ ] tests/unit/models/neural_sde/training/test_score_matching.py
+
+Pricing Integration (7.7.3):
+[ ] src/pricers/neural_sde/mc_pricer.py (NeuralSDEMcPricer)
+[ ] src/pricers/neural_sde/greeks.py (NeuralSDEGreeksCalculator)
+[ ] tests/unit/pricers/neural_sde/test_mc_pricer.py
+
+Generative Simulation (7.7.4):
+[ ] src/models/neural_sde/generation/conditional.py (ConditionalGenerator)
+[ ] src/models/neural_sde/generation/augmentation.py (SyntheticDataAugmenter)
+[ ] tests/unit/models/neural_sde/generation/test_conditional.py
+
+Documentation:
+[ ] docs/reference/models/neural_sde.md
+[ ] docs/guides/models/training_neural_sde.md
+[ ] docs/tutorials/models/neural_sde_tutorial.ipynb
+[ ] Pipeline: src/orchestrator/pipelines/ml/train_neural_sde.py
+[ ] Example: examples/pipelines/run_train_neural_sde.py
+```
 
 **Status:** Not started. See `docs/development/progress/phase_7_7_neural_sde.md` (to be created).
 
@@ -1124,6 +1345,49 @@ The same **general framework** as ML applies: build agent instance → fetch/pre
   - Support: Path-wise and likelihood ratio methods
   - Use case: Risk management with rough vol
 
+**Implementation Checklist:**
+```
+Fractional Brownian Motion (7.8.1):
+[ ] src/models/rough_volatility/fbm/sampler.py (FractionalBMSampler)
+[ ] src/models/rough_volatility/fbm/cholesky.py (CholeskyFBM)
+[ ] src/models/rough_volatility/fbm/hosking.py (HoskingFBM)
+[ ] src/models/rough_volatility/volterra.py (VolterraProcess)
+[ ] tests/unit/models/rough_volatility/test_fbm.py
+
+Rough Bergomi (7.8.2):
+[ ] src/models/rough_volatility/rough_bergomi/dynamics.py (RoughBergomiDynamics)
+[ ] src/models/rough_volatility/rough_bergomi/simulator.py (RoughBergomiSimulator)
+[ ] src/models/rough_volatility/rough_bergomi/hybrid_scheme.py (HybridSimulationScheme)
+[ ] src/pricers/rough_volatility/rough_bergomi_mc.py (RoughBergomiMcPricer)
+[ ] tests/unit/models/rough_volatility/test_rough_bergomi.py
+[ ] tests/unit/pricers/rough_volatility/test_rough_bergomi_mc.py
+
+Rough Heston (7.8.3):
+[ ] src/models/rough_volatility/rough_heston/dynamics.py (RoughHestonDynamics)
+[ ] src/models/rough_volatility/rough_heston/char_func.py (RoughHestonCharFunc, AdamsMethod)
+[ ] src/models/rough_volatility/rough_heston/fourier_pricer.py (RoughHestonFourierPricer)
+[ ] tests/unit/models/rough_volatility/test_rough_heston.py
+
+Calibration (7.8.4):
+[ ] src/calibration/rough_volatility/rough_bergomi.py (RoughBergomiCalibrator)
+[ ] src/calibration/rough_volatility/rough_heston.py (RoughHestonCalibrator)
+[ ] src/calibration/rough_volatility/hurst_estimation.py (HurstEstimator)
+[ ] tests/unit/calibration/rough_volatility/test_calibrators.py
+[ ] tests/unit/calibration/rough_volatility/test_hurst.py
+
+Integration (7.8.5):
+[ ] src/models/rough_volatility/vol_surface.py (RoughVolSurface)
+[ ] src/models/rough_volatility/greeks.py (RoughVolGreeks)
+[ ] tests/unit/models/rough_volatility/test_integration.py
+
+Documentation:
+[ ] docs/reference/models/rough_volatility.md
+[ ] docs/guides/models/rough_vol_calibration.md
+[ ] docs/tutorials/models/rough_volatility_tutorial.ipynb
+[ ] Pipeline: src/orchestrator/pipelines/calibration/rough_vol.py
+[ ] Example: examples/pipelines/run_calibrate_rough_bergomi.py
+```
+
 **Status:** Not started. See `docs/development/progress/phase_7_8_rough_volatility.md` (to be created).
 
 **Dependencies:** MC framework, vol surface infrastructure, calibration engine.
@@ -1166,6 +1430,24 @@ The same **general framework** as ML applies: build agent instance → fetch/pre
   - Support: Standardised TCA output for comparison and reporting
   - Use case: Execution & TCA application project
 
+**Implementation Checklist (8.1):**
+```
+[ ] src/execution/costs/market_impact.py (TemporaryImpact, PermanentImpact, AlmgrenChrissImpact)
+[ ] src/execution/costs/spread.py (SpreadModel, LiquidityAdjustedSpread)
+[ ] src/execution/optimal/almgren_chriss.py (AlmgrenChrissSolver, OptimalTrajectory)
+[ ] src/execution/optimal/twap_vwap.py (TWAPSchedule, VWAPSchedule)
+[ ] src/execution/tca/metrics.py (ImplementationShortfall, ArrivalPrice, Slippage)
+[ ] src/execution/tca/report.py (TCAReport, TCAReportGenerator)
+[ ] tests/unit/execution/test_market_impact.py
+[ ] tests/unit/execution/test_optimal_execution.py
+[ ] tests/unit/execution/test_tca_metrics.py
+[ ] docs/reference/execution/tca.md
+[ ] docs/guides/execution/optimal_execution.md
+[ ] docs/tutorials/execution/tca_tutorial.ipynb
+[ ] Pipeline: src/orchestrator/pipelines/execution/compute_tca.py
+[ ] Example: examples/pipelines/run_tca_analysis.py
+```
+
 ### 8.2 Factor Risk Model & Factor Attribution
 - [ ] **Factor Exposure Computation**
   - Implement: Compute portfolio exposures to risk factors (e.g. rates, vol, sector, style)
@@ -1182,6 +1464,21 @@ The same **general framework** as ML applies: build agent instance → fetch/pre
   - Support: Portfolio-level and instrument-level factor breakdown
   - Use case: Factor risk & attribution application project, risk reports
 
+**Implementation Checklist (8.2):**
+```
+[ ] src/risk/factor/exposure.py (FactorExposureCalculator, FactorDefinition)
+[ ] src/risk/factor/covariance.py (FactorCovarianceMatrix, FactorReturns)
+[ ] src/risk/factor/attribution.py (FactorPnLAttribution, FactorAttributionReport)
+[ ] src/risk/factor/factor_var.py (FactorVaR)
+[ ] tests/unit/risk/factor/test_exposure.py
+[ ] tests/unit/risk/factor/test_attribution.py
+[ ] docs/reference/risk/factor_model.md
+[ ] docs/guides/risk/factor_risk.md
+[ ] docs/tutorials/risk/factor_attribution_tutorial.ipynb
+[ ] Pipeline: src/orchestrator/pipelines/risk/compute_factor_risk.py
+[ ] Example: examples/pipelines/run_factor_attribution.py
+```
+
 ### 8.3 Volatility Trading & Variance Swap Analytics
 - [ ] **Variance Swap / Vol Swap Pricing**
   - Implement: Variance swap pricing (e.g. model-based from Heston/local vol), fair variance strike
@@ -1192,6 +1489,19 @@ The same **general framework** as ML applies: build agent instance → fetch/pre
   - Implement: Index vs single-name dispersion metrics, vol-of-vol from existing models
   - Support: Relative value and dispersion trading analytics
   - Use case: Volatility trading application project
+
+**Implementation Checklist (8.3):**
+```
+[ ] src/instruments/equity/options/variance_swap.py (VarianceSwap, VolatilitySwap)
+[ ] src/pricers/equity/variance_swap.py (VarianceSwapPricer, VarianceSwapReplicator)
+[ ] src/analytics/volatility/dispersion.py (DispersionAnalytics, IndexVsSingleName)
+[ ] src/analytics/volatility/vol_of_vol.py (VolOfVolCalculator)
+[ ] tests/unit/instruments/equity/test_variance_swap.py
+[ ] tests/unit/analytics/volatility/test_dispersion.py
+[ ] docs/reference/instruments/variance_swaps.md
+[ ] docs/guides/volatility/vol_trading_analytics.md
+[ ] docs/tutorials/volatility/variance_swap_tutorial.ipynb
+```
 
 ### 8.4 Portfolio Construction & Optimisation
 - [ ] **Portfolio Optimisation API**
@@ -1204,6 +1514,22 @@ The same **general framework** as ML applies: build agent instance → fetch/pre
   - Support: Same risk inputs as VaR and factor model where applicable
   - Use case: Portfolio optimisation, factor-aware optimisation
 
+**Implementation Checklist (8.4):**
+```
+[ ] src/portfolio/optimisation/mean_variance.py (MeanVarianceOptimiser)
+[ ] src/portfolio/optimisation/risk_parity.py (RiskParityOptimiser)
+[ ] src/portfolio/optimisation/black_litterman.py (BlackLittermanOptimiser)
+[ ] src/portfolio/optimisation/constraints.py (TurnoverConstraint, SectorConstraint, LeverageConstraint)
+[ ] src/portfolio/optimisation/covariance.py (CovarianceEstimator, ShrinkageEstimator)
+[ ] tests/unit/portfolio/optimisation/test_mean_variance.py
+[ ] tests/unit/portfolio/optimisation/test_risk_parity.py
+[ ] docs/reference/portfolio/optimisation.md
+[ ] docs/guides/portfolio/portfolio_construction.md
+[ ] docs/tutorials/portfolio/portfolio_optimisation_tutorial.ipynb
+[ ] Pipeline: src/orchestrator/pipelines/portfolio/optimise_portfolio.py
+[ ] Example: examples/pipelines/run_portfolio_optimisation.py
+```
+
 ### 8.5 Tail Risk & Crisis Analytics
 - [ ] **CVaR / Expected Shortfall**
   - Implement: Conditional VaR (expected shortfall) alongside VaR
@@ -1215,23 +1541,261 @@ The same **general framework** as ML applies: build agent instance → fetch/pre
   - Support: Stress scenarios that include tail/crisis behaviour
   - Use case: Tail risk & crisis analytics application project
 
+**Implementation Checklist (8.5):**
+```
+[ ] src/risk/var/cvar.py (CVaR, ExpectedShortfall, CVaRConfig)
+[ ] src/risk/tail/dependence.py (TailDependence, CopulaAnalysis)
+[ ] src/risk/tail/crisis_scenarios.py (CrisisScenarioGenerator, CorrelationBreakdown)
+[ ] tests/unit/risk/var/test_cvar.py
+[ ] tests/unit/risk/tail/test_dependence.py
+[ ] docs/reference/risk/tail_risk.md
+[ ] docs/guides/risk/tail_risk_management.md
+[ ] docs/tutorials/risk/tail_risk_tutorial.ipynb
+```
+
 ### 8.6 Real-Time Risk & Limit Monitoring
 - [ ] **Limit Monitoring & Alerts**
   - Implement: Threshold checks (VaR, Greeks, exposure, PnL), breach detection, alert interface
   - Support: Integration with streaming engine and risk aggregation
   - Use case: Real-time risk dashboard application project
 
-### 8.7 Alternative Data for Alpha
-- [ ] **Alternative Data Adapters & Featurisation**
-  - Implement: Adapters for alternative data sources (e.g. sentiment, macro); featurisation into standard format
-  - Support: Output compatible with generic ML training pipeline (Phase 7.1)
-  - Use case: Alternative data alpha application project, ML strategies
+**Implementation Checklist (8.6):**
+```
+[ ] src/risk/monitoring/limits.py (LimitDefinition, LimitMonitor, LimitBreach)
+[ ] src/risk/monitoring/alerts.py (AlertEngine, AlertHandler, AlertNotification)
+[ ] src/risk/monitoring/dashboard.py (RiskDashboardData, RealTimeRiskAggregator)
+[ ] tests/unit/risk/monitoring/test_limits.py
+[ ] tests/unit/risk/monitoring/test_alerts.py
+[ ] docs/reference/risk/limit_monitoring.md
+[ ] docs/guides/risk/real_time_risk.md
+[ ] docs/tutorials/risk/limit_monitoring_tutorial.ipynb
+```
 
-### 8.8 Market-Making / Quoting Simulator Components
-- [ ] **Spread & Inventory Model**
-  - Implement: Spread rule (e.g. around fair value from pricers), simple inventory penalty
-  - Support: Use by market-making simulator or RL quoting agent
-  - Use case: Options market-making application project
+### 8.7 Alternative Data for Alpha
+
+**What are data connectors/adapters?**
+Connectors are a common data engineering pattern that transform external data sources into a standardised internal format:
+```
+External Source (JSON/CSV/API) → Connector → Standardised Format → ML Pipeline / Backtesting
+```
+
+**Why needed:**
+- Different data providers have different formats, APIs, schemas
+- Connectors isolate this complexity from core library
+- Allows plugging in new data sources without changing ML/backtesting pipelines
+
+- [ ] **Alternative Data Connectors**
+  - Implement: Connectors for alternative data sources (sentiment, macro, options flow)
+  - Pattern: `DataConnector` protocol with `fetch()`, `transform()`, `to_features()`
+  - Examples:
+    - `SentimentConnector`: Fetches news/social sentiment, normalises to [-1, +1]
+    - `MacroConnector`: Fetches economic indicators (GDP, CPI), aligns timestamps
+    - `OptionsFlowConnector`: Fetches unusual options activity data
+  - Support: Output compatible with ML training pipeline (Phase 7.1)
+  - Use case: Alternative data alpha, ML strategy features
+
+- [ ] **Featurisation Pipeline**
+  - Implement: Transform raw alternative data into ML-ready features
+  - Support: Time alignment, normalisation, missing data handling
+  - Use case: Feed features into generic ML training pipeline
+
+**Implementation Checklist (8.7):**
+```
+Connectors (in marketdata, following existing provider patterns):
+[ ] src/marketdata/providers/alternative/base.py (AltDataConnector protocol)
+[ ] src/marketdata/providers/alternative/sentiment.py (SentimentConnector)
+[ ] src/marketdata/providers/alternative/macro.py (MacroConnector)
+[ ] src/marketdata/providers/alternative/options_flow.py (OptionsFlowConnector)
+
+Featurisation (for ML pipeline):
+[ ] src/machine_learning/data/alternative/featuriser.py (AltDataFeaturiser)
+[ ] src/machine_learning/data/alternative/transforms.py (TimeAligner, Normaliser)
+
+Tests:
+[ ] tests/unit/marketdata/providers/alternative/test_connectors.py
+[ ] tests/unit/machine_learning/data/alternative/test_featuriser.py
+
+Documentation:
+[ ] docs/reference/marketdata/alternative_data.md
+[ ] docs/guides/data/alternative_data_pipeline.md
+[ ] docs/tutorials/data/alternative_data_tutorial.ipynb
+```
+
+### 8.8 Market-Making / Quoting Analytics
+
+**What is market-making?**
+Market-making is providing liquidity by continuously quoting bid and ask prices. Options trading desks often act as market-makers.
+
+**Core concepts:**
+
+1. **Fair Value**: Use library pricers to compute theoretical mid-price
+2. **Spread Model**: How to set bid-ask spread around fair value
+   - Wider spread = more profit per trade but fewer fills
+   - Narrower spread = more volume but tighter margins
+   - Depends on: volatility, inventory, time of day, order flow
+3. **Inventory Model**: Managing position risk from accumulated trades
+   - Example: Long 100 deltas → shade asks higher (discourage more buys)
+   - Avellaneda-Stoikov model is the classic academic reference
+
+**Workflow:**
+```
+Market Data → Pricer (fair value) → Spread Model → Bid/Ask Quotes → Fill → Inventory Update → Risk Adjustment
+```
+
+- [ ] **Spread Models**
+  - Implement: Spread rules for computing bid-ask around fair value
+  - Models: Fixed spread, volatility-adjusted, Avellaneda-Stoikov
+  - Support: Use pricers for fair value, market data for vol
+  - Use case: Automated quoting, market-making analytics
+
+- [ ] **Inventory Management**
+  - Implement: Inventory tracking and risk adjustment
+  - Support: Inventory penalty in spread calculation, position limits
+  - Use case: Manage delta/gamma exposure from market-making
+
+- [ ] **Quoting Simulator**
+  - Implement: Simulate market-making P&L with fills and inventory
+  - Support: Backtest quoting strategies, compare spread models
+  - Use case: Strategy development, risk analysis
+
+**Implementation Checklist (8.8):**
+```
+Core (in execution module alongside TCA from 8.1):
+[ ] src/execution/market_making/spread.py (SpreadModel, FixedSpread, AvellanedaStoikovSpread)
+[ ] src/execution/market_making/inventory.py (InventoryTracker, InventoryPenalty)
+[ ] src/execution/market_making/quoting.py (QuotingEngine, Quote, QuoteGenerator)
+
+Simulation:
+[ ] src/execution/market_making/simulator.py (MarketMakingSimulator)
+[ ] src/execution/market_making/backtest.py (MMBacktestEngine, MMBacktestResult)
+
+Tests:
+[ ] tests/unit/execution/market_making/test_spread.py
+[ ] tests/unit/execution/market_making/test_inventory.py
+[ ] tests/unit/execution/market_making/test_simulator.py
+
+Documentation:
+[ ] docs/reference/execution/market_making.md
+[ ] docs/guides/execution/market_making_strategy.md
+[ ] docs/tutorials/execution/market_making_tutorial.ipynb
+```
+
+**Note:** 
+- Lives in `src/execution/` alongside TCA (8.1) - both are about trade execution
+- Can be extended with RL quoting agent (Phase 7.2 integration) for adaptive market-making
+
+### 8.9 XVA Framework (Credit Valuation Adjustments)
+
+**Goal:** Implement counterparty credit risk adjustments (CVA, DVA, FVA) for OTC derivatives pricing.
+
+- [ ] **Exposure Simulation**
+  - Implement: Expected Positive Exposure (EPE), Expected Negative Exposure (ENE) profiles
+  - Support: Monte Carlo simulation of portfolio value paths
+  - Use case: Counterparty risk measurement, collateral optimisation
+
+- [ ] **CVA/DVA Calculation**
+  - Implement: Credit Valuation Adjustment (CVA), Debit Valuation Adjustment (DVA)
+  - Formula: CVA = (1-R) ∫ EPE(t) × PD(t) dt
+  - Support: Calibration to CDS spreads, netting sets
+  - Use case: Counterparty credit risk pricing
+
+- [ ] **FVA Calculation**
+  - Implement: Funding Valuation Adjustment (FVA)
+  - Support: Asymmetric funding costs (borrowing vs lending spreads)
+  - Use case: Funding cost in derivative pricing
+
+- [ ] **Collateral Modelling**
+  - Implement: Collateral agreement (CSA) modelling, margin period of risk
+  - Support: Threshold, minimum transfer amount, independent amounts
+  - Use case: Collateralised exposure calculation
+
+**Implementation Checklist (8.9):**
+```
+[ ] src/xva/exposure/simulator.py (ExposureSimulator, ExposurePath)
+[ ] src/xva/exposure/profiles.py (EPE, ENE, PFE, ExposureProfile)
+[ ] src/xva/cva/calculator.py (CVACalculator, DVACalculator)
+[ ] src/xva/cva/credit_curve.py (CreditCurve, CDSBootstrapper)
+[ ] src/xva/fva/calculator.py (FVACalculator, FundingCurve)
+[ ] src/xva/collateral/csa.py (CSAModel, CollateralAgreement)
+[ ] src/xva/collateral/margin.py (MarginCalculator, MarginPeriodOfRisk)
+[ ] src/xva/netting/netting_set.py (NettingSet, CloseoutNetting)
+[ ] tests/unit/xva/test_exposure.py
+[ ] tests/unit/xva/test_cva.py
+[ ] tests/unit/xva/test_fva.py
+[ ] tests/unit/xva/test_collateral.py
+[ ] docs/reference/xva/xva_framework.md
+[ ] docs/guides/xva/computing_xva.md
+[ ] docs/tutorials/xva/xva_tutorial.ipynb
+[ ] Pipeline: src/orchestrator/pipelines/xva/compute_xva.py
+[ ] Example: examples/pipelines/run_compute_xva.py
+```
+
+**Status:** Not started.
+
+**Dependencies:** MC simulation, pricers, credit curves.
+
+### 8.10 Regulatory Capital (FRTB & SIMM)
+
+**Goal:** Implement regulatory capital calculations for market risk (FRTB) and initial margin (SIMM).
+
+- [ ] **FRTB Standardised Approach (SA)**
+  - Implement: Sensitivities-Based Method (SBM) for delta, vega, curvature
+  - Support: Risk class buckets (IR, FX, Equity, Commodity, Credit)
+  - Support: Correlation scenarios (high, medium, low)
+  - Use case: Basel IV market risk capital
+
+- [ ] **FRTB Default Risk Charge (DRC)**
+  - Implement: Default risk capital for non-securitised products
+  - Support: Jump-to-default sensitivities
+  - Use case: Credit default risk capital
+
+- [ ] **ISDA SIMM**
+  - Implement: Standard Initial Margin Model (SIMM 2.x)
+  - Support: Delta, vega, curvature risk weights and correlations
+  - Support: Concentration thresholds
+  - Use case: Initial margin for non-cleared OTC derivatives
+
+- [ ] **Capital Reports**
+  - Implement: Regulatory report generation (FRTB, SIMM)
+  - Support: Risk class breakdown, bucket details
+  - Use case: Regulatory compliance reporting
+
+**Implementation Checklist (8.10):**
+```
+FRTB SA:
+[ ] src/regulatory/frtb/sensitivities.py (FRTBSensitivity, DeltaSensitivity, VegaSensitivity, CurvatureSensitivity)
+[ ] src/regulatory/frtb/risk_classes.py (RiskClass, Bucket, RiskWeight)
+[ ] src/regulatory/frtb/sbm.py (SBMCalculator, CorrelationScenario)
+[ ] src/regulatory/frtb/drc.py (DRCCalculator, DefaultRiskCharge)
+[ ] src/regulatory/frtb/aggregation.py (FRTBAggregator, TotalCapital)
+
+SIMM:
+[ ] src/regulatory/simm/sensitivities.py (SIMMSensitivity, SIMMDelta, SIMMVega)
+[ ] src/regulatory/simm/risk_weights.py (SIMMRiskWeights, ConcentrationThreshold)
+[ ] src/regulatory/simm/calculator.py (SIMMCalculator, SIMMResult)
+[ ] src/regulatory/simm/correlation.py (SIMMCorrelation)
+
+Reports:
+[ ] src/regulatory/reports/frtb_report.py (FRTBReport, FRTBReportGenerator)
+[ ] src/regulatory/reports/simm_report.py (SIMMReport, SIMMReportGenerator)
+
+Tests:
+[ ] tests/unit/regulatory/frtb/test_sbm.py
+[ ] tests/unit/regulatory/frtb/test_drc.py
+[ ] tests/unit/regulatory/simm/test_calculator.py
+
+Documentation:
+[ ] docs/reference/regulatory/frtb.md
+[ ] docs/reference/regulatory/simm.md
+[ ] docs/guides/regulatory/regulatory_capital.md
+[ ] docs/tutorials/regulatory/frtb_simm_tutorial.ipynb
+[ ] Pipeline: src/orchestrator/pipelines/regulatory/compute_capital.py
+[ ] Example: examples/pipelines/run_frtb_capital.py
+```
+
+**Status:** Not started.
+
+**Dependencies:** Greeks calculation, risk sensitivities, market data.
 
 ### Deliverables (Phase 8):
 - [ ] Execution models, optimal execution, TCA metrics (8.1)
@@ -1242,8 +1806,138 @@ The same **general framework** as ML applies: build agent instance → fetch/pre
 - [ ] Limit monitoring and alerts (8.6)
 - [ ] Alternative data adapters and featurisation (8.7)
 - [ ] Spread/inventory model for market-making (8.8)
+- [ ] XVA framework (CVA, DVA, FVA) (8.9)
+- [ ] Regulatory capital (FRTB SA, SIMM) (8.10)
 
-**Impact:** Library supports execution, factor risk, vol trading, portfolio optimisation, tail risk, real-time monitoring, alt data, and market-making application projects.
+**Impact:** Library supports execution, factor risk, vol trading, portfolio optimisation, tail risk, real-time monitoring, alt data, market-making, counterparty risk (XVA), and regulatory capital application projects.
+
+---
+
+## Phase 9: Deployment & Services
+
+**Goal:** Provide production-ready service layer for deploying quantitative capabilities as APIs and real-time services.
+
+### 9.1 REST API Service (FastAPI)
+
+- [ ] **Pricing Service**
+  - Implement: FastAPI endpoints for option pricing (BSM, MC, FDE)
+  - Support: Batch pricing, async processing for large portfolios
+  - Endpoints: `/price`, `/greeks`, `/portfolio/price`
+  - Use case: Integration with trading systems, web dashboards
+
+- [ ] **Risk Service**
+  - Implement: FastAPI endpoints for risk calculations
+  - Support: VaR, Greeks aggregation, scenario analysis
+  - Endpoints: `/risk/var`, `/risk/greeks`, `/risk/scenarios`
+  - Use case: Risk dashboards, automated monitoring
+
+- [ ] **Calibration Service**
+  - Implement: FastAPI endpoints for model calibration
+  - Support: SABR, Heston, Hull-White calibration
+  - Endpoints: `/calibrate/sabr`, `/calibrate/heston`
+  - Use case: Daily calibration jobs, on-demand calibration
+
+### 9.2 Low-Latency Service (gRPC)
+
+- [ ] **gRPC Pricing Service**
+  - Implement: Protocol buffer definitions for pricing requests/responses
+  - Support: Streaming pricing for real-time applications
+  - Use case: High-frequency pricing, algo trading
+
+- [ ] **gRPC Risk Service**
+  - Implement: Protocol buffer definitions for risk calculations
+  - Support: Streaming risk updates
+  - Use case: Real-time risk monitoring
+
+### 9.3 WebSocket Streaming
+
+- [ ] **Quote Streaming Server**
+  - Implement: WebSocket server for streaming market data and prices
+  - Support: Subscription model for instruments
+  - Use case: Real-time dashboards, trading UIs
+
+- [ ] **Risk Streaming Server**
+  - Implement: WebSocket server for streaming risk metrics
+  - Support: Real-time Greeks, VaR updates
+  - Use case: Risk monitoring dashboards
+
+### 9.4 Service Infrastructure
+
+- [ ] **Service Configuration**
+  - Implement: ServiceConfig for deployment settings
+  - Support: Environment-based configuration, secrets management
+  - Use case: Production deployment
+
+- [ ] **Health & Metrics**
+  - Implement: Health check endpoints, Prometheus metrics
+  - Support: Latency tracking, error rates, throughput
+  - Use case: Production monitoring
+
+- [ ] **Authentication & Authorization**
+  - Implement: JWT/API key authentication
+  - Support: Role-based access control
+  - Use case: Secure API access
+
+**Implementation Checklist (Phase 9):**
+```
+FastAPI Services (9.1):
+[ ] src/services/api/pricing.py (PricingRouter, price_option, price_portfolio)
+[ ] src/services/api/risk.py (RiskRouter, compute_var, compute_greeks)
+[ ] src/services/api/calibration.py (CalibrationRouter, calibrate_sabr)
+[ ] src/services/api/models.py (PricingRequest, PricingResponse, RiskRequest)
+[ ] src/services/api/app.py (create_app, lifespan)
+
+gRPC Services (9.2):
+[ ] src/services/grpc/protos/pricing.proto
+[ ] src/services/grpc/protos/risk.proto
+[ ] src/services/grpc/pricing_service.py (PricingServicer)
+[ ] src/services/grpc/risk_service.py (RiskServicer)
+[ ] src/services/grpc/server.py (GRPCServer)
+
+WebSocket (9.3):
+[ ] src/services/websocket/quote_server.py (QuoteWebSocketServer)
+[ ] src/services/websocket/risk_server.py (RiskWebSocketServer)
+[ ] src/services/websocket/handlers.py (WebSocketHandler)
+
+Infrastructure (9.4):
+[ ] src/services/config.py (ServiceConfig, load_config)
+[ ] src/services/health.py (HealthCheck, ReadinessCheck)
+[ ] src/services/metrics.py (MetricsCollector, PrometheusExporter)
+[ ] src/services/auth.py (JWTAuth, APIKeyAuth, RoleBasedAccess)
+
+Tests:
+[ ] tests/integration/services/test_pricing_api.py
+[ ] tests/integration/services/test_risk_api.py
+[ ] tests/integration/services/test_grpc.py
+[ ] tests/integration/services/test_websocket.py
+
+Documentation:
+[ ] docs/reference/services/api_reference.md
+[ ] docs/guides/deployment/deploying_services.md
+[ ] docs/guides/deployment/docker_kubernetes.md
+[ ] docs/tutorials/deployment/pricing_service_tutorial.ipynb
+
+Examples:
+[ ] examples/services/run_pricing_server.py
+[ ] examples/services/run_risk_server.py
+[ ] examples/services/client_example.py
+[ ] docker/Dockerfile.pricing
+[ ] docker/docker-compose.yml
+```
+
+### Deliverables (Phase 9):
+- [ ] FastAPI pricing/risk/calibration services (9.1)
+- [ ] gRPC low-latency services (9.2)
+- [ ] WebSocket streaming servers (9.3)
+- [ ] Service infrastructure (config, health, auth) (9.4)
+- [ ] Docker deployment configurations
+- [ ] Kubernetes manifests (optional)
+
+**Status:** Not started.
+
+**Dependencies:** All core library phases (1-8), especially pricers, risk, calibration.
+
+**Impact:** Enables deployment of quantitative capabilities as production services for integration with trading systems, dashboards, and external applications.
 
 ---
 
@@ -1401,23 +2095,80 @@ Once the core library is complete (Phases 1–8), the following **orchestrator/a
 
 ## Timeline Summary
 
-| Phase | Duration | Focus | Key Deliverables |
-|-------|----------|-------|-----------------|
-| Phase 1 | Weeks 1-4 | FX Enhancement | 4+ FX products, local vol, calibration |
-| Phase 2 | Weeks 5-10 | Equity | 7+ equity products, equity infrastructure |
-| Phase 3 | Weeks 11-18 | Rates | 6+ rate products, Hull-White, LMM |
-| Phase 4 | Weeks 19-24 | Advanced Models | Jump-diffusion, SABR, multi-asset |
-| Phase 5 | Weeks 25-30+ | Production | Calibration, backtesting, risk, **streaming/live (5.5)**, **analytics/reports (5.6)** |
-| Phase 6 | Ongoing | Education | Tutorials, notebooks, docs |
-| Phase 7.1-7.2 | Weeks 31-34 | ML & RL | ML pipelines (7.1), GNN-LSTM pricer, Q-learning/RL framework (7.2) |
-| Phase 7.3-7.5 | Weeks 35-36+ | Exotics & Extensions | Exotic products (7.3), credit (7.4), commodities (7.5) |
-| **Phase 7.6** | Weeks 37-38 | **Deep Hedging** | HedgingEnv, transaction costs, hedging policy network, benchmarking |
-| **Phase 7.7** | Weeks 39-40 | **Neural SDE** | Neural drift/diffusion, SDE training, generative scenarios |
-| **Phase 7.8** | Weeks 41-42 | **Rough Volatility** | Fractional BM, rough Bergomi, rough Heston, calibration |
-| Phase 8 | After 7 | **Quant HF & Execution** | Execution/TCA (8.1), factor risk (8.2), vol trading (8.3), portfolio opt (8.4), tail risk (8.5), limit monitoring (8.6), alt data (8.7), market-making (8.8) |
-| *After library* | — | **Application Projects 1–12** | Option analytics, Algo bot, GNN-LSTM pricer, Q-learning orchestrator; **5** Execution/TCA, **6** Factor risk, **7** Market-making, **8** Vol trading, **9** Portfolio opt, **10** Tail risk, **11** Real-time risk, **12** Alt data alpha |
+| Phase | Status | Focus | Key Deliverables |
+|-------|--------|-------|-----------------|
+| Phase 1 | ✅ Complete | FX Enhancement | 4+ FX products, local vol, calibration |
+| Phase 2 | ✅ Complete | Equity | 7+ equity products, equity infrastructure |
+| Phase 3 | ✅ Complete | Rates | 6+ rate products, Hull-White, LMM |
+| Phase 4 | ✅ Complete | Advanced Models | Jump-diffusion, SABR, multi-asset |
+| Phase 5 | ✅ Complete | Production | Calibration, backtesting, risk, streaming, analytics |
+| Phase 6 | ✅ Complete | Education | Tutorials, notebooks, docs |
+| Phase 7.1 | ✅ Complete | ML Integration | ML pipelines, GNN-LSTM pricer |
+| Phase 7.1.5 | ⬜ Pending | Production ML | MLflow, Optuna, Model Registry |
+| Phase 7.2 | ⚠️ Core Complete | Q-Learning/RL | RL framework, RL Orchestrator pending |
+| Phase 7.3 | ⬜ Pending | Exotics | Cliquet, Autocallable, Range Accrual |
+| Phase 7.4-7.5 | ⬜ Optional | Extensions | Credit derivatives, Commodities |
+| Phase 7.6 | ⚠️ Core Complete | Deep Hedging | Environments, agents, backtesting pending |
+| Phase 7.7 | ⬜ Pending | Neural SDE | Neural drift/diffusion, SDE training |
+| Phase 7.8 | ⬜ Pending | Rough Volatility | Fractional BM, rough Bergomi/Heston |
+| Phase 8.1 | ⬜ Pending | Execution/TCA | Market impact, optimal execution |
+| Phase 8.2 | ⬜ Pending | Factor Risk | Factor exposure, factor attribution |
+| Phase 8.3 | ⬜ Pending | Vol Trading | Variance swaps, dispersion |
+| Phase 8.4 | ⬜ Pending | Portfolio Opt | Mean-variance, risk parity |
+| Phase 8.5 | ⬜ Pending | Tail Risk | CVaR, crisis scenarios |
+| Phase 8.6 | ⬜ Pending | Limit Monitoring | Real-time risk, alerts |
+| Phase 8.7 | ⬜ Pending | Alt Data | Data adapters, featurisation |
+| Phase 8.8 | ⬜ Pending | Market-Making | Spread/inventory models |
+| Phase 8.9 | ⬜ Pending | XVA | CVA, DVA, FVA |
+| Phase 8.10 | ⬜ Pending | Regulatory | FRTB SA, SIMM |
+| Phase 9 | ⬜ Pending | Services | FastAPI, gRPC, WebSocket |
+| *After library* | — | Applications | Projects 1–12 |
 
-**Total Timeline:** ~10-11 months for core functionality (including new Phases 7.6-7.8), ongoing for education/advanced topics; **Phase 8** (quant hedge fund & execution extensions) follows Phase 7; **application projects 1–12** (option report, algo bot, GNN-LSTM pricer, Q-learning orchestrator, execution/TCA, factor risk, market-making, vol trading, portfolio opt, tail risk, real-time risk, alt data alpha) follow library completion.
+### Recommended Implementation Order
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  IMMEDIATE: Complete Core Gaps                                   │
+├──────────────────────────────────────────────────────────────────┤
+│  7.2   RL Orchestrator (completes RL framework)                  │
+│  7.3   Exotic Products (Cliquet, Autocallable, Range Accrual)    │
+│  7.6   Deep Hedging Backtesting Integration                      │
+└──────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  SHORT-TERM: Production ML & Research Models                     │
+├──────────────────────────────────────────────────────────────────┤
+│  7.1.5 Production ML (MLflow, Optuna, Registry)                  │
+│  7.7   Neural SDE                                                │
+│  7.8   Rough Volatility                                          │
+└──────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  MEDIUM-TERM: Quant HF Extensions                                │
+├──────────────────────────────────────────────────────────────────┤
+│  8.1   Execution & TCA                                           │
+│  8.2   Factor Risk                                               │
+│  8.4   Portfolio Optimisation                                    │
+│  8.5   Tail Risk (CVaR)                                          │
+│  8.9   XVA Framework                                             │
+│  8.10  Regulatory Capital (FRTB/SIMM)                            │
+└──────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  LONGER-TERM: Services & Remaining Extensions                    │
+├──────────────────────────────────────────────────────────────────┤
+│  8.3   Vol Trading Analytics                                     │
+│  8.6   Real-Time Limit Monitoring                                │
+│  8.7   Alternative Data                                          │
+│  8.8   Market-Making Simulator                                   │
+│  9     Deployment & Services                                     │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Total Timeline:** Library core (Phases 1-7) substantially complete; remaining items add ~6-8 months for Phases 7.x completion, 8.x extensions, and Phase 9 services. Application projects follow library completion.
 
 ---
 
@@ -1451,12 +2202,60 @@ This roadmap provides a **structured path** to building a **comprehensive, profe
 5. ✅ **Enhances educational value** (tutorials, notebooks)
 6. ✅ **Achieves production readiness** (calibration, backtesting)
 
-**Next Steps:**
-1. Review and prioritize phases
-2. Complete remaining Phase 5 (risk, streaming 5.5, analytics 5.6, performance) and Phase 6–7
-3. **Implement cutting-edge research phases:** Deep Hedging (7.6), Neural SDE (7.7), Rough Volatility (7.8)
-4. Iterate based on learnings
-5. Maintain quality standards throughout
-6. **After library completion:** Complete Phase 8 (quant hedge fund & execution extensions) then build application projects 1–12 (option analytics, algo bot, GNN-LSTM pricer, Q-learning orchestrator, execution/TCA, factor risk, market-making, vol trading, portfolio opt, tail risk, real-time risk, alt data alpha)
+### Current Status
 
-**The foundation is excellent. Time to build! 🚀**
+The library has achieved **substantial completion** of Phases 1-7 core functionality:
+- ✅ FX, Equity, IR derivatives with multiple pricing methods
+- ✅ Advanced models (Heston, SABR, Hull-White, LMM, Merton, VG)
+- ✅ Production infrastructure (calibration, backtesting, streaming, risk)
+- ✅ ML integration with GNN-LSTM pricer
+- ✅ Deep hedging framework (core complete)
+
+### Immediate Next Steps
+
+1. **Complete Core Gaps:**
+   - 7.2: RL Orchestrator (deploy RL agents to backtest/live)
+   - 7.3: Exotic Products (Cliquet, Autocallable, Range Accrual)
+   - 7.6: Deep Hedging backtesting integration
+
+2. **Production ML Enhancement (7.1.5):**
+   - Experiment tracking (MLflow/W&B)
+   - Hyperparameter tuning (Optuna)
+   - Model registry and versioning
+
+3. **Research-Level Models:**
+   - 7.7: Neural SDE (learned market dynamics)
+   - 7.8: Rough Volatility (rough Bergomi, rough Heston)
+
+### Medium-Term Goals
+
+4. **Quant HF Extensions (Phase 8):**
+   - Execution/TCA, Factor Risk, Portfolio Optimisation
+   - XVA Framework (8.9), Regulatory Capital (8.10)
+   - Vol Trading, Market-Making, Alternative Data
+
+5. **Deployment & Services (Phase 9):**
+   - FastAPI pricing/risk services
+   - gRPC low-latency services
+   - WebSocket streaming
+
+### Long-Term Vision
+
+6. **Application Projects 1-12:**
+   - Option Analytics, Algo Bot, GNN-LSTM Pricer
+   - Q-Learning Orchestrator, Execution/TCA
+   - Factor Risk, Market-Making, Vol Trading
+   - Portfolio Optimisation, Tail Risk, Real-Time Risk
+   - Alternative Data Alpha
+
+---
+
+**Implementation Standard:** For every new component, deliver:
+- Implementation with type hints and docstrings
+- Unit tests (>90% coverage)
+- Reference documentation
+- Guide documentation
+- Tutorial notebook (where applicable)
+- Pipeline check → example script if pipeline exists
+
+**The foundation is excellent. Time to build!**
