@@ -28,6 +28,7 @@ class MarketView(Protocol):
         ...
 
 
+@runtime_checkable
 class ScenarioShock(Protocol):
     """
     A scenario shock transforms a base MarketView into a new (shocked) MarketView.

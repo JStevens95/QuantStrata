@@ -41,7 +41,8 @@ from src.orchestrator.core.state_keys import StateKeys as Keys  # Centralised st
 # Market Data Imports
 # =============================================================================
 from src.marketdata.curves.term_structure import ZeroRateCurve  # Curve implementation
-from src.marketdata.curves.bootstrapper import CurveBootstrapper  # Bootstrapping engine
+# Bootstrapping uses in-pipeline logic; see bootstrap_discount_curve in
+# src.marketdata.curves.bootstrapper for alternative API.
 
 import numpy as np  # Numerical operations
 
@@ -147,7 +148,7 @@ def _curves_cfg(cfg: RunConfig) -> Dict[str, Any]:
 # Rate Quote Data Class
 # =============================================================================
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class RateQuote:
     """
     A single rate quote for curve bootstrapping.

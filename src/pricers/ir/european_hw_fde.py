@@ -71,7 +71,7 @@ FDScheme = Literal["explicit", "implicit", "crank_nicolson"]
 # =============================================================================
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class FDConfig:
     """
     Configuration for Finite Difference pricing.
@@ -106,7 +106,7 @@ DEFAULT_FD_CONFIG = FDConfig()
 # =============================================================================
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class HWGrid:
     """
     Grid for Hull-White finite difference.
@@ -220,7 +220,7 @@ class HWGrid:
 # =============================================================================
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IrBondZeroCouponFDPricerSimple:
     """
     Finite Difference pricer for zero coupon bonds under Hull-White.
@@ -411,7 +411,7 @@ class IrBondZeroCouponFDPricerSimple:
 # =============================================================================
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IrBondEuropeanOptionFDPricerSimple:
     """
     Finite Difference pricer for European bond options under Hull-White.
@@ -631,7 +631,7 @@ class IrBondEuropeanOptionFDPricerSimple:
 # =============================================================================
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IrCapletEuropeanOptionFDPricerSimple:
     """
     Finite Difference pricer for caplets under Hull-White.
@@ -720,7 +720,7 @@ class IrCapletEuropeanOptionFDPricerSimple:
         }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IrFloorletEuropeanOptionFDPricerSimple:
     """
     Finite Difference pricer for floorlets under Hull-White.

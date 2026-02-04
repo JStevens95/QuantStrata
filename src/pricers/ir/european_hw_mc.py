@@ -72,7 +72,7 @@ GreekName = Literal["delta", "gamma", "vega", "theta", "rho"]
 # =============================================================================
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class MCConfig:
     """
     Configuration for Monte Carlo pricing.
@@ -200,7 +200,7 @@ def _compute_zc_bond_price_at_t(
 # =============================================================================
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IrBondZeroCouponMCPricerSimple:
     """
     Monte Carlo pricer for zero coupon bonds under Hull-White.
@@ -342,7 +342,7 @@ class IrBondZeroCouponMCPricerSimple:
 # =============================================================================
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IrBondEuropeanOptionMCPricerSimple:
     """
     Monte Carlo pricer for European bond options under Hull-White.
@@ -571,7 +571,7 @@ class IrBondEuropeanOptionMCPricerSimple:
 # =============================================================================
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IrCapletEuropeanOptionMCPricerSimple:
     """
     Monte Carlo pricer for caplets under Hull-White.
@@ -679,7 +679,7 @@ class IrCapletEuropeanOptionMCPricerSimple:
         }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IrFloorletEuropeanOptionMCPricerSimple:
     """
     Monte Carlo pricer for floorlets under Hull-White.
@@ -776,7 +776,7 @@ class IrFloorletEuropeanOptionMCPricerSimple:
 # =============================================================================
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IrSwaptionEuropeanOptionMCPricerSimple:
     """
     Monte Carlo pricer for European swaptions under Hull-White.

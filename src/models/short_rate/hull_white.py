@@ -76,7 +76,7 @@ HullWhiteScheme = Literal["exact", "euler"]
 # Hull-White Parameters
 # =============================================================================
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class HullWhiteParameters:
     """
     Parameters for the Hull-White one-factor short rate model.
@@ -202,7 +202,7 @@ class HullWhiteParameters:
 # Hull-White Simulation Output
 # =============================================================================
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class HullWhiteSimulation:
     """
     Output container for Hull-White path simulation.
@@ -261,7 +261,7 @@ class HullWhiteSimulation:
 # Hull-White Dynamics Simulator
 # =============================================================================
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class HullWhiteDynamics:
     """
     Simulator for Hull-White one-factor short rate dynamics.

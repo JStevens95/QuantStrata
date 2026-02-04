@@ -91,7 +91,7 @@ def _vol_surface_cfg(cfg: RunConfig) -> Dict[str, Any]:
 # Vol Quote Data Class
 # =============================================================================
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class VolQuote:
     """
     A single volatility quote for surface construction.

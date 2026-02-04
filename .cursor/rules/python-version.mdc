@@ -1,0 +1,12 @@
+---
+description: Use requirements.txt for Python version; project targets Python 3.12+
+globs: 
+alwaysApply: true
+---
+
+# Python version and environment
+
+- **Always** determine the project's Python version from `requirements.txt` (see the comment at the top). Do not assume an older Python (e.g. 3.9) when running commands or making compatibility changes.
+- This project requires **Python 3.12+** and uses features such as `dataclass(slots=True)` (3.10+) and `typing.TypeAlias` (3.10+).
+- When running any Python command, test, or script, use the interpreter that satisfies `requirements.txt` (e.g. `python3.12` or the project's venv).
+- Do not remove or downgrade Python 3.10+ features (e.g. `slots=True`, `kw_only`, `TypeAlias`) for "compatibility" without confirming the target version in `requirements.txt`.

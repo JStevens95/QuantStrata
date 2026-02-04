@@ -139,7 +139,7 @@ def _instantaneous_forward_rate(df_t: float, df_t_dt: float, dt: float = 0.001) 
 # =============================================================================
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IrBondZeroCouponHWPricerSimple:
     """
     Hull-White pricer for zero coupon bonds with direct parameters.
@@ -237,7 +237,7 @@ class IrBondZeroCouponHWPricerSimple:
         }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IrBondZeroCouponHWPricer:
     """
     Hull-White pricer for zero coupon bonds with market data.
@@ -282,7 +282,7 @@ class IrBondZeroCouponHWPricer:
 # =============================================================================
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IrBondEuropeanOptionHWPricerSimple:
     """
     Hull-White pricer for European bond options with direct parameters.
@@ -460,7 +460,7 @@ class IrBondEuropeanOptionHWPricerSimple:
         }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IrBondEuropeanOptionHWPricer:
     """
     Hull-White pricer for European bond options with market data lookup.
@@ -544,7 +544,7 @@ class IrBondEuropeanOptionHWPricer:
 # =============================================================================
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IrCapletEuropeanOptionHWPricerSimple:
     """
     Hull-White pricer for caplets with direct parameters.
@@ -669,7 +669,7 @@ class IrCapletEuropeanOptionHWPricerSimple:
         }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IrFloorletEuropeanOptionHWPricerSimple:
     """
     Hull-White pricer for floorlets with direct parameters.
@@ -761,7 +761,7 @@ class IrFloorletEuropeanOptionHWPricerSimple:
         }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IrCapEuropeanOptionHWPricerSimple:
     """
     Hull-White pricer for caps with direct parameters.
@@ -792,7 +792,7 @@ class IrCapEuropeanOptionHWPricerSimple:
         return total_greeks
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IrFloorEuropeanOptionHWPricerSimple:
     """
     Hull-White pricer for floors with direct parameters.
@@ -828,7 +828,7 @@ class IrFloorEuropeanOptionHWPricerSimple:
 # =============================================================================
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IrSwaptionEuropeanOptionHWPricerSimple:
     """
     Hull-White pricer for European swaptions using Jamshidian decomposition.

@@ -166,7 +166,7 @@ class LinearDfInterpolator:
             raise ValueError(f"Unknown extrapolation mode: {self._extrapolation}")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class LogLinearDfInterpolator:
     """
     Log-linear interpolation in discount factors.
@@ -345,7 +345,7 @@ class LinearZeroInterpolator:
         return float(result[0]) if scalar_input else result
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CubicSplineZeroInterpolator:
     """
     Cubic spline interpolation in zero rates.

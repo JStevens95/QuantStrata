@@ -36,12 +36,13 @@ from src.orchestrator.core.pipeline import Pipeline
 from src.orchestrator.core.step import Step
 
 # NOTE:
-# Your repo already contains risk scenario modules (tests show this),
-# so we import the "real" building blocks from src.risk.*.
-# If the exact module path differs slightly, update these imports only.
-from src.risk.scenarios.runner import ScenarioRunner  # type: ignore
-from src.risk.scenarios.shocks import ParallelRateShock, SpotShock, VolShock  # type: ignore
+# Risk runner uses run_portfolio_scenarios; shocks live in marketdata.scenarios.
+from src.risk.scenarios.runner import run_portfolio_scenarios  # type: ignore
+from src.marketdata.scenarios.shocks import ParallelRateShock, SpotShock, VolShock  # type: ignore
 from src.risk.reporting.scenario_report import ScenarioReport  # type: ignore
+from src.portfolio.portfolio import PortfolioPricer  # type: ignore
+from src.pricers.registry import DefaultPricerRegistry  # type: ignore
+from src.marketdata.scenarios.interfaces import ScenarioPack  # type: ignore
 
 from src.marketdata.core.ids import MarketId  # type: ignore
 
@@ -163,13 +164,13 @@ def _build_shock_from_cfg(item: Mapping[str, Any]) -> Tuple[str, Any]:
     # Parse market key
     mkt_id = _parse_market_id(key, where=f"params.risk.scenarios[{name}].key")
 
-    # Construct the shock
+    # Construct the shock (marketdata.scenarios.shocks use name, *_id, bump/bump_mode or rate_shift)
     if shock_type == "spot":
-        return name, SpotShock(mkt_id, bump=bump, mode=mode)
+        return name, SpotShock(name=name, spot_id=mkt_id, bump=bump, bump_mode=mode)
     if shock_type == "vol":
-        return name, VolShock(mkt_id, bump=bump, mode=mode)
+        return name, VolShock(name=name, vol_id=mkt_id, bump=bump, bump_mode=mode)
     if shock_type in {"rate_parallel", "parallel_rate", "rate"}:
-        return name, ParallelRateShock(mkt_id, bump=bump, mode=mode)
+        return name, ParallelRateShock(name=name, curve_id=mkt_id, rate_shift=bump)
 
     raise ValueError(
         f"Unsupported scenario type '{shock_type}' for scenario '{name}'. "
@@ -224,11 +225,16 @@ class RunScenarioStep(Step):
             raise KeyError("Missing ctx.state['scenario_pack']. Run BuildScenarioPackStep first.")
         pack: Sequence[Tuple[str, Any]] = ctx.state["scenario_pack"]
 
-        # Build a runner (your risk package owns the pricing loop & pnl conventions)
-        runner = ScenarioRunner()
-
-        # Execute and store result (keep raw result object for flexibility)
-        result = runner.run(portfolio=portfolio, base_market=base_market, scenarios=pack)
+        # Build pricer and run scenarios (risk package owns pricing loop & pnl conventions)
+        registry = DefaultPricerRegistry().build()
+        portfolio_pricer = PortfolioPricer(registry=registry)
+        scenario_pack = ScenarioPack(scenarios=dict(pack))
+        result = run_portfolio_scenarios(
+            portfolio=portfolio,
+            base_market=base_market,
+            portfolio_pricer=portfolio_pricer,
+            scenarios=scenario_pack,
+        )
         ctx.state["scenario_result"] = result
 
         # Build a report object (or dict) for output + artifacts

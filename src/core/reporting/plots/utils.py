@@ -10,7 +10,7 @@ from matplotlib.figure import Figure
 PathLike = Union[str, Path]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PlotConfig:
     show: bool = True
     save: bool = False
