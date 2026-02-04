@@ -69,12 +69,13 @@ Price various derivatives across asset classes.
 | [IR Instruments](pricing/ir_instruments_pricing.ipynb) | FRA, IRS, caps/floors, swaptions |
 | [Bond Pricing](pricing/bond_pricing.ipynb) | Zero-coupon and fixed-rate bond pricing |
 | [Multi-Asset Options](pricing/multi_asset_options.ipynb) | Basket, spread, rainbow options |
+| [Exotic Options](pricing/exotic_options.ipynb) | Cliquet, autocallable, range accrual (MC pricing) |
 
 ---
 
 ## Models
 
-Deep dives into specific pricing models.
+Deep dives into specific pricing and simulation models.
 
 | Tutorial | Description |
 |----------|-------------|
@@ -82,6 +83,7 @@ Deep dives into specific pricing models.
 | [LMM Pricing](pricing/lmm_pricing.ipynb) | LIBOR Market Model simulation and pricing |
 | [Jump/Lévy Models](pricing/jump_levy_models.ipynb) | Merton jump-diffusion, Variance Gamma |
 | [Advanced MC Methods](pricing/advanced_mc_methods.ipynb) | LSM, QMC, Importance Sampling |
+| [Neural SDE](models/neural_sde_tutorial.ipynb) | Data-driven drift/diffusion, training, path generation (Phase 7.7) |
 
 ---
 
@@ -111,8 +113,33 @@ ML framework: data preparation, training, evaluation, and inference (Phase 7.1).
 |----------|-------------|
 | [ML Model Lifecycle](machine_learning/ml_model_lifecycle.ipynb) | Config → data → model → training → evaluation → tuning → deployment (generic pipeline) |
 | [Hybrid GNN-LSTM](machine_learning/hybrid_gnn_lstm_tutorial.ipynb) | End-to-end Hybrid GNN-LSTM: graph + PnL data, architecture, TrainingManager, evaluation, deployment |
+| [ML Production](machine_learning/ml_production.ipynb) | Experiment tracking, model registry, hyperparameter tuning (Phase 7.1.5) |
 
 *See also: [ML Framework Guide](../guides/machine_learning/ml_framework.md) | [ML Framework Reference](../reference/machine_learning/ml_framework.md)*
+
+---
+
+## Deep Hedging
+
+Learn optimal hedging strategies via neural policies (Phase 7.6).
+
+| Tutorial | Description |
+|----------|-------------|
+| [Deep Hedging Tutorial](deep_hedging/deep_hedging_tutorial.ipynb) | Hedging problem, delta vs deep hedging, training, comparison, **backtesting** (BacktestEngineAdapter / pipeline) |
+
+*See also: [Backtesting Hedging Agents](../guides/deep_hedging/backtesting_hedging_agents.md) | [Deep Hedging Theory](../reference/deep_hedging/theory.md)*
+
+---
+
+## Q-Learning / RL
+
+Deploy and backtest RL agents (Phase 7.2).
+
+| Tutorial | Description |
+|----------|-------------|
+| [RL Deployment Tutorial](q_learning/rl_deployment_tutorial.ipynb) | Deploy and backtest agents via orchestrator pipelines |
+
+*See also: [Deploying RL Agents](../guides/q_learning/deploying_rl_agents.md) | [RL Framework Reference](../reference/q_learning/rl_framework.md)*
 
 ---
 

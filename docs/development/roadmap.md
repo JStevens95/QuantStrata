@@ -889,7 +889,7 @@ This keeps the framework **model-agnostic** and **reusable** across ML-based pri
 [x] docs/reference/machine_learning/production_ml.md
 [x] docs/guides/machine_learning/experiment_tracking.md
 [x] docs/guides/machine_learning/hyperparameter_tuning.md
-[ ] docs/tutorials/machine_learning/ml_production.ipynb
+[x] docs/tutorials/machine_learning/ml_production.ipynb
 [x] Pipeline: src/orchestrator/pipelines/ml/hyperparameter_tuning.py
 [x] Example: examples/pipelines/run_hyperparameter_tuning.py
 ```
@@ -962,7 +962,7 @@ Documentation:
 [x] docs/reference/q_learning/environments.md
 [x] docs/reference/q_learning/runners.md
 [x] docs/guides/q_learning/deploying_rl_agents.md
-[ ] docs/tutorials/q_learning/rl_deployment_tutorial.ipynb
+[x] docs/tutorials/q_learning/rl_deployment_tutorial.ipynb
 [x] Example: examples/pipelines/run_deploy_rl_agent.py
 ```
 
@@ -1009,7 +1009,7 @@ Implementation & tests:
 Documentation:
 [ ] docs/reference/instruments/exotic_products.md
 [ ] docs/guides/instruments/pricing_exotics.md
-[ ] docs/tutorials/pricing/exotic_options.ipynb
+[x] docs/tutorials/pricing/exotic_options.ipynb
 
 Pipeline & example:
 [ ] Pipeline: pricing pipeline extension or exotic pricing step
@@ -1143,15 +1143,15 @@ The structure mirrors `q_learning/` but with hedging-specific components.
 [x] tests/unit/deep_hedging/evaluation/test_backtest_metrics.py
 [x] tests/unit/deep_hedging/environments/test_multi_asset.py, test_historical.py
 [x] docs/reference/deep_hedging/theory.md
-[ ] docs/guides/deep_hedging/backtesting_hedging_agents.md
+[x] docs/guides/deep_hedging/backtesting_hedging_agents.md
 [ ] docs/guides/deep_hedging/multi_asset_hedging.md
 [ ] docs/guides/deep_hedging/model_agnostic_hedging.md
-[ ] Update: docs/tutorials/deep_hedging/deep_hedging_tutorial.ipynb (backtesting section)
-[ ] Pipeline: src/orchestrator/pipelines/deep_hedging/backtest_agent.py
-[ ] Example: examples/pipelines/run_backtest_hedging_agent.py
+[x] Update: docs/tutorials/deep_hedging/deep_hedging_tutorial.ipynb (backtesting section)
+[x] Pipeline: src/orchestrator/pipelines/deep_hedging/backtest_agent.py
+[x] Example: examples/pipelines/run_backtest_hedging_agent.py
 ```
 
-**Status:** ✅ **Core and backtesting integration complete.** Environments, agents, training, evaluation, adapters, multi-asset and historical envs implemented. **Gaps:** Guide docs, tutorial backtesting section, pipeline, example script. See `docs/development/IMPLEMENTATION_CHECKLIST_REVIEW.md` (Phase 7.6) and `docs/development/progress/phase_7_6_deep_hedging.md`.
+**Status:** ✅ **Core and backtesting integration complete.** Environments, agents, training, evaluation, adapters, multi-asset and historical envs implemented; tutorial includes backtesting section; pipeline and example script exist. **Gaps:** Optional guide docs. See `docs/development/IMPLEMENTATION_CHECKLIST_REVIEW.md` (Phase 7.6) and `docs/development/progress/phase_7_6_deep_hedging.md`.
 
 **Documentation:**
 - Theory: `docs/reference/deep_hedging/theory.md` (PhD-level technical reference)
@@ -1256,12 +1256,12 @@ Generative Simulation (7.7.4):
 Documentation:
 [ ] docs/reference/models/neural_sde.md
 [ ] docs/guides/models/training_neural_sde.md
-[ ] docs/tutorials/models/neural_sde_tutorial.ipynb
+[x] docs/tutorials/models/neural_sde_tutorial.ipynb
 [x] Pipeline: src/orchestrator/pipelines/ml/train_neural_sde.py
 [x] Example: examples/pipelines/run_train_neural_sde.py
 ```
 
-**Status:** ✅ **Implementation complete** (networks, solvers, dynamics, training losses, trainer, path generator, reference/guide docs, pipeline, example). **Gaps:** Adjoint method; score matching / calibration; pricing integration (MC pricer, Greeks); conditional/augmentation generation; tutorial notebook (deferred). See `docs/development/IMPLEMENTATION_CHECKLIST_REVIEW.md` (Phase 7.7).
+**Status:** ✅ **Implementation complete** (networks, solvers, dynamics, training losses, trainer, path generator, reference/guide docs, pipeline, example, tutorial notebook). **Gaps:** Adjoint method; score matching / calibration; pricing integration (MC pricer, Greeks); conditional/augmentation generation. See `docs/development/IMPLEMENTATION_CHECKLIST_REVIEW.md` (Phase 7.7).
 
 **Dependencies:** MC framework, calibration engine, ML pipelines (7.1).
 

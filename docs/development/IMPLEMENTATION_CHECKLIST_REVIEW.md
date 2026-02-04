@@ -42,7 +42,7 @@ For every new component, the following deliverables are required:
 | Unit Tests | ✅ Complete | `tests/unit/machine_learning/core/test_tracking.py`, `tuning/test_search_space.py`, `registry/test_registry.py` |
 | Reference Doc | ✅ Complete | `docs/reference/machine_learning/production_ml.md` |
 | Guide Doc | ⚠️ Partial | Reference doc includes usage examples |
-| Tutorial Notebook | ⏳ Deferred | Lower priority |
+| Tutorial Notebook | ✅ Complete | `docs/tutorials/machine_learning/ml_production.ipynb` |
 | Pipeline | ✅ Complete | `src/orchestrator/pipelines/ml/hyperparameter_tuning.py` |
 | Example Script | ✅ Complete | `examples/pipelines/run_hyperparameter_tuning.py` |
 
@@ -75,7 +75,7 @@ For every new component, the following deliverables are required:
 | Unit Tests | ✅ Complete | `tests/unit/q_learning/environments/test_trading.py`, `runners/test_backtest.py` |
 | Reference Doc | ✅ Complete | `docs/reference/q_learning/rl_framework.md`, `environments.md`, `runners.md` |
 | Guide Doc | ✅ Complete | `docs/guides/q_learning/rl_framework.md`, `deploying_rl_agents.md` |
-| Tutorial Notebook | ⏳ Deferred | Lower priority |
+| Tutorial Notebook | ✅ Complete | `docs/tutorials/q_learning/rl_deployment_tutorial.ipynb` |
 | Pipeline | ✅ Complete | `src/orchestrator/pipelines/rl/backtest_agent.py`, `deploy_agent.py` |
 | Example Script | ✅ Complete | `examples/pipelines/run_deploy_rl_agent.py` |
 
@@ -111,7 +111,7 @@ For every new component, the following deliverables are required:
 | Unit Tests | ✅ Complete | tests/unit/ (instruments, pricers) as implemented |
 | Reference Doc | ✅ Complete | `docs/reference/instruments/exotic_products.md` |
 | Guide Doc | ✅ Complete | `docs/guides/instruments/pricing_exotics.md` |
-| Tutorial Notebook | ⏳ Deferred | Lower priority |
+| Tutorial Notebook | ✅ Complete | `docs/tutorials/pricing/exotic_options.ipynb` |
 | Pipeline | ⚠️ Optional | pricing.price_portfolio covers exotics via registry |
 | Example Script | ✅ Complete | `examples/pricing/exotic_structured_products.py`, `02_exotic_options.py` |
 
@@ -143,7 +143,7 @@ For every new component, the following deliverables are required:
 | Unit Tests | ✅ Complete | tests/unit/deep_hedging/adapters/, evaluation/, environments/ |
 | Reference Doc | ✅ Exists | `docs/reference/deep_hedging/theory.md` |
 | Guide Doc | ✅ Complete | `docs/guides/deep_hedging/backtesting_hedging_agents.md`, `multi_asset_hedging.md`, `model_agnostic_hedging.md` |
-| Tutorial Notebook | ⚠️ Partial | Existing: `docs/tutorials/deep_hedging/deep_hedging_tutorial.ipynb`; backtesting section optional |
+| Tutorial Notebook | ✅ Complete | `docs/tutorials/deep_hedging/deep_hedging_tutorial.ipynb` (includes backtesting section) |
 | Pipeline | ✅ Complete | `src/orchestrator/pipelines/deep_hedging/backtest_agent.py` |
 | Example Script | ✅ Complete | `examples/pipelines/run_backtest_hedging_agent.py` |
 
@@ -176,7 +176,7 @@ For every new component, the following deliverables are required:
 | Unit Tests | ✅ Complete | tests/unit/models/neural_sde/ (as implemented) |
 | Reference Doc | ✅ Complete | `docs/reference/models/neural_sde.md` |
 | Guide Doc | ✅ Complete | `docs/guides/models/training_neural_sde.md` |
-| Tutorial Notebook | ⏳ Deferred | Lower priority |
+| Tutorial Notebook | ✅ Complete | `docs/tutorials/models/neural_sde_tutorial.ipynb` |
 | Pipeline | ✅ Complete | `src/orchestrator/pipelines/ml/train_neural_sde.py` |
 | Example Script | ✅ Complete | `examples/pipelines/run_train_neural_sde.py` |
 
@@ -270,7 +270,7 @@ For every new component, the following deliverables are required:
 |------|--------|-------|
 | Reference Docs | ✅ Complete | 3 key docs |
 | Guide Docs | ⚠️ Partial | Covered in reference docs |
-| Tutorial Notebooks | ⏳ Deferred | Lower priority |
+| Tutorial Notebooks | ✅ Complete | ml_production, rl_deployment, exotic_options, deep_hedging (incl. backtest), neural_sde_tutorial |
 
 ### Pipelines
 
@@ -299,7 +299,7 @@ For every new component, the following deliverables are required:
 | Unit Tests | 32 files | 18+ files | ⏳ remainder deferred |
 | Reference Docs | 6 docs | 6 docs | ✅ Complete (exotics, neural_sde, q_learning envs/runners) |
 | Guide Docs | 13 docs | 7+ docs | ✅ Key guides done (ML, RL, deep hedging, neural SDE, exotics) |
-| Tutorial Notebooks | 5 notebooks | 0 | ⏳ Deferred |
+| Tutorial Notebooks | 5+ notebooks | Implemented | ✅ ml_production, rl_deployment, exotic_options, deep_hedging backtest, neural_sde |
 | Pipelines | 8 pipelines | 5+ pipelines | ✅ rl.backtest_agent, rl.deploy_agent, ml.train_neural_sde, deep_hedging.backtest_agent |
 | Example Scripts | 10 scripts | 5+ scripts | ✅ run_train_neural_sde, run_deploy_rl_agent, run_backtest_hedging_agent |
 
@@ -323,7 +323,7 @@ For every new component, the following deliverables are required:
 
 ## Remaining Work (Lower Priority)
 
-1. Tutorial notebooks for interactive demonstrations (deferred)
+1. Tutorial notebooks for interactive demonstrations (implemented for 7.1.5, 7.2, 7.3, 7.6, 7.7)
 2. Optional pricing exotics pipeline (price_portfolio already covers exotics via registry)
 3. 8.1 volatility example script / pipeline if desired
 
