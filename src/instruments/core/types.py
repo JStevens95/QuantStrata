@@ -1,6 +1,21 @@
 from __future__ import annotations
 
+from enum import Enum
 from typing import Literal
+
+
+# -----------------------------------------------------------------------------
+# Currency (for settlement, notional, multi-currency instruments)
+# -----------------------------------------------------------------------------
+
+
+class Currency(str, Enum):
+    """ISO 4217-style currency codes used in instruments (settlement, notional)."""
+    USD = "USD"
+    EUR = "EUR"
+    GBP = "GBP"
+    CHF = "CHF"
+    JPY = "JPY"
 
 # -----------------------------------------------------------------------------
 # Core instrument definitions (type aliases)

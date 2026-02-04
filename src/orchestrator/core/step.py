@@ -16,7 +16,7 @@ from src.orchestrator.core.errors import StepError
 from src.orchestrator.core.types import StepName, Tags
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class Step:
     """
     Base Step.

@@ -30,7 +30,7 @@ import numpy as np
 from src.models.payoffs.base import BasePathPayoff1D
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class CliquetPayoff(BasePathPayoff1D):
     """
     Cliquet (ratchet) option payoff.
@@ -136,7 +136,7 @@ class CliquetPayoff(BasePathPayoff1D):
         return payoff
 
 
-@dataclass 
+@dataclass(frozen=True, slots=True)
 class ReverseCliquetPayoff(BasePathPayoff1D):
     """
     Reverse cliquet payoff (put-like).
@@ -206,7 +206,7 @@ class ReverseCliquetPayoff(BasePathPayoff1D):
         return payoff
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class LocalCliquetPayoff(BasePathPayoff1D):
     """
     Local cliquet payoff (sum of local period payoffs).

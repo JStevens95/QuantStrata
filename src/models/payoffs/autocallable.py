@@ -29,7 +29,7 @@ import numpy as np
 from src.models.payoffs.base import BasePathPayoff1D
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class AutocallablePayoff(BasePathPayoff1D):
     """
     Autocallable payoff with early termination.
@@ -217,7 +217,7 @@ class AutocallablePayoff(BasePathPayoff1D):
         return payoffs, info
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class SimpleAutocallablePayoff(BasePathPayoff1D):
     """
     Simplified autocallable payoff (no coupons, just early redemption).

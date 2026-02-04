@@ -28,7 +28,7 @@ import numpy as np
 from src.models.payoffs.base import BasePathPayoff1D
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class RangeAccrualPayoff(BasePathPayoff1D):
     """
     Range accrual payoff.
@@ -134,7 +134,7 @@ class RangeAccrualPayoff(BasePathPayoff1D):
         return payoffs, info
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class DoubleRangeAccrualPayoff(BasePathPayoff1D):
     """
     Double range accrual with different rates.
@@ -199,7 +199,7 @@ class DoubleRangeAccrualPayoff(BasePathPayoff1D):
         return payoff
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class DigitalRangePayoff(BasePathPayoff1D):
     """
     Digital range payoff.

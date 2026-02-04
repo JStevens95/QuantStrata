@@ -16,6 +16,7 @@ A short guide for contributors and users: coding standards, testing, performance
 ### Data and configuration
 
 - **Config and result types:** Use immutable **dataclasses** with `frozen=True` and `slots=True` for configuration and result objects (e.g. `VarConfig`, `VarResult`, `GreeksSummary`). Use `field(default_factory=list)` for mutable defaults.
+- **Dataclass inheritance:** In Python 3.12+, frozen and non-frozen cannot be mixed in an inheritance chain: a non-frozen dataclass cannot inherit from a frozen one, and a frozen dataclass cannot inherit from a non-frozen one. So: (1) For **base classes** with multiple subclasses (e.g. `Step`), keep the base **non-frozen** so pipeline steps can be either plain classes or frozen dataclasses. (2) For **payoff/instrument hierarchies** where the base is frozen (e.g. `BasePayoff1D`, `BasePathPayoff1D`), **all** subclasses must use `@dataclass(frozen=True, slots=True)`. Leaf config/result types with no subclasses should remain frozen.
 - **No pandas in core library code:** The risk reporting layer (e.g. `SensitivitiesReport`, `AttributionReport`, `RiskReport`) and related code use plain Python types (`list`, `dict`, `Mapping`) and `.to_dicts()` / `.to_csv()` for export so that the library does not depend on pandas. Use pandas in notebooks or application code if needed.
 - **Interfaces:** Prefer **protocols** or small abstract interfaces for pluggable behaviour (e.g. `MarketDataProvider`, `BrokerageAdapter`, `StreamingMarketDataProtocol`).
 
@@ -64,7 +65,7 @@ A short guide for contributors and users: coding standards, testing, performance
 | Area        | Convention |
 |------------|------------|
 | Python     | 3.12+ |
-| Config/result types | Immutable dataclasses, `frozen=True`, `slots=True` |
+| Config/result types | Immutable dataclasses, `frozen=True`, `slots=True`; base + subclasses must match (all frozen or base non-frozen) |
 | Core risk/reporting | No pandas; use `.to_dicts()` / `.to_csv()` for export |
 | Pluggable behaviour | Protocols / small interfaces |
 | Tests      | `tests/unit/`, pytest, run from repo root with venv |
