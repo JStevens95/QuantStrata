@@ -206,7 +206,13 @@ class StateKeys:
     MODEL_RESULTS = "model_results"              # Dict[str, PortfolioResult]: By model
     COMPARISON_MATRIX = "comparison_matrix"      # DataFrame: Price/Greek comparison
     CONVERGENCE_ANALYSIS = "convergence_analysis"  # Dict: MC/FDE convergence
-    
+
+    # --- RL Agent Backtest / Deploy ---
+    RL_AGENT = "rl_agent"                        # RLAgent: Trained agent
+    RL_ENV = "rl_env"                            # RLEnvironment: Trading/hedging env
+    RL_BACKTEST_RESULT = "rl_backtest_result"    # BacktestResult (q_learning): RL backtest
+    RL_AGENT_PATH = "rl_agent_path"              # str: Path to saved agent artifact
+
     # =========================================================================
     # WORKFLOW KEYS
     # =========================================================================

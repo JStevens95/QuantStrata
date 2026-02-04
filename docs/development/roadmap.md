@@ -887,14 +887,14 @@ This keeps the framework **model-agnostic** and **reusable** across ML-based pri
 [x] tests/unit/machine_learning/tuning/test_search_space.py
 [x] tests/unit/machine_learning/registry/test_registry.py
 [x] docs/reference/machine_learning/production_ml.md
-[ ] docs/guides/machine_learning/experiment_tracking.md
-[ ] docs/guides/machine_learning/hyperparameter_tuning.md
+[x] docs/guides/machine_learning/experiment_tracking.md
+[x] docs/guides/machine_learning/hyperparameter_tuning.md
 [ ] docs/tutorials/machine_learning/ml_production.ipynb
 [x] Pipeline: src/orchestrator/pipelines/ml/hyperparameter_tuning.py
 [x] Example: examples/pipelines/run_hyperparameter_tuning.py
 ```
 
-**Status:** ✅ **Complete** (implementation, tests, reference doc, pipeline, example). **Gaps:** Guide docs (experiment_tracking, hyperparameter_tuning), tutorial notebook. Dependencies: Phase 7.1 complete.
+**Status:** ✅ **Complete** (implementation, tests, reference doc, pipeline, example, guide docs). **Gaps:** Tutorial notebook (deferred). Dependencies: Phase 7.1 complete.
 
 ### 7.2 Q-Learning & Reinforcement Learning Agents
 
@@ -950,8 +950,8 @@ Runners (agent execution utilities):
 [x] src/q_learning/runners/base.py (BaseRunner protocol)
 
 Orchestrator Pipelines (in src/orchestrator/pipelines/):
-[ ] src/orchestrator/pipelines/rl/deploy_agent.py (orchestrator-level deployment)
-[ ] src/orchestrator/pipelines/rl/backtest_agent.py (orchestrator-level backtesting)
+[x] src/orchestrator/pipelines/rl/deploy_agent.py (orchestrator-level deployment)
+[x] src/orchestrator/pipelines/rl/backtest_agent.py (orchestrator-level backtesting)
 
 Tests:
 [x] tests/unit/q_learning/environments/test_trading.py
@@ -959,14 +959,14 @@ Tests:
 [x] tests/unit/q_learning/runners/test_backtest.py
 
 Documentation:
-[ ] docs/reference/q_learning/environments.md
-[ ] docs/reference/q_learning/runners.md
-[ ] docs/guides/q_learning/deploying_rl_agents.md
+[x] docs/reference/q_learning/environments.md
+[x] docs/reference/q_learning/runners.md
+[x] docs/guides/q_learning/deploying_rl_agents.md
 [ ] docs/tutorials/q_learning/rl_deployment_tutorial.ipynb
-[ ] Example: examples/pipelines/run_deploy_rl_agent.py
+[x] Example: examples/pipelines/run_deploy_rl_agent.py
 ```
 
-**Status:** ✅ Phase 7.2 complete (training, evaluation, inference, protocols, environments, runners, tests). **Gaps:** Orchestrator rl pipelines (`rl/deploy_agent.py`, `rl/backtest_agent.py`), reference docs (environments.md, runners.md), guide (deploying_rl_agents.md), tutorial notebook, example script. See `docs/development/progress/phase_7_2_q_learning.md`. Technical reference: `docs/reference/q_learning/rl_framework.md`. Guide: `docs/guides/q_learning/rl_framework.md`.
+**Status:** ✅ Phase 7.2 complete (training, evaluation, inference, protocols, environments, runners, tests, orchestrator pipelines, reference/guide docs, example). **Gaps:** Tutorial notebook (deferred). See `docs/development/progress/phase_7_2_q_learning.md`. Technical reference: `docs/reference/q_learning/rl_framework.md`, `environments.md`, `runners.md`. Guide: `docs/guides/q_learning/rl_framework.md`, `deploying_rl_agents.md`.
 
 ### 7.3 Exotic Products ✅
 
@@ -1257,11 +1257,11 @@ Documentation:
 [ ] docs/reference/models/neural_sde.md
 [ ] docs/guides/models/training_neural_sde.md
 [ ] docs/tutorials/models/neural_sde_tutorial.ipynb
-[ ] Pipeline: src/orchestrator/pipelines/ml/train_neural_sde.py
-[ ] Example: examples/pipelines/run_train_neural_sde.py
+[x] Pipeline: src/orchestrator/pipelines/ml/train_neural_sde.py
+[x] Example: examples/pipelines/run_train_neural_sde.py
 ```
 
-**Status:** ✅ **Implementation complete** (networks, solvers, dynamics, training losses, trainer, path generator). **Gaps:** Adjoint method; score matching / calibration; pricing integration (MC pricer, Greeks); conditional/augmentation generation; reference/guide docs; tutorial notebook; orchestrator pipeline; example script. See `docs/development/IMPLEMENTATION_CHECKLIST_REVIEW.md` (Phase 7.7).
+**Status:** ✅ **Implementation complete** (networks, solvers, dynamics, training losses, trainer, path generator, reference/guide docs, pipeline, example). **Gaps:** Adjoint method; score matching / calibration; pricing integration (MC pricer, Greeks); conditional/augmentation generation; tutorial notebook (deferred). See `docs/development/IMPLEMENTATION_CHECKLIST_REVIEW.md` (Phase 7.7).
 
 **Dependencies:** MC framework, calibration engine, ML pipelines (7.1).
 

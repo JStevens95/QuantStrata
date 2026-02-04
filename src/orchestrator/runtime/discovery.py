@@ -166,6 +166,12 @@ def register_builtin_pipelines(registry: PipelineRegistry) -> None:
     )
     registry.register("ml.train_deep_hedging", ml_train_deep_hedging)
 
+    # deep_hedging.backtest_agent: Backtest trained hedging agent
+    from src.orchestrator.pipelines.deep_hedging.backtest_agent import (
+        build_pipeline as dh_backtest_agent,
+    )
+    registry.register("deep_hedging.backtest_agent", dh_backtest_agent)
+
     # train_gnn_pricer: Train GNN-RNN hybrid pricing model
     from src.orchestrator.pipelines.ml.train_gnn_pricer import (
         build_pipeline as ml_train_gnn_pricer,
@@ -177,6 +183,28 @@ def register_builtin_pipelines(registry: PipelineRegistry) -> None:
         build_pipeline as ml_train_calibration_model,
     )
     registry.register("ml.train_calibration_model", ml_train_calibration_model)
+
+    # train_neural_sde: Train Neural SDE on paths
+    from src.orchestrator.pipelines.ml.train_neural_sde import (
+        build_pipeline as ml_train_neural_sde,
+    )
+    registry.register("ml.train_neural_sde", ml_train_neural_sde)
+
+    # =========================================================================
+    # RL PIPELINES (Q-Learning / Agent deployment)
+    # =========================================================================
+
+    # rl.backtest_agent: Backtest RL agent with BacktestRunner
+    from src.orchestrator.pipelines.rl.backtest_agent import (
+        build_pipeline as rl_backtest_agent,
+    )
+    registry.register("rl.backtest_agent", rl_backtest_agent)
+
+    # rl.deploy_agent: Load saved agent into state for deployment
+    from src.orchestrator.pipelines.rl.deploy_agent import (
+        build_pipeline as rl_deploy_agent,
+    )
+    registry.register("rl.deploy_agent", rl_deploy_agent)
 
     # =========================================================================
     # BACKTESTING PIPELINES
