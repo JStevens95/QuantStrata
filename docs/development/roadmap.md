@@ -880,21 +880,21 @@ This keeps the framework **model-agnostic** and **reusable** across ML-based pri
 
 **Implementation Checklist:**
 ```
-[ ] src/machine_learning/core/tracking.py (MLflowTracker, WandBTracker, TrackingProtocol)
-[ ] src/machine_learning/tuning/search_space.py (SearchSpace, TrialPruner) — if pipelines/tuning.py insufficient
-[ ] src/machine_learning/registry/registry.py (ModelRegistry, ModelArtifact, ModelVersion)
-[ ] tests/unit/machine_learning/core/test_tracking.py
-[ ] tests/unit/machine_learning/tuning/test_search_space.py
-[ ] tests/unit/machine_learning/registry/test_registry.py
-[ ] docs/reference/machine_learning/production_ml.md
+[x] src/machine_learning/core/tracking.py (MLflowTracker, WandBTracker, TrackingProtocol)
+[x] src/machine_learning/tuning/search_space.py (SearchSpace, TrialPruner) — if pipelines/tuning.py insufficient
+[x] src/machine_learning/registry/registry.py (ModelRegistry, ModelArtifact, ModelVersion)
+[x] tests/unit/machine_learning/core/test_tracking.py
+[x] tests/unit/machine_learning/tuning/test_search_space.py
+[x] tests/unit/machine_learning/registry/test_registry.py
+[x] docs/reference/machine_learning/production_ml.md
 [ ] docs/guides/machine_learning/experiment_tracking.md
 [ ] docs/guides/machine_learning/hyperparameter_tuning.md
 [ ] docs/tutorials/machine_learning/ml_production.ipynb
-[ ] Pipeline: extends src/machine_learning/pipelines/tuning.py
-[ ] Example: examples/pipelines/run_tune_gnn_pricer.py
+[x] Pipeline: src/orchestrator/pipelines/ml/hyperparameter_tuning.py
+[x] Example: examples/pipelines/run_hyperparameter_tuning.py
 ```
 
-**Status:** Not started. Dependencies: Phase 7.1 complete.
+**Status:** ✅ **Complete** (implementation, tests, reference doc, pipeline, example). **Gaps:** Guide docs (experiment_tracking, hyperparameter_tuning), tutorial notebook. Dependencies: Phase 7.1 complete.
 
 ### 7.2 Q-Learning & Reinforcement Learning Agents
 
@@ -930,33 +930,33 @@ The same **general framework** as ML applies: build agent instance → fetch/pre
   - Use case: Delta hedging agent, algo trading agent
   - **Implemented:** `RLAgent`, `RLEnvironment` in `core/protocols.py`; `Transition`, `RLTrainingConfig`, `RLTrainingResult`, `RLEvaluationResult` in `core/types.py`; pipelines and BaseEnv as above.
 
-- [ ] **RL Agent Deployment & Environments**
+- [x] **RL Agent Deployment & Environments**
   - Implement: Trading and hedging environments that wrap backtesting/streaming infrastructure
   - Implement: Agent runners that execute trained agents in backtest or live contexts
-  - Integrate: With backtesting engine, streaming engine, and library pricers/risk
+  - **Implemented:** `src/q_learning/environments/trading.py`, `hedging.py`, `streaming.py`; `src/q_learning/runners/base.py`, `backtest.py`, `live.py`; unit tests for environments and runners
   - Use case: Automated hedging, strategy deployment, cutting-edge applications
-  - Note: Orchestrator pipelines go in `src/orchestrator/pipelines/rl/`; q_learning module provides environments and runners
+  - Note: Orchestrator pipelines in `src/orchestrator/pipelines/rl/` not yet added
 
 **RL Deployment Implementation Checklist:**
 ```
 Environments (extend existing q_learning/environments/):
-[ ] src/q_learning/environments/trading.py (TradingEnvironment wrapping backtesting)
-[ ] src/q_learning/environments/hedging.py (HedgingEnvironment wrapping pricers)
-[ ] src/q_learning/environments/streaming.py (StreamingEnvironment for live execution)
+[x] src/q_learning/environments/trading.py (TradingEnvironment wrapping backtesting)
+[x] src/q_learning/environments/hedging.py (HedgingEnvironment wrapping pricers)
+[x] src/q_learning/environments/streaming.py (StreamingEnvironment for live execution)
 
 Runners (agent execution utilities):
-[ ] src/q_learning/runners/backtest.py (BacktestRunner - run agent in backtesting framework)
-[ ] src/q_learning/runners/live.py (LiveRunner - run agent with streaming engine)
-[ ] src/q_learning/runners/base.py (BaseRunner protocol)
+[x] src/q_learning/runners/backtest.py (BacktestRunner - run agent in backtesting framework)
+[x] src/q_learning/runners/live.py (LiveRunner - run agent with streaming engine)
+[x] src/q_learning/runners/base.py (BaseRunner protocol)
 
 Orchestrator Pipelines (in src/orchestrator/pipelines/):
 [ ] src/orchestrator/pipelines/rl/deploy_agent.py (orchestrator-level deployment)
 [ ] src/orchestrator/pipelines/rl/backtest_agent.py (orchestrator-level backtesting)
 
 Tests:
-[ ] tests/unit/q_learning/environments/test_trading.py
-[ ] tests/unit/q_learning/environments/test_hedging.py
-[ ] tests/unit/q_learning/runners/test_backtest.py
+[x] tests/unit/q_learning/environments/test_trading.py
+[x] tests/unit/q_learning/environments/test_hedging.py (or covered in test_backtest.py)
+[x] tests/unit/q_learning/runners/test_backtest.py
 
 Documentation:
 [ ] docs/reference/q_learning/environments.md
@@ -966,7 +966,7 @@ Documentation:
 [ ] Example: examples/pipelines/run_deploy_rl_agent.py
 ```
 
-**Status:** Phase 7.2 core complete (training, evaluation, inference, protocols, BaseEnv, metrics). RL Orchestrator not yet implemented. See `docs/development/progress/phase_7_2_q_learning.md`. Technical reference: `docs/reference/q_learning/rl_framework.md`. Guide: `docs/guides/q_learning/rl_framework.md`.
+**Status:** ✅ Phase 7.2 complete (training, evaluation, inference, protocols, environments, runners, tests). **Gaps:** Orchestrator rl pipelines (`rl/deploy_agent.py`, `rl/backtest_agent.py`), reference docs (environments.md, runners.md), guide (deploying_rl_agents.md), tutorial notebook, example script. See `docs/development/progress/phase_7_2_q_learning.md`. Technical reference: `docs/reference/q_learning/rl_framework.md`. Guide: `docs/guides/q_learning/rl_framework.md`.
 
 ### 7.3 Exotic Products ✅
 
@@ -998,7 +998,25 @@ Documentation:
 
 **Pricer Naming Convention:** `{product}_{model}_{method}.py` — e.g. `cliquet_gbm_mc.py`, `autocallable_gbm_mc.py`, `range_accrual_hw_mc.py`.
 
-**Status:** ✅ **Implementation and unit tests complete.** Reference/guide docs, pipeline, and example script: see `docs/development/IMPLEMENTATION_CHECKLIST_REVIEW.md` (Phase 7.3).
+**Implementation Checklist:**
+```
+Implementation & tests:
+[x] src/instruments/equity/options/cliquet.py, autocallable.py; src/instruments/ir/options/range_accrual.py
+[x] src/models/payoffs/cliquet.py, autocallable.py, range_accrual.py
+[x] src/pricers/equity/cliquet_gbm_mc.py, autocallable_gbm_mc.py; src/pricers/ir/range_accrual_hw_mc.py
+[x] tests/unit/... (instruments, pricers) as implemented
+
+Documentation:
+[ ] docs/reference/instruments/exotic_products.md
+[ ] docs/guides/instruments/pricing_exotics.md
+[ ] docs/tutorials/pricing/exotic_options.ipynb
+
+Pipeline & example:
+[ ] Pipeline: pricing pipeline extension or exotic pricing step
+[ ] Example: examples/pricing/exotic_structured_products.py (or 02_exotic_options.py)
+```
+
+**Status:** ✅ **Implementation and unit tests complete.** **Gaps:** Reference doc, guide doc, tutorial notebook, pipeline, example script. See `docs/development/IMPLEMENTATION_CHECKLIST_REVIEW.md` (Phase 7.3).
 
 ### 7.4 Credit Derivatives (Optional)
 - [ ] **Credit Default Swaps (CDS)**
@@ -1114,7 +1132,26 @@ The structure mirrors `q_learning/` but with hedging-specific components.
   - **Implemented:** `src/deep_hedging/environments/historical.py` (HistoricalHedgingEnv), `src/deep_hedging/adapters/historical_data.py`
   - Use case: Robust hedging under model uncertainty
 
-**Status:** ✅ **Core and backtesting integration complete.** Environments, agents, training, evaluation, adapters, multi-asset and historical envs implemented. See `docs/development/IMPLEMENTATION_CHECKLIST_REVIEW.md` (Phase 7.6) and `docs/development/progress/phase_7_6_deep_hedging.md`.
+**Implementation Checklist (backtesting & advanced):**
+```
+[x] src/deep_hedging/adapters/backtesting.py (BacktestEngineAdapter)
+[x] src/deep_hedging/adapters/historical_data.py (HistoricalDataAdapter)
+[x] src/deep_hedging/evaluation/backtest_metrics.py (HedgingBacktestMetrics)
+[x] src/deep_hedging/environments/multi_asset.py (MultiAssetHedgingEnv)
+[x] src/deep_hedging/environments/historical.py (HistoricalHedgingEnv)
+[x] tests/unit/deep_hedging/adapters/test_backtesting.py, test_historical_data.py
+[x] tests/unit/deep_hedging/evaluation/test_backtest_metrics.py
+[x] tests/unit/deep_hedging/environments/test_multi_asset.py, test_historical.py
+[x] docs/reference/deep_hedging/theory.md
+[ ] docs/guides/deep_hedging/backtesting_hedging_agents.md
+[ ] docs/guides/deep_hedging/multi_asset_hedging.md
+[ ] docs/guides/deep_hedging/model_agnostic_hedging.md
+[ ] Update: docs/tutorials/deep_hedging/deep_hedging_tutorial.ipynb (backtesting section)
+[ ] Pipeline: src/orchestrator/pipelines/deep_hedging/backtest_agent.py
+[ ] Example: examples/pipelines/run_backtest_hedging_agent.py
+```
+
+**Status:** ✅ **Core and backtesting integration complete.** Environments, agents, training, evaluation, adapters, multi-asset and historical envs implemented. **Gaps:** Guide docs, tutorial backtesting section, pipeline, example script. See `docs/development/IMPLEMENTATION_CHECKLIST_REVIEW.md` (Phase 7.6) and `docs/development/progress/phase_7_6_deep_hedging.md`.
 
 **Documentation:**
 - Theory: `docs/reference/deep_hedging/theory.md` (PhD-level technical reference)
@@ -1131,15 +1168,14 @@ The structure mirrors `q_learning/` but with hedging-specific components.
 **Research Foundation:** Kidger et al. (2021) "Neural SDEs", Gierjatowicz et al. (2020) "Robust pricing and hedging via neural SDEs"
 
 ### 7.7.1 Neural SDE Framework
-- [ ] **Neural Drift and Diffusion**
+- [x] **Neural Drift and Diffusion**
   - Implement: Neural networks μ_θ(S, t) and σ_θ(S, t) for SDE: dS = μ_θ dt + σ_θ dW
-  - Architecture: MLP with positivity constraints for diffusion
-  - Support: Time-dependent and state-dependent dynamics
+  - **Implemented:** `src/models/neural_sde/networks.py` (NeuralDriftNetwork, NeuralDiffusionNetwork)
   - Use case: Learn realistic price dynamics from data
 
-- [ ] **SDE Solver Integration**
+- [x] **SDE Solver Integration**
   - Implement: Euler-Maruyama and Milstein solvers for neural SDEs
-  - Support: Batched simulation for efficiency
+  - **Implemented:** `src/models/neural_sde/solvers.py`
   - Use case: Generate paths from learned dynamics
 
 - [ ] **Adjoint Sensitivity Method**
@@ -1158,9 +1194,9 @@ The structure mirrors `q_learning/` but with hedging-specific components.
   - Support: Joint calibration to spot dynamics and vol surface
   - Use case: Risk-neutral dynamics for pricing
 
-- [ ] **Training Pipeline**
-  - Implement: Data pipeline (historical returns → training batches)
-  - Support: Validation, early stopping, checkpointing
+- [x] **Training Pipeline**
+  - Implement: Data pipeline (historical returns → training batches), validation, early stopping, checkpointing
+  - **Implemented:** `src/models/neural_sde/training/losses.py`, `trainer.py` (NeuralSDETrainer)
   - Use case: End-to-end neural SDE training
 
 ### 7.7.3 Integration with Pricing
@@ -1175,6 +1211,11 @@ The structure mirrors `q_learning/` but with hedging-specific components.
   - Use case: Risk management with neural dynamics
 
 ### 7.7.4 Generative Scenario Simulation
+- [x] **Path Generator**
+  - Implement: Generate paths from trained neural SDE dynamics
+  - **Implemented:** `src/models/neural_sde/generation/generator.py`
+  - Use case: Scenario generation, synthetic paths for pricing/training
+
 - [ ] **Conditional Generation**
   - Implement: Generate paths conditioned on regime (e.g., high vol, crisis)
   - Support: Conditioning on VIX level, macro variables
@@ -1188,18 +1229,18 @@ The structure mirrors `q_learning/` but with hedging-specific components.
 **Implementation Checklist:**
 ```
 Neural SDE Framework (7.7.1):
-[ ] src/models/neural_sde/networks.py (NeuralDriftNetwork, NeuralDiffusionNetwork)
-[ ] src/models/neural_sde/solvers.py (EulerMaruyamaSolver, MilsteinSolver)
+[x] src/models/neural_sde/networks.py (NeuralDriftNetwork, NeuralDiffusionNetwork)
+[x] src/models/neural_sde/solvers.py (EulerMaruyamaSolver, MilsteinSolver)
 [ ] src/models/neural_sde/adjoint.py (AdjointSDEMethod)
-[ ] src/models/neural_sde/dynamics.py (NeuralSDEDynamics)
-[ ] tests/unit/models/neural_sde/test_networks.py
-[ ] tests/unit/models/neural_sde/test_solvers.py
+[x] src/models/neural_sde/dynamics.py (NeuralSDEDynamics)
+[x] tests/unit/models/neural_sde/test_networks.py
+[x] tests/unit/models/neural_sde/test_solvers.py
 
 Training (7.7.2):
 [ ] src/models/neural_sde/training/score_matching.py (ScoreMatchingTrainer)
 [ ] src/models/neural_sde/training/calibration.py (NeuralSDECalibrator)
-[ ] src/models/neural_sde/training/pipeline.py (NeuralSDETrainingPipeline)
-[ ] tests/unit/models/neural_sde/training/test_score_matching.py
+[x] src/models/neural_sde/training/losses.py, trainer.py (NeuralSDETrainer)
+[x] tests/unit/models/neural_sde/training/test_*.py (as implemented)
 
 Pricing Integration (7.7.3):
 [ ] src/pricers/neural_sde/mc_pricer.py (NeuralSDEMcPricer)
@@ -1207,6 +1248,7 @@ Pricing Integration (7.7.3):
 [ ] tests/unit/pricers/neural_sde/test_mc_pricer.py
 
 Generative Simulation (7.7.4):
+[x] src/models/neural_sde/generation/generator.py (PathGenerator)
 [ ] src/models/neural_sde/generation/conditional.py (ConditionalGenerator)
 [ ] src/models/neural_sde/generation/augmentation.py (SyntheticDataAugmenter)
 [ ] tests/unit/models/neural_sde/generation/test_conditional.py
@@ -1219,7 +1261,7 @@ Documentation:
 [ ] Example: examples/pipelines/run_train_neural_sde.py
 ```
 
-**Status:** ✅ **Implementation complete** (networks, solvers, dynamics, training losses, trainer, path generator). Unit tests, reference/guide docs, pipeline, and example script status: see `docs/development/IMPLEMENTATION_CHECKLIST_REVIEW.md` (Phase 7.7).
+**Status:** ✅ **Implementation complete** (networks, solvers, dynamics, training losses, trainer, path generator). **Gaps:** Adjoint method; score matching / calibration; pricing integration (MC pricer, Greeks); conditional/augmentation generation; reference/guide docs; tutorial notebook; orchestrator pipeline; example script. See `docs/development/IMPLEMENTATION_CHECKLIST_REVIEW.md` (Phase 7.7).
 
 **Dependencies:** MC framework, calibration engine, ML pipelines (7.1).
 
@@ -2045,25 +2087,27 @@ QuantStrata is a **comprehensive, professional quant library** with:
 | **Infrastructure** | Calibration, Backtesting, Streaming, Risk |
 | **Code Quality** | ~87K LOC, ~40K test LOC, clean architecture |
 
-### What Remains (Focused Scope)
+### What Remains (Optional / Gaps)
 
-| Item | Effort | Value |
+| Item | Status | Notes |
 |------|--------|-------|
-| 7.1.5 Production ML | ~3 days | Medium |
-| 7.2 RL Environments | ~4 days | High |
-| 7.3 Exotic Products | ~5 days | High |
-| 7.6 Backtesting Adapter | ~2 days | Medium |
-| 7.7 Neural SDE | ~2 weeks | Medium (research) |
-| 8.1 Vol Trading | ~1 week | High |
-| 8.2 Portfolio Opt | ~1 week | High |
+| 7.1.5 Production ML | ✅ Done | Gaps: guide docs (experiment_tracking, hyperparameter_tuning), tutorial notebook |
+| 7.2 RL Environments & Runners | ✅ Done | Gaps: orchestrator rl pipelines, extra reference/guide docs, tutorial, example script |
+| 7.3 Exotic Products | ✅ Done | Gaps: reference/guide docs, pipeline, example script (see IMPLEMENTATION_CHECKLIST_REVIEW) |
+| 7.6 Deep Hedging Backtesting | ✅ Done | Gaps: guide docs, pipeline, example script (optional) |
+| 7.7 Neural SDE | ✅ Core done | Gaps: adjoint; score matching/calibration; MC pricer/Greeks; conditional/augmentation; docs; pipeline; example |
+| 8.1 Vol Trading | ✅ Done | Gaps: optional extra docs/tutorials |
+| 8.2 Portfolio Opt | ✅ Done | — |
 
 ### Library Completion Criteria
 
-The library will be considered **complete** when:
+The library is considered **complete** for core scope when:
 1. ✅ Phases 1-6 (done)
 2. ✅ Phase 7.1 ML Integration (done)
-3. ⬜ Phase 7.1.5, 7.2, 7.3, 7.6, 7.7 (remaining core)
-4. ⬜ Phase 8.1, 8.2 (focused extensions)
+3. ✅ Phase 7.1.5, 7.2, 7.3, 7.6, 7.7 (implementation and tests done; some docs/pipelines/examples deferred)
+4. ✅ Phase 8.1, 8.2 (focused extensions done)
+
+**Remaining work** is optional: tutorial notebooks, additional guide docs, orchestrator pipelines for RL/deep hedging/neural SDE, and example scripts where not yet present. See phase implementation checklists and `docs/development/IMPLEMENTATION_CHECKLIST_REVIEW.md` for details.
 
 After that: **Build application projects as needed, not as library features.**
 
