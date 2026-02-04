@@ -968,72 +968,37 @@ Documentation:
 
 **Status:** Phase 7.2 core complete (training, evaluation, inference, protocols, BaseEnv, metrics). RL Orchestrator not yet implemented. See `docs/development/progress/phase_7_2_q_learning.md`. Technical reference: `docs/reference/q_learning/rl_framework.md`. Guide: `docs/guides/q_learning/rl_framework.md`.
 
-### 7.3 Exotic Products
+### 7.3 Exotic Products ✅
 
 **Goal:** Implement structured products commonly traded by hedge funds and investment banks.
 
-- [ ] **Cliquet Options**
+- [x] **Cliquet Options**
   - Instrument: `CliquetOption` (periodic resets with local/global caps and floors)
   - Parameters: reset_dates, local_cap, local_floor, global_cap, global_floor, participation
   - Payoff: `CliquetPayoff` (path-dependent, sum of capped/floored periodic returns)
   - Pricer: `CliquetMcPricer` (MC required for path-dependency)
-  - Greeks: Delta, gamma, vega (bump-and-reval), rho
+  - **Implemented:** `src/instruments/equity/options/cliquet.py`, `src/models/payoffs/cliquet.py`, `src/pricers/equity/cliquet_gbm_mc.py`
   - Use case: Equity-linked structured notes, guaranteed return products
 
-- [ ] **Autocallable Products**
+- [x] **Autocallable Products**
   - Instrument: `AutocallableOption` (barrier observation dates, coupon, early redemption)
   - Parameters: observation_dates, autocall_barrier, coupon_barrier, put_barrier, coupon_rate
   - Payoff: `AutocallablePayoff` (early termination on barrier breach with coupon)
   - Pricer: `AutocallableMcPricer` (MC required)
-  - Greeks: Delta, gamma, vega, autocall probability
+  - **Implemented:** `src/instruments/equity/options/autocallable.py`, `src/models/payoffs/autocallable.py`, `src/pricers/equity/autocallable_gbm_mc.py`
   - Use case: Most popular structured product globally (>$100B annual issuance)
 
-- [ ] **Range Accrual**
+- [x] **Range Accrual**
   - Instrument: `RangeAccrualNote` (IR or FX underlying)
   - Parameters: range_lower, range_upper, observation_freq, notional, accrual_rate
   - Payoff: `RangeAccrualPayoff` (accrues on days within range)
-  - Pricer: `RangeAccrualMcPricer` (MC required)
-  - Greeks: Delta, range sensitivity
+  - Pricer: `RangeAccrualHwMcPricer` (Hull-White MC)
+  - **Implemented:** `src/instruments/ir/options/range_accrual.py`, `src/models/payoffs/range_accrual.py`, `src/pricers/ir/range_accrual_hw_mc.py`
   - Use case: Yield enhancement, low-vol betting
 
-**Implementation Checklist:**
+**Pricer Naming Convention:** `{product}_{model}_{method}.py` — e.g. `cliquet_gbm_mc.py`, `autocallable_gbm_mc.py`, `range_accrual_hw_mc.py`.
 
-**Pricer Naming Convention:** `{product}_{model}_{method}.py`
-- Follows existing pattern: `european_bsm_mc.py`, `european_heston_mc.py`
-- For exotics: `cliquet_gbm_mc.py`, `autocallable_gbm_mc.py` (allows future model variants)
-
-```
-Cliquet Options:
-[ ] src/instruments/equity/options/cliquet.py (EquityCliquetOption)
-[ ] src/instruments/fx/options/cliquet.py (FxCliquetOption)
-[ ] src/models/payoffs/cliquet.py (CliquetPayoff)
-[ ] src/pricers/equity/cliquet_gbm_mc.py (EquityCliquetGbmMcPricer)
-[ ] src/pricers/fx/cliquet_gbm_mc.py (FxCliquetGbmMcPricer)
-[ ] tests/unit/instruments/equity/test_cliquet.py
-[ ] tests/unit/pricers/equity/test_cliquet_gbm_mc.py
-
-Autocallable Products:
-[ ] src/instruments/equity/options/autocallable.py (EquityAutocallableOption)
-[ ] src/models/payoffs/autocallable.py (AutocallablePayoff)
-[ ] src/pricers/equity/autocallable_gbm_mc.py (EquityAutocallableGbmMcPricer)
-[ ] src/pricers/equity/autocallable_localvol_mc.py (EquityAutocallableLocalvolMcPricer) — optional
-[ ] tests/unit/instruments/equity/test_autocallable.py
-[ ] tests/unit/pricers/equity/test_autocallable_gbm_mc.py
-
-Range Accrual:
-[ ] src/instruments/ir/options/range_accrual.py (IrRangeAccrualNote)
-[ ] src/models/payoffs/range_accrual.py (RangeAccrualPayoff)
-[ ] src/pricers/ir/range_accrual_hw_mc.py (IrRangeAccrualHwMcPricer) — Hull-White model
-[ ] tests/unit/instruments/ir/test_range_accrual.py
-[ ] tests/unit/pricers/ir/test_range_accrual_hw_mc.py
-
-Documentation:
-[ ] docs/reference/instruments/exotic_products.md
-[ ] docs/guides/instruments/pricing_exotics.md
-[ ] docs/tutorials/pricing/exotic_options.ipynb
-```
-
-**Status:** Not started.
+**Status:** ✅ **Implementation and unit tests complete.** Reference/guide docs, pipeline, and example script: see `docs/development/IMPLEMENTATION_CHECKLIST_REVIEW.md` (Phase 7.3).
 
 ### 7.4 Credit Derivatives (Optional)
 - [ ] **Credit Default Swaps (CDS)**
@@ -1123,33 +1088,13 @@ Documentation:
   - Use case: Compare hedging strategies
   - **Implemented:** `src/deep_hedging/evaluation/evaluator.py` (compute_hedging_metrics, HedgingEvaluator, compare_agents)
 
-- [ ] **Backtesting Integration**
+- [x] **Backtesting Integration**
   - Implement: Run trained hedging agent in backtesting framework
   - Support: Historical data replay, out-of-sample evaluation
+  - **Implemented:** `src/deep_hedging/adapters/backtesting.py` (BacktestEngineAdapter), `src/deep_hedging/adapters/historical_data.py` (HistoricalDataAdapter), `src/deep_hedging/evaluation/backtest_metrics.py` (HedgingBacktestMetrics), multi-asset and historical environments
   - Use case: Validate deep hedging on real data
-  - Note: Uses existing `src/backtesting/` infrastructure; deep_hedging provides adapters
-
-**Backtesting Integration Implementation Checklist:**
-```
-Adapters (bridge deep_hedging agents to backtesting framework):
-[ ] src/deep_hedging/adapters/backtesting.py (BacktestEngineAdapter - adapts hedging agent to backtesting.Strategy interface)
-[ ] src/deep_hedging/adapters/historical_data.py (HistoricalDataAdapter - prepares historical data for hedging env)
-
-Results (hedging-specific result processing):
-[ ] src/deep_hedging/evaluation/backtest_metrics.py (HedgingBacktestMetrics - extends evaluation with backtest-specific metrics)
-
-Tests:
-[ ] tests/unit/deep_hedging/adapters/test_backtesting.py
-[ ] tests/unit/deep_hedging/evaluation/test_backtest_metrics.py
-
-Documentation:
-[ ] docs/guides/deep_hedging/backtesting_hedging_agents.md
-[ ] Update: docs/tutorials/deep_hedging/deep_hedging_tutorial.ipynb (add backtesting section)
-
-Pipeline:
-[ ] src/orchestrator/pipelines/deep_hedging/backtest_agent.py
-[ ] Example: examples/pipelines/run_backtest_hedging_agent.py
-```
+  - Tests: `tests/unit/deep_hedging/adapters/test_backtesting.py`, `test_historical_data.py`, `evaluation/test_backtest_metrics.py`, `environments/test_multi_asset.py`, `test_historical.py`
+  - Pipeline and example script: see `docs/development/IMPLEMENTATION_CHECKLIST_REVIEW.md` (Phase 7.6).
 
 **Note on Deep Hedging Architecture:**
 Deep hedging is fundamentally an RL application (agents, environments, training). It's kept as a separate module because:
@@ -1159,34 +1104,17 @@ Deep hedging is fundamentally an RL application (agents, environments, training)
 The structure mirrors `q_learning/` but with hedging-specific components.
 
 ### 7.6.4 Advanced Deep Hedging
-- [ ] **Multi-Asset Hedging**
+- [x] **Multi-Asset Hedging**
   - Implement: Hedge portfolio of options with multiple underlyings
-  - Support: Cross-gamma, correlation hedging
+  - **Implemented:** `src/deep_hedging/environments/multi_asset.py` (MultiAssetHedgingEnv)
   - Use case: Portfolio-level deep hedging
 
-- [ ] **Model-Agnostic Hedging**
-  - Implement: Train hedging agent without assuming specific dynamics
-  - Support: Learn from historical data directly (uses historical data adapter from 7.6.3)
+- [x] **Model-Agnostic Hedging**
+  - Implement: Train hedging agent without assuming specific dynamics; learn from historical data
+  - **Implemented:** `src/deep_hedging/environments/historical.py` (HistoricalHedgingEnv), `src/deep_hedging/adapters/historical_data.py`
   - Use case: Robust hedging under model uncertainty
 
-**Implementation Checklist:**
-```
-Multi-Asset (extends existing environments/agents):
-[ ] src/deep_hedging/environments/multi_asset.py (MultiAssetHedgingEnv)
-[ ] src/deep_hedging/agents/multi_asset.py (MultiAssetDeepHedgingAgent)
-[ ] tests/unit/deep_hedging/environments/test_multi_asset.py
-[ ] tests/unit/deep_hedging/agents/test_multi_asset.py
-
-Model-Agnostic (uses historical adapter):
-[ ] src/deep_hedging/environments/historical.py (HistoricalHedgingEnv - wraps historical data)
-[ ] tests/unit/deep_hedging/environments/test_historical.py
-
-Documentation:
-[ ] docs/guides/deep_hedging/multi_asset_hedging.md
-[ ] docs/guides/deep_hedging/model_agnostic_hedging.md
-```
-
-**Status:** ✅ **Core complete.** Environments, agents, training, evaluation implemented. Advanced features (multi-asset, backtesting integration, model-agnostic) pending. See `docs/development/progress/phase_7_6_deep_hedging.md`.
+**Status:** ✅ **Core and backtesting integration complete.** Environments, agents, training, evaluation, adapters, multi-asset and historical envs implemented. See `docs/development/IMPLEMENTATION_CHECKLIST_REVIEW.md` (Phase 7.6) and `docs/development/progress/phase_7_6_deep_hedging.md`.
 
 **Documentation:**
 - Theory: `docs/reference/deep_hedging/theory.md` (PhD-level technical reference)
@@ -1291,7 +1219,7 @@ Documentation:
 [ ] Example: examples/pipelines/run_train_neural_sde.py
 ```
 
-**Status:** Not started. See `docs/development/progress/phase_7_7_neural_sde.md` (to be created).
+**Status:** ✅ **Implementation complete** (networks, solvers, dynamics, training losses, trainer, path generator). Unit tests, reference/guide docs, pipeline, and example script status: see `docs/development/IMPLEMENTATION_CHECKLIST_REVIEW.md` (Phase 7.7).
 
 **Dependencies:** MC framework, calibration engine, ML pipelines (7.1).
 
@@ -1317,13 +1245,13 @@ Documentation:
 ### Phase 7 Deliverables Summary:
 - ✅ ML integration (pricing, calibration) — 7.1
 - ✅ Hybrid GNN-LSTM full revaluation pricer — 7.1
-- ⬜ Production ML infrastructure (tracking, tuning) — 7.1.5
-- ⚠️ Q-learning / RL agent framework — 7.2 (core complete, environments pending)
-- ⬜ Exotic products (Cliquet, Autocallable, Range Accrual) — 7.3
+- ✅ Production ML infrastructure (tracking, tuning, registry) — 7.1.5
+- ✅ Q-learning / RL agent framework (environments, runners) — 7.2
+- ✅ Exotic products (Cliquet, Autocallable, Range Accrual) — 7.3
 - 🔲 Credit derivatives — 7.4 (optional, deferred)
 - 🔲 Commodities — 7.5 (optional, deferred)
-- ⚠️ Deep hedging framework — 7.6 (core complete, backtesting pending)
-- ⬜ Neural SDE for learned market dynamics — 7.7
+- ✅ Deep hedging framework (core, backtesting, multi-asset, historical) — 7.6
+- ✅ Neural SDE (networks, solvers, dynamics, training, generation) — 7.7
 - 🔲 Rough volatility — 7.8 (deferred)
 
 **Impact:** Demonstrates **cutting-edge ML/RL capabilities** in modern quantitative finance: deep hedging, neural SDEs, and hybrid GNN-LSTM pricing.
@@ -1386,7 +1314,7 @@ Documentation:
 [ ] docs/tutorials/volatility/variance_swap_tutorial.ipynb
 ```
 
-**Status:** Not started.
+**Status:** ✅ **Complete.** Tests and reference doc in place. Pipeline/example optional; see `docs/development/IMPLEMENTATION_CHECKLIST_REVIEW.md` (Phase 8.1).
 
 **Dependencies:** Vol surface calibration, Heston model, multi-asset infrastructure.
 
@@ -1435,22 +1363,18 @@ Pipeline:
 Example:
 [x] examples/pipelines/run_portfolio_optimisation.py
 
-Pipeline:
-[ ] src/orchestrator/pipelines/portfolio/optimise_portfolio.py
-[ ] Example: examples/pipelines/run_portfolio_optimisation.py
 ```
 
-**Status:** Not started.
+**Status:** ✅ **Complete.** Pipeline and example script implemented. See `docs/development/IMPLEMENTATION_CHECKLIST_REVIEW.md` (Phase 8.2).
 
 **Dependencies:** Portfolio module, risk infrastructure.
 
 ---
 
 ### Phase 8 Deliverables:
-- [ ] Variance swap pricing (replicating, Heston-based) — 8.1
-- [ ] Dispersion & vol-of-vol analytics — 8.1
-- [ ] Mean-variance, risk parity, Black-Litterman optimisation — 8.2
-- [ ] Covariance estimation with shrinkage — 8.2
+- [x] Variance swap pricing, dispersion & vol-of-vol analytics — 8.1
+- [x] Mean-variance, risk parity, Black-Litterman optimisation — 8.2
+- [x] Covariance estimation with shrinkage — 8.2
 
 **Estimated Effort:** ~2 weeks total
 

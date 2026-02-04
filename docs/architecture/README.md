@@ -8,8 +8,10 @@ This section provides visual and detailed documentation of the QuantStrata libra
 
 | Document | Description |
 |----------|-------------|
+| [**QuantStrata Library Overview**](QuantStrataLibraryOverview.md) | **Start here.** Single-document architecture overview for quants: layers, components, workflows, pipelines, and ecosystem |
 | [Ecosystem Diagrams](ecosystem_diagrams.md) | Visual diagrams showing module interactions, data flows, and component relationships |
 | [Component Reference](component_reference.md) | Detailed reference of what each module provides and requires |
+| [Orchestrator Pipeline Documentation](orchestrator_pipeline_documentation.md) | Pipeline reference, state keys, configuration, and best practices |
 
 ---
 
