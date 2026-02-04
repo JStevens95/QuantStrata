@@ -18,3 +18,14 @@ QuantLib >= 1.40
 
 # Optional: Machine learning (Python 3.12 recommended; TF 2.20+ for stability)
 tensorflow >= 2.20.0
+mlflow >= 2.0.0
+wandb >= 0.16.0
+
+# Optional: PyTorch for training
+torch >= 2.0.0
+
+# Optional: Scikit-learn for evaluation
+scikit-learn >= 1.2.0
+
+# Optional: Ray for distributed training
+ray >= 2.0.0

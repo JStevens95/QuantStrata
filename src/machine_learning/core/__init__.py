@@ -52,6 +52,16 @@ from src.machine_learning.core.types import (
     EvaluationResult as LegacyEvaluationResult,
 )
 
+# Experiment tracking (no tensorflow dependency)
+from src.machine_learning.core.tracking import (
+    ExperimentTracker,
+    RunInfo,
+    InMemoryTracker,
+    MLflowTracker,
+    WandBTracker,
+    create_tracker,
+)
+
 __all__ = [
     # Base models
     "BaseModel",
@@ -81,4 +91,11 @@ __all__ = [
     # Legacy
     "LegacyTrainingResult",
     "LegacyEvaluationResult",
+    # Experiment tracking
+    "ExperimentTracker",
+    "RunInfo",
+    "InMemoryTracker",
+    "MLflowTracker",
+    "WandBTracker",
+    "create_tracker",
 ]

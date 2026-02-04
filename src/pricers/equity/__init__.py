@@ -40,6 +40,19 @@ from src.pricers.equity.american_bsm_fde import EquityVanillaAmericanOptionFdPri
 from src.pricers.equity.forward import EquityForwardPricer  # Forward pricer.
 from src.pricers.equity.spot import EquitySpotPricer  # Spot pricer.
 
+# Exotic Pricers
+from src.pricers.equity.cliquet_gbm_mc import (
+    EquityCliquetGbmMcPricer,
+    FxCliquetGbmMcPricer,
+    CliquetPricingResult,
+    CliquetMarketData,
+)
+from src.pricers.equity.autocallable_gbm_mc import (
+    EquityAutocallableGbmMcPricer,
+    AutocallablePricingResult,
+    AutocallableMarketData,
+)
+
 __all__ = [
     # BSM (analytic)
     "EquityVanillaEuropeanOptionBsmPricer",
@@ -60,4 +73,13 @@ __all__ = [
     # Linear
     "EquityForwardPricer",
     "EquitySpotPricer",
+    # Exotic - Cliquet
+    "EquityCliquetGbmMcPricer",
+    "FxCliquetGbmMcPricer",
+    "CliquetPricingResult",
+    "CliquetMarketData",
+    # Exotic - Autocallable
+    "EquityAutocallableGbmMcPricer",
+    "AutocallablePricingResult",
+    "AutocallableMarketData",
 ]
