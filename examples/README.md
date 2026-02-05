@@ -10,9 +10,9 @@ This directory contains comprehensive examples demonstrating the QuantStrata lib
 examples/
 ├── fundamentals/     # Core market data concepts and building blocks
 ├── pricing/          # Option pricing methods (BSM, MC, FD)
-├── risk/             # Risk management, scenarios, and VaR
+├── risk/             # Risk management, scenarios, P&L attribution, hedging
+├── ml/               # Machine learning & reinforcement learning
 ├── pipelines/        # Production pipeline examples
-├── showcase/         # Visual demonstrations
 ├── notebooks/        # Interactive Jupyter notebooks
 └── workflows/        # End-to-end application workflows
 ```
@@ -113,7 +113,21 @@ Learn to manage risk with scenarios and sensitivities.
 
 ---
 
-## Part 4: Pipelines
+## Part 4: Machine Learning & RL
+
+ML and RL applications for quantitative finance.
+
+| Script | Description |
+|--------|-------------|
+| `01_hedging_environment.py` | RL hedging environment (Gymnasium interface) |
+| `02_rl_hedging_agent.py` | Train RL agent for option hedging |
+| `03_model_validation.py` | BSM vs Monte Carlo vs Finite Difference comparison |
+
+**Key concepts:** RL for finance, policy gradient, model validation.
+
+---
+
+## Part 5: Pipelines
 
 Production pipeline examples using the orchestrator framework.
 
@@ -184,8 +198,10 @@ The QuantStrata library itself (`src/`).
 
 1. Skim fundamentals for API reference
 2. Study `fundamentals/07_timeseries_generation.py` for scenario concepts
-3. Deep dive into `risk/fx_option_scenario_pnl.py` for production patterns
-4. Review `pipelines/run_var.py` for orchestrator usage
+3. Review `risk/03_pnl_attribution.py` and `risk/04_delta_hedging.py`
+4. Deep dive into `risk/fx_option_scenario_pnl.py` for production patterns
+5. Explore `ml/02_rl_hedging_agent.py` for RL applications
+6. Review `pipelines/run_var.py` for orchestrator usage
 
 ### For Interviewers / Reviewers
 
