@@ -86,6 +86,13 @@ sys.path.insert(0, str(REPO_ROOT))
 # QuantStrata imports
 # -----------------------------------------------------------------------------
 from src.q_learning.environments.hedging import HedgingEnvironment, HedgingEnvConfig
+from src.marketdata.core.ids import MarketId
+from src.marketdata.core.market import Market
+from src.marketdata.core.interfaces import Quote
+from src.marketdata.curves.term_structure import ZeroRateCurve
+from src.marketdata.surfaces.vol_surface import GridVolSurface
+from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
+from src.pricers.fx.european_bsm import FxVanillaEuropeanOptionBsmPricer
 
 
 # =============================================================================
@@ -361,24 +368,73 @@ class SimplePolicy:
 # SECTION 1: Environment Setup
 # =============================================================================
 
+def _build_production_pricing_callables(
+    spot_ref: float, strike: float, risk_free_rate: float, volatility: float,
+) -> Tuple[Any, Any, Any, Any]:
+    """ZeroRateCurve + GridVolSurface (no FlatVol/FlatCurves)."""
+    import numpy as np
+    tenors = np.array([0.0, 0.25, 0.5, 1.0])
+    rates = np.full_like(tenors, risk_free_rate)
+    dom_curve = ZeroRateCurve(tenors=tenors, zero_rates=rates, extrapolation="flat")
+    for_curve = ZeroRateCurve(tenors=tenors, zero_rates=rates, extrapolation="flat")
+    expiries = np.array([0.1, 0.25, 0.5, 1.0])
+    strikes = np.array([strike * 0.8, strike * 0.9, strike, strike * 1.1, strike * 1.2])
+    implied_vols = np.full((len(expiries), len(strikes)), volatility)
+    vol_surface = GridVolSurface(expiries=expiries, strikes=strikes, implied_vols=implied_vols, extrapolation="flat")
+    spot_id = MarketId(asset_class="FX", mkt_type="SPOT", name="EURUSD")
+    dom_id = MarketId(asset_class="IR", mkt_type="CURVE", name="USD_OIS")
+    for_id = MarketId(asset_class="IR", mkt_type="CURVE", name="EUR_OIS")
+    vol_id = MarketId(asset_class="FX", mkt_type="VOL", name="EURUSD")
+    pricer = FxVanillaEuropeanOptionBsmPricer()
+
+    def _market(spot: float) -> Market:
+        return Market(asof="", quotes={spot_id: Quote(value=spot)}, curves={dom_id: dom_curve, for_id: for_curve}, vols={vol_id: vol_surface})
+
+    def price_fn(spot: float, strike_k: float, tau: float, option_type: str) -> float:
+        opt = FxVanillaEuropeanOption(option_type=option_type, notional=1.0, strike=strike_k, expiry=max(tau, 0.0), spot_id=spot_id, vol_id=vol_id, domestic_curve_id=dom_id, foreign_curve_id=for_id)
+        return pricer.price(opt, _market(spot))
+
+    def delta_fn(spot: float, strike_k: float, tau: float, option_type: str) -> float:
+        opt = FxVanillaEuropeanOption(option_type=option_type, notional=1.0, strike=strike_k, expiry=max(tau, 0.0), spot_id=spot_id, vol_id=vol_id, domestic_curve_id=dom_id, foreign_curve_id=for_id)
+        return pricer.greeks(opt, _market(spot))["delta"]
+
+    def gamma_fn(spot: float, strike_k: float, tau: float) -> float:
+        opt = FxVanillaEuropeanOption(option_type="call", notional=1.0, strike=strike_k, expiry=max(tau, 0.0), spot_id=spot_id, vol_id=vol_id, domestic_curve_id=dom_id, foreign_curve_id=for_id)
+        return pricer.greeks(opt, _market(spot))["gamma"]
+
+    def vega_fn(spot: float, strike_k: float, tau: float) -> float:
+        opt = FxVanillaEuropeanOption(option_type="call", notional=1.0, strike=strike_k, expiry=max(tau, 0.0), spot_id=spot_id, vol_id=vol_id, domestic_curve_id=dom_id, foreign_curve_id=for_id)
+        return pricer.greeks(opt, _market(spot))["vega"]
+
+    return price_fn, delta_fn, gamma_fn, vega_fn
+
+
 def create_environment() -> Tuple[HedgingEnvironment, HedgingEnvConfig]:
-    """Create hedging environment."""
+    """Create hedging environment (ZeroRateCurve + GridVolSurface, production-grade)."""
     logger.info("=" * 70)
     logger.info("SECTION 1: Environment Setup")
     logger.info("=" * 70)
-    
+
+    spot_ref, strike_ref = 100.0, 100.0
+    vol, r = 0.20, 0.05
+    price_fn, delta_fn, gamma_fn, vega_fn = _build_production_pricing_callables(spot_ref, strike_ref, r, vol)
+
     config = HedgingEnvConfig(
-        spot=100.0,
-        strike=100.0,
+        spot=spot_ref,
+        strike=strike_ref,
         maturity=0.25,
-        volatility=0.20,
-        risk_free_rate=0.05,
+        volatility=vol,
+        risk_free_rate=r,
+        price_fn=price_fn,
+        delta_fn=delta_fn,
+        gamma_fn=gamma_fn,
+        vega_fn=vega_fn,
         n_steps=50,
         proportional_cost=0.001,
         reward_type="risk_adjusted",
         risk_aversion=0.1,
     )
-    
+
     env = HedgingEnvironment(config=config)
     
     logger.info(f"  State dimension: {env.observation_space_dim}")

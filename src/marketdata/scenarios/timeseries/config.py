@@ -493,20 +493,46 @@ class TimeseriesConfig:
             ) from e
 
     def _generate_dates(self) -> List[str]:
-        """Generate date grid from start_date to end_date with given frequency."""
-        import pandas as pd
+        """Generate date grid from start_date to end_date with given frequency.
 
-        freq_map = {
-            "D": "D",
-            "W": "W-FRI",
-            "M": "ME",
-            "B": "B",
-        }
+        Uses datetime only (no pandas dependency). Frequencies: D (daily), W (weekly),
+        M (month-end), B (business days via weekday check).
+        """
+        from datetime import datetime, timedelta
 
-        pd_freq = freq_map.get(self.freq, "D")
-        dates = pd.date_range(start=self.start_date, end=self.end_date, freq=pd_freq)
+        start = self.start_date
+        end = self.end_date
+        if isinstance(start, str):
+            start = datetime.strptime(start, "%Y-%m-%d").date()
+        if isinstance(end, str):
+            end = datetime.strptime(end, "%Y-%m-%d").date()
 
-        return [d.strftime("%Y-%m-%d") for d in dates]
+        out: List[str] = []
+        current = start
+        step_days = 1 if self.freq == "D" else 7 if self.freq == "W" else 28
+        if self.freq == "M":
+            # Approximate month step: advance to next month same day (capped at 28)
+            def next_month(d):
+                if d.month == 12:
+                    return d.replace(year=d.year + 1, month=1)
+                return d.replace(month=d.month + 1)
+
+        while current <= end:
+            out.append(current.strftime("%Y-%m-%d"))
+            if self.freq == "D":
+                current = current + timedelta(days=1)
+            elif self.freq == "W":
+                current = current + timedelta(days=7)
+            elif self.freq == "M":
+                current = next_month(current)
+            elif self.freq == "B":
+                current = current + timedelta(days=1)
+                while current.weekday() >= 5 and current <= end:
+                    current = current + timedelta(days=1)
+            else:
+                current = current + timedelta(days=step_days)
+
+        return out
 
     @property
     def n_factors(self) -> int:

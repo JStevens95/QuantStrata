@@ -28,7 +28,7 @@ Example:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -80,6 +80,13 @@ class HedgingEnvConfig:
     
     # Dynamics
     drift: float = 0.0  # Real-world drift (can differ from risk-free)
+
+    # Optional production-grade pricing (ZeroRateCurve + GridVolSurface via library pricers).
+    # When all four are set, they are used instead of inline BSM (scalar vol/rate).
+    price_fn: Optional[Callable[[float, float, float, str], float]] = None
+    delta_fn: Optional[Callable[[float, float, float, str], float]] = None
+    gamma_fn: Optional[Callable[[float, float, float], float]] = None
+    vega_fn: Optional[Callable[[float, float, float], float]] = None
 
 
 # =============================================================================
@@ -305,7 +312,61 @@ class HedgingEnvironment:
             )
         else:
             self.n_actions = 1
-    
+
+        # Production-grade pricing: use callables when all four are provided
+        self._use_external_pricing = all([
+            self.config.price_fn is not None,
+            self.config.delta_fn is not None,
+            self.config.gamma_fn is not None,
+            self.config.vega_fn is not None,
+        ])
+
+    def _price(self, spot: float, strike: float, tau: float, option_type: str) -> float:
+        """Option value: external callable or inline BSM."""
+        if self._use_external_pricing and self.config.price_fn is not None:
+            return float(self.config.price_fn(spot, strike, tau, option_type))
+        return _black_scholes_price(
+            spot, strike, tau,
+            self.config.volatility,
+            self.config.risk_free_rate,
+            self.config.dividend_yield,
+            option_type,
+        )
+
+    def _delta(self, spot: float, strike: float, tau: float, option_type: str) -> float:
+        """Option delta: external callable or inline BSM."""
+        if self._use_external_pricing and self.config.delta_fn is not None:
+            return float(self.config.delta_fn(spot, strike, tau, option_type))
+        return _black_scholes_delta(
+            spot, strike, tau,
+            self.config.volatility,
+            self.config.risk_free_rate,
+            self.config.dividend_yield,
+            option_type,
+        )
+
+    def _gamma(self, spot: float, strike: float, tau: float) -> float:
+        """Option gamma: external callable or inline BSM."""
+        if self._use_external_pricing and self.config.gamma_fn is not None:
+            return float(self.config.gamma_fn(spot, strike, tau))
+        return _black_scholes_gamma(
+            spot, strike, tau,
+            self.config.volatility,
+            self.config.risk_free_rate,
+            self.config.dividend_yield,
+        )
+
+    def _vega(self, spot: float, strike: float, tau: float) -> float:
+        """Option vega: external callable or inline BSM."""
+        if self._use_external_pricing and self.config.vega_fn is not None:
+            return float(self.config.vega_fn(spot, strike, tau))
+        return _black_scholes_vega(
+            spot, strike, tau,
+            self.config.volatility,
+            self.config.risk_free_rate,
+            self.config.dividend_yield,
+        )
+
     @property
     def observation_space_dim(self) -> int:
         """Return observation space dimension."""
@@ -347,13 +408,10 @@ class HedgingEnvironment:
         self._time_to_expiry = self.config.maturity
         
         # Compute initial option value
-        self._option_value = _black_scholes_price(
+        self._option_value = self._price(
             self._spot,
             self.config.strike,
             self._time_to_expiry,
-            self.config.volatility,
-            self.config.risk_free_rate,
-            self.config.dividend_yield,
             self.config.option_type,
         )
         
@@ -406,13 +464,10 @@ class HedgingEnvironment:
             ))
         
         # Compute target position
-        delta = _black_scholes_delta(
+        delta = self._delta(
             self._spot,
             self.config.strike,
             self._time_to_expiry,
-            self.config.volatility,
-            self.config.risk_free_rate,
-            self.config.dividend_yield,
             self.config.option_type,
         )
         
@@ -440,13 +495,10 @@ class HedgingEnvironment:
         self._step_count += 1
         
         # Compute new option value
-        new_option_value = _black_scholes_price(
+        new_option_value = self._price(
             self._spot,
             self.config.strike,
             max(self._time_to_expiry, 0),
-            self.config.volatility,
-            self.config.risk_free_rate,
-            self.config.dividend_yield,
             self.config.option_type,
         )
         
@@ -505,39 +557,24 @@ class HedgingEnvironment:
         
         # Delta
         if self.config.include_delta:
-            delta = _black_scholes_delta(
+            delta = self._delta(
                 self._spot,
                 self.config.strike,
                 max(self._time_to_expiry, 0),
-                self.config.volatility,
-                self.config.risk_free_rate,
-                self.config.dividend_yield,
                 self.config.option_type,
             )
             features.append(delta)
         
         # Gamma
         if self.config.include_gamma:
-            gamma = _black_scholes_gamma(
-                self._spot,
-                self.config.strike,
-                max(self._time_to_expiry, 0),
-                self.config.volatility,
-                self.config.risk_free_rate,
-                self.config.dividend_yield,
-            )
+            tau = max(self._time_to_expiry, 0)
+            gamma = self._gamma(self._spot, self.config.strike, tau)
             features.append(gamma * self._spot)  # Dollar gamma
         
         # Vega
         if self.config.include_vega:
-            vega = _black_scholes_vega(
-                self._spot,
-                self.config.strike,
-                max(self._time_to_expiry, 0),
-                self.config.volatility,
-                self.config.risk_free_rate,
-                self.config.dividend_yield,
-            )
+            tau = max(self._time_to_expiry, 0)
+            vega = self._vega(self._spot, self.config.strike, tau)
             features.append(vega)
         
         # Position
@@ -552,13 +589,10 @@ class HedgingEnvironment:
     
     def _get_info(self) -> Dict[str, Any]:
         """Build info dictionary."""
-        delta = _black_scholes_delta(
+        delta = self._delta(
             self._spot,
             self.config.strike,
             max(self._time_to_expiry, 0),
-            self.config.volatility,
-            self.config.risk_free_rate,
-            self.config.dividend_yield,
             self.config.option_type,
         )
         
