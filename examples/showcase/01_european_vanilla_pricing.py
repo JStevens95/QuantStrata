@@ -1,48 +1,140 @@
 #!/usr/bin/env python3
 """
+===============================================================================
 European Vanilla Option Pricing: BSM, Monte Carlo, and Finite Difference
+===============================================================================
 
 This example demonstrates pricing European vanilla FX options using three
-different methods and compares their results and performance.
+different methods via QuantStrata's production pricers.
 
-Topics Covered:
-- Black-Scholes-Merton analytical pricing
-- Monte Carlo simulation with variance reduction
-- Finite Difference PDE solving
-- Greeks computation and visualization
-- Method comparison and convergence analysis
+Learning Objectives
+-------------------
+1. **Multi-Method Pricing**: Compare BSM analytical, MC, and FD approaches
+2. **Library Integration**: Use production FX pricers consistently
+3. **Greeks Analysis**: Compute and visualize risk sensitivities
+4. **Convergence Testing**: Validate numerical methods against analytical
+
+Mathematical Framework
+----------------------
+For FX options under Garman-Kohlhagen:
+
+    C = S·e^(-r_f·T)·N(d1) - K·e^(-r_d·T)·N(d2)
+    P = K·e^(-r_d·T)·N(-d2) - S·e^(-r_f·T)·N(-d1)
+
+Where:
+    d1 = [ln(S/K) + (r_d - r_f + σ²/2)T] / (σ√T)
+    d2 = d1 - σ√T
+
+Put-Call Parity:
+    C - P = S·e^(-r_f·T) - K·e^(-r_d·T)
+
+Production Context
+------------------
+At a hedge fund:
+- FX options are highly liquid G10 instruments
+- BSM is the market standard for quoting
+- MC is used for path-dependent exotics validation
+- FD is preferred for American exercise and barriers
+
+Prerequisites
+-------------
+- Examples in fundamentals/
+- Understanding of FX conventions
+
+Run This Example
+----------------
+    cd /path/to/QuantStrata
+    PYTHONPATH=. python examples/showcase/01_european_vanilla_pricing.py
 
 Author: QuantStrata Team
+===============================================================================
 """
 
-import numpy as np
-import matplotlib.pyplot as plt
-from dataclasses import dataclass
-from typing import Tuple
+# =============================================================================
+# IMPORTS
+# =============================================================================
 
-# QuantStrata imports
+from __future__ import annotations
+
+import argparse
+import logging
 import sys
-sys.path.insert(0, '../..')
+import time
+from dataclasses import dataclass
+from datetime import date
+from pathlib import Path
+from typing import Dict, List, Tuple
 
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
+import numpy as np
+
+# -----------------------------------------------------------------------------
+# Path setup
+# -----------------------------------------------------------------------------
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
+
+# -----------------------------------------------------------------------------
+# QuantStrata imports - using library pricers
+# -----------------------------------------------------------------------------
+from src.marketdata.core.ids import MarketId
+from src.marketdata.core.interfaces import Quote
 from src.marketdata.core.market import Market
+from src.marketdata.curves.term_structure import FlatZeroRateCurve
+from src.marketdata.surfaces.vol_surface import FlatVolSurface
+
+from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
+
+# Library pricers - production implementations
+from src.pricers.fx.european_bsm import FxVanillaEuropeanOptionBsmPricer
+from src.pricers.fx.european_bsm_mc import FxVanillaEuropeanOptionMcPricer
+from src.pricers.fx.european_bsm_fde import FxVanillaEuropeanOptionFdPricer
+
+# BSM model functions for direct Greeks computation
+from src.models.analytic.black_scholes_merton.base import (
+    vanilla_price,
+    vanilla_delta,
+    vanilla_gamma,
+    vanilla_vega,
+    vanilla_theta,
+)
+
 
 # =============================================================================
-# Configuration and Setup
+# LOGGING SETUP
 # =============================================================================
 
-# Plot style configuration
-plt.style.use('seaborn-v0_8-whitegrid')
-plt.rcParams.update({
-    'figure.figsize': (14, 8),
-    'font.size': 11,
-    'axes.titlesize': 14,
-    'axes.labelsize': 12,
-    'legend.fontsize': 10,
-    'lines.linewidth': 2,
-    'axes.grid': True,
-    'grid.alpha': 0.3,
-})
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)-8s | %(message)s',
+    datefmt='%H:%M:%S',
+)
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+
+ENABLE_PLOTTING = True
+
+try:
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d import Axes3D
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
+    logger.warning("matplotlib not available - plotting disabled")
+
+
+# =============================================================================
+# CONSTANTS
+# =============================================================================
+
+# Market IDs
+EURUSD_SPOT = MarketId(asset_class="FX", mkt_type="SPOT", name="EURUSD")
+USD_CURVE = MarketId(asset_class="IR", mkt_type="CURVE", name="USD_OIS")
+EUR_CURVE = MarketId(asset_class="IR", mkt_type="CURVE", name="EUR_OIS")
+EURUSD_VOL = MarketId(asset_class="FX", mkt_type="VOL", name="EURUSD")
 
 # Color palette
 COLORS = {
@@ -55,6 +147,11 @@ COLORS = {
     'vega': '#10B981',
 }
 
+
+# =============================================================================
+# DATA STRUCTURES
+# =============================================================================
+
 @dataclass
 class OptionParams:
     """Container for option parameters."""
@@ -66,455 +163,515 @@ class OptionParams:
     r_for: float = 0.02           # EUR rate
     notional: float = 1_000_000   # 1M EUR notional
 
-# =============================================================================
-# Analytical Black-Scholes-Merton
-# =============================================================================
 
-def bsm_price(S: float, K: float, T: float, r: float, q: float, sigma: float, 
-              option_type: str = 'call') -> float:
-    """
-    Black-Scholes-Merton price for European option.
-    
-    Parameters
-    ----------
-    S : Spot price
-    K : Strike price
-    T : Time to expiry (years)
-    r : Domestic risk-free rate
-    q : Foreign/dividend rate
-    sigma : Volatility
-    option_type : 'call' or 'put'
-    """
-    from scipy.stats import norm
-    
-    d1 = (np.log(S/K) + (r - q + 0.5*sigma**2)*T) / (sigma*np.sqrt(T))
-    d2 = d1 - sigma*np.sqrt(T)
-    
-    if option_type == 'call':
-        price = S*np.exp(-q*T)*norm.cdf(d1) - K*np.exp(-r*T)*norm.cdf(d2)
-    else:
-        price = K*np.exp(-r*T)*norm.cdf(-d2) - S*np.exp(-q*T)*norm.cdf(-d1)
-    
-    return price
+@dataclass
+class PricingResult:
+    """Result from a pricer."""
+    method: str
+    call_price: float
+    put_price: float
+    time_ms: float
+    std_error: float = 0.0
 
-def bsm_greeks(S: float, K: float, T: float, r: float, q: float, sigma: float,
-               option_type: str = 'call') -> dict:
-    """Compute all Greeks analytically."""
-    from scipy.stats import norm
-    
-    d1 = (np.log(S/K) + (r - q + 0.5*sigma**2)*T) / (sigma*np.sqrt(T))
-    d2 = d1 - sigma*np.sqrt(T)
-    
-    # Common terms
-    Nd1 = norm.cdf(d1) if option_type == 'call' else norm.cdf(-d1)
-    nd1 = norm.pdf(d1)
-    
-    # Greeks
-    delta = np.exp(-q*T) * Nd1 if option_type == 'call' else -np.exp(-q*T) * norm.cdf(-d1)
-    gamma = np.exp(-q*T) * nd1 / (S * sigma * np.sqrt(T))
-    vega = S * np.exp(-q*T) * np.sqrt(T) * nd1 / 100  # Per 1% vol
-    theta = -(S * sigma * np.exp(-q*T) * nd1) / (2*np.sqrt(T))
-    if option_type == 'call':
-        theta += q*S*np.exp(-q*T)*norm.cdf(d1) - r*K*np.exp(-r*T)*norm.cdf(d2)
-    else:
-        theta += -q*S*np.exp(-q*T)*norm.cdf(-d1) + r*K*np.exp(-r*T)*norm.cdf(-d2)
-    theta /= 365  # Per day
-    
-    return {'delta': delta, 'gamma': gamma, 'vega': vega, 'theta': theta}
 
 # =============================================================================
-# Monte Carlo Pricing
+# MARKET AND INSTRUMENT SETUP
 # =============================================================================
 
-def mc_price(S: float, K: float, T: float, r: float, q: float, sigma: float,
-             option_type: str = 'call', n_paths: int = 100000, 
-             antithetic: bool = True) -> Tuple[float, float]:
-    """
-    Monte Carlo price with confidence interval.
-    
-    Returns
-    -------
-    price : float
-    std_error : float
-    """
-    np.random.seed(42)
-    
-    if antithetic:
-        n_half = n_paths // 2
-        Z = np.random.randn(n_half)
-        Z = np.concatenate([Z, -Z])  # Antithetic pairs
-    else:
-        Z = np.random.randn(n_paths)
-    
-    # Terminal spot under Q
-    drift = (r - q - 0.5*sigma**2) * T
-    diffusion = sigma * np.sqrt(T) * Z
-    ST = S * np.exp(drift + diffusion)
-    
-    # Payoffs
-    if option_type == 'call':
-        payoffs = np.maximum(ST - K, 0)
-    else:
-        payoffs = np.maximum(K - ST, 0)
-    
-    # Discounted price
-    disc_payoffs = np.exp(-r*T) * payoffs
-    price = np.mean(disc_payoffs)
-    std_error = np.std(disc_payoffs) / np.sqrt(len(disc_payoffs))
-    
-    return price, std_error
+def create_market(params: OptionParams) -> Market:
+    """Create market snapshot from parameters."""
+    return Market(
+        val_date=date.today(),
+        quotes={EURUSD_SPOT: Quote(EURUSD_SPOT, params.spot)},
+        curves={
+            USD_CURVE: FlatZeroRateCurve(USD_CURVE, params.r_dom),
+            EUR_CURVE: FlatZeroRateCurve(EUR_CURVE, params.r_for),
+        },
+        vol_surfaces={EURUSD_VOL: FlatVolSurface(EURUSD_VOL, params.vol)},
+    )
+
+
+def create_option(
+    params: OptionParams,
+    option_type: str = "call",
+) -> FxVanillaEuropeanOption:
+    """Create FX vanilla option."""
+    return FxVanillaEuropeanOption(
+        option_type=option_type,
+        spot_id=EURUSD_SPOT,
+        domestic_curve_id=USD_CURVE,
+        foreign_curve_id=EUR_CURVE,
+        vol_id=EURUSD_VOL,
+        strike=params.strike,
+        expiry=params.expiry,
+        notional=params.notional,
+    )
+
 
 # =============================================================================
-# Finite Difference Pricing
+# PRICING FUNCTIONS USING LIBRARY PRICERS
 # =============================================================================
 
-def fd_price(S0: float, K: float, T: float, r: float, q: float, sigma: float,
-             option_type: str = 'call', N: int = 200, M: int = 100) -> float:
-    """
-    Crank-Nicolson finite difference price.
+def price_with_bsm(params: OptionParams) -> PricingResult:
+    """Price using library BSM pricer."""
+    market = create_market(params)
+    pricer = FxVanillaEuropeanOptionBsmPricer()
     
-    Parameters
-    ----------
-    N : Number of spot grid points
-    M : Number of time steps
-    """
-    # Grid setup
-    S_max = 4 * K
-    dS = S_max / N
-    dt = T / M
+    call_option = create_option(params, "call")
+    put_option = create_option(params, "put")
     
-    S = np.linspace(0, S_max, N+1)
+    start = time.perf_counter()
+    call_price = pricer.price(call_option, market)
+    put_price = pricer.price(put_option, market)
+    elapsed = (time.perf_counter() - start) * 1000
     
-    # Terminal condition
-    if option_type == 'call':
-        V = np.maximum(S - K, 0)
-    else:
-        V = np.maximum(K - S, 0)
+    return PricingResult(
+        method="BSM (Analytical)",
+        call_price=call_price / params.notional,  # Per unit
+        put_price=put_price / params.notional,
+        time_ms=elapsed,
+    )
+
+
+def price_with_mc(
+    params: OptionParams,
+    n_paths: int = 100_000,
+) -> PricingResult:
+    """Price using library Monte Carlo pricer."""
+    market = create_market(params)
+    pricer = FxVanillaEuropeanOptionMcPricer(
+        n_paths=n_paths,
+        seed=42,
+        antithetic=True,
+    )
     
-    # Coefficient vectors (for interior points)
-    j = np.arange(1, N)
-    a = 0.25 * dt * (sigma**2 * j**2 - (r-q) * j)
-    b = -0.5 * dt * (sigma**2 * j**2 + r)
-    c = 0.25 * dt * (sigma**2 * j**2 + (r-q) * j)
+    call_option = create_option(params, "call")
+    put_option = create_option(params, "put")
     
-    # Build tridiagonal matrices
-    A = np.diag(1 - b) + np.diag(-a[1:], -1) + np.diag(-c[:-1], 1)
-    B = np.diag(1 + b) + np.diag(a[1:], -1) + np.diag(c[:-1], 1)
+    start = time.perf_counter()
+    call_result = pricer.run(call_option, market)
+    put_result = pricer.run(put_option, market)
+    elapsed = (time.perf_counter() - start) * 1000
     
-    # Time stepping
-    for m in range(M):
-        # Boundary values
-        if option_type == 'call':
-            V_lower = 0
-            V_upper = S_max - K * np.exp(-r * (T - m*dt))
-        else:
-            V_lower = K * np.exp(-r * (T - m*dt))
-            V_upper = 0
-        
-        # RHS
-        rhs = B @ V[1:N]
-        rhs[0] += a[0] * V_lower
-        rhs[-1] += c[-1] * V_upper
-        
-        # Solve
-        V[1:N] = np.linalg.solve(A, rhs)
-        V[0] = V_lower
-        V[N] = V_upper
+    call_price = call_result.discounted_payoffs.mean()
+    put_price = put_result.discounted_payoffs.mean()
     
-    # Interpolate to spot
-    return np.interp(S0, S, V)
+    # Standard error
+    call_stderr = call_result.discounted_payoffs.std() / np.sqrt(len(call_result.discounted_payoffs))
+    
+    return PricingResult(
+        method="Monte Carlo",
+        call_price=call_price / params.notional,
+        put_price=put_price / params.notional,
+        time_ms=elapsed,
+        std_error=call_stderr / params.notional,
+    )
+
+
+def price_with_fd(params: OptionParams) -> PricingResult:
+    """Price using library Finite Difference pricer."""
+    market = create_market(params)
+    pricer = FxVanillaEuropeanOptionFdPricer(
+        n_space=401,
+        n_time_steps=200,
+        theta=0.5,  # Crank-Nicolson
+    )
+    
+    call_option = create_option(params, "call")
+    put_option = create_option(params, "put")
+    
+    start = time.perf_counter()
+    call_price = pricer.price(call_option, market)
+    put_price = pricer.price(put_option, market)
+    elapsed = (time.perf_counter() - start) * 1000
+    
+    return PricingResult(
+        method="Finite Difference",
+        call_price=call_price / params.notional,
+        put_price=put_price / params.notional,
+        time_ms=elapsed,
+    )
+
+
+def compute_greeks(params: OptionParams) -> Dict[str, float]:
+    """Compute Greeks using library BSM pricer."""
+    market = create_market(params)
+    pricer = FxVanillaEuropeanOptionBsmPricer()
+    call_option = create_option(params, "call")
+    
+    greeks = pricer.greeks(call_option, market)
+    
+    return {
+        'delta': greeks.get('delta', 0.0),
+        'gamma': greeks.get('gamma', 0.0),
+        'vega': greeks.get('vega', 0.0),
+        'theta': greeks.get('theta', 0.0),
+    }
+
+
+def check_put_call_parity(params: OptionParams) -> Dict[str, float]:
+    """Verify put-call parity using library pricer."""
+    bsm_result = price_with_bsm(params)
+    
+    # Put-call parity: C - P = S·e^(-r_f·T) - K·e^(-r_d·T)
+    parity_lhs = bsm_result.call_price - bsm_result.put_price
+    parity_rhs = (
+        params.spot * np.exp(-params.r_for * params.expiry) -
+        params.strike * np.exp(-params.r_dom * params.expiry)
+    )
+    
+    return {
+        "C - P": parity_lhs,
+        "S·e^(-r_f·T) - K·e^(-r_d·T)": parity_rhs,
+        "parity_error": abs(parity_lhs - parity_rhs),
+    }
+
 
 # =============================================================================
-# Visualization Functions
+# CONVERGENCE ANALYSIS
 # =============================================================================
 
-def plot_method_comparison(params: OptionParams):
-    """Compare pricing methods across spot range."""
-    spots = np.linspace(params.spot * 0.7, params.spot * 1.3, 50)
+def test_mc_convergence(params: OptionParams) -> Tuple[List[int], List[float], List[float]]:
+    """Test MC convergence vs BSM."""
+    bsm_result = price_with_bsm(params)
+    bsm_call = bsm_result.call_price
     
-    bsm_calls = [bsm_price(s, params.strike, params.expiry, params.r_dom, 
-                           params.r_for, params.vol, 'call') for s in spots]
-    bsm_puts = [bsm_price(s, params.strike, params.expiry, params.r_dom,
-                          params.r_for, params.vol, 'put') for s in spots]
-    
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-    
-    # Call prices
-    ax = axes[0]
-    ax.plot(spots, bsm_calls, color=COLORS['bsm'], linewidth=2.5, label='BSM Analytical')
-    
-    # MC prices at sample points
-    mc_spots = spots[::5]
-    mc_calls = [mc_price(s, params.strike, params.expiry, params.r_dom,
-                         params.r_for, params.vol, 'call')[0] for s in mc_spots]
-    ax.scatter(mc_spots, mc_calls, color=COLORS['mc'], s=60, zorder=5, 
-               label='Monte Carlo', marker='o')
-    
-    # FD prices at sample points
-    fd_calls = [fd_price(s, params.strike, params.expiry, params.r_dom,
-                         params.r_for, params.vol, 'call') for s in mc_spots]
-    ax.scatter(mc_spots, fd_calls, color=COLORS['fd'], s=60, zorder=5,
-               label='Finite Difference', marker='s')
-    
-    ax.axvline(params.strike, color='gray', linestyle='--', alpha=0.5, label='Strike')
-    ax.set_xlabel('Spot Price')
-    ax.set_ylabel('Option Price')
-    ax.set_title('European Call Option: Method Comparison')
-    ax.legend()
-    
-    # Put prices
-    ax = axes[1]
-    ax.plot(spots, bsm_puts, color=COLORS['bsm'], linewidth=2.5, label='BSM Analytical')
-    
-    mc_puts = [mc_price(s, params.strike, params.expiry, params.r_dom,
-                        params.r_for, params.vol, 'put')[0] for s in mc_spots]
-    ax.scatter(mc_spots, mc_puts, color=COLORS['mc'], s=60, zorder=5,
-               label='Monte Carlo', marker='o')
-    
-    fd_puts = [fd_price(s, params.strike, params.expiry, params.r_dom,
-                        params.r_for, params.vol, 'put') for s in mc_spots]
-    ax.scatter(mc_spots, fd_puts, color=COLORS['fd'], s=60, zorder=5,
-               label='Finite Difference', marker='s')
-    
-    ax.axvline(params.strike, color='gray', linestyle='--', alpha=0.5, label='Strike')
-    ax.set_xlabel('Spot Price')
-    ax.set_ylabel('Option Price')
-    ax.set_title('European Put Option: Method Comparison')
-    ax.legend()
-    
-    plt.tight_layout()
-    plt.savefig('european_vanilla_comparison.png', dpi=150, bbox_inches='tight')
-    plt.show()
-
-def plot_greeks_surface(params: OptionParams):
-    """Plot Greeks as function of spot and time."""
-    spots = np.linspace(params.spot * 0.7, params.spot * 1.3, 40)
-    times = np.linspace(0.01, params.expiry, 30)
-    
-    S_grid, T_grid = np.meshgrid(spots, times)
-    
-    # Compute delta surface
-    delta_grid = np.zeros_like(S_grid)
-    gamma_grid = np.zeros_like(S_grid)
-    
-    for i, t in enumerate(times):
-        for j, s in enumerate(spots):
-            greeks = bsm_greeks(s, params.strike, t, params.r_dom, 
-                               params.r_for, params.vol, 'call')
-            delta_grid[i, j] = greeks['delta']
-            gamma_grid[i, j] = greeks['gamma']
-    
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5), subplot_kw={'projection': '3d'})
-    
-    # Delta surface
-    ax = axes[0]
-    surf = ax.plot_surface(S_grid, T_grid, delta_grid, cmap='viridis', alpha=0.8)
-    ax.set_xlabel('Spot')
-    ax.set_ylabel('Time to Expiry')
-    ax.set_zlabel('Delta')
-    ax.set_title('Call Option Delta Surface')
-    ax.view_init(elev=25, azim=45)
-    
-    # Gamma surface
-    ax = axes[1]
-    surf = ax.plot_surface(S_grid, T_grid, gamma_grid, cmap='plasma', alpha=0.8)
-    ax.set_xlabel('Spot')
-    ax.set_ylabel('Time to Expiry')
-    ax.set_zlabel('Gamma')
-    ax.set_title('Call Option Gamma Surface')
-    ax.view_init(elev=25, azim=45)
-    
-    plt.tight_layout()
-    plt.savefig('greeks_surface.png', dpi=150, bbox_inches='tight')
-    plt.show()
-
-def plot_convergence_analysis(params: OptionParams):
-    """Analyze MC and FD convergence."""
-    # BSM benchmark
-    bsm_call = bsm_price(params.spot, params.strike, params.expiry,
-                         params.r_dom, params.r_for, params.vol, 'call')
-    
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-    
-    # MC convergence
-    ax = axes[0]
     path_counts = [1000, 5000, 10000, 50000, 100000, 500000]
     mc_prices = []
     mc_errors = []
     
     for n in path_counts:
-        price, stderr = mc_price(params.spot, params.strike, params.expiry,
-                                 params.r_dom, params.r_for, params.vol, 'call',
-                                 n_paths=n)
-        mc_prices.append(price)
-        mc_errors.append(stderr)
+        mc_result = price_with_mc(params, n_paths=n)
+        mc_prices.append(mc_result.call_price)
+        mc_errors.append(mc_result.std_error)
     
-    ax.errorbar(path_counts, mc_prices, yerr=np.array(mc_errors)*1.96,
-                fmt='o-', color=COLORS['mc'], capsize=5, label='MC Price ± 95% CI')
-    ax.axhline(bsm_call, color=COLORS['bsm'], linestyle='--', linewidth=2,
-               label=f'BSM = {bsm_call:.6f}')
-    ax.set_xscale('log')
-    ax.set_xlabel('Number of Paths')
-    ax.set_ylabel('Option Price')
-    ax.set_title('Monte Carlo Convergence')
-    ax.legend()
+    return path_counts, mc_prices, mc_errors
+
+
+def test_fd_convergence(params: OptionParams) -> Tuple[List[int], List[float]]:
+    """Test FD convergence vs BSM."""
+    bsm_result = price_with_bsm(params)
+    bsm_call = bsm_result.call_price
     
-    # FD convergence
-    ax = axes[1]
-    grid_sizes = [50, 100, 200, 400, 800]
-    fd_prices = []
+    grid_sizes = [51, 101, 201, 401, 801]
+    fd_errors = []
+    
+    market = create_market(params)
+    call_option = create_option(params, "call")
     
     for n in grid_sizes:
-        price = fd_price(params.spot, params.strike, params.expiry,
-                        params.r_dom, params.r_for, params.vol, 'call',
-                        N=n, M=n//2)
-        fd_prices.append(price)
+        pricer = FxVanillaEuropeanOptionFdPricer(
+            n_space=n,
+            n_time_steps=n // 2,
+            theta=0.5,
+        )
+        fd_price = pricer.price(call_option, market) / params.notional
+        fd_errors.append(abs(fd_price - bsm_call))
     
-    fd_errors = np.abs(np.array(fd_prices) - bsm_call)
-    
-    ax.semilogy(grid_sizes, fd_errors, 'o-', color=COLORS['fd'], 
-                linewidth=2, markersize=8, label='|FD - BSM|')
-    
-    # Reference line for O(h²) convergence
-    h_ref = np.array(grid_sizes)
-    err_ref = fd_errors[0] * (grid_sizes[0]/h_ref)**2
-    ax.semilogy(grid_sizes, err_ref, '--', color='gray', alpha=0.7,
-                label=r'$O(h^2)$ reference')
-    
-    ax.set_xlabel('Grid Points (N)')
-    ax.set_ylabel('Absolute Error')
-    ax.set_title('Finite Difference Convergence')
-    ax.legend()
-    
-    plt.tight_layout()
-    plt.savefig('convergence_analysis.png', dpi=150, bbox_inches='tight')
-    plt.show()
+    return grid_sizes, fd_errors
 
-def plot_volatility_smile_impact(params: OptionParams):
-    """Show how volatility affects option prices."""
-    vols = np.linspace(0.05, 0.40, 8)
-    strikes = np.linspace(params.spot * 0.8, params.spot * 1.2, 50)
-    
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-    
-    # Call prices for different vols
-    ax = axes[0]
-    colors = plt.cm.viridis(np.linspace(0, 0.9, len(vols)))
-    
-    for vol, color in zip(vols, colors):
-        prices = [bsm_price(params.spot, k, params.expiry, params.r_dom,
-                           params.r_for, vol, 'call') for k in strikes]
-        ax.plot(strikes, prices, color=color, label=f'σ = {vol:.0%}')
-    
-    ax.axvline(params.spot, color='gray', linestyle='--', alpha=0.5)
-    ax.set_xlabel('Strike')
-    ax.set_ylabel('Call Price')
-    ax.set_title('Call Price vs Strike (Different Volatilities)')
-    ax.legend(loc='upper right')
-    
-    # Implied volatility smile illustration
-    ax = axes[1]
-    
-    # Simulate a volatility smile (in reality would be from market)
-    moneyness = strikes / params.spot
-    smile = params.vol * (1 + 0.3 * (moneyness - 1)**2 + 0.1 * (1 - moneyness))
-    
-    ax.plot(moneyness, smile * 100, color=COLORS['vega'], linewidth=2.5)
-    ax.axvline(1.0, color='gray', linestyle='--', alpha=0.5, label='ATM')
-    ax.axhline(params.vol * 100, color='gray', linestyle=':', alpha=0.5)
-    
-    ax.set_xlabel('Moneyness (K/S)')
-    ax.set_ylabel('Implied Volatility (%)')
-    ax.set_title('Typical Volatility Smile Shape')
-    ax.legend()
-    
-    plt.tight_layout()
-    plt.savefig('volatility_impact.png', dpi=150, bbox_inches='tight')
-    plt.show()
 
 # =============================================================================
-# Main Execution
+# MAIN WORKFLOW
 # =============================================================================
 
-def main():
-    """Run all demonstrations."""
-    print("=" * 70)
-    print("European Vanilla Option Pricing Showcase")
-    print("=" * 70)
+def run_pricing_showcase() -> Tuple[List[PricingResult], Dict]:
+    """
+    Run the complete pricing showcase.
+    """
+    logger.info("=" * 70)
+    logger.info("EUROPEAN VANILLA OPTION PRICING SHOWCASE")
+    logger.info("=" * 70)
     
     params = OptionParams()
     
-    # Print parameters
-    print(f"\nOption Parameters:")
-    print(f"  Spot (EUR/USD):     {params.spot}")
-    print(f"  Strike:             {params.strike}")
-    print(f"  Expiry:             {params.expiry} year")
-    print(f"  Volatility:         {params.vol:.1%}")
-    print(f"  Domestic rate (USD):{params.r_dom:.2%}")
-    print(f"  Foreign rate (EUR): {params.r_for:.2%}")
+    # Section 1: Parameters
+    logger.info("")
+    logger.info("=" * 70)
+    logger.info("SECTION 1: Option Parameters")
+    logger.info("=" * 70)
     
-    # Compute prices
-    print("\n" + "-" * 50)
-    print("Pricing Results:")
-    print("-" * 50)
+    logger.info("")
+    logger.info(f"  Spot (EUR/USD):      {params.spot}")
+    logger.info(f"  Strike:              {params.strike}")
+    logger.info(f"  Expiry:              {params.expiry} year")
+    logger.info(f"  Volatility:          {params.vol:.1%}")
+    logger.info(f"  Domestic rate (USD): {params.r_dom:.2%}")
+    logger.info(f"  Foreign rate (EUR):  {params.r_for:.2%}")
+    logger.info(f"  Notional:            {params.notional:,.0f} EUR")
     
-    bsm_call = bsm_price(params.spot, params.strike, params.expiry,
-                         params.r_dom, params.r_for, params.vol, 'call')
-    bsm_put = bsm_price(params.spot, params.strike, params.expiry,
-                        params.r_dom, params.r_for, params.vol, 'put')
+    # Section 2: Pricing
+    logger.info("")
+    logger.info("=" * 70)
+    logger.info("SECTION 2: Multi-Method Pricing (Library Pricers)")
+    logger.info("=" * 70)
     
-    mc_call, mc_std = mc_price(params.spot, params.strike, params.expiry,
-                               params.r_dom, params.r_for, params.vol, 'call')
-    mc_put, _ = mc_price(params.spot, params.strike, params.expiry,
-                         params.r_dom, params.r_for, params.vol, 'put')
+    results = []
     
-    fd_call = fd_price(params.spot, params.strike, params.expiry,
-                       params.r_dom, params.r_for, params.vol, 'call')
-    fd_put = fd_price(params.spot, params.strike, params.expiry,
-                      params.r_dom, params.r_for, params.vol, 'put')
+    # BSM
+    bsm_result = price_with_bsm(params)
+    results.append(bsm_result)
     
-    print(f"\n{'Method':<15} {'Call Price':<12} {'Put Price':<12}")
-    print("-" * 40)
-    print(f"{'BSM Analytical':<15} {bsm_call:<12.6f} {bsm_put:<12.6f}")
-    print(f"{'Monte Carlo':<15} {mc_call:<12.6f} {mc_put:<12.6f}")
-    print(f"{'Finite Diff':<15} {fd_call:<12.6f} {fd_put:<12.6f}")
+    # Monte Carlo
+    mc_result = price_with_mc(params)
+    results.append(mc_result)
     
-    # Greeks
-    greeks = bsm_greeks(params.spot, params.strike, params.expiry,
-                        params.r_dom, params.r_for, params.vol, 'call')
+    # Finite Difference
+    fd_result = price_with_fd(params)
+    results.append(fd_result)
     
-    print("\n" + "-" * 50)
-    print("Call Option Greeks (BSM):")
-    print("-" * 50)
-    print(f"  Delta:  {greeks['delta']:.4f}")
-    print(f"  Gamma:  {greeks['gamma']:.4f}")
-    print(f"  Vega:   {greeks['vega']:.4f} (per 1% vol)")
-    print(f"  Theta:  {greeks['theta']:.4f} (per day)")
+    logger.info("")
+    logger.info(f"{'Method':<20} {'Call Price':>12} {'Put Price':>12} {'Time (ms)':>12}")
+    logger.info("-" * 60)
     
-    # Put-Call Parity Check
-    parity_lhs = bsm_call - bsm_put
-    parity_rhs = params.spot * np.exp(-params.r_for * params.expiry) - \
-                 params.strike * np.exp(-params.r_dom * params.expiry)
+    for r in results:
+        logger.info(f"{r.method:<20} {r.call_price:>12.6f} {r.put_price:>12.6f} {r.time_ms:>11.2f}")
     
-    print("\n" + "-" * 50)
-    print("Put-Call Parity Check:")
-    print("-" * 50)
-    print(f"  C - P       = {parity_lhs:.6f}")
-    print(f"  Se^(-qT) - Ke^(-rT) = {parity_rhs:.6f}")
-    print(f"  Difference  = {abs(parity_lhs - parity_rhs):.2e}")
+    # Section 3: Greeks
+    logger.info("")
+    logger.info("=" * 70)
+    logger.info("SECTION 3: Greeks (BSM Pricer)")
+    logger.info("=" * 70)
     
-    # Generate plots
-    print("\n" + "-" * 50)
-    print("Generating Visualizations...")
-    print("-" * 50)
+    greeks = compute_greeks(params)
     
-    plot_method_comparison(params)
-    plot_greeks_surface(params)
-    plot_convergence_analysis(params)
-    plot_volatility_smile_impact(params)
+    logger.info("")
+    logger.info(f"  Delta:  {greeks['delta']:.4f}")
+    logger.info(f"  Gamma:  {greeks['gamma']:.4f}")
+    logger.info(f"  Vega:   {greeks['vega']:.4f}")
+    logger.info(f"  Theta:  {greeks['theta']:.6f}")
     
-    print("\nPlots saved to current directory.")
-    print("=" * 70)
+    # Section 4: Put-Call Parity
+    logger.info("")
+    logger.info("=" * 70)
+    logger.info("SECTION 4: Put-Call Parity Check")
+    logger.info("=" * 70)
+    
+    parity = check_put_call_parity(params)
+    
+    logger.info("")
+    logger.info(f"  C - P:                      {parity['C - P']:.6f}")
+    logger.info(f"  S·e^(-r_f·T) - K·e^(-r_d·T): {parity['S·e^(-r_f·T) - K·e^(-r_d·T)']:.6f}")
+    logger.info(f"  Parity Error:               {parity['parity_error']:.2e}")
+    
+    # Section 5: Method Errors
+    logger.info("")
+    logger.info("=" * 70)
+    logger.info("SECTION 5: Error vs BSM Analytical")
+    logger.info("=" * 70)
+    
+    bsm_call = bsm_result.call_price
+    
+    logger.info("")
+    logger.info(f"{'Method':<20} {'Error vs BSM':>15}")
+    logger.info("-" * 40)
+    logger.info(f"{'BSM (reference)':<20} {0.0:>15.6f}")
+    logger.info(f"{'Monte Carlo':<20} {abs(mc_result.call_price - bsm_call):>15.6f}")
+    logger.info(f"{'Finite Difference':<20} {abs(fd_result.call_price - bsm_call):>15.6f}")
+    
+    return results, {
+        "params": params,
+        "greeks": greeks,
+        "parity": parity,
+    }
+
+
+# =============================================================================
+# VISUALIZATION
+# =============================================================================
+
+def visualize_pricing(results: List[PricingResult], analysis: Dict) -> None:
+    """Visualize pricing results."""
+    if not MATPLOTLIB_AVAILABLE or not ENABLE_PLOTTING:
+        logger.info("Skipping plots")
+        return
+    
+    logger.info("")
+    logger.info("=" * 70)
+    logger.info("SECTION 6: Visualization")
+    logger.info("=" * 70)
+    
+    params = analysis["params"]
+    
+    plt.style.use('seaborn-v0_8-whitegrid')
+    plt.rcParams.update({
+        'figure.figsize': (14, 8),
+        'font.size': 11,
+        'axes.titlesize': 14,
+        'axes.labelsize': 12,
+        'legend.fontsize': 10,
+        'lines.linewidth': 2,
+        'axes.grid': True,
+        'grid.alpha': 0.3,
+    })
+    
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    
+    # Plot 1: Method Comparison
+    ax = axes[0, 0]
+    methods = [r.method for r in results]
+    call_prices = [r.call_price for r in results]
+    colors = [COLORS['bsm'], COLORS['mc'], COLORS['fd']]
+    
+    bars = ax.bar(methods, call_prices, color=colors)
+    ax.axhline(call_prices[0], color='black', linestyle='--', linewidth=1, label='BSM Reference')
+    ax.set_ylabel('Call Price (per unit)')
+    ax.set_title('Pricing Method Comparison')
+    ax.legend()
+    
+    # Plot 2: Price vs Spot
+    ax = axes[0, 1]
+    spots = np.linspace(params.spot * 0.7, params.spot * 1.3, 50)
+    
+    call_prices_bsm = []
+    put_prices_bsm = []
+    
+    for s in spots:
+        test_params = OptionParams(
+            spot=s,
+            strike=params.strike,
+            expiry=params.expiry,
+            vol=params.vol,
+            r_dom=params.r_dom,
+            r_for=params.r_for,
+            notional=1.0,
+        )
+        result = price_with_bsm(test_params)
+        call_prices_bsm.append(result.call_price)
+        put_prices_bsm.append(result.put_price)
+    
+    ax.plot(spots, call_prices_bsm, color=COLORS['call'], linewidth=2.5, label='Call')
+    ax.plot(spots, put_prices_bsm, color=COLORS['put'], linewidth=2.5, label='Put')
+    ax.axvline(params.strike, color='gray', linestyle='--', alpha=0.5, label='Strike')
+    ax.set_xlabel('Spot Price')
+    ax.set_ylabel('Option Price')
+    ax.set_title('Option Price vs Spot (BSM)')
+    ax.legend()
+    
+    # Plot 3: Greeks vs Spot
+    ax = axes[1, 0]
+    deltas = []
+    gammas = []
+    
+    for s in spots:
+        # Use library BSM functions directly
+        carry = params.r_dom - params.r_for
+        delta = vanilla_delta(
+            option_type="call",
+            spot=s,
+            strike=params.strike,
+            expiry=params.expiry,
+            discount_rate=params.r_dom,
+            carry=carry,
+            vol=params.vol,
+        )
+        gamma = vanilla_gamma(
+            spot=s,
+            strike=params.strike,
+            expiry=params.expiry,
+            discount_rate=params.r_dom,
+            carry=carry,
+            vol=params.vol,
+        )
+        deltas.append(delta)
+        gammas.append(gamma)
+    
+    ax2 = ax.twinx()
+    ax.plot(spots, deltas, color=COLORS['bsm'], linewidth=2.5, label='Delta')
+    ax2.plot(spots, gammas, color=COLORS['gamma'], linewidth=2.5, linestyle='--', label='Gamma')
+    
+    ax.set_xlabel('Spot Price')
+    ax.set_ylabel('Delta', color=COLORS['bsm'])
+    ax2.set_ylabel('Gamma', color=COLORS['gamma'])
+    ax.set_title('Delta and Gamma vs Spot')
+    ax.axvline(params.strike, color='gray', linestyle='--', alpha=0.5)
+    ax.legend(loc='upper left')
+    ax2.legend(loc='upper right')
+    
+    # Plot 4: Execution Time Comparison
+    ax = axes[1, 1]
+    times = [r.time_ms for r in results]
+    
+    bars = ax.bar(methods, times, color=colors)
+    ax.set_ylabel('Time (ms)')
+    ax.set_title('Execution Time Comparison')
+    ax.set_yscale('log')
+    
+    for bar, t in zip(bars, times):
+        ax.annotate(f'{t:.1f}ms',
+                   (bar.get_x() + bar.get_width()/2, bar.get_height()),
+                   ha='center', va='bottom', fontsize=9)
+    
+    plt.tight_layout()
+    plt.show(block=True)
+    
+    logger.info("Visualization complete")
+
+
+# =============================================================================
+# SUMMARY
+# =============================================================================
+
+def print_summary() -> None:
+    """Print summary of key concepts."""
+    logger.info("")
+    logger.info("=" * 70)
+    logger.info("SUMMARY")
+    logger.info("=" * 70)
+    
+    summary = """
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │                         KEY TAKEAWAYS                                │
+    ├─────────────────────────────────────────────────────────────────────┤
+    │                                                                      │
+    │  1. Library Pricers Used:                                           │
+    │     - FxVanillaEuropeanOptionBsmPricer (analytical)                 │
+    │     - FxVanillaEuropeanOptionMcPricer (Monte Carlo)                 │
+    │     - FxVanillaEuropeanOptionFdPricer (Finite Difference)           │
+    │                                                                      │
+    │  2. Method Comparison:                                              │
+    │     - BSM: Fastest, exact for European vanilla                      │
+    │     - MC: Flexible, scales to complex payoffs                       │
+    │     - FD: Handles early exercise, American options                  │
+    │                                                                      │
+    │  3. Put-Call Parity:                                                │
+    │     C - P = S·e^(-r_f·T) - K·e^(-r_d·T)                            │
+    │     All methods satisfy this relationship                           │
+    │                                                                      │
+    │  4. Production Usage:                                               │
+    │     - Use BSM for vanilla European pricing/Greeks                   │
+    │     - Use MC for path-dependent validation                          │
+    │     - Use FD for American exercise/barriers                         │
+    │                                                                      │
+    └─────────────────────────────────────────────────────────────────────┘
+    """
+    logger.info(summary)
+
+
+# =============================================================================
+# MAIN
+# =============================================================================
+
+def main(args: argparse.Namespace) -> None:
+    """Main entry point."""
+    global ENABLE_PLOTTING
+    ENABLE_PLOTTING = args.plot
+    
+    try:
+        results, analysis = run_pricing_showcase()
+        visualize_pricing(results, analysis)
+        print_summary()
+        logger.info("Example completed successfully!")
+        
+    except Exception as e:
+        logger.exception(f"Example failed: {e}")
+        sys.exit(1)
+
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="European Vanilla Pricing Showcase")
+    parser.add_argument("--plot", action="store_true", default=True)
+    parser.add_argument("--no-plot", action="store_false", dest="plot")
+    
+    args = parser.parse_args()
+    main(args)

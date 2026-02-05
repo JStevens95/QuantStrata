@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
 ===============================================================================
-Risk: Model Validation and Stress Testing
+Risk: Model Validation Using QuantStrata Pricers
 ===============================================================================
 
-This example demonstrates comprehensive model validation techniques used in
-production risk systems - comparing models, stress testing, and quantifying
-model uncertainty.
+This example demonstrates comprehensive model validation techniques using
+QuantStrata's production pricers - comparing BSM analytic, Monte Carlo, and
+Finite Difference methods.
 
 Learning Objectives
 -------------------
-1. **Cross-Model Validation**: Compare BSM vs Monte Carlo vs FDE
+1. **Cross-Model Validation**: Compare BSM vs Monte Carlo vs FDE pricers
 2. **Convergence Testing**: Verify numerical methods converge properly
 3. **Extreme Scenario Stress**: Test models under extreme conditions
-4. **Model Risk Quantification**: Understand limits of each approach
+4. **Library Integration**: Use production pricers for validation
 
 Mathematical Framework
 ----------------------
@@ -65,17 +65,49 @@ import logging
 import sys
 import time
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-from scipy.stats import norm
 
 # -----------------------------------------------------------------------------
 # Path setup
 # -----------------------------------------------------------------------------
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
+
+# -----------------------------------------------------------------------------
+# QuantStrata imports - Library pricers and models
+# -----------------------------------------------------------------------------
+from src.marketdata.core.ids import MarketId
+from src.marketdata.core.interfaces import Quote
+from src.marketdata.core.market import Market
+from src.marketdata.curves.term_structure import FlatZeroRateCurve
+from src.marketdata.surfaces.vol_surface import FlatVolSurface
+
+from src.instruments.equity.options.vanilla import EquityVanillaEuropeanOption
+
+# Library BSM pricer
+from src.pricers.equity.european_bsm import EquityVanillaEuropeanOptionBsmPricer
+
+# Library MC pricer
+from src.pricers.equity.european_bsm_mc import (
+    EquityVanillaEuropeanOptionMcPricer,
+    EquityVanillOptionMcSimulation,
+)
+
+# Library FDE pricer
+from src.pricers.equity.european_bsm_fde import EquityVanillaEuropeanOptionFdPricer
+
+# Direct BSM functions for reference
+from src.models.analytic.black_scholes_merton.base import (
+    vanilla_price,
+    vanilla_delta,
+    vanilla_gamma,
+    vanilla_vega,
+    vanilla_theta,
+)
 
 
 # =============================================================================
@@ -105,641 +137,534 @@ except ImportError:
 
 
 # =============================================================================
-# ANALYTICAL MODEL (BSM)
+# CONSTANTS
 # =============================================================================
 
-def bs_d1d2(S: float, K: float, T: float, r: float, sigma: float) -> Tuple[float, float]:
-    """Calculate BSM d1 and d2."""
-    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
-    d2 = d1 - sigma * np.sqrt(T)
-    return d1, d2
-
-
-def bs_call_price(S: float, K: float, T: float, r: float, sigma: float) -> float:
-    """Black-Scholes call price."""
-    if T <= 0:
-        return max(S - K, 0)
-    d1, d2 = bs_d1d2(S, K, T, r, sigma)
-    return S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
-
-
-def bs_put_price(S: float, K: float, T: float, r: float, sigma: float) -> float:
-    """Black-Scholes put price."""
-    if T <= 0:
-        return max(K - S, 0)
-    d1, d2 = bs_d1d2(S, K, T, r, sigma)
-    return K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
-
-
-def bs_delta(S: float, K: float, T: float, r: float, sigma: float, is_call: bool = True) -> float:
-    """Black-Scholes delta."""
-    if T <= 0:
-        return 1.0 if (S > K and is_call) else (0.0 if is_call else -1.0 if S < K else 0.0)
-    d1, _ = bs_d1d2(S, K, T, r, sigma)
-    return norm.cdf(d1) if is_call else norm.cdf(d1) - 1
-
-
-def bs_gamma(S: float, K: float, T: float, r: float, sigma: float) -> float:
-    """Black-Scholes gamma."""
-    if T <= 0:
-        return 0.0
-    d1, _ = bs_d1d2(S, K, T, r, sigma)
-    return norm.pdf(d1) / (S * sigma * np.sqrt(T))
-
-
-def bs_vega(S: float, K: float, T: float, r: float, sigma: float) -> float:
-    """Black-Scholes vega."""
-    if T <= 0:
-        return 0.0
-    d1, _ = bs_d1d2(S, K, T, r, sigma)
-    return S * norm.pdf(d1) * np.sqrt(T) / 100  # Per 1% vol change
+SPOT_ID = MarketId(asset_class="EQ", mkt_type="SPOT", name="SPX")
+CURVE_ID = MarketId(asset_class="IR", mkt_type="CURVE", name="USD_OIS")
+VOL_ID = MarketId(asset_class="EQ", mkt_type="VOL", name="SPX")
 
 
 # =============================================================================
-# MONTE CARLO MODEL
-# =============================================================================
-
-def mc_call_price(
-    S: float,
-    K: float,
-    T: float,
-    r: float,
-    sigma: float,
-    n_paths: int = 100000,
-    seed: Optional[int] = None,
-) -> Tuple[float, float]:
-    """
-    Monte Carlo call price with standard error.
-    
-    Returns
-    -------
-    Tuple
-        (price, standard_error)
-    """
-    if seed is not None:
-        np.random.seed(seed)
-    
-    # GBM simulation
-    Z = np.random.randn(n_paths)
-    S_T = S * np.exp((r - 0.5 * sigma**2) * T + sigma * np.sqrt(T) * Z)
-    
-    # Discounted payoffs
-    payoffs = np.exp(-r * T) * np.maximum(S_T - K, 0)
-    
-    price = np.mean(payoffs)
-    std_error = np.std(payoffs) / np.sqrt(n_paths)
-    
-    return price, std_error
-
-
-def mc_put_price(
-    S: float,
-    K: float,
-    T: float,
-    r: float,
-    sigma: float,
-    n_paths: int = 100000,
-    seed: Optional[int] = None,
-) -> Tuple[float, float]:
-    """Monte Carlo put price with standard error."""
-    if seed is not None:
-        np.random.seed(seed)
-    
-    Z = np.random.randn(n_paths)
-    S_T = S * np.exp((r - 0.5 * sigma**2) * T + sigma * np.sqrt(T) * Z)
-    
-    payoffs = np.exp(-r * T) * np.maximum(K - S_T, 0)
-    
-    price = np.mean(payoffs)
-    std_error = np.std(payoffs) / np.sqrt(n_paths)
-    
-    return price, std_error
-
-
-# =============================================================================
-# FINITE DIFFERENCE MODEL
-# =============================================================================
-
-def fde_call_price(
-    S: float,
-    K: float,
-    T: float,
-    r: float,
-    sigma: float,
-    n_space: int = 200,
-    n_time: int = 100,
-) -> float:
-    """
-    Finite difference call price using Crank-Nicolson scheme.
-    """
-    # Grid setup
-    S_max = 4 * K  # Upper boundary
-    dS = S_max / n_space
-    dt = T / n_time
-    
-    S_grid = np.linspace(0, S_max, n_space + 1)
-    
-    # Terminal condition
-    V = np.maximum(S_grid - K, 0)
-    
-    # Coefficients for tridiagonal system
-    i = np.arange(1, n_space)
-    
-    # Crank-Nicolson coefficients
-    alpha = 0.25 * dt * (sigma**2 * i**2 - r * i)
-    beta = -0.5 * dt * (sigma**2 * i**2 + r)
-    gamma = 0.25 * dt * (sigma**2 * i**2 + r * i)
-    
-    # Build matrices
-    M1 = np.diag(1 - beta) + np.diag(-alpha[1:], -1) + np.diag(-gamma[:-1], 1)
-    M2 = np.diag(1 + beta) + np.diag(alpha[1:], -1) + np.diag(gamma[:-1], 1)
-    
-    # Time stepping
-    for _ in range(n_time):
-        # Boundary conditions
-        V[0] = 0  # Call at S=0
-        V[-1] = S_max - K * np.exp(-r * (_ + 1) * dt)  # Call at S_max
-        
-        # Interior points
-        rhs = M2 @ V[1:-1]
-        rhs[0] += alpha[0] * (V[0])
-        rhs[-1] += gamma[-1] * (V[-1])
-        
-        V[1:-1] = np.linalg.solve(M1, rhs)
-    
-    # Interpolate to get price at S
-    idx = int(S / dS)
-    idx = min(idx, n_space - 1)
-    weight = (S - S_grid[idx]) / dS
-    
-    return V[idx] * (1 - weight) + V[idx + 1] * weight
-
-
-# =============================================================================
-# VALIDATION TESTS
+# DATA STRUCTURES
 # =============================================================================
 
 @dataclass
 class ValidationResult:
-    """Container for validation test results."""
-    test_name: str
-    passed: bool
-    details: dict
-    message: str
+    """Result of model validation."""
+    model_name: str
+    price: float
+    delta: float
+    gamma: float
+    vega: float
+    time_ms: float
+    error_vs_bsm: Optional[float] = None
+    std_error: Optional[float] = None
 
 
-def test_cross_model_consistency(
-    S: float = 100.0,
-    K: float = 100.0,
-    T: float = 0.5,
-    r: float = 0.05,
-    sigma: float = 0.2,
-    tol: float = 0.01,
-) -> ValidationResult:
-    """
-    Test that BSM, MC, and FDE produce consistent prices.
-    """
-    # BSM (benchmark)
-    bsm_price = bs_call_price(S, K, T, r, sigma)
-    
-    # Monte Carlo
-    mc_price, mc_se = mc_call_price(S, K, T, r, sigma, n_paths=500000, seed=42)
-    
-    # Finite Difference
-    fde_price = fde_call_price(S, K, T, r, sigma, n_space=400, n_time=200)
-    
-    # Calculate deviations
-    mc_error = abs(mc_price - bsm_price) / bsm_price
-    fde_error = abs(fde_price - bsm_price) / bsm_price
-    
-    passed = mc_error < tol and fde_error < tol
-    
-    return ValidationResult(
-        test_name="Cross-Model Consistency",
-        passed=passed,
-        details={
-            'bsm_price': bsm_price,
-            'mc_price': mc_price,
-            'mc_se': mc_se,
-            'fde_price': fde_price,
-            'mc_error_pct': mc_error * 100,
-            'fde_error_pct': fde_error * 100,
-        },
-        message=f"BSM={bsm_price:.4f}, MC={mc_price:.4f}±{mc_se:.4f}, FDE={fde_price:.4f}"
+@dataclass
+class ConvergenceResult:
+    """Result of convergence testing."""
+    parameter_values: List
+    prices: List[float]
+    errors: List[float]
+    times_ms: List[float]
+
+
+# =============================================================================
+# MARKET AND INSTRUMENT SETUP
+# =============================================================================
+
+def create_market(
+    spot: float,
+    rate: float,
+    vol: float,
+    val_date: date = date.today(),
+) -> Market:
+    """Create market snapshot with given parameters."""
+    return Market(
+        val_date=val_date,
+        quotes={SPOT_ID: Quote(SPOT_ID, spot)},
+        curves={CURVE_ID: FlatZeroRateCurve(CURVE_ID, rate)},
+        vol_surfaces={VOL_ID: FlatVolSurface(VOL_ID, vol)},
     )
+
+
+def create_option(
+    strike: float,
+    expiry: float,
+    option_type: str = "call",
+    notional: float = 1.0,
+) -> EquityVanillaEuropeanOption:
+    """Create equity vanilla option."""
+    return EquityVanillaEuropeanOption(
+        option_type=option_type,
+        spot_id=SPOT_ID,
+        curve_id=CURVE_ID,
+        vol_id=VOL_ID,
+        strike=strike,
+        expiry=expiry,
+        notional=notional,
+        dividend_yield=0.0,
+    )
+
+
+# =============================================================================
+# MODEL VALIDATION FUNCTIONS
+# =============================================================================
+
+def validate_model_consistency(
+    spot: float = 100.0,
+    strike: float = 100.0,
+    expiry: float = 0.5,
+    rate: float = 0.05,
+    vol: float = 0.20,
+) -> List[ValidationResult]:
+    """
+    Compare prices across BSM, MC, and FDE pricers.
+    
+    Returns
+    -------
+    List[ValidationResult]
+        Results from each pricer.
+    """
+    market = create_market(spot=spot, rate=rate, vol=vol)
+    option = create_option(strike=strike, expiry=expiry)
+    
+    results = []
+    
+    # 1. BSM Analytic (reference)
+    bsm_pricer = EquityVanillaEuropeanOptionBsmPricer()
+    
+    start = time.perf_counter()
+    bsm_price = bsm_pricer.price(option, market)
+    bsm_greeks = bsm_pricer.greeks(option, market)
+    bsm_time = (time.perf_counter() - start) * 1000
+    
+    results.append(ValidationResult(
+        model_name="BSM (Analytic)",
+        price=bsm_price,
+        delta=bsm_greeks.get("delta", 0.0),
+        gamma=bsm_greeks.get("gamma", 0.0),
+        vega=bsm_greeks.get("vega", 0.0),
+        time_ms=bsm_time,
+        error_vs_bsm=0.0,
+    ))
+    
+    # 2. Monte Carlo
+    mc_pricer = EquityVanillaEuropeanOptionMcPricer(
+        n_paths=100_000,
+        seed=42,
+        antithetic=True,
+    )
+    
+    start = time.perf_counter()
+    mc_result = mc_pricer.run(option, market)
+    mc_time = (time.perf_counter() - start) * 1000
+    
+    mc_price = mc_result.discounted_payoffs.mean()
+    mc_stderr = mc_result.discounted_payoffs.std() / np.sqrt(len(mc_result.discounted_payoffs))
+    
+    # MC Greeks via bump-and-reprice
+    mc_greeks = mc_pricer.greeks(option, market)
+    
+    results.append(ValidationResult(
+        model_name="Monte Carlo",
+        price=mc_price,
+        delta=mc_greeks.get("delta", 0.0),
+        gamma=mc_greeks.get("gamma", 0.0),
+        vega=mc_greeks.get("vega", 0.0),
+        time_ms=mc_time,
+        error_vs_bsm=abs(mc_price - bsm_price),
+        std_error=mc_stderr,
+    ))
+    
+    # 3. Finite Difference
+    fde_pricer = EquityVanillaEuropeanOptionFdPricer(
+        n_space=401,
+        n_time_steps=200,
+        theta=0.5,  # Crank-Nicolson
+    )
+    
+    start = time.perf_counter()
+    fde_price = fde_pricer.price(option, market)
+    fde_greeks = fde_pricer.greeks(option, market)
+    fde_time = (time.perf_counter() - start) * 1000
+    
+    results.append(ValidationResult(
+        model_name="Finite Difference",
+        price=fde_price,
+        delta=fde_greeks.get("delta", 0.0),
+        gamma=fde_greeks.get("gamma", 0.0),
+        vega=fde_greeks.get("vega", 0.0),
+        time_ms=fde_time,
+        error_vs_bsm=abs(fde_price - bsm_price),
+    ))
+    
+    return results
 
 
 def test_mc_convergence(
-    S: float = 100.0,
-    K: float = 100.0,
-    T: float = 0.5,
-    r: float = 0.05,
-    sigma: float = 0.2,
-) -> ValidationResult:
+    spot: float = 100.0,
+    strike: float = 100.0,
+    expiry: float = 0.5,
+    rate: float = 0.05,
+    vol: float = 0.20,
+) -> ConvergenceResult:
     """
-    Test Monte Carlo convergence rate (should be O(1/√N)).
-    """
-    bsm_price = bs_call_price(S, K, T, r, sigma)
+    Test Monte Carlo convergence rate.
     
+    Expected: Error ∝ 1/√N
+    """
+    market = create_market(spot=spot, rate=rate, vol=vol)
+    option = create_option(strike=strike, expiry=expiry)
+    
+    # Reference price from BSM
+    bsm_pricer = EquityVanillaEuropeanOptionBsmPricer()
+    bsm_price = bsm_pricer.price(option, market)
+    
+    # Test different path counts
     path_counts = [1000, 5000, 10000, 50000, 100000, 500000]
+    prices = []
     errors = []
-    std_errors = []
+    times_ms = []
     
-    for n in path_counts:
-        mc_price, mc_se = mc_call_price(S, K, T, r, sigma, n_paths=n, seed=42)
+    for n_paths in path_counts:
+        mc_pricer = EquityVanillaEuropeanOptionMcPricer(
+            n_paths=n_paths,
+            seed=42,
+            antithetic=True,
+        )
+        
+        start = time.perf_counter()
+        mc_result = mc_pricer.run(option, market)
+        elapsed = (time.perf_counter() - start) * 1000
+        
+        mc_price = mc_result.discounted_payoffs.mean()
+        prices.append(mc_price)
         errors.append(abs(mc_price - bsm_price))
-        std_errors.append(mc_se)
+        times_ms.append(elapsed)
     
-    # Theoretical: error ∝ 1/√N
-    # Check if error ratio follows expected pattern
-    ratios = [errors[i] / errors[i-1] for i in range(1, len(errors))]
-    expected_ratios = [np.sqrt(path_counts[i-1] / path_counts[i]) for i in range(1, len(path_counts))]
-    
-    # Convergence is reasonable if ratios are within factor of 2
-    ratio_errors = [abs(r - e) / e for r, e in zip(ratios, expected_ratios)]
-    passed = all(r < 1.0 for r in ratio_errors)  # Within 100% of expected
-    
-    return ValidationResult(
-        test_name="MC Convergence",
-        passed=passed,
-        details={
-            'path_counts': path_counts,
-            'errors': errors,
-            'std_errors': std_errors,
-            'ratios': ratios,
-            'expected_ratios': expected_ratios,
-        },
-        message=f"Final error: {errors[-1]:.6f} at N={path_counts[-1]:,}"
+    return ConvergenceResult(
+        parameter_values=path_counts,
+        prices=prices,
+        errors=errors,
+        times_ms=times_ms,
     )
 
 
-def test_put_call_parity(
-    S: float = 100.0,
-    K: float = 100.0,
-    T: float = 0.5,
-    r: float = 0.05,
-    sigma: float = 0.2,
-    tol: float = 1e-6,
-) -> ValidationResult:
+def test_fde_convergence(
+    spot: float = 100.0,
+    strike: float = 100.0,
+    expiry: float = 0.5,
+    rate: float = 0.05,
+    vol: float = 0.20,
+) -> ConvergenceResult:
     """
-    Test put-call parity: C - P = S - K*e^(-rT)
+    Test Finite Difference convergence rate.
+    
+    Expected: Error ∝ Δx² for second-order schemes
     """
-    call = bs_call_price(S, K, T, r, sigma)
-    put = bs_put_price(S, K, T, r, sigma)
+    market = create_market(spot=spot, rate=rate, vol=vol)
+    option = create_option(strike=strike, expiry=expiry)
     
-    lhs = call - put
-    rhs = S - K * np.exp(-r * T)
-    error = abs(lhs - rhs)
+    # Reference price from BSM
+    bsm_pricer = EquityVanillaEuropeanOptionBsmPricer()
+    bsm_price = bsm_pricer.price(option, market)
     
-    passed = error < tol
+    # Test different grid sizes
+    grid_sizes = [51, 101, 201, 401, 801]
+    prices = []
+    errors = []
+    times_ms = []
     
-    return ValidationResult(
-        test_name="Put-Call Parity",
-        passed=passed,
-        details={
-            'call': call,
-            'put': put,
-            'lhs': lhs,
-            'rhs': rhs,
-            'error': error,
-        },
-        message=f"C-P={lhs:.6f}, S-Ke^(-rT)={rhs:.6f}, Error={error:.2e}"
-    )
-
-
-def test_boundary_conditions(
-    K: float = 100.0,
-    T: float = 0.5,
-    r: float = 0.05,
-    sigma: float = 0.2,
-    tol: float = 0.01,
-) -> ValidationResult:
-    """
-    Test option boundary conditions.
-    """
-    results = {}
-    
-    # Call at S→0 should be 0
-    call_s0 = bs_call_price(0.01, K, T, r, sigma)
-    results['call_s0'] = call_s0
-    
-    # Put at S→∞ should be 0
-    put_sinf = bs_put_price(10 * K, K, T, r, sigma)
-    results['put_sinf'] = put_sinf
-    
-    # Call at S→∞ should be ≈ S - K*e^(-rT)
-    S_high = 10 * K
-    call_sinf = bs_call_price(S_high, K, T, r, sigma)
-    call_sinf_expected = S_high - K * np.exp(-r * T)
-    call_sinf_error = abs(call_sinf - call_sinf_expected) / call_sinf_expected
-    results['call_sinf'] = call_sinf
-    results['call_sinf_expected'] = call_sinf_expected
-    
-    # At expiry, intrinsic value
-    call_expiry = bs_call_price(110, K, 0.0001, r, sigma)
-    results['call_expiry'] = call_expiry
-    results['call_expiry_expected'] = 10.0
-    
-    passed = (
-        call_s0 < tol and
-        put_sinf < tol and
-        call_sinf_error < tol
-    )
-    
-    return ValidationResult(
-        test_name="Boundary Conditions",
-        passed=passed,
-        details=results,
-        message=f"Call(S≈0)={call_s0:.6f}, Put(S→∞)={put_sinf:.6f}"
-    )
-
-
-def test_greeks_consistency(
-    S: float = 100.0,
-    K: float = 100.0,
-    T: float = 0.5,
-    r: float = 0.05,
-    sigma: float = 0.2,
-    tol: float = 0.01,
-) -> ValidationResult:
-    """
-    Test Greeks via finite difference vs analytical.
-    """
-    # Analytical Greeks
-    delta_analytical = bs_delta(S, K, T, r, sigma)
-    gamma_analytical = bs_gamma(S, K, T, r, sigma)
-    
-    # Numerical Greeks
-    dS = 0.01 * S
-    V_up = bs_call_price(S + dS, K, T, r, sigma)
-    V_mid = bs_call_price(S, K, T, r, sigma)
-    V_down = bs_call_price(S - dS, K, T, r, sigma)
-    
-    delta_numerical = (V_up - V_down) / (2 * dS)
-    gamma_numerical = (V_up - 2 * V_mid + V_down) / (dS ** 2)
-    
-    delta_error = abs(delta_analytical - delta_numerical) / delta_analytical
-    gamma_error = abs(gamma_analytical - gamma_numerical) / gamma_analytical
-    
-    passed = delta_error < tol and gamma_error < tol
-    
-    return ValidationResult(
-        test_name="Greeks Consistency",
-        passed=passed,
-        details={
-            'delta_analytical': delta_analytical,
-            'delta_numerical': delta_numerical,
-            'delta_error_pct': delta_error * 100,
-            'gamma_analytical': gamma_analytical,
-            'gamma_numerical': gamma_numerical,
-            'gamma_error_pct': gamma_error * 100,
-        },
-        message=f"Delta error: {delta_error*100:.4f}%, Gamma error: {gamma_error*100:.4f}%"
-    )
-
-
-# =============================================================================
-# STRESS TESTING
-# =============================================================================
-
-@dataclass
-class StressScenario:
-    """Definition of a stress scenario."""
-    name: str
-    spot_shock: float  # Multiplicative
-    vol_shock: float  # Additive (percentage points)
-    rate_shock: float  # Additive (basis points / 100)
-
-
-def run_stress_tests(
-    S: float = 100.0,
-    K: float = 100.0,
-    T: float = 0.5,
-    r: float = 0.05,
-    sigma: float = 0.2,
-) -> Dict[str, dict]:
-    """
-    Run model through stress scenarios.
-    """
-    scenarios = [
-        StressScenario("Base Case", 1.0, 0.0, 0.0),
-        StressScenario("Market Crash (-20%)", 0.8, 0.15, -0.01),
-        StressScenario("Flash Crash (-40%)", 0.6, 0.30, -0.02),
-        StressScenario("Bull Market (+30%)", 1.3, -0.05, 0.01),
-        StressScenario("Vol Spike", 1.0, 0.20, 0.0),
-        StressScenario("Vol Collapse", 1.0, -0.10, 0.0),
-        StressScenario("Rate Hike", 1.0, 0.0, 0.02),
-        StressScenario("Rate Cut", 1.0, 0.0, -0.02),
-        StressScenario("Extreme: 2008 Crisis", 0.5, 0.40, -0.03),
-        StressScenario("Extreme: Vol Explosion", 1.0, 0.50, 0.0),
-    ]
-    
-    results = {}
-    
-    for scenario in scenarios:
-        S_stressed = S * scenario.spot_shock
-        sigma_stressed = max(0.01, sigma + scenario.vol_shock)
-        r_stressed = r + scenario.rate_shock
+    for n_space in grid_sizes:
+        fde_pricer = EquityVanillaEuropeanOptionFdPricer(
+            n_space=n_space,
+            n_time_steps=n_space // 2,
+            theta=0.5,
+        )
         
-        call_price = bs_call_price(S_stressed, K, T, r_stressed, sigma_stressed)
-        put_price = bs_put_price(S_stressed, K, T, r_stressed, sigma_stressed)
-        delta = bs_delta(S_stressed, K, T, r_stressed, sigma_stressed)
-        gamma = bs_gamma(S_stressed, K, T, r_stressed, sigma_stressed)
-        vega = bs_vega(S_stressed, K, T, r_stressed, sigma_stressed)
+        start = time.perf_counter()
+        fde_price = fde_pricer.price(option, market)
+        elapsed = (time.perf_counter() - start) * 1000
         
-        results[scenario.name] = {
-            'scenario': scenario,
-            'call': call_price,
-            'put': put_price,
-            'delta': delta,
-            'gamma': gamma,
-            'vega': vega,
-            'spot': S_stressed,
-            'vol': sigma_stressed,
-            'rate': r_stressed,
-        }
+        prices.append(fde_price)
+        errors.append(abs(fde_price - bsm_price))
+        times_ms.append(elapsed)
     
-    return results
+    return ConvergenceResult(
+        parameter_values=grid_sizes,
+        prices=prices,
+        errors=errors,
+        times_ms=times_ms,
+    )
+
+
+def test_extreme_scenarios() -> Dict[str, List[ValidationResult]]:
+    """
+    Test model behavior under extreme market conditions.
+    
+    Tests:
+    - Deep ITM / OTM
+    - Near expiry
+    - High / low volatility
+    - Zero rates
+    """
+    scenarios = {}
+    
+    # Deep ITM (spot = 150, strike = 100)
+    scenarios["Deep ITM"] = validate_model_consistency(
+        spot=150.0, strike=100.0, expiry=0.5, rate=0.05, vol=0.20
+    )
+    
+    # Deep OTM (spot = 50, strike = 100)
+    scenarios["Deep OTM"] = validate_model_consistency(
+        spot=50.0, strike=100.0, expiry=0.5, rate=0.05, vol=0.20
+    )
+    
+    # Near expiry (1 week)
+    scenarios["Near Expiry"] = validate_model_consistency(
+        spot=100.0, strike=100.0, expiry=0.02, rate=0.05, vol=0.20
+    )
+    
+    # High volatility
+    scenarios["High Vol"] = validate_model_consistency(
+        spot=100.0, strike=100.0, expiry=0.5, rate=0.05, vol=0.80
+    )
+    
+    # Low volatility
+    scenarios["Low Vol"] = validate_model_consistency(
+        spot=100.0, strike=100.0, expiry=0.5, rate=0.05, vol=0.05
+    )
+    
+    # Zero rate
+    scenarios["Zero Rate"] = validate_model_consistency(
+        spot=100.0, strike=100.0, expiry=0.5, rate=0.0, vol=0.20
+    )
+    
+    return scenarios
+
+
+def test_put_call_parity() -> Dict[str, float]:
+    """
+    Validate put-call parity: C - P = S - K·e^(-rT)
+    """
+    spot = 100.0
+    strike = 100.0
+    expiry = 0.5
+    rate = 0.05
+    vol = 0.20
+    
+    market = create_market(spot=spot, rate=rate, vol=vol)
+    
+    call_option = create_option(strike=strike, expiry=expiry, option_type="call")
+    put_option = create_option(strike=strike, expiry=expiry, option_type="put")
+    
+    bsm_pricer = EquityVanillaEuropeanOptionBsmPricer()
+    
+    call_price = bsm_pricer.price(call_option, market)
+    put_price = bsm_pricer.price(put_option, market)
+    
+    # Put-call parity
+    forward_diff = spot - strike * np.exp(-rate * expiry)
+    parity_diff = call_price - put_price
+    parity_error = abs(parity_diff - forward_diff)
+    
+    return {
+        "call_price": call_price,
+        "put_price": put_price,
+        "C - P": parity_diff,
+        "S - K·e^(-rT)": forward_diff,
+        "parity_error": parity_error,
+    }
 
 
 # =============================================================================
 # MAIN WORKFLOW
 # =============================================================================
 
-def run_model_validation() -> Tuple[List[ValidationResult], Dict[str, dict]]:
+def run_model_validation() -> Tuple[List[ValidationResult], Dict]:
     """
-    Run complete model validation suite.
-    
-    Returns
-    -------
-    Tuple
-        List of validation results and stress test results.
+    Run the complete model validation workflow.
     """
     logger.info("=" * 70)
-    logger.info("SECTION 1: Model Consistency Tests")
+    logger.info("SECTION 1: Cross-Model Consistency")
     logger.info("=" * 70)
     
-    validation_results = []
+    logger.info("")
+    logger.info("Comparing BSM, Monte Carlo, and Finite Difference pricers...")
     
-    # Run validation tests
-    tests = [
-        test_cross_model_consistency,
-        test_mc_convergence,
-        test_put_call_parity,
-        test_boundary_conditions,
-        test_greeks_consistency,
-    ]
-    
-    for test_func in tests:
-        logger.info("")
-        result = test_func()
-        validation_results.append(result)
-        
-        status = "PASS" if result.passed else "FAIL"
-        logger.info(f"  [{status}] {result.test_name}")
-        logger.info(f"         {result.message}")
-    
-    # Summary
-    passed = sum(1 for r in validation_results if r.passed)
-    total = len(validation_results)
+    base_results = validate_model_consistency()
     
     logger.info("")
-    logger.info("-" * 70)
-    logger.info(f"  Validation Summary: {passed}/{total} tests passed")
-    logger.info("-" * 70)
+    logger.info(f"{'Model':<20} {'Price':>12} {'Delta':>10} {'Gamma':>10} {'Error':>12} {'Time':>10}")
+    logger.info("-" * 80)
     
-    # Stress tests
-    logger.info("")
-    logger.info("=" * 70)
-    logger.info("SECTION 2: Stress Testing")
-    logger.info("=" * 70)
-    
-    stress_results = run_stress_tests()
-    
-    logger.info("")
-    logger.info(f"{'Scenario':<25} {'Call':>10} {'Put':>10} {'Delta':>8} {'Gamma':>8}")
-    logger.info("-" * 70)
-    
-    base_call = stress_results['Base Case']['call']
-    
-    for name, data in stress_results.items():
-        pnl_pct = (data['call'] - base_call) / base_call * 100 if base_call > 0 else 0
+    for r in base_results:
+        error_str = f"{r.error_vs_bsm:.6f}" if r.error_vs_bsm is not None else "N/A"
         logger.info(
-            f"{name:<25} {data['call']:>10.4f} {data['put']:>10.4f} "
-            f"{data['delta']:>8.4f} {data['gamma']:>8.4f}"
+            f"{r.model_name:<20} {r.price:>12.6f} {r.delta:>10.4f} {r.gamma:>10.6f} "
+            f"{error_str:>12} {r.time_ms:>9.2f}ms"
         )
     
-    return validation_results, stress_results
+    # Monte Carlo convergence
+    logger.info("")
+    logger.info("=" * 70)
+    logger.info("SECTION 2: Monte Carlo Convergence")
+    logger.info("=" * 70)
+    
+    mc_conv = test_mc_convergence()
+    
+    logger.info("")
+    logger.info(f"{'Paths':>10} {'Price':>12} {'Error':>12} {'Time':>10}")
+    logger.info("-" * 50)
+    
+    for paths, price, error, t in zip(
+        mc_conv.parameter_values, mc_conv.prices, mc_conv.errors, mc_conv.times_ms
+    ):
+        logger.info(f"{paths:>10,} {price:>12.6f} {error:>12.6f} {t:>9.2f}ms")
+    
+    # FDE convergence
+    logger.info("")
+    logger.info("=" * 70)
+    logger.info("SECTION 3: Finite Difference Convergence")
+    logger.info("=" * 70)
+    
+    fde_conv = test_fde_convergence()
+    
+    logger.info("")
+    logger.info(f"{'Grid Size':>10} {'Price':>12} {'Error':>12} {'Time':>10}")
+    logger.info("-" * 50)
+    
+    for size, price, error, t in zip(
+        fde_conv.parameter_values, fde_conv.prices, fde_conv.errors, fde_conv.times_ms
+    ):
+        logger.info(f"{size:>10} {price:>12.6f} {error:>12.6f} {t:>9.2f}ms")
+    
+    # Put-Call Parity
+    logger.info("")
+    logger.info("=" * 70)
+    logger.info("SECTION 4: Put-Call Parity Validation")
+    logger.info("=" * 70)
+    
+    parity = test_put_call_parity()
+    
+    logger.info("")
+    logger.info(f"  Call Price:       {parity['call_price']:.6f}")
+    logger.info(f"  Put Price:        {parity['put_price']:.6f}")
+    logger.info(f"  C - P:            {parity['C - P']:.6f}")
+    logger.info(f"  S - K·e^(-rT):    {parity['S - K·e^(-rT)']:.6f}")
+    logger.info(f"  Parity Error:     {parity['parity_error']:.2e}")
+    
+    # Extreme scenarios
+    logger.info("")
+    logger.info("=" * 70)
+    logger.info("SECTION 5: Extreme Scenario Testing")
+    logger.info("=" * 70)
+    
+    extreme_results = test_extreme_scenarios()
+    
+    for scenario_name, results in extreme_results.items():
+        logger.info("")
+        logger.info(f"  {scenario_name}:")
+        bsm_result = results[0]
+        max_error = max(r.error_vs_bsm for r in results[1:] if r.error_vs_bsm is not None)
+        logger.info(f"    BSM Price: {bsm_result.price:.6f}")
+        logger.info(f"    Max Error: {max_error:.6f}")
+    
+    return base_results, {
+        "mc_convergence": mc_conv,
+        "fde_convergence": fde_conv,
+        "parity": parity,
+        "extreme_scenarios": extreme_results,
+    }
 
 
 # =============================================================================
 # VISUALIZATION
 # =============================================================================
 
-def visualize_validation(
-    validation_results: List[ValidationResult],
-    stress_results: Dict[str, dict],
-) -> None:
-    """Visualize validation and stress test results."""
+def visualize_validation(base_results: List[ValidationResult], analysis: Dict) -> None:
+    """Visualize validation results."""
     if not MATPLOTLIB_AVAILABLE or not ENABLE_PLOTTING:
-        logger.info("Skipping plots (matplotlib not available or disabled)")
+        logger.info("Skipping plots")
         return
     
     logger.info("")
     logger.info("=" * 70)
-    logger.info("SECTION 3: Visualization")
+    logger.info("SECTION 6: Visualization")
     logger.info("=" * 70)
     
     plt.style.use('seaborn-v0_8-whitegrid')
     
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
     
-    # -------------------------------------------------------------------------
-    # Plot 1: MC Convergence
-    # -------------------------------------------------------------------------
+    # Plot 1: Model comparison
     ax = axes[0, 0]
+    models = [r.model_name for r in base_results]
+    prices = [r.price for r in base_results]
+    colors = ['#2E86AB', '#E94F37', '#4CAF50']
     
-    mc_result = next((r for r in validation_results if r.test_name == "MC Convergence"), None)
+    bars = ax.bar(models, prices, color=colors)
+    ax.axhline(prices[0], color='black', linestyle='--', linewidth=1, label='BSM Reference')
+    ax.set_ylabel('Price')
+    ax.set_title('Model Price Comparison')
+    ax.legend()
     
-    if mc_result:
-        path_counts = mc_result.details['path_counts']
-        errors = mc_result.details['errors']
-        
-        ax.loglog(path_counts, errors, 'o-', color='#2E86AB', linewidth=2, markersize=8)
-        
-        # Theoretical line
-        ref_error = errors[0]
-        ref_n = path_counts[0]
-        theoretical = [ref_error * np.sqrt(ref_n / n) for n in path_counts]
-        ax.loglog(path_counts, theoretical, '--', color='#E94F37', linewidth=2, label='O(1/√N)')
-        
-        ax.set_xlabel('Number of Paths')
-        ax.set_ylabel('Absolute Error')
-        ax.set_title('Monte Carlo Convergence')
-        ax.legend()
-        ax.grid(True, alpha=0.3)
+    # Add error labels
+    for bar, r in zip(bars[1:], base_results[1:]):
+        if r.error_vs_bsm:
+            ax.annotate(f'Err: {r.error_vs_bsm:.4f}',
+                       (bar.get_x() + bar.get_width()/2, bar.get_height()),
+                       ha='center', va='bottom', fontsize=9)
     
-    # -------------------------------------------------------------------------
-    # Plot 2: Model Comparison by Strike
-    # -------------------------------------------------------------------------
+    # Plot 2: MC Convergence
     ax = axes[0, 1]
+    mc_conv = analysis["mc_convergence"]
+    ax.loglog(mc_conv.parameter_values, mc_conv.errors, 'o-', color='#2E86AB', 
+              linewidth=2, markersize=8, label='MC Error')
     
-    S = 100.0
-    T = 0.5
-    r = 0.05
-    sigma = 0.2
+    # Reference 1/sqrt(N) line
+    n = np.array(mc_conv.parameter_values)
+    ref_line = mc_conv.errors[0] * np.sqrt(mc_conv.parameter_values[0]) / np.sqrt(n)
+    ax.loglog(n, ref_line, '--', color='gray', label=r'$1/\sqrt{N}$ reference')
     
-    strikes = np.linspace(70, 130, 13)
-    bsm_prices = [bs_call_price(S, K, T, r, sigma) for K in strikes]
-    mc_prices = [mc_call_price(S, K, T, r, sigma, n_paths=50000, seed=42)[0] for K in strikes]
-    fde_prices = [fde_call_price(S, K, T, r, sigma, n_space=200, n_time=100) for K in strikes]
-    
-    ax.plot(strikes, bsm_prices, '-', color='#2E86AB', linewidth=2, label='BSM')
-    ax.plot(strikes, mc_prices, 's', color='#E94F37', markersize=8, label='Monte Carlo')
-    ax.plot(strikes, fde_prices, '^', color='#4CAF50', markersize=8, label='FDE')
-    
-    ax.set_xlabel('Strike')
-    ax.set_ylabel('Call Price')
-    ax.set_title('Cross-Model Comparison')
+    ax.set_xlabel('Number of Paths')
+    ax.set_ylabel('Absolute Error')
+    ax.set_title('Monte Carlo Convergence')
     ax.legend()
     ax.grid(True, alpha=0.3)
     
-    # -------------------------------------------------------------------------
-    # Plot 3: Stress Test Results
-    # -------------------------------------------------------------------------
+    # Plot 3: FDE Convergence
     ax = axes[1, 0]
+    fde_conv = analysis["fde_convergence"]
+    ax.loglog(fde_conv.parameter_values, fde_conv.errors, 's-', color='#4CAF50',
+              linewidth=2, markersize=8, label='FDE Error')
     
-    scenarios = list(stress_results.keys())
-    call_prices = [stress_results[s]['call'] for s in scenarios]
+    # Reference 1/N² line
+    n = np.array(fde_conv.parameter_values)
+    ref_line = fde_conv.errors[0] * (fde_conv.parameter_values[0]**2) / (n**2)
+    ax.loglog(n, ref_line, '--', color='gray', label=r'$1/N^2$ reference')
     
-    colors = ['#2E86AB' if s == 'Base Case' else '#E94F37' if 'Crash' in s or 'Crisis' in s else '#4CAF50' for s in scenarios]
-    
-    bars = ax.barh(scenarios, call_prices, color=colors, alpha=0.8)
-    ax.axvline(x=stress_results['Base Case']['call'], color='black', linestyle='--', linewidth=2)
-    ax.set_xlabel('Call Price')
-    ax.set_title('Stress Test: Call Prices by Scenario')
-    ax.grid(True, alpha=0.3, axis='x')
-    
-    # -------------------------------------------------------------------------
-    # Plot 4: Greeks Under Stress
-    # -------------------------------------------------------------------------
-    ax = axes[1, 1]
-    
-    x = np.arange(len(scenarios))
-    width = 0.35
-    
-    deltas = [stress_results[s]['delta'] for s in scenarios]
-    gammas = [stress_results[s]['gamma'] * 100 for s in scenarios]  # Scale for visibility
-    
-    ax.bar(x - width/2, deltas, width, label='Delta', color='#2E86AB', alpha=0.8)
-    ax.bar(x + width/2, gammas, width, label='Gamma (×100)', color='#E94F37', alpha=0.8)
-    
-    ax.set_xticks(x)
-    ax.set_xticklabels(scenarios, rotation=45, ha='right')
-    ax.set_ylabel('Greek Value')
-    ax.set_title('Greeks Under Stress')
+    ax.set_xlabel('Grid Points')
+    ax.set_ylabel('Absolute Error')
+    ax.set_title('Finite Difference Convergence')
     ax.legend()
     ax.grid(True, alpha=0.3)
+    
+    # Plot 4: Execution Time Comparison
+    ax = axes[1, 1]
+    times = [r.time_ms for r in base_results]
+    bars = ax.bar(models, times, color=colors)
+    ax.set_ylabel('Time (ms)')
+    ax.set_title('Execution Time Comparison')
+    ax.set_yscale('log')
+    
+    for bar, t in zip(bars, times):
+        ax.annotate(f'{t:.1f}ms',
+                   (bar.get_x() + bar.get_width()/2, bar.get_height()),
+                   ha='center', va='bottom', fontsize=9)
     
     plt.tight_layout()
     plt.show(block=True)
@@ -763,26 +688,26 @@ def print_summary() -> None:
     │                         KEY TAKEAWAYS                                │
     ├─────────────────────────────────────────────────────────────────────┤
     │                                                                      │
-    │  1. Model Consistency:                                              │
-    │     - BSM, MC, FDE should agree (within tolerances)                │
-    │     - Discrepancies indicate implementation bugs                    │
-    │     - Regular validation catches drift                              │
+    │  1. Library Pricers Used:                                           │
+    │     - EquityVanillaEuropeanOptionBsmPricer (analytic)               │
+    │     - EquityVanillaEuropeanOptionMcPricer (Monte Carlo)             │
+    │     - EquityVanillaEuropeanOptionFdPricer (Finite Difference)       │
     │                                                                      │
-    │  2. Convergence Testing:                                            │
-    │     - MC: error ∝ 1/√N (halve error = 4× paths)                    │
-    │     - FDE: error ∝ Δx² (halve error = 4× grid points)              │
-    │     - Verify expected convergence rates                             │
+    │  2. Cross-Model Consistency:                                        │
+    │     - All methods should converge to same price                     │
+    │     - Differences indicate numerical error or bugs                  │
+    │     - Greeks should also be consistent                              │
     │                                                                      │
-    │  3. Stress Testing:                                                 │
-    │     - Test extreme market conditions                                │
-    │     - Identify model breakdown points                               │
-    │     - Key for risk management                                       │
+    │  3. Convergence Properties:                                         │
+    │     - MC: Error ∝ 1/√N (slow, but dimension-independent)            │
+    │     - FDE: Error ∝ Δx² (fast for low dimensions)                    │
+    │     - BSM: Exact (closed-form, fastest)                             │
     │                                                                      │
-    │  4. Production Best Practices:                                      │
-    │     - Automated daily validation                                    │
-    │     - Version control for model changes                             │
-    │     - Document all test results                                     │
-    │     - Alert on test failures                                        │
+    │  4. Production Validation:                                          │
+    │     - Test extreme scenarios (deep ITM/OTM, near expiry)            │
+    │     - Verify put-call parity                                        │
+    │     - Check boundary conditions                                     │
+    │     - Document convergence rates                                    │
     │                                                                      │
     └─────────────────────────────────────────────────────────────────────┘
     """
@@ -790,31 +715,18 @@ def print_summary() -> None:
 
 
 # =============================================================================
-# MAIN ENTRY POINT
+# MAIN
 # =============================================================================
 
 def main(args: argparse.Namespace) -> None:
-    """
-    Main entry point for the example.
-    
-    Parameters
-    ----------
-    args : argparse.Namespace
-        Command-line arguments.
-    """
+    """Main entry point."""
     global ENABLE_PLOTTING
     ENABLE_PLOTTING = args.plot
     
     try:
-        # Run validation suite
-        validation_results, stress_results = run_model_validation()
-        
-        # Visualization
-        visualize_validation(validation_results, stress_results)
-        
-        # Summary
+        base_results, analysis = run_model_validation()
+        visualize_validation(base_results, analysis)
         print_summary()
-        
         logger.info("Example completed successfully!")
         
     except Exception as e:
@@ -823,22 +735,9 @@ def main(args: argparse.Namespace) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Model Validation Example",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument(
-        "--plot",
-        action="store_true",
-        default=True,
-        help="Enable plotting (default: True)",
-    )
-    parser.add_argument(
-        "--no-plot",
-        action="store_false",
-        dest="plot",
-        help="Disable plotting",
-    )
+    parser = argparse.ArgumentParser(description="Model Validation Example")
+    parser.add_argument("--plot", action="store_true", default=True)
+    parser.add_argument("--no-plot", action="store_false", dest="plot")
     
     args = parser.parse_args()
     main(args)

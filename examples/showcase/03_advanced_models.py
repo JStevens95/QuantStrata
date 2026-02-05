@@ -15,11 +15,28 @@ Topics Covered:
 Author: QuantStrata Team
 """
 
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
 import numpy as np
 import matplotlib.pyplot as plt
 from dataclasses import dataclass
 from typing import Tuple
 from scipy.stats import norm
+
+# Path setup
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
+
+# QuantStrata imports - use library dynamics
+from src.models.dynamics.gbm_dynamics import GbmDynamicsSimulator, GbmScheme
+from src.models.stochastic_volatility.heston import (
+    HestonParameters,
+    HestonDynamics,
+    HestonSimulation,
+)
 
 # =============================================================================
 # Configuration
@@ -133,52 +150,50 @@ def simulate_local_vol_paths(params: BSMParams, n_paths: int = 10000,
 def simulate_heston_paths(params: HestonParams, n_paths: int = 10000,
                           n_steps: int = 252, seed: int = 42) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Simulate Heston model paths using QE (Quadratic Exponential) scheme.
+    Simulate Heston model paths using QuantStrata's library HestonDynamics.
+    
+    This function uses the library's production Heston simulator which provides
+    multiple discretization schemes (euler, full_truncation, reflection, qe).
     
     Model:
         dS_t = (r - q) S_t dt + √V_t S_t dW_S
         dV_t = κ(θ - V_t) dt + ξ √V_t dW_V
         dW_S · dW_V = ρ dt
     
-    QE scheme handles variance positivity better than Euler.
+    Returns
+    -------
+    Tuple[np.ndarray, np.ndarray]
+        Spot paths (n_steps+1, n_paths), Variance paths (n_steps+1, n_paths)
     """
-    np.random.seed(seed)
+    # Convert local HestonParams to library HestonParameters
+    lib_params = HestonParameters(
+        kappa=params.kappa,
+        theta=params.theta,
+        xi=params.xi,
+        v0=params.V0,
+        rho=params.rho,
+    )
     
-    dt = params.T / n_steps
-    sqrt_dt = np.sqrt(dt)
+    # Create HestonDynamics with drift = r - q
+    dynamics = HestonDynamics(
+        params=lib_params,
+        drift=params.r - params.q,
+    )
     
-    # Precompute constants
-    kappa, theta, xi, rho = params.kappa, params.theta, params.xi, params.rho
+    # Simulate using library (full_truncation scheme for robustness)
+    sim: HestonSimulation = dynamics.simulate(
+        spot0=params.S0,
+        maturity=params.T,
+        n_paths=n_paths,
+        n_steps=n_steps,
+        scheme="full_truncation",
+        seed=seed,
+        antithetic=True,
+    )
     
-    # Initialize
-    S = np.full(n_paths, params.S0)
-    V = np.full(n_paths, params.V0)
-    
-    S_paths = np.zeros((n_steps + 1, n_paths))
-    V_paths = np.zeros((n_steps + 1, n_paths))
-    S_paths[0, :] = params.S0
-    V_paths[0, :] = params.V0
-    
-    for i in range(n_steps):
-        # Generate correlated Brownian increments
-        Z1 = np.random.randn(n_paths)
-        Z2 = np.random.randn(n_paths)
-        W_V = sqrt_dt * Z1
-        W_S = sqrt_dt * (rho * Z1 + np.sqrt(1 - rho**2) * Z2)
-        
-        # Update variance (using full truncation for simplicity)
-        V_plus = np.maximum(V, 0)
-        sqrt_V = np.sqrt(V_plus)
-        
-        V_new = V + kappa * (theta - V_plus) * dt + xi * sqrt_V * W_V
-        V = np.maximum(V_new, 0)  # Truncation scheme
-        
-        # Update spot (log-Euler)
-        log_S = np.log(S) + (params.r - params.q - 0.5 * V_plus) * dt + sqrt_V * W_S
-        S = np.exp(log_S)
-        
-        S_paths[i+1, :] = S
-        V_paths[i+1, :] = V
+    # Transpose to (n_steps+1, n_paths) for compatibility
+    S_paths = sim.spot_paths.T
+    V_paths = sim.variance_paths.T
     
     return S_paths, V_paths
 

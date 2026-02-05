@@ -16,10 +16,22 @@ Topics Covered:
 Author: QuantStrata Team
 """
 
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import Tuple, List
 from dataclasses import dataclass
+
+# Path setup
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
+
+# QuantStrata imports - use library dynamics
+from src.models.dynamics.gbm_dynamics import GbmDynamicsSimulator, GbmScheme
 
 # =============================================================================
 # Configuration
@@ -59,21 +71,31 @@ class MarketParams:
 
 def simulate_gbm_paths(params: MarketParams, n_paths: int = 10000, 
                        n_steps: int = 252, seed: int = 42) -> np.ndarray:
-    """Simulate GBM paths under risk-neutral measure."""
-    np.random.seed(seed)
+    """
+    Simulate GBM paths using QuantStrata's library dynamics.
     
-    dt = params.T / n_steps
-    drift = (params.r - params.q - 0.5*params.sigma**2) * dt
-    diffusion = params.sigma * np.sqrt(dt)
+    Uses GbmDynamicsSimulator with LOG_EULER scheme for numerical stability.
+    """
+    # Use library GBM simulator
+    simulator = GbmDynamicsSimulator(scheme=GbmScheme.LOG_EULER)
     
-    Z = np.random.randn(n_steps, n_paths)
-    log_returns = drift + diffusion * Z
+    # Drift for risk-neutral measure: r - q
+    drift = params.r - params.q
     
-    paths = np.zeros((n_steps + 1, n_paths))
-    paths[0, :] = params.S0
-    paths[1:, :] = params.S0 * np.exp(np.cumsum(log_returns, axis=0))
+    # Simulate paths (returns shape (n_paths, n_steps + 1))
+    paths_raw = simulator.simulate(
+        S0=params.S0,
+        drift=drift,
+        sigma=params.sigma,
+        T=params.T,
+        n_steps=n_steps,
+        n_paths=n_paths,
+        seed=seed,
+        antithetic=True,
+    )
     
-    return paths
+    # Transpose to (n_steps + 1, n_paths) for compatibility
+    return paths_raw.T
 
 # =============================================================================
 # Barrier Option Pricing
@@ -456,15 +478,17 @@ def plot_lookback_analysis(params: MarketParams, paths: np.ndarray):
     # Premium analysis
     ax = axes[1, 1]
     
-    # Vanilla prices for reference
-    from scipy.stats import norm
-    d1 = (np.log(params.S0/K) + (params.r - params.q + 0.5*params.sigma**2)*params.T) / \
-         (params.sigma*np.sqrt(params.T))
-    d2 = d1 - params.sigma*np.sqrt(params.T)
-    vanilla_call_bsm = params.S0*np.exp(-params.q*params.T)*norm.cdf(d1) - \
-                       K*np.exp(-params.r*params.T)*norm.cdf(d2)
-    vanilla_put_bsm = K*np.exp(-params.r*params.T)*norm.cdf(-d2) - \
-                      params.S0*np.exp(-params.q*params.T)*norm.cdf(-d1)
+    # Vanilla prices for reference using library BSM
+    from src.models.analytic.black_scholes_merton.base import vanilla_price
+    carry = params.r - params.q
+    vanilla_call_bsm = vanilla_price(
+        option_type="call", spot=params.S0, strike=K, expiry=params.T,
+        discount_rate=params.r, carry=carry, vol=params.sigma
+    )
+    vanilla_put_bsm = vanilla_price(
+        option_type="put", spot=params.S0, strike=K, expiry=params.T,
+        discount_rate=params.r, carry=carry, vol=params.sigma
+    )
     
     categories = ['Call (Float)', 'Call (Fixed)', 'Put (Float)', 'Put (Fixed)']
     lookback_prices = [float_call, fixed_call, float_put, fixed_put]

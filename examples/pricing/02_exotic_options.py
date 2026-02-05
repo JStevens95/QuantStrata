@@ -90,6 +90,18 @@ from src.marketdata.core.market import Market
 from src.marketdata.curves.term_structure import FlatZeroRateCurve
 from src.marketdata.surfaces.vol_surface import FlatVolSurface
 
+# GBM dynamics for path simulation (use library instead of standalone code)
+from src.models.dynamics.gbm_dynamics import GbmDynamicsSimulator, GbmScheme
+
+# Library exotic pricers (production alternatives to manual implementations)
+from src.pricers.fx.european_bsm_mc import (
+    FxVanillaEuropeanOptionMcPricer,
+    FxBarrierEuropeanOptionMcPricer,
+    FxAsianEuropeanOptionMcPricer,
+    FxLookbackEuropeanOptionMcPricer,
+    FxTouchEuropeanOptionMcPricer,
+)
+
 
 # =============================================================================
 # LOGGING SETUP
@@ -211,7 +223,10 @@ def simulate_paths(
     seed: int = 42,
 ) -> np.ndarray:
     """
-    Simulate GBM paths for Monte Carlo pricing.
+    Simulate GBM paths using QuantStrata's library dynamics.
+    
+    This function uses the library's GbmDynamicsSimulator for production-grade
+    path simulation with proper variance reduction and numerical stability.
     
     Parameters
     ----------
@@ -242,40 +257,44 @@ def simulate_paths(
     Under risk-neutral measure:
         dS/S = (r - q) dt + σ dW
     
-    Exact solution:
+    Exact solution (log-Euler scheme):
         S_t = S_0 · exp((r - q - σ²/2)t + σ W_t)
     
-    Discretized:
-        S_{t+dt} = S_t · exp((r - q - σ²/2)dt + σ√dt Z)
+    Library Implementation
+    ----------------------
+    Uses GbmDynamicsSimulator with LOG_EULER scheme for numerical stability.
+    Antithetic variates are used for variance reduction.
     """
     logger.info("")
     logger.info("=" * 70)
-    logger.info("SECTION 2: Path Simulation")
+    logger.info("SECTION 2: Path Simulation (Library GbmDynamicsSimulator)")
     logger.info("=" * 70)
     
-    # Set seed for reproducibility
-    np.random.seed(seed)
+    # Use library GBM simulator
+    simulator = GbmDynamicsSimulator(scheme=GbmScheme.LOG_EULER)
     
-    # Time step size
-    dt = T / n_steps
+    # Drift for FX options: r_domestic - r_foreign
+    drift = r - q
     
-    # Drift and diffusion coefficients
-    drift = (r - q - 0.5 * sigma**2) * dt
-    diffusion = sigma * np.sqrt(dt)
+    # Simulate paths using library
+    # Returns shape (n_paths, n_steps + 1), we transpose for compatibility
+    paths_raw = simulator.simulate(
+        S0=S0,
+        drift=drift,
+        sigma=sigma,
+        T=T,
+        n_steps=n_steps,
+        n_paths=n_paths,
+        seed=seed,
+        antithetic=True,  # Variance reduction
+    )
     
-    # Generate standard normal random variables
-    Z = np.random.randn(n_steps, n_paths)
-    
-    # Compute log returns
-    log_returns = drift + diffusion * Z
-    
-    # Build paths (using cumulative sum for efficiency)
-    paths = np.zeros((n_steps + 1, n_paths))
-    paths[0, :] = S0
-    paths[1:, :] = S0 * np.exp(np.cumsum(log_returns, axis=0))
+    # Transpose to (n_steps + 1, n_paths) for backward compatibility with payoff functions
+    paths = paths_raw.T
     
     logger.info("")
     logger.info(f"Simulated {n_paths:,} paths with {n_steps} steps")
+    logger.info(f"  Using: GbmDynamicsSimulator (LOG_EULER scheme)")
     logger.info(f"  Paths shape: {paths.shape}")
     logger.info(f"  Mean terminal: {np.mean(paths[-1, :]):.4f}")
     logger.info(f"  Std terminal:  {np.std(paths[-1, :]):.4f}")

@@ -111,70 +111,85 @@ except ImportError:
 
 
 # =============================================================================
-# BLACK-SCHOLES FUNCTIONS
+# BLACK-SCHOLES FUNCTIONS (Using Library)
 # =============================================================================
 
-def norm_cdf(x: float) -> float:
-    """Standard normal CDF."""
-    return 0.5 * (1 + math.erf(x / math.sqrt(2)))
+# Import library BSM functions - production implementations
+from src.models.analytic.black_scholes_merton.base import (
+    vanilla_price as _lib_vanilla_price,
+    vanilla_delta as _lib_vanilla_delta,
+    vanilla_gamma as _lib_vanilla_gamma,
+    vanilla_vega as _lib_vanilla_vega,
+    d1_d2 as _lib_d1_d2,
+)
 
-
-def norm_pdf(x: float) -> float:
-    """Standard normal PDF."""
-    return math.exp(-0.5 * x ** 2) / math.sqrt(2 * math.pi)
+# GBM dynamics for Monte Carlo
+from src.models.dynamics.gbm_dynamics import GbmDynamicsSimulator, GbmScheme
 
 
 def bs_d1d2(S: float, K: float, T: float, r: float, q: float, sigma: float) -> Tuple[float, float]:
-    """Compute d1 and d2."""
+    """Compute d1 and d2 using library function."""
     if T <= 1e-10:
         return 0.0, 0.0
-    sqrt_T = math.sqrt(T)
-    d1 = (math.log(S / K) + (r - q + 0.5 * sigma ** 2) * T) / (sigma * sqrt_T)
-    d2 = d1 - sigma * sqrt_T
-    return d1, d2
+    carry = r - q
+    return _lib_d1_d2(spot=S, strike=K, expiry=T, discount_rate=r, carry=carry, vol=sigma)
 
 
 def bs_call_price(S: float, K: float, T: float, r: float, q: float, sigma: float) -> float:
-    """Black-Scholes call price (analytical)."""
+    """Black-Scholes call price using library function."""
     if T <= 1e-10:
         return max(S - K, 0)
-    d1, d2 = bs_d1d2(S, K, T, r, q, sigma)
-    return S * math.exp(-q * T) * norm_cdf(d1) - K * math.exp(-r * T) * norm_cdf(d2)
+    carry = r - q
+    return _lib_vanilla_price(
+        option_type="call", spot=S, strike=K, expiry=T, 
+        discount_rate=r, carry=carry, vol=sigma
+    )
 
 
 def bs_put_price(S: float, K: float, T: float, r: float, q: float, sigma: float) -> float:
-    """Black-Scholes put price (analytical)."""
+    """Black-Scholes put price using library function."""
     if T <= 1e-10:
         return max(K - S, 0)
-    d1, d2 = bs_d1d2(S, K, T, r, q, sigma)
-    return K * math.exp(-r * T) * norm_cdf(-d2) - S * math.exp(-q * T) * norm_cdf(-d1)
+    carry = r - q
+    return _lib_vanilla_price(
+        option_type="put", spot=S, strike=K, expiry=T,
+        discount_rate=r, carry=carry, vol=sigma
+    )
 
 
 def bs_delta(S: float, K: float, T: float, r: float, q: float, sigma: float, is_call: bool = True) -> float:
-    """Black-Scholes delta."""
+    """Black-Scholes delta using library function."""
     if T <= 1e-10:
         return 1.0 if (is_call and S > K) else (-1.0 if (not is_call and S < K) else 0.0)
-    d1, _ = bs_d1d2(S, K, T, r, q, sigma)
-    if is_call:
-        return math.exp(-q * T) * norm_cdf(d1)
-    else:
-        return math.exp(-q * T) * (norm_cdf(d1) - 1)
+    carry = r - q
+    option_type = "call" if is_call else "put"
+    return _lib_vanilla_delta(
+        option_type=option_type, spot=S, strike=K, expiry=T,
+        discount_rate=r, carry=carry, vol=sigma
+    )
 
 
 def bs_gamma(S: float, K: float, T: float, r: float, q: float, sigma: float) -> float:
-    """Black-Scholes gamma."""
+    """Black-Scholes gamma using library function."""
     if T <= 1e-10:
         return 0.0
-    d1, _ = bs_d1d2(S, K, T, r, q, sigma)
-    return math.exp(-q * T) * norm_pdf(d1) / (S * sigma * math.sqrt(T))
+    carry = r - q
+    return _lib_vanilla_gamma(
+        spot=S, strike=K, expiry=T,
+        discount_rate=r, carry=carry, vol=sigma
+    )
 
 
 def bs_vega(S: float, K: float, T: float, r: float, q: float, sigma: float) -> float:
-    """Black-Scholes vega (per 1% vol move)."""
+    """Black-Scholes vega (per 1% vol move) using library function."""
     if T <= 1e-10:
         return 0.0
-    d1, _ = bs_d1d2(S, K, T, r, q, sigma)
-    return S * math.exp(-q * T) * norm_pdf(d1) * math.sqrt(T) / 100
+    carry = r - q
+    # Library returns vega per 1 vol point, we divide by 100 for per 1% move
+    return _lib_vanilla_vega(
+        spot=S, strike=K, expiry=T,
+        discount_rate=r, carry=carry, vol=sigma
+    ) / 100
 
 
 # =============================================================================
@@ -194,7 +209,7 @@ def mc_price(
     antithetic: bool = True,
 ) -> Tuple[float, float, float]:
     """
-    Monte Carlo option price with standard error.
+    Monte Carlo option price using library GbmDynamicsSimulator.
     
     Parameters
     ----------
@@ -208,21 +223,28 @@ def mc_price(
     Tuple[float, float, float]
         Price, standard error, runtime (seconds).
     """
-    np.random.seed(seed)
-    
     start = time.time()
     
-    # Simulate terminal prices
-    drift = (r - q - 0.5 * sigma ** 2) * T
-    diffusion = sigma * np.sqrt(T)
+    # Use library GBM simulator for path generation
+    simulator = GbmDynamicsSimulator(scheme=GbmScheme.LOG_EULER)
     
-    if antithetic:
-        Z = np.random.randn(n_paths // 2)
-        Z = np.concatenate([Z, -Z])
-    else:
-        Z = np.random.randn(n_paths)
+    # Simulate paths (only need terminal value, so 1 step is sufficient)
+    # But for more realistic MC, use multiple steps
+    drift = r - q  # Risk-neutral drift
     
-    S_T = S * np.exp(drift + diffusion * Z)
+    paths = simulator.simulate(
+        S0=S,
+        drift=drift,
+        sigma=sigma,
+        T=T,
+        n_steps=1,  # Single step for European option
+        n_paths=n_paths,
+        seed=seed,
+        antithetic=antithetic,
+    )
+    
+    # Terminal prices
+    S_T = paths[:, -1]
     
     # Compute payoffs
     if is_call:
