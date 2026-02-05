@@ -45,6 +45,15 @@ At a hedge fund:
 - Especially useful for path-dependent options
 - Model-free approach avoids model specification error
 
+Why Results May Vary / Production Considerations
+-------------------------------------------------
+- The environment is wired to library pricers; for production, supply
+  ZeroRateCurve and GridVolSurface (no FlatVol/FlatCurves) so Greeks
+  and PnL reflect real market structure.
+- Example metrics depend on random seeds, number of episodes, and
+  risk aversion; tune and validate against delta-hedge on out-of-sample
+  paths with realistic costs and market data.
+
 Prerequisites
 -------------
 - Understanding of delta hedging (examples/risk/04_delta_hedging.py)

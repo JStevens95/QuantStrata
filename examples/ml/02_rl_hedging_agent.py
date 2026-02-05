@@ -38,6 +38,15 @@ At a hedge fund:
 - Robust to model misspecification
 - Requires careful backtesting and out-of-sample validation
 
+Why Results May Vary / Production Considerations
+-------------------------------------------------
+- For production, feed the hedging environment with real market data:
+  ZeroRateCurve and GridVolSurface instead of FlatCurves/FlatVol, so
+  option values and Greeks match front-office pricing.
+- Example performance depends on hyperparameters (learning rate, entropy,
+  network size) and number of episodes; run multiple seeds and compare
+  to delta-hedge on out-of-sample paths with realistic costs.
+
 Prerequisites
 -------------
 - Understanding of RL environment (examples/ml/01_hedging_environment.py)
