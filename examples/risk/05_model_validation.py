@@ -184,7 +184,7 @@ def create_market(
     """Create market snapshot with given parameters."""
     return Market(
         val_date=val_date,
-        quotes={SPOT_ID: Quote(SPOT_ID, spot)},
+        quotes={SPOT_ID: Quote(value=spot)},
         curves={CURVE_ID: FlatZeroRateCurve(CURVE_ID, rate)},
         vol_surfaces={VOL_ID: FlatVolSurface(VOL_ID, vol)},
     )

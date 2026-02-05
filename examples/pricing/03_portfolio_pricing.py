@@ -77,11 +77,11 @@ from src.marketdata.core.market import Market
 from src.marketdata.curves.term_structure import FlatZeroRateCurve
 from src.marketdata.surfaces.vol_surface import FlatVolSurface
 
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
+from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
 from src.portfolio.core import Portfolio, Position
 from src.portfolio.portfolio import PortfolioPricer
 from src.pricers.registry import PricerRegistry
-from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer
+from src.pricers.fx.european_bsm import FxVanillaEuropeanOptionBsmPricer
 
 
 # =============================================================================
@@ -175,7 +175,7 @@ def create_option(
     expiry: float,
     is_call: bool,
     notional: float,
-) -> EuropeanFxVanillaOption:
+) -> FxVanillaEuropeanOption:
     """
     Create an FX vanilla option with correct API.
     
@@ -195,7 +195,7 @@ def create_option(
     EuropeanFxVanillaOption
         The option instrument.
     """
-    return EuropeanFxVanillaOption(
+    return FxVanillaEuropeanOption(
         option_type="call" if is_call else "put",
         strike=strike,
         expiry=expiry,
@@ -298,7 +298,7 @@ def setup_pricer_registry() -> Tuple[PricerRegistry, PortfolioPricer]:
     
     # Create registry and register pricers
     registry = PricerRegistry()
-    registry.register(EuropeanFxVanillaOption, FxEuropeanVanillaBsmPricer())
+    registry.register(FxVanillaEuropeanOption, FxVanillaEuropeanOptionBsmPricer())
     
     # Create portfolio pricer
     portfolio_pricer = PortfolioPricer(pricer_registry=registry)

@@ -91,7 +91,7 @@ from src.marketdata.curves.term_structure import FlatZeroRateCurve
 from src.marketdata.surfaces.vol_surface import FlatVolSurface
 
 # GBM dynamics for path simulation (use library instead of standalone code)
-from src.models.dynamics.gbm_dynamics import GbmDynamicsSimulator, GbmScheme
+from src.models.dynamics.gbm_dynamics import GbmDynamicsSimulator
 
 # Library exotic pricers (production alternatives to manual implementations)
 from src.pricers.fx.european_bsm_mc import (
@@ -262,7 +262,7 @@ def simulate_paths(
     
     Library Implementation
     ----------------------
-    Uses GbmDynamicsSimulator with LOG_EULER scheme for numerical stability.
+    Uses GbmDynamicsSimulator with "exact" (log-space) scheme.
     Antithetic variates are used for variance reduction.
     """
     logger.info("")
@@ -270,31 +270,35 @@ def simulate_paths(
     logger.info("SECTION 2: Path Simulation (Library GbmDynamicsSimulator)")
     logger.info("=" * 70)
     
-    # Use library GBM simulator
-    simulator = GbmDynamicsSimulator(scheme=GbmScheme.LOG_EULER)
-    
     # Drift for FX options: r_domestic - r_foreign
     drift = r - q
     
-    # Simulate paths using library
-    # Returns shape (n_paths, n_steps + 1), we transpose for compatibility
-    paths_raw = simulator.simulate(
-        S0=S0,
-        drift=drift,
-        sigma=sigma,
-        T=T,
+    # Generate normals (library expects shape (n_paths, n_steps))
+    rng = np.random.default_rng(seed)
+    if True:  # antithetic
+        n_half = n_paths // 2
+        Z = rng.standard_normal((n_half, n_steps))
+        Z = np.concatenate([Z, -Z], axis=0)
+    else:
+        Z = rng.standard_normal((n_paths, n_steps))
+    
+    # Use library GBM simulator: (drift, vol), then simulate_paths(normals=...)
+    simulator = GbmDynamicsSimulator(drift=drift, vol=sigma)
+    paths_raw = simulator.simulate_paths(
+        spot0=S0,
+        maturity=T,
         n_steps=n_steps,
-        n_paths=n_paths,
-        seed=seed,
-        antithetic=True,  # Variance reduction
+        n_paths=Z.shape[0],
+        normals=Z,
+        scheme="exact",
     )
     
     # Transpose to (n_steps + 1, n_paths) for backward compatibility with payoff functions
     paths = paths_raw.T
     
     logger.info("")
-    logger.info(f"Simulated {n_paths:,} paths with {n_steps} steps")
-    logger.info(f"  Using: GbmDynamicsSimulator (LOG_EULER scheme)")
+    logger.info(f"Simulated {paths.shape[1]:,} paths with {n_steps} steps")
+    logger.info(f"  Using: GbmDynamicsSimulator (exact scheme)")
     logger.info(f"  Paths shape: {paths.shape}")
     logger.info(f"  Mean terminal: {np.mean(paths[-1, :]):.4f}")
     logger.info(f"  Std terminal:  {np.std(paths[-1, :]):.4f}")

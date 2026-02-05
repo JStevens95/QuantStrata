@@ -124,7 +124,7 @@ from src.models.analytic.black_scholes_merton.base import (
 )
 
 # GBM dynamics for Monte Carlo
-from src.models.dynamics.gbm_dynamics import GbmDynamicsSimulator, GbmScheme
+from src.models.dynamics.gbm_dynamics import GbmDynamicsSimulator
 
 
 def bs_d1d2(S: float, K: float, T: float, r: float, q: float, sigma: float) -> Tuple[float, float]:
@@ -225,25 +225,24 @@ def mc_price(
     """
     start = time.time()
     
-    # Use library GBM simulator for path generation
-    simulator = GbmDynamicsSimulator(scheme=GbmScheme.LOG_EULER)
-    
-    # Simulate paths (only need terminal value, so 1 step is sufficient)
-    # But for more realistic MC, use multiple steps
-    drift = r - q  # Risk-neutral drift
-    
-    paths = simulator.simulate(
-        S0=S,
-        drift=drift,
-        sigma=sigma,
-        T=T,
-        n_steps=1,  # Single step for European option
-        n_paths=n_paths,
-        seed=seed,
-        antithetic=antithetic,
+    drift = r - q
+    rng = np.random.default_rng(seed)
+    n_steps_mc = 1
+    if antithetic:
+        n_half = n_paths // 2
+        Z = rng.standard_normal((n_half, n_steps_mc))
+        Z = np.concatenate([Z, -Z], axis=0)
+    else:
+        Z = rng.standard_normal((n_paths, n_steps_mc))
+    simulator = GbmDynamicsSimulator(drift=drift, vol=sigma)
+    paths = simulator.simulate_paths(
+        spot0=S,
+        maturity=T,
+        n_steps=n_steps_mc,
+        n_paths=Z.shape[0],
+        normals=Z,
+        scheme="exact",
     )
-    
-    # Terminal prices
     S_T = paths[:, -1]
     
     # Compute payoffs

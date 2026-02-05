@@ -202,6 +202,10 @@ class FxVanillaEuropeanOptionBsmPricer:
         }
 
 
+# Alias for backward compatibility with examples and docs
+FxEuropeanVanillaBsmPricer = FxVanillaEuropeanOptionBsmPricer
+
+
 @dataclass(frozen=True, slots=True)
 class FxDigitalEuropeanOptionBsmPricer:
     """

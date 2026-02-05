@@ -433,7 +433,7 @@ def _digital_call(F, K, T, sigma, df):
     from src.models.analytic.black_scholes_merton.base import digital_cash_price
     undiscounted = digital_cash_price(
         option_type="call", spot=F, strike=K, expiry=T,
-        discount_rate=0.0, carry=0.0, vol=sigma, cash_amount=1.0
+        discount_rate=0.0, carry=0.0, vol=sigma, cash=1.0
     )
     return df * undiscounted
 

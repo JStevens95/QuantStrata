@@ -182,7 +182,7 @@ def create_market(params: OptionParams) -> Market:
     """Create market snapshot from parameters."""
     return Market(
         val_date=date.today(),
-        quotes={EURUSD_SPOT: Quote(EURUSD_SPOT, params.spot)},
+        quotes={EURUSD_SPOT: Quote(value=params.spot)},
         curves={
             USD_CURVE: FlatZeroRateCurve(USD_CURVE, params.r_dom),
             EUR_CURVE: FlatZeroRateCurve(EUR_CURVE, params.r_for),

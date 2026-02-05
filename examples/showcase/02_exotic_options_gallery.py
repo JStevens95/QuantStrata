@@ -31,7 +31,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 # QuantStrata imports - use library dynamics
-from src.models.dynamics.gbm_dynamics import GbmDynamicsSimulator, GbmScheme
+from src.models.dynamics.gbm_dynamics import GbmDynamicsSimulator
 
 # =============================================================================
 # Configuration
@@ -74,27 +74,22 @@ def simulate_gbm_paths(params: MarketParams, n_paths: int = 10000,
     """
     Simulate GBM paths using QuantStrata's library dynamics.
     
-    Uses GbmDynamicsSimulator with LOG_EULER scheme for numerical stability.
+    Uses GbmDynamicsSimulator with "exact" (log-space) scheme.
     """
-    # Use library GBM simulator
-    simulator = GbmDynamicsSimulator(scheme=GbmScheme.LOG_EULER)
-    
-    # Drift for risk-neutral measure: r - q
     drift = params.r - params.q
-    
-    # Simulate paths (returns shape (n_paths, n_steps + 1))
-    paths_raw = simulator.simulate(
-        S0=params.S0,
-        drift=drift,
-        sigma=params.sigma,
-        T=params.T,
+    rng = np.random.default_rng(seed)
+    n_half = n_paths // 2
+    Z = rng.standard_normal((n_half, n_steps))
+    Z = np.concatenate([Z, -Z], axis=0)
+    simulator = GbmDynamicsSimulator(drift=drift, vol=params.sigma)
+    paths_raw = simulator.simulate_paths(
+        spot0=params.S0,
+        maturity=params.T,
         n_steps=n_steps,
-        n_paths=n_paths,
-        seed=seed,
-        antithetic=True,
+        n_paths=Z.shape[0],
+        normals=Z,
+        scheme="exact",
     )
-    
-    # Transpose to (n_steps + 1, n_paths) for compatibility
     return paths_raw.T
 
 # =============================================================================

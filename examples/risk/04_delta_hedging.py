@@ -98,7 +98,7 @@ from src.models.analytic.black_scholes_merton.base import (
 )
 
 # GBM dynamics for path simulation
-from src.models.dynamics.gbm_dynamics import GbmDynamicsSimulator, GbmScheme
+from src.models.dynamics.gbm_dynamics import GbmDynamicsSimulator
 
 
 # =============================================================================
@@ -202,7 +202,7 @@ def create_market(
     """Create market snapshot with given parameters."""
     return Market(
         val_date=val_date,
-        quotes={EURUSD_SPOT: Quote(EURUSD_SPOT, spot)},
+        quotes={EURUSD_SPOT: Quote(value=spot)},
         curves={
             USD_CURVE: FlatZeroRateCurve(USD_CURVE, r_dom),
             EUR_CURVE: FlatZeroRateCurve(EUR_CURVE, r_for),
@@ -272,6 +272,7 @@ def compute_greeks_from_model(
     )
     
     gamma = vanilla_gamma(
+        option_type="call",
         spot=spot,
         strike=strike,
         expiry=expiry,
@@ -336,19 +337,19 @@ def simulate_gbm_paths(
     ndarray
         Paths of shape (n_paths, n_steps + 1).
     """
-    simulator = GbmDynamicsSimulator(scheme=GbmScheme.LOG_EULER)
-    
-    paths = simulator.simulate(
-        S0=S0,
-        drift=drift,
-        sigma=vol,
-        T=T,
+    rng = np.random.default_rng(seed)
+    n_half = n_paths // 2
+    Z = rng.standard_normal((n_half, n_steps))
+    Z = np.concatenate([Z, -Z], axis=0)
+    simulator = GbmDynamicsSimulator(drift=drift, vol=vol)
+    paths = simulator.simulate_paths(
+        spot0=S0,
+        maturity=T,
         n_steps=n_steps,
-        n_paths=n_paths,
-        seed=seed,
-        antithetic=True,
+        n_paths=Z.shape[0],
+        normals=Z,
+        scheme="exact",
     )
-    
     return paths
 
 
