@@ -4,41 +4,43 @@
 Machine Learning: Neural Stochastic Differential Equations
 ===============================================================================
 
-This example demonstrates Neural SDEs - combining deep learning with stochastic
-processes for flexible, learnable dynamics models in quantitative finance.
+This example demonstrates QuantStrata's Neural SDE module for learning
+asset dynamics from historical data.
 
 Learning Objectives
 -------------------
-1. **Neural SDE Concept**: Learn dynamics from data
-2. **Architecture Design**: Drift and diffusion networks
-3. **Training Process**: Backprop through SDE solutions
-4. **Applications**: Volatility modeling, path simulation
+1. **Neural SDE Architecture**: Use NeuralSDEDynamics for learnable dynamics
+2. **Network Design**: NeuralDriftNetwork and NeuralDiffusionNetwork
+3. **Training Pipeline**: Use NeuralSDETrainer with TrainingConfig
+4. **Validation**: Compare learned dynamics to known parametric models
 
 Mathematical Framework
 ----------------------
 Standard SDE:
-    dX_t = μ(X_t, t) dt + σ(X_t, t) dW_t
+    dS_t = μ(S_t, t) dt + σ(S_t, t) dW_t
 
 Neural SDE:
-    dX_t = μ_θ(X_t, t) dt + σ_φ(X_t, t) dW_t
+    dS_t = μ_θ(S_t, t) dt + σ_φ(S_t, t) dW_t
 
-Where μ_θ and σ_φ are neural networks with learnable parameters.
+Where μ_θ and σ_φ are neural networks:
+- μ_θ: Drift network (any real output)
+- σ_φ: Diffusion network (positive output via softplus)
 
-Training objective (simplified):
-    L = Σ_t ||X_t^data - X_t^model||² + regularization
+Training minimizes:
+    L = moment_weight × MomentMatchingLoss + pathwise_weight × PathwiseLoss
 
 Production Context
 ------------------
 At a hedge fund:
-- Neural SDEs can learn complex volatility dynamics
+- Neural SDEs can capture complex volatility dynamics
 - More flexible than parametric models (Heston, SABR)
-- Used for simulation, pricing, risk
-- Requires careful regularization and validation
+- Used for pricing, risk simulation, scenario generation
+- Requires careful validation against known benchmarks
 
 Prerequisites
 -------------
-- Basic SDE knowledge
-- Neural network fundamentals
+- SDE fundamentals
+- Neural network basics
 - Previous ML examples
 
 Run This Example
@@ -62,7 +64,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -71,6 +73,17 @@ import numpy as np
 # -----------------------------------------------------------------------------
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
+
+# -----------------------------------------------------------------------------
+# QuantStrata imports - using existing neural_sde module
+# -----------------------------------------------------------------------------
+from src.models.neural_sde.dynamics import NeuralSDEDynamics, NeuralSDEConfig
+from src.models.neural_sde.networks import NeuralDriftNetwork, NeuralDiffusionNetwork
+from src.models.neural_sde.training.trainer import (
+    NeuralSDETrainer,
+    TrainingConfig,
+    TrainingResult,
+)
 
 
 # =============================================================================
@@ -100,393 +113,7 @@ except ImportError:
 
 
 # =============================================================================
-# NEURAL NETWORK COMPONENTS
-# =============================================================================
-
-class DenseLayer:
-    """
-    Dense layer for neural networks.
-    
-    Implements: y = activation(Wx + b)
-    """
-    
-    def __init__(
-        self,
-        input_dim: int,
-        output_dim: int,
-        activation: str = 'tanh',
-    ) -> None:
-        """Initialize dense layer."""
-        # Xavier initialization
-        scale = np.sqrt(2.0 / (input_dim + output_dim))
-        self.W = np.random.randn(input_dim, output_dim) * scale
-        self.b = np.zeros((1, output_dim))
-        
-        self.activation = activation
-        
-        # Gradients
-        self.dW = None
-        self.db = None
-        
-        # Cache for backprop
-        self._input = None
-        self._pre_activation = None
-    
-    def forward(self, x: np.ndarray) -> np.ndarray:
-        """Forward pass."""
-        self._input = x
-        self._pre_activation = x @ self.W + self.b
-        
-        if self.activation == 'tanh':
-            return np.tanh(self._pre_activation)
-        elif self.activation == 'relu':
-            return np.maximum(0, self._pre_activation)
-        elif self.activation == 'sigmoid':
-            return 1 / (1 + np.exp(-self._pre_activation))
-        elif self.activation == 'softplus':
-            return np.log(1 + np.exp(self._pre_activation))
-        else:  # linear
-            return self._pre_activation
-    
-    def backward(self, grad_output: np.ndarray) -> np.ndarray:
-        """Backward pass."""
-        # Activation gradient
-        if self.activation == 'tanh':
-            a = np.tanh(self._pre_activation)
-            grad_act = grad_output * (1 - a**2)
-        elif self.activation == 'relu':
-            grad_act = grad_output * (self._pre_activation > 0).astype(float)
-        elif self.activation == 'sigmoid':
-            s = 1 / (1 + np.exp(-self._pre_activation))
-            grad_act = grad_output * s * (1 - s)
-        elif self.activation == 'softplus':
-            grad_act = grad_output * (1 / (1 + np.exp(-self._pre_activation)))
-        else:  # linear
-            grad_act = grad_output
-        
-        # Parameter gradients
-        self.dW = self._input.T @ grad_act
-        self.db = np.sum(grad_act, axis=0, keepdims=True)
-        
-        # Input gradient
-        return grad_act @ self.W.T
-
-
-class NeuralNetwork:
-    """
-    Simple multi-layer neural network.
-    """
-    
-    def __init__(
-        self,
-        layer_dims: List[int],
-        activations: List[str],
-    ) -> None:
-        """
-        Initialize neural network.
-        
-        Parameters
-        ----------
-        layer_dims : List[int]
-            Dimensions including input and output.
-        activations : List[str]
-            Activation for each layer (len = len(layer_dims) - 1).
-        """
-        self.layers: List[DenseLayer] = []
-        
-        for i in range(len(layer_dims) - 1):
-            self.layers.append(
-                DenseLayer(layer_dims[i], layer_dims[i + 1], activations[i])
-            )
-    
-    def forward(self, x: np.ndarray) -> np.ndarray:
-        """Forward pass through all layers."""
-        for layer in self.layers:
-            x = layer.forward(x)
-        return x
-    
-    def backward(self, grad_output: np.ndarray) -> np.ndarray:
-        """Backward pass through all layers."""
-        for layer in reversed(self.layers):
-            grad_output = layer.backward(grad_output)
-        return grad_output
-    
-    def get_params(self) -> List[np.ndarray]:
-        """Get all parameters."""
-        params = []
-        for layer in self.layers:
-            params.extend([layer.W, layer.b])
-        return params
-    
-    def get_grads(self) -> List[np.ndarray]:
-        """Get all gradients."""
-        grads = []
-        for layer in self.layers:
-            grads.extend([layer.dW, layer.db])
-        return grads
-    
-    def update_params(self, lr: float) -> None:
-        """Update parameters with gradients."""
-        for layer in self.layers:
-            layer.W -= lr * layer.dW
-            layer.b -= lr * layer.db
-
-
-# =============================================================================
-# NEURAL SDE
-# =============================================================================
-
-class NeuralSDE:
-    """
-    Neural Stochastic Differential Equation.
-    
-    Models: dX_t = μ_θ(X_t, t) dt + σ_φ(X_t, t) dW_t
-    
-    Where μ_θ and σ_φ are neural networks.
-    
-    Example:
-        sde = NeuralSDE(state_dim=1, hidden_dim=32)
-        paths = sde.simulate(X0, T, n_steps, n_paths)
-        sde.fit(observed_paths, T, epochs=100)
-    """
-    
-    def __init__(
-        self,
-        state_dim: int = 1,
-        hidden_dim: int = 32,
-        learning_rate: float = 0.001,
-    ) -> None:
-        """
-        Initialize Neural SDE.
-        
-        Parameters
-        ----------
-        state_dim : int
-            Dimension of state X.
-        hidden_dim : int
-            Hidden layer dimension.
-        learning_rate : float
-            Learning rate for training.
-        """
-        self.state_dim = state_dim
-        self.learning_rate = learning_rate
-        
-        # Drift network: μ_θ(X, t) -> R^state_dim
-        # Input: [X, t]
-        self.drift_net = NeuralNetwork(
-            layer_dims=[state_dim + 1, hidden_dim, hidden_dim, state_dim],
-            activations=['tanh', 'tanh', 'linear'],
-        )
-        
-        # Diffusion network: σ_φ(X, t) -> R^state_dim (diagonal)
-        # Output through softplus to ensure positivity
-        self.diffusion_net = NeuralNetwork(
-            layer_dims=[state_dim + 1, hidden_dim, hidden_dim, state_dim],
-            activations=['tanh', 'tanh', 'softplus'],
-        )
-        
-        self.train_losses: List[float] = []
-    
-    def drift(self, X: np.ndarray, t: float) -> np.ndarray:
-        """
-        Compute drift μ_θ(X, t).
-        
-        Parameters
-        ----------
-        X : np.ndarray
-            State, shape (batch, state_dim).
-        t : float
-            Time.
-        
-        Returns
-        -------
-        np.ndarray
-            Drift values, shape (batch, state_dim).
-        """
-        t_vec = np.full((X.shape[0], 1), t)
-        inputs = np.hstack([X, t_vec])
-        return self.drift_net.forward(inputs)
-    
-    def diffusion(self, X: np.ndarray, t: float) -> np.ndarray:
-        """
-        Compute diffusion σ_φ(X, t).
-        
-        Parameters
-        ----------
-        X : np.ndarray
-            State, shape (batch, state_dim).
-        t : float
-            Time.
-        
-        Returns
-        -------
-        np.ndarray
-            Diffusion values (positive), shape (batch, state_dim).
-        """
-        t_vec = np.full((X.shape[0], 1), t)
-        inputs = np.hstack([X, t_vec])
-        # Ensure minimum diffusion for numerical stability
-        return self.diffusion_net.forward(inputs) + 1e-4
-    
-    def simulate(
-        self,
-        X0: np.ndarray,
-        T: float,
-        n_steps: int,
-        n_paths: int,
-        seed: Optional[int] = None,
-    ) -> np.ndarray:
-        """
-        Simulate paths using Euler-Maruyama scheme.
-        
-        Parameters
-        ----------
-        X0 : np.ndarray
-            Initial state, shape (state_dim,).
-        T : float
-            Time horizon.
-        n_steps : int
-            Number of time steps.
-        n_paths : int
-            Number of paths to simulate.
-        seed : Optional[int]
-            Random seed.
-        
-        Returns
-        -------
-        np.ndarray
-            Paths, shape (n_paths, n_steps + 1, state_dim).
-        """
-        if seed is not None:
-            np.random.seed(seed)
-        
-        dt = T / n_steps
-        sqrt_dt = np.sqrt(dt)
-        
-        # Initialize paths
-        paths = np.zeros((n_paths, n_steps + 1, self.state_dim))
-        paths[:, 0, :] = X0
-        
-        # Euler-Maruyama
-        for i in range(n_steps):
-            t = i * dt
-            X = paths[:, i, :]
-            
-            mu = self.drift(X, t)
-            sigma = self.diffusion(X, t)
-            
-            dW = np.random.randn(n_paths, self.state_dim) * sqrt_dt
-            
-            paths[:, i + 1, :] = X + mu * dt + sigma * dW
-        
-        return paths
-    
-    def fit(
-        self,
-        observed_paths: np.ndarray,
-        T: float,
-        epochs: int = 100,
-        batch_size: int = 64,
-        verbose: bool = True,
-    ) -> None:
-        """
-        Fit Neural SDE to observed paths.
-        
-        Uses MSE loss on drift prediction + variance matching for diffusion.
-        This provides interpretable, always-positive loss values.
-        
-        Parameters
-        ----------
-        observed_paths : np.ndarray
-            Observed paths, shape (n_paths, n_steps + 1, state_dim).
-        T : float
-            Time horizon.
-        epochs : int
-            Training epochs.
-        batch_size : int
-            Batch size.
-        verbose : bool
-            Print progress.
-        """
-        n_paths, n_steps_plus_1, _ = observed_paths.shape
-        n_steps = n_steps_plus_1 - 1
-        dt = T / n_steps
-        sqrt_dt = np.sqrt(dt)
-        
-        # Compute empirical increments for diffusion target
-        # dX = X_{t+1} - X_t, empirical volatility from data
-        increments = np.diff(observed_paths, axis=1)  # (n_paths, n_steps, state_dim)
-        
-        for epoch in range(epochs):
-            epoch_drift_loss = 0.0
-            epoch_diff_loss = 0.0
-            n_batches = 0
-            
-            # Shuffle paths
-            perm = np.random.permutation(n_paths)
-            
-            for batch_start in range(0, n_paths, batch_size):
-                batch_idx = perm[batch_start:batch_start + batch_size]
-                batch_paths = observed_paths[batch_idx]
-                batch_increments = increments[batch_idx]
-                
-                # Process each time step
-                for i in range(n_steps):
-                    t = i * dt
-                    X = batch_paths[:, i, :]
-                    dX_actual = batch_increments[:, i, :]  # Actual increment
-                    
-                    # Forward pass
-                    mu = self.drift(X, t)
-                    sigma = self.diffusion(X, t)
-                    
-                    # Drift prediction: dX ≈ μ·dt, so μ ≈ dX/dt
-                    # MSE loss on drift
-                    drift_target = dX_actual / dt
-                    drift_loss = np.mean((mu - drift_target) ** 2)
-                    
-                    # Diffusion: match variance of residuals
-                    # Var(dX - μ·dt) = σ²·dt, so σ ≈ |dX - μ·dt| / sqrt(dt)
-                    residual = dX_actual - mu * dt
-                    empirical_vol = np.abs(residual) / sqrt_dt
-                    diff_loss = np.mean((sigma - empirical_vol) ** 2)
-                    
-                    epoch_drift_loss += drift_loss
-                    epoch_diff_loss += diff_loss
-                    
-                    # Backward pass for drift
-                    grad_mu = 2 * (mu - drift_target) / len(batch_idx)
-                    t_vec = np.full((len(batch_idx), 1), t)
-                    inputs = np.hstack([X, t_vec])
-                    _ = self.drift_net.forward(inputs)
-                    self.drift_net.backward(grad_mu)
-                    self.drift_net.update_params(self.learning_rate)
-                    
-                    # Backward pass for diffusion
-                    grad_sigma = 2 * (sigma - empirical_vol) / len(batch_idx)
-                    _ = self.diffusion_net.forward(inputs)
-                    self.diffusion_net.backward(grad_sigma)
-                    self.diffusion_net.update_params(self.learning_rate * 0.1)  # Slower for stability
-                
-                n_batches += 1
-            
-            # Combined loss (weighted sum)
-            avg_drift_loss = epoch_drift_loss / (n_batches * n_steps)
-            avg_diff_loss = epoch_diff_loss / (n_batches * n_steps)
-            total_loss = avg_drift_loss + 0.1 * avg_diff_loss  # Weight diffusion less
-            
-            self.train_losses.append(total_loss)
-            
-            if verbose and (epoch + 1) % 20 == 0:
-                logger.info(
-                    f"Epoch {epoch + 1:>3}/{epochs}: "
-                    f"Drift Loss = {avg_drift_loss:.6f}, "
-                    f"Diff Loss = {avg_diff_loss:.6f}"
-                )
-
-
-# =============================================================================
-# TARGET SDE MODELS
+# SYNTHETIC DATA GENERATION (TARGET MODELS)
 # =============================================================================
 
 def simulate_gbm_paths(
@@ -501,21 +128,43 @@ def simulate_gbm_paths(
     """
     Simulate Geometric Brownian Motion paths.
     
-    dS_t = μ S_t dt + σ S_t dW_t
+    dS = μ·S·dt + σ·S·dW
+    
+    Parameters
+    ----------
+    S0 : float
+        Initial spot price.
+    mu : float
+        Drift (annualized).
+    sigma : float
+        Volatility (annualized).
+    T : float
+        Time horizon in years.
+    n_steps : int
+        Number of time steps.
+    n_paths : int
+        Number of paths to simulate.
+    seed : int, optional
+        Random seed.
+    
+    Returns
+    -------
+    ndarray
+        Paths of shape (n_paths, n_steps + 1).
     """
-    if seed is not None:
-        np.random.seed(seed)
+    rng = np.random.default_rng(seed)
     
     dt = T / n_steps
     sqrt_dt = np.sqrt(dt)
     
-    paths = np.zeros((n_paths, n_steps + 1, 1))
-    paths[:, 0, 0] = S0
+    paths = np.zeros((n_paths, n_steps + 1))
+    paths[:, 0] = S0
     
     for i in range(n_steps):
-        S = paths[:, i, 0]
-        dW = np.random.randn(n_paths) * sqrt_dt
-        paths[:, i + 1, 0] = S + mu * S * dt + sigma * S * dW
+        dW = rng.standard_normal(n_paths) * sqrt_dt
+        paths[:, i + 1] = paths[:, i] * np.exp(
+            (mu - 0.5 * sigma**2) * dt + sigma * dW
+        )
     
     return paths
 
@@ -533,333 +182,437 @@ def simulate_cev_paths(
     """
     Simulate Constant Elasticity of Variance (CEV) paths.
     
-    dS_t = μ S_t dt + σ S_t^γ dW_t
+    dS = μ·S·dt + σ·S^γ·dW
+    
+    Parameters
+    ----------
+    S0 : float
+        Initial spot price.
+    mu : float
+        Drift.
+    sigma : float
+        Volatility scale.
+    gamma : float
+        CEV exponent (γ=1 is GBM, γ<1 gives leverage effect).
+    T : float
+        Time horizon.
+    n_steps : int
+        Number of steps.
+    n_paths : int
+        Number of paths.
+    seed : int, optional
+        Random seed.
+    
+    Returns
+    -------
+    ndarray
+        Paths of shape (n_paths, n_steps + 1).
     """
-    if seed is not None:
-        np.random.seed(seed)
+    rng = np.random.default_rng(seed)
     
     dt = T / n_steps
     sqrt_dt = np.sqrt(dt)
     
-    paths = np.zeros((n_paths, n_steps + 1, 1))
-    paths[:, 0, 0] = S0
+    paths = np.zeros((n_paths, n_steps + 1))
+    paths[:, 0] = S0
     
     for i in range(n_steps):
-        S = np.maximum(paths[:, i, 0], 1e-6)  # Prevent negative
-        dW = np.random.randn(n_paths) * sqrt_dt
-        paths[:, i + 1, 0] = S + mu * S * dt + sigma * (S ** gamma) * dW
-        paths[:, i + 1, 0] = np.maximum(paths[:, i + 1, 0], 1e-6)
+        S = np.maximum(paths[:, i], 1e-6)
+        dW = rng.standard_normal(n_paths) * sqrt_dt
+        paths[:, i + 1] = S + mu * S * dt + sigma * (S ** gamma) * dW
+        paths[:, i + 1] = np.maximum(paths[:, i + 1], 1e-6)
     
     return paths
 
 
-def simulate_ou_paths(
-    X0: float,
+def simulate_mean_reverting_vol_paths(
+    S0: float,
+    kappa: float,
     theta: float,
-    mu: float,
-    sigma: float,
+    sigma_vol: float,
     T: float,
     n_steps: int,
     n_paths: int,
     seed: Optional[int] = None,
 ) -> np.ndarray:
     """
-    Simulate Ornstein-Uhlenbeck paths.
+    Simulate paths with mean-reverting stochastic volatility (simplified).
     
-    dX_t = θ(μ - X_t) dt + σ dW_t
+    dS = μ·S·dt + σ_t·S·dW
+    dσ = κ(θ - σ)·dt + σ_v·dZ
+    
+    Parameters
+    ----------
+    S0 : float
+        Initial spot.
+    kappa : float
+        Mean reversion speed.
+    theta : float
+        Long-term volatility.
+    sigma_vol : float
+        Vol of vol.
+    T : float
+        Time horizon.
+    n_steps : int
+        Number of steps.
+    n_paths : int
+        Number of paths.
+    seed : int, optional
+        Random seed.
+    
+    Returns
+    -------
+    ndarray
+        Paths of shape (n_paths, n_steps + 1).
     """
-    if seed is not None:
-        np.random.seed(seed)
+    rng = np.random.default_rng(seed)
     
     dt = T / n_steps
     sqrt_dt = np.sqrt(dt)
     
-    paths = np.zeros((n_paths, n_steps + 1, 1))
-    paths[:, 0, 0] = X0
+    paths = np.zeros((n_paths, n_steps + 1))
+    paths[:, 0] = S0
+    
+    vol = np.full(n_paths, theta)
     
     for i in range(n_steps):
-        X = paths[:, i, 0]
-        dW = np.random.randn(n_paths) * sqrt_dt
-        paths[:, i + 1, 0] = X + theta * (mu - X) * dt + sigma * dW
+        dW_s = rng.standard_normal(n_paths) * sqrt_dt
+        dW_v = rng.standard_normal(n_paths) * sqrt_dt
+        
+        # Update volatility
+        vol = vol + kappa * (theta - vol) * dt + sigma_vol * dW_v
+        vol = np.maximum(vol, 0.01)
+        
+        # Update spot
+        S = paths[:, i]
+        paths[:, i + 1] = S * np.exp(-0.5 * vol**2 * dt + vol * dW_s)
     
     return paths
+
+
+# =============================================================================
+# EVALUATION FUNCTIONS
+# =============================================================================
+
+def compute_path_statistics(paths: np.ndarray) -> Dict[str, float]:
+    """
+    Compute summary statistics from paths.
+    
+    Parameters
+    ----------
+    paths : ndarray
+        Paths of shape (n_paths, n_steps + 1).
+    
+    Returns
+    -------
+    dict
+        Statistics dictionary.
+    """
+    final_prices = paths[:, -1]
+    returns = np.log(paths[:, -1] / paths[:, 0])
+    
+    # Daily returns for higher moments
+    daily_returns = np.diff(np.log(paths), axis=1).flatten()
+    
+    mean_return = np.mean(returns)
+    std_return = np.std(returns)
+    
+    # Skewness
+    if std_return > 1e-8:
+        skewness = np.mean(((returns - mean_return) / std_return) ** 3)
+    else:
+        skewness = 0.0
+    
+    # Kurtosis (excess)
+    if std_return > 1e-8:
+        kurtosis = np.mean(((returns - mean_return) / std_return) ** 4) - 3
+    else:
+        kurtosis = 0.0
+    
+    return {
+        "mean_final": float(np.mean(final_prices)),
+        "std_final": float(np.std(final_prices)),
+        "mean_return": float(mean_return),
+        "std_return": float(std_return),
+        "skewness": float(skewness),
+        "kurtosis": float(kurtosis),
+        "min_price": float(np.min(final_prices)),
+        "max_price": float(np.max(final_prices)),
+    }
+
+
+def compare_distributions(
+    true_paths: np.ndarray,
+    model_paths: np.ndarray,
+) -> Dict[str, float]:
+    """
+    Compare terminal distributions.
+    
+    Parameters
+    ----------
+    true_paths : ndarray
+        True paths.
+    model_paths : ndarray
+        Model-generated paths.
+    
+    Returns
+    -------
+    dict
+        Comparison metrics.
+    """
+    true_final = true_paths[:, -1]
+    model_final = model_paths[:, -1]
+    
+    # Mean and std errors
+    mean_error = abs(np.mean(model_final) - np.mean(true_final)) / np.mean(true_final)
+    std_error = abs(np.std(model_final) - np.std(true_final)) / np.std(true_final)
+    
+    # Kolmogorov-Smirnov style max difference
+    true_sorted = np.sort(true_final)
+    model_sorted = np.sort(model_final)
+    
+    # Resample to same size for comparison
+    n = min(len(true_sorted), len(model_sorted))
+    true_q = np.interp(np.linspace(0, 1, n), np.linspace(0, 1, len(true_sorted)), true_sorted)
+    model_q = np.interp(np.linspace(0, 1, n), np.linspace(0, 1, len(model_sorted)), model_sorted)
+    
+    ks_stat = np.max(np.abs(true_q - model_q)) / np.mean(true_final)
+    
+    return {
+        "mean_error_pct": float(mean_error * 100),
+        "std_error_pct": float(std_error * 100),
+        "ks_stat_pct": float(ks_stat * 100),
+    }
 
 
 # =============================================================================
 # MAIN WORKFLOW
 # =============================================================================
 
-@dataclass
-class ExperimentConfig:
-    """Configuration for Neural SDE experiment."""
-    T: float = 1.0
-    n_steps: int = 50
-    n_train_paths: int = 1000
-    n_test_paths: int = 200
-    hidden_dim: int = 32
-    epochs: int = 100
-    learning_rate: float = 0.01
-
-
-def run_neural_sde() -> Tuple[dict, dict]:
+def run_neural_sde() -> Tuple[Dict[str, TrainingResult], Dict[str, Dict]]:
     """
     Run Neural SDE experiments.
     
     Returns
     -------
     Tuple
-        Experiment results and trained models.
+        Training results and comparison metrics.
     """
     logger.info("=" * 70)
-    logger.info("SECTION 1: Neural SDE for GBM")
+    logger.info("SECTION 1: Data Generation")
     logger.info("=" * 70)
     
-    config = ExperimentConfig()
-    results = {}
-    models = {}
-    
-    # -------------------------------------------------------------------------
-    # Experiment 1: Learn GBM dynamics
-    # -------------------------------------------------------------------------
-    logger.info("")
-    logger.info("Generating GBM training data...")
-    
+    # Generate training data from GBM
     S0 = 100.0
     mu_true = 0.05
     sigma_true = 0.2
+    T = 1.0
+    n_steps = 50
+    n_train_paths = 2000
+    n_test_paths = 500
     
-    gbm_train = simulate_gbm_paths(
-        S0, mu_true, sigma_true, config.T, config.n_steps,
-        config.n_train_paths, seed=42
-    )
-    
-    gbm_test = simulate_gbm_paths(
-        S0, mu_true, sigma_true, config.T, config.n_steps,
-        config.n_test_paths, seed=123
-    )
-    
-    logger.info(f"  Train paths: {config.n_train_paths}")
-    logger.info(f"  Test paths:  {config.n_test_paths}")
-    logger.info(f"  Time steps:  {config.n_steps}")
-    
-    # Normalize for training
-    gbm_train_norm = gbm_train / S0
-    gbm_test_norm = gbm_test / S0
-    
-    # Train Neural SDE
     logger.info("")
-    logger.info("Training Neural SDE on GBM data...")
+    logger.info("Generating GBM training data...")
+    logger.info(f"  S0={S0}, μ={mu_true}, σ={sigma_true}")
+    logger.info(f"  T={T}y, steps={n_steps}")
+    logger.info(f"  Train paths: {n_train_paths}")
+    logger.info(f"  Test paths:  {n_test_paths}")
     
-    nsde_gbm = NeuralSDE(
-        state_dim=1,
-        hidden_dim=config.hidden_dim,
-        learning_rate=config.learning_rate,
-    )
+    gbm_train = simulate_gbm_paths(S0, mu_true, sigma_true, T, n_steps, n_train_paths, seed=42)
+    gbm_test = simulate_gbm_paths(S0, mu_true, sigma_true, T, n_steps, n_test_paths, seed=123)
     
-    nsde_gbm.fit(gbm_train_norm, config.T, epochs=config.epochs)
-    
-    # Evaluate
+    # Statistics of true data
+    train_stats = compute_path_statistics(gbm_train)
     logger.info("")
-    logger.info("Evaluating on test data...")
+    logger.info(f"  Training data stats:")
+    logger.info(f"    Mean final: {train_stats['mean_final']:.2f}")
+    logger.info(f"    Std final:  {train_stats['std_final']:.2f}")
+    logger.info(f"    Mean return: {train_stats['mean_return']:.4f}")
     
-    nsde_gbm_paths = nsde_gbm.simulate(
-        X0=np.array([1.0]),
-        T=config.T,
-        n_steps=config.n_steps,
-        n_paths=config.n_test_paths,
-        seed=123,
-    ) * S0
-    
-    # Compare terminal distributions
-    true_terminal = gbm_test[:, -1, 0]
-    pred_terminal = nsde_gbm_paths[:, -1, 0]
-    
-    results['gbm'] = {
-        'true_mean': np.mean(true_terminal),
-        'pred_mean': np.mean(pred_terminal),
-        'true_std': np.std(true_terminal),
-        'pred_std': np.std(pred_terminal),
-        'true_paths': gbm_test,
-        'pred_paths': nsde_gbm_paths,
-        'train_loss': nsde_gbm.train_losses,
-    }
-    
-    models['gbm'] = nsde_gbm
-    
-    logger.info(f"  True terminal: mean={results['gbm']['true_mean']:.2f}, std={results['gbm']['true_std']:.2f}")
-    logger.info(f"  Pred terminal: mean={results['gbm']['pred_mean']:.2f}, std={results['gbm']['pred_std']:.2f}")
-    
-    # -------------------------------------------------------------------------
-    # Experiment 2: Learn OU dynamics
-    # -------------------------------------------------------------------------
+    # Create Neural SDE
     logger.info("")
     logger.info("=" * 70)
-    logger.info("SECTION 2: Neural SDE for Ornstein-Uhlenbeck")
+    logger.info("SECTION 2: Neural SDE Setup")
     logger.info("=" * 70)
     
-    X0 = 0.0
-    theta_true = 2.0
-    mu_true_ou = 0.5
-    sigma_true_ou = 0.3
+    sde_config = NeuralSDEConfig(
+        drift_hidden_dims=[64, 32],
+        diffusion_hidden_dims=[64, 32],
+        activation="tanh",
+        min_vol=0.01,
+        max_vol=1.0,
+        solver_type="euler",
+        S_mean=S0,
+        S_std=20.0,
+    )
+    
+    neural_sde = NeuralSDEDynamics(config=sde_config, seed=42)
     
     logger.info("")
-    logger.info("Generating OU training data...")
+    logger.info("  Neural SDE Configuration:")
+    logger.info(f"    Drift network:     {sde_config.drift_hidden_dims}")
+    logger.info(f"    Diffusion network: {sde_config.diffusion_hidden_dims}")
+    logger.info(f"    Activation:        {sde_config.activation}")
+    logger.info(f"    Vol range:         [{sde_config.min_vol}, {sde_config.max_vol}]")
+    logger.info(f"    Solver:            {sde_config.solver_type}")
     
-    ou_train = simulate_ou_paths(
-        X0, theta_true, mu_true_ou, sigma_true_ou, config.T, config.n_steps,
-        config.n_train_paths, seed=42
-    )
-    
-    ou_test = simulate_ou_paths(
-        X0, theta_true, mu_true_ou, sigma_true_ou, config.T, config.n_steps,
-        config.n_test_paths, seed=123
-    )
-    
-    # Train
-    logger.info("Training Neural SDE on OU data...")
-    
-    nsde_ou = NeuralSDE(
-        state_dim=1,
-        hidden_dim=config.hidden_dim,
-        learning_rate=config.learning_rate,
-    )
-    
-    nsde_ou.fit(ou_train, config.T, epochs=config.epochs)
-    
-    # Evaluate
-    nsde_ou_paths = nsde_ou.simulate(
-        X0=np.array([X0]),
-        T=config.T,
-        n_steps=config.n_steps,
-        n_paths=config.n_test_paths,
-        seed=123,
-    )
-    
-    true_terminal_ou = ou_test[:, -1, 0]
-    pred_terminal_ou = nsde_ou_paths[:, -1, 0]
-    
-    results['ou'] = {
-        'true_mean': np.mean(true_terminal_ou),
-        'pred_mean': np.mean(pred_terminal_ou),
-        'true_std': np.std(true_terminal_ou),
-        'pred_std': np.std(pred_terminal_ou),
-        'true_paths': ou_test,
-        'pred_paths': nsde_ou_paths,
-        'train_loss': nsde_ou.train_losses,
-    }
-    
-    models['ou'] = nsde_ou
-    
-    logger.info(f"  True terminal: mean={results['ou']['true_mean']:.3f}, std={results['ou']['true_std']:.3f}")
-    logger.info(f"  Pred terminal: mean={results['ou']['pred_mean']:.3f}, std={results['ou']['pred_std']:.3f}")
-    
-    # -------------------------------------------------------------------------
-    # Summary metrics
-    # -------------------------------------------------------------------------
+    # Training
     logger.info("")
     logger.info("=" * 70)
-    logger.info("SECTION 3: Summary Metrics")
+    logger.info("SECTION 3: Training")
     logger.info("=" * 70)
     
+    training_config = TrainingConfig(
+        n_epochs=60,
+        learning_rate=0.001,
+        batch_size=64,
+        moment_weight=1.0,
+        pathwise_weight=0.5,
+        l2_reg=1e-5,
+        n_sim_paths=500,
+        n_sim_steps=n_steps,
+        patience=15,
+        verbose=True,
+        log_interval=20,
+    )
+    
     logger.info("")
-    logger.info(f"{'Model':<10} {'True Mean':>12} {'Pred Mean':>12} {'Mean Err':>10} {'Std Err':>10}")
+    logger.info(f"  Training Configuration:")
+    logger.info(f"    Epochs:         {training_config.n_epochs}")
+    logger.info(f"    Learning rate:  {training_config.learning_rate}")
+    logger.info(f"    Batch size:     {training_config.batch_size}")
+    logger.info(f"    Moment weight:  {training_config.moment_weight}")
+    logger.info(f"    Pathwise weight: {training_config.pathwise_weight}")
+    logger.info("")
+    
+    trainer = NeuralSDETrainer(config=training_config, seed=42)
+    
+    start_time = time.time()
+    training_result = trainer.fit(
+        model=neural_sde,
+        historical_paths=gbm_train,
+    )
+    training_time = time.time() - start_time
+    
+    logger.info("")
+    logger.info(f"  Training completed in {training_time:.1f}s")
+    logger.info(f"  Final loss: {training_result.final_loss:.6f}")
+    logger.info(f"  Converged:  {training_result.converged}")
+    
+    # Evaluation
+    logger.info("")
+    logger.info("=" * 70)
+    logger.info("SECTION 4: Evaluation")
+    logger.info("=" * 70)
+    
+    # Simulate from trained model
+    logger.info("")
+    logger.info("Simulating from trained Neural SDE...")
+    
+    model_paths = neural_sde.simulate(
+        S0=S0,
+        T=T,
+        n_steps=n_steps,
+        n_paths=n_test_paths,
+    )
+    
+    # Compare statistics
+    model_stats = compute_path_statistics(model_paths)
+    true_stats = compute_path_statistics(gbm_test)
+    comparison = compare_distributions(gbm_test, model_paths)
+    
+    logger.info("")
+    logger.info(f"{'Statistic':<20} {'True':>12} {'Neural SDE':>12} {'Error':>10}")
     logger.info("-" * 60)
+    logger.info(f"{'Mean Final':<20} {true_stats['mean_final']:>12.2f} {model_stats['mean_final']:>12.2f} {comparison['mean_error_pct']:>9.1f}%")
+    logger.info(f"{'Std Final':<20} {true_stats['std_final']:>12.2f} {model_stats['std_final']:>12.2f} {comparison['std_error_pct']:>9.1f}%")
+    logger.info(f"{'Mean Return':<20} {true_stats['mean_return']:>12.4f} {model_stats['mean_return']:>12.4f}")
+    logger.info(f"{'Std Return':<20} {true_stats['std_return']:>12.4f} {model_stats['std_return']:>12.4f}")
+    logger.info(f"{'Skewness':<20} {true_stats['skewness']:>12.4f} {model_stats['skewness']:>12.4f}")
+    logger.info(f"{'Kurtosis':<20} {true_stats['kurtosis']:>12.4f} {model_stats['kurtosis']:>12.4f}")
+    logger.info("-" * 60)
+    logger.info(f"  KS-like statistic: {comparison['ks_stat_pct']:.2f}%")
     
-    for name in ['gbm', 'ou']:
-        r = results[name]
-        mean_err = abs(r['true_mean'] - r['pred_mean']) / abs(r['true_mean'] + 1e-6) * 100
-        std_err = abs(r['true_std'] - r['pred_std']) / r['true_std'] * 100
-        logger.info(
-            f"{name.upper():<10} {r['true_mean']:>12.4f} {r['pred_mean']:>12.4f} "
-            f"{mean_err:>9.1f}% {std_err:>9.1f}%"
-        )
+    results = {
+        "training_result": training_result,
+        "comparison": comparison,
+        "true_stats": true_stats,
+        "model_stats": model_stats,
+        "true_paths": gbm_test,
+        "model_paths": model_paths,
+    }
     
-    return results, models
+    return {"gbm": training_result}, results
 
 
 # =============================================================================
 # VISUALIZATION
 # =============================================================================
 
-def visualize_neural_sde(results: dict, models: dict) -> None:
+def visualize_results(results: Dict) -> None:
     """Visualize Neural SDE results."""
     if not MATPLOTLIB_AVAILABLE or not ENABLE_PLOTTING:
-        logger.info("Skipping plots (matplotlib not available or disabled)")
+        logger.info("Skipping plots")
         return
     
     logger.info("")
     logger.info("=" * 70)
-    logger.info("SECTION 4: Visualization")
+    logger.info("SECTION 5: Visualization")
     logger.info("=" * 70)
     
     plt.style.use('seaborn-v0_8-whitegrid')
     
-    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
     
-    # -------------------------------------------------------------------------
-    # Row 1: GBM
-    # -------------------------------------------------------------------------
+    true_paths = results["true_paths"]
+    model_paths = results["model_paths"]
+    training_result = results["training_result"]
     
-    # Sample paths
+    # Plot 1: Sample true paths
     ax = axes[0, 0]
-    for i in range(min(20, results['gbm']['true_paths'].shape[0])):
-        ax.plot(results['gbm']['true_paths'][i, :, 0], alpha=0.3, color='#2E86AB')
+    for i in range(min(30, true_paths.shape[0])):
+        ax.plot(true_paths[i], alpha=0.4, color='#2E86AB', linewidth=0.8)
     ax.set_xlabel('Time Step')
     ax.set_ylabel('Price')
-    ax.set_title('GBM: True Paths')
+    ax.set_title('True GBM Paths')
     ax.grid(True, alpha=0.3)
     
+    # Plot 2: Sample model paths
     ax = axes[0, 1]
-    for i in range(min(20, results['gbm']['pred_paths'].shape[0])):
-        ax.plot(results['gbm']['pred_paths'][i, :, 0], alpha=0.3, color='#E94F37')
+    for i in range(min(30, model_paths.shape[0])):
+        ax.plot(model_paths[i], alpha=0.4, color='#E94F37', linewidth=0.8)
     ax.set_xlabel('Time Step')
     ax.set_ylabel('Price')
-    ax.set_title('GBM: Neural SDE Paths')
+    ax.set_title('Neural SDE Paths')
     ax.grid(True, alpha=0.3)
     
-    # Terminal distribution
-    ax = axes[0, 2]
-    ax.hist(results['gbm']['true_paths'][:, -1, 0], bins=30, alpha=0.5, label='True', color='#2E86AB', density=True)
-    ax.hist(results['gbm']['pred_paths'][:, -1, 0], bins=30, alpha=0.5, label='Neural SDE', color='#E94F37', density=True)
-    ax.set_xlabel('Terminal Value')
-    ax.set_ylabel('Density')
-    ax.set_title('GBM: Terminal Distribution')
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    
-    # -------------------------------------------------------------------------
-    # Row 2: OU
-    # -------------------------------------------------------------------------
-    
+    # Plot 3: Terminal distribution comparison
     ax = axes[1, 0]
-    for i in range(min(20, results['ou']['true_paths'].shape[0])):
-        ax.plot(results['ou']['true_paths'][i, :, 0], alpha=0.3, color='#2E86AB')
-    ax.axhline(y=0.5, color='black', linestyle='--', linewidth=2, label='μ=0.5')
-    ax.set_xlabel('Time Step')
-    ax.set_ylabel('Value')
-    ax.set_title('OU: True Paths (mean-reverting)')
+    ax.hist(true_paths[:, -1], bins=40, alpha=0.5, density=True, 
+            label='True', color='#2E86AB')
+    ax.hist(model_paths[:, -1], bins=40, alpha=0.5, density=True,
+            label='Neural SDE', color='#E94F37')
+    ax.set_xlabel('Terminal Price')
+    ax.set_ylabel('Density')
+    ax.set_title('Terminal Distribution Comparison')
     ax.legend()
     ax.grid(True, alpha=0.3)
     
+    # Plot 4: Training loss
     ax = axes[1, 1]
-    for i in range(min(20, results['ou']['pred_paths'].shape[0])):
-        ax.plot(results['ou']['pred_paths'][i, :, 0], alpha=0.3, color='#E94F37')
-    ax.axhline(y=0.5, color='black', linestyle='--', linewidth=2, label='μ=0.5')
-    ax.set_xlabel('Time Step')
-    ax.set_ylabel('Value')
-    ax.set_title('OU: Neural SDE Paths')
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    
-    # Training loss
-    ax = axes[1, 2]
-    ax.plot(results['gbm']['train_loss'], label='GBM', color='#2E86AB')
-    ax.plot(results['ou']['train_loss'], label='OU', color='#E94F37')
-    ax.set_xlabel('Epoch')
-    ax.set_ylabel('Loss')
-    ax.set_title('Training Loss')
-    ax.legend()
-    ax.grid(True, alpha=0.3)
+    if training_result.loss_history:
+        ax.plot(training_result.loss_history, color='#2E86AB', linewidth=2, label='Total Loss')
+        if training_result.moment_losses:
+            ax.plot(training_result.moment_losses, color='#4CAF50', 
+                    linewidth=1.5, alpha=0.7, label='Moment Loss')
+        if training_result.pathwise_losses:
+            ax.plot(training_result.pathwise_losses, color='#E94F37',
+                    linewidth=1.5, alpha=0.7, label='Pathwise Loss')
+        ax.set_xlabel('Epoch')
+        ax.set_ylabel('Loss')
+        ax.set_title('Training History')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
     plt.show(block=True)
@@ -872,7 +625,7 @@ def visualize_neural_sde(results: dict, models: dict) -> None:
 # =============================================================================
 
 def print_summary() -> None:
-    """Print summary of key concepts."""
+    """Print key takeaways."""
     logger.info("")
     logger.info("=" * 70)
     logger.info("SUMMARY")
@@ -883,28 +636,28 @@ def print_summary() -> None:
     │                         KEY TAKEAWAYS                                │
     ├─────────────────────────────────────────────────────────────────────┤
     │                                                                      │
-    │  1. Neural SDE Formulation:                                         │
-    │     - dX = μ_θ(X,t) dt + σ_φ(X,t) dW                               │
-    │     - μ_θ, σ_φ are neural networks                                  │
-    │     - Learns dynamics from observed paths                           │
+    │  1. QuantStrata Neural SDE Module:                                  │
+    │     - NeuralSDEDynamics: Main class for learnable dynamics          │
+    │     - NeuralDriftNetwork: Neural network for μ_θ(S, t)              │
+    │     - NeuralDiffusionNetwork: Neural network for σ_φ(S, t)          │
+    │     - EulerMaruyama/Milstein solvers for simulation                 │
     │                                                                      │
-    │  2. Training Approach:                                              │
-    │     - Maximum likelihood via score matching                         │
-    │     - Euler-Maruyama discretization                                 │
-    │     - Backprop through SDE solution                                 │
+    │  2. Network Design:                                                 │
+    │     - Drift: Any real output (linear activation)                    │
+    │     - Diffusion: Positive output (softplus + clipping)              │
+    │     - Input normalization for training stability                    │
     │                                                                      │
-    │  3. Architecture Design:                                            │
-    │     - Separate drift and diffusion networks                         │
-    │     - Softplus for positive diffusion                               │
-    │     - Input: (X, t) for time-varying dynamics                       │
+    │  3. Training Pipeline:                                              │
+    │     - NeuralSDETrainer with TrainingConfig                          │
+    │     - Moment matching loss (mean, variance)                         │
+    │     - Pathwise loss (trajectory similarity)                         │
+    │     - Early stopping and L2 regularization                          │
     │                                                                      │
     │  4. Production Considerations:                                      │
-    │     - Regularization to prevent overfitting                         │
-    │     - Validation on out-of-sample paths                             │
-    │     - Compare to parametric models                                  │
-    │     - Use for pricing, simulation, risk                             │
-    │                                                                      │
-    │  Neural SDEs offer flexible, data-driven dynamics modeling          │
+    │     - Validate against known parametric models                      │
+    │     - Compare terminal distributions                                │
+    │     - Check moment matching (mean, std, skew, kurtosis)             │
+    │     - Use for pricing, risk simulation, stress testing              │
     │                                                                      │
     └─────────────────────────────────────────────────────────────────────┘
     """
@@ -912,31 +665,18 @@ def print_summary() -> None:
 
 
 # =============================================================================
-# MAIN ENTRY POINT
+# MAIN
 # =============================================================================
 
 def main(args: argparse.Namespace) -> None:
-    """
-    Main entry point for the example.
-    
-    Parameters
-    ----------
-    args : argparse.Namespace
-        Command-line arguments.
-    """
+    """Main entry point."""
     global ENABLE_PLOTTING
     ENABLE_PLOTTING = args.plot
     
     try:
-        # Run Neural SDE experiments
-        results, models = run_neural_sde()
-        
-        # Visualization
-        visualize_neural_sde(results, models)
-        
-        # Summary
+        training_results, results = run_neural_sde()
+        visualize_results(results)
         print_summary()
-        
         logger.info("Example completed successfully!")
         
     except Exception as e:
@@ -945,22 +685,9 @@ def main(args: argparse.Namespace) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Neural SDE Example",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument(
-        "--plot",
-        action="store_true",
-        default=True,
-        help="Enable plotting (default: True)",
-    )
-    parser.add_argument(
-        "--no-plot",
-        action="store_false",
-        dest="plot",
-        help="Disable plotting",
-    )
+    parser = argparse.ArgumentParser(description="Neural SDE Example")
+    parser.add_argument("--plot", action="store_true", default=True)
+    parser.add_argument("--no-plot", action="store_false", dest="plot")
     
     args = parser.parse_args()
     main(args)
