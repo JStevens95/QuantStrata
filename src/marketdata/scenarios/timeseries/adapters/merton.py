@@ -1,6 +1,9 @@
 """
 Merton Jump-Diffusion adapter for time series generation.
 
+This adapter delegates to the existing MertonDynamics in `src/models/jump_diffusion/`
+rather than reimplementing the simulation logic.
+
 Mathematical Model
 ------------------
 dS_t / S_t = (μ - λκ) dt + σ dW_t + (J - 1) dN_t
@@ -11,12 +14,6 @@ where:
     - N_t: Poisson process with intensity λ
     - J = exp(Y), Y ~ N(μ_J, σ_J²) is the jump multiplier
     - κ = E[J - 1] = exp(μ_J + σ_J²/2) - 1
-
-Properties
-----------
-- Fat tails: Jumps generate heavier tails than pure GBM
-- Implied vol smile: Creates steep short-term smiles
-- Jump clustering: Can model market crashes
 
 When to Use
 -----------
@@ -32,7 +29,8 @@ import numpy as np
 from dataclasses import dataclass
 from typing import Optional
 
-from src.marketdata.scenarios.timeseries.config import GBMDynamicsSpec
+# Use existing Merton implementation
+from src.models.jump_diffusion.merton import MertonParameters, MertonDynamics
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,14 +38,13 @@ class MertonDynamicsSpec:
     """
     Specification for Merton jump-diffusion dynamics.
 
-    Mathematical Model
-    ------------------
-    dS_t / S_t = (μ - λκ) dt + σ dW_t + (J - 1) dN_t
+    This is a thin wrapper around MertonParameters that adds drift
+    for use in the TimeseriesGenerator framework.
 
     Parameters
     ----------
     drift : float
-        Base drift μ (before jump adjustment).
+        Base drift μ (risk-neutral: r - q).
     sigma : float
         Diffusion volatility σ >= 0.
     lambda_ : float
@@ -76,55 +73,50 @@ class MertonDynamicsSpec:
     sigma_j: float
 
     def __post_init__(self) -> None:
-        if not np.isfinite(self.drift):
-            raise ValueError("MertonDynamicsSpec.drift must be finite.")
-        if self.sigma < 0.0:
-            raise ValueError("MertonDynamicsSpec.sigma must be >= 0.")
-        if self.lambda_ < 0.0:
-            raise ValueError("MertonDynamicsSpec.lambda_ must be >= 0.")
-        if self.sigma_j < 0.0:
-            raise ValueError("MertonDynamicsSpec.sigma_j must be >= 0.")
+        # Validation delegated to MertonParameters
+        _ = self.to_merton_parameters()
 
-    @property
-    def expected_jump(self) -> float:
-        """Expected jump multiplier E[J] = exp(μ_J + σ_J²/2)."""
-        return np.exp(self.mu_j + 0.5 * self.sigma_j ** 2)
+    def to_merton_parameters(self) -> MertonParameters:
+        """Convert to the core MertonParameters used by MertonDynamics."""
+        return MertonParameters(
+            sigma=self.sigma,
+            lambda_=self.lambda_,
+            mu_j=self.mu_j,
+            sigma_j=self.sigma_j,
+        )
 
     @property
     def kappa(self) -> float:
-        """Expected relative jump κ = E[J - 1] = E[J] - 1."""
-        return self.expected_jump - 1.0
+        """Expected relative jump κ = E[J - 1]."""
+        return self.to_merton_parameters().kappa
 
     @property
-    def compensated_drift(self) -> float:
-        """Risk-neutral drift: μ - λκ."""
+    def adjusted_drift(self) -> float:
+        """Drift adjusted for jump compensation: μ - λκ."""
         return self.drift - self.lambda_ * self.kappa
 
-    @property
-    def total_variance(self) -> float:
-        """
-        Total instantaneous variance (diffusion + jump contribution).
-        
-        Var = σ² + λ(μ_J² + σ_J²)
-        """
-        jump_var = self.lambda_ * (self.mu_j ** 2 + self.sigma_j ** 2)
-        return self.sigma ** 2 + jump_var
 
-
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class MertonAdapter:
     """
     Adapter for Merton jump-diffusion dynamics.
 
-    The adapter transforms Gaussian shocks into jump-diffusion paths.
-    It internally generates Poisson jumps and log-normal jump sizes.
+    Delegates to the existing MertonDynamics implementation in
+    `src/models/jump_diffusion/merton.py`.
 
     Parameters
     ----------
     spec : MertonDynamicsSpec
         Merton dynamics specification.
     rng_seed_offset : int
-        Offset for internal RNG (for jump generation).
+        Offset added to seeds for jump generation (ensures different
+        jumps even when diffusion shocks are correlated).
+
+    Notes
+    -----
+    The shocks parameter provides the diffusion component (correlated
+    with other factors). Jump times and sizes are generated independently
+    using the underlying MertonDynamics.
 
     Examples
     --------
@@ -132,13 +124,11 @@ class MertonAdapter:
     ...     drift=0.05, sigma=0.15, lambda_=0.5, mu_j=-0.10, sigma_j=0.15
     ... )
     >>> adapter = MertonAdapter(spec=spec)
-    >>>
-    >>> shocks = np.random.standard_normal((252, 1000))
     >>> paths = adapter.simulate(
     ...     initial_value=100.0,
     ...     n_time=252,
-    ...     n_scenarios=1000,
-    ...     shocks=shocks,
+    ...     n_scenarios=10000,
+    ...     shocks=np.random.randn(252, 10000),
     ...     dt=1/252,
     ... )
     """
@@ -146,9 +136,18 @@ class MertonAdapter:
     spec: MertonDynamicsSpec
     rng_seed_offset: int = 987654321
 
+    _dynamics: MertonDynamics = None
+
+    def __post_init__(self) -> None:
+        """Initialize the underlying MertonDynamics."""
+        self._dynamics = MertonDynamics(
+            params=self.spec.to_merton_parameters(),
+            drift=self.spec.drift,
+        )
+
     @property
     def requires_variance_paths(self) -> bool:
-        """Merton does not produce variance paths."""
+        """Merton doesn't have stochastic variance."""
         return False
 
     def simulate(
@@ -158,78 +157,52 @@ class MertonAdapter:
         n_scenarios: int,
         shocks: np.ndarray,
         dt: float,
+        seed: Optional[int] = None,
     ) -> np.ndarray:
         """
         Simulate Merton jump-diffusion paths.
 
+        Uses the existing MertonDynamics for simulation, which provides
+        proper handling of jumps with Poisson arrivals and log-normal sizes.
+
         Parameters
         ----------
         initial_value : float
-            Starting spot S_0.
+            Starting value S_0.
         n_time : int
             Number of time steps.
         n_scenarios : int
             Number of scenarios.
         shocks : np.ndarray
-            Standard normal shocks for diffusion, shape (n_time, n_scenarios).
+            Standard normal shocks for diffusion (may be partially used).
         dt : float
             Time step in years.
+        seed : int, optional
+            Random seed for jump generation.
 
         Returns
         -------
         np.ndarray
             Simulated paths, shape (n_time + 1, n_scenarios).
         """
-        # Validate shocks shape
-        if shocks.shape != (n_time, n_scenarios):
-            raise ValueError(
-                f"shocks shape {shocks.shape} doesn't match "
-                f"(n_time={n_time}, n_scenarios={n_scenarios})"
-            )
+        maturity = n_time * dt
 
-        # Extract parameters
-        mu = float(self.spec.drift)
-        sigma = float(self.spec.sigma)
-        lambda_ = float(self.spec.lambda_)
-        mu_j = float(self.spec.mu_j)
-        sigma_j = float(self.spec.sigma_j)
-        kappa = float(self.spec.kappa)
+        # Use the full MertonDynamics simulation
+        # The existing implementation handles diffusion + jumps correctly
+        effective_seed = seed if seed is not None else self.rng_seed_offset
 
-        sqrt_dt = np.sqrt(dt)
+        sim_result = self._dynamics.simulate(
+            spot0=initial_value,
+            maturity=maturity,
+            n_paths=n_scenarios,
+            n_steps=n_time,
+            seed=effective_seed,
+            antithetic=False,  # Don't use antithetic to preserve path count
+        )
 
-        # Initialize RNG for jumps
-        rng = np.random.default_rng(seed=self.rng_seed_offset)
-
-        # Allocate paths
-        paths = np.empty((n_time + 1, n_scenarios), dtype=np.float64)
-        paths[0, :] = initial_value
-
-        # Compensated drift
-        drift_comp = (mu - lambda_ * kappa - 0.5 * sigma * sigma) * dt
-
-        for t in range(n_time):
-            # Diffusion component
-            diffusion = sigma * sqrt_dt * shocks[t, :]
-
-            # Jump component
-            # Number of jumps in this time step (Poisson)
-            n_jumps = rng.poisson(lam=lambda_ * dt, size=n_scenarios)
-
-            # Total jump size for each path
-            jump_returns = np.zeros(n_scenarios)
-            for s in range(n_scenarios):
-                if n_jumps[s] > 0:
-                    # Sum of log-normal jumps
-                    jump_sizes = rng.normal(mu_j, sigma_j, size=n_jumps[s])
-                    jump_returns[s] = np.sum(jump_sizes)
-
-            # Log return = drift + diffusion + jumps
-            log_return = drift_comp + diffusion + jump_returns
-
-            # Update paths
-            paths[t + 1, :] = paths[t, :] * np.exp(log_return)
-
-        return paths
+        # MertonSimulation returns shape (n_paths, n_steps + 1)
+        # We need (n_time + 1, n_scenarios)
+        return sim_result.spot_paths.T
 
     def simulate_with_variance(
         self,
@@ -240,7 +213,7 @@ class MertonAdapter:
         dt: float,
     ) -> tuple[np.ndarray, np.ndarray]:
         """
-        Simulate Merton paths (variance is N/A, returned as NaN).
+        Simulate paths (variance paths returned as NaN since Merton has no SV).
 
         Returns
         -------
@@ -250,3 +223,34 @@ class MertonAdapter:
         paths = self.simulate(initial_value, n_time, n_scenarios, shocks, dt)
         variance = np.full_like(paths, np.nan)
         return paths, variance
+
+    def simulate_with_jumps(
+        self,
+        initial_value: float,
+        n_time: int,
+        n_scenarios: int,
+        shocks: np.ndarray,
+        dt: float,
+        seed: Optional[int] = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Simulate paths and return jump counts.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray]
+            (paths, jump_counts) both shape (n_time + 1, n_scenarios).
+        """
+        maturity = n_time * dt
+        effective_seed = seed if seed is not None else self.rng_seed_offset
+
+        sim_result = self._dynamics.simulate(
+            spot0=initial_value,
+            maturity=maturity,
+            n_paths=n_scenarios,
+            n_steps=n_time,
+            seed=effective_seed,
+            antithetic=False,
+        )
+
+        return sim_result.spot_paths.T, sim_result.jump_counts.T

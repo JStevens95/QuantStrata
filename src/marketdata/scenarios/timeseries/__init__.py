@@ -115,6 +115,14 @@ from src.marketdata.scenarios.timeseries.adapters import (
     OUAdapter,
     FactorAdapter,
 )
+from src.marketdata.scenarios.timeseries.factor_model import (
+    FactorModelGenerator,
+    FactorModelResult,
+    CurveFactorSpec,
+    VolSurfaceFactorSpec,
+    SpotFactorSpec,
+    FactorDynamics,
+)
 
 __all__ = [
     # Main classes
@@ -135,4 +143,11 @@ __all__ = [
     "HestonAdapter",
     "OUAdapter",
     "FactorAdapter",
+    # Factor Model Generator (Production)
+    "FactorModelGenerator",
+    "FactorModelResult",
+    "CurveFactorSpec",
+    "VolSurfaceFactorSpec",
+    "SpotFactorSpec",
+    "FactorDynamics",
 ]
