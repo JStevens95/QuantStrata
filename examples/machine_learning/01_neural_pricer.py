@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
 ===============================================================================
-Machine Learning: Neural Network Option Pricer
+Machine Learning: Neural Network Option Pricer with QuantStrata MLPPricer
 ===============================================================================
 
-This example demonstrates training a neural network to price options faster
-than traditional methods while maintaining accuracy.
+This example demonstrates training a neural network to price options using
+QuantStrata's production machine_learning module.
 
 Learning Objectives
 -------------------
-1. **ML for Pricing**: Understand when and why to use neural network pricers
-2. **Data Generation**: Create training data from analytical/MC pricers
-3. **Model Architecture**: Design networks for financial applications
-4. **Inference**: Use trained models for real-time pricing
+1. **MLPPricer Architecture**: Use the library's production MLP model
+2. **Data Generation**: Generate training data from analytical BSM pricer
+3. **Training Pipeline**: Use Trainer with TrainingConfig
+4. **Model Evaluation**: Compare speed and accuracy vs analytical pricing
 
 Mathematical Framework
 ----------------------
@@ -22,15 +22,12 @@ The goal is to learn a function f_θ such that:
 Loss function:
     L(θ) = E[(f_θ(x) - V_true(x))²]
 
-For exotics where no closed-form exists, train on MC prices:
-    f_θ(x) ≈ E[payoff | x]
-
-Input features typically include:
-    - Moneyness: K/S or log(K/S)
+Input features (normalized for training stability):
+    - Moneyness: log(S/K)
     - Time to expiry: T
     - Volatility: σ
     - Interest rate: r
-    - Option parameters (barrier, etc.)
+    - Option type indicator
 
 Production Context
 ------------------
@@ -42,8 +39,8 @@ At a hedge fund:
 
 Prerequisites
 -------------
+- TensorFlow 2.x installed
 - Basic pricing examples (examples/pricing/)
-- Understanding of neural networks (PyTorch/TensorFlow)
 
 Run This Example
 ----------------
@@ -66,7 +63,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -75,6 +72,43 @@ import numpy as np
 # -----------------------------------------------------------------------------
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
+
+# -----------------------------------------------------------------------------
+# QuantStrata imports
+# -----------------------------------------------------------------------------
+# BSM model for generating training data
+from src.models.analytic.black_scholes_merton.base import (
+    vanilla_price,
+    vanilla_delta,
+    vanilla_gamma,
+    vanilla_vega,
+    vanilla_theta,
+)
+
+# Check if TensorFlow is available
+try:
+    import tensorflow as tf
+    TF_AVAILABLE = True
+    
+    # ML infrastructure
+    from src.machine_learning.models.pricing.model import (
+        MLPPricer,
+        create_mlp_pricer,
+    )
+    from src.machine_learning.training.trainer import (
+        Trainer,
+        TrainingResult,
+    )
+    from src.machine_learning.core.config import (
+        TrainingConfig,
+        OptimizerConfig,
+        EarlyStoppingConfig,
+    )
+except ImportError as e:
+    TF_AVAILABLE = False
+    tf = None
+    logger_init = logging.getLogger(__name__)
+    logger_init.warning(f"TensorFlow not available: {e}")
 
 
 # =============================================================================
@@ -104,465 +138,387 @@ except ImportError:
 
 
 # =============================================================================
-# BLACK-SCHOLES BENCHMARK
-# =============================================================================
-
-def bs_call_price(S: float, K: float, T: float, sigma: float, r: float) -> float:
-    """Black-Scholes call price."""
-    if T <= 0:
-        return max(S - K, 0)
-    
-    from scipy.stats import norm
-    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
-    d2 = d1 - sigma * np.sqrt(T)
-    
-    return S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
-
-
-def bs_put_price(S: float, K: float, T: float, sigma: float, r: float) -> float:
-    """Black-Scholes put price."""
-    if T <= 0:
-        return max(K - S, 0)
-    
-    from scipy.stats import norm
-    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
-    d2 = d1 - sigma * np.sqrt(T)
-    
-    return K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
-
-
-# =============================================================================
-# DATA GENERATION
+# DATA GENERATION USING QUANTSTRATA BSM
 # =============================================================================
 
 @dataclass
 class PricingDataConfig:
-    """Configuration for training data generation."""
-    # Parameter ranges
-    spot_range: Tuple[float, float] = (80.0, 120.0)
-    strike_range: Tuple[float, float] = (80.0, 120.0)
-    expiry_range: Tuple[float, float] = (0.1, 2.0)
-    vol_range: Tuple[float, float] = (0.05, 0.50)
-    rate_range: Tuple[float, float] = (0.0, 0.10)
-    
-    # Dataset sizes
+    """Configuration for pricing data generation."""
     n_train: int = 50000
     n_val: int = 10000
     n_test: int = 10000
+    
+    # Parameter ranges
+    spot_range: Tuple[float, float] = (50.0, 150.0)
+    strike_range: Tuple[float, float] = (50.0, 150.0)
+    expiry_range: Tuple[float, float] = (0.05, 2.0)
+    vol_range: Tuple[float, float] = (0.05, 0.6)
+    rate_range: Tuple[float, float] = (0.0, 0.1)
+    
+    seed: int = 42
 
 
-def generate_training_data(config: PricingDataConfig, seed: int = 42) -> dict:
+def generate_pricing_data(config: PricingDataConfig, n_samples: int) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Generate training data for neural pricer.
+    Generate option pricing data using QuantStrata's BSM module.
+    
+    Parameters
+    ----------
+    config : PricingDataConfig
+        Data generation configuration.
+    n_samples : int
+        Number of samples to generate.
+    
+    Returns
+    -------
+    Tuple[np.ndarray, np.ndarray]
+        Features (X) and targets (y).
+    """
+    rng = np.random.default_rng(config.seed)
+    
+    # Sample parameters uniformly
+    spots = rng.uniform(*config.spot_range, n_samples)
+    strikes = rng.uniform(*config.strike_range, n_samples)
+    expiries = rng.uniform(*config.expiry_range, n_samples)
+    vols = rng.uniform(*config.vol_range, n_samples)
+    rates = rng.uniform(*config.rate_range, n_samples)
+    is_call = rng.integers(0, 2, n_samples)  # 0 = put, 1 = call
+    
+    # Compute prices using QuantStrata BSM
+    prices = np.zeros(n_samples)
+    
+    for i in range(n_samples):
+        option_type = "call" if is_call[i] == 1 else "put"
+        
+        # Use library BSM with cost-of-carry = rate (no dividends)
+        prices[i] = vanilla_price(
+            option_type=option_type,
+            spot=float(spots[i]),
+            strike=float(strikes[i]),
+            expiry=float(expiries[i]),
+            discount_rate=float(rates[i]),
+            carry=float(rates[i]),  # b = r for non-dividend equity
+            vol=float(vols[i]),
+        )
+    
+    # Build feature matrix (normalized)
+    # Features: [moneyness, expiry, vol, rate, is_call]
+    moneyness = np.log(spots / strikes)
+    
+    X = np.column_stack([
+        moneyness,
+        expiries,
+        vols,
+        rates,
+        is_call.astype(float),
+    ])
+    
+    # Normalize price by spot for better training
+    y = prices / spots
+    
+    return X.astype(np.float32), y.astype(np.float32).reshape(-1, 1)
+
+
+# =============================================================================
+# EVALUATION FUNCTIONS
+# =============================================================================
+
+def evaluate_pricer(
+    model,
+    X_test: np.ndarray,
+    y_test: np.ndarray,
+    spots_test: np.ndarray,
+) -> Dict[str, float]:
+    """
+    Evaluate neural pricer performance.
     
     Returns
     -------
     dict
-        Dictionary with X_train, y_train, X_val, y_val, X_test, y_test.
+        Evaluation metrics.
     """
-    np.random.seed(seed)
+    # Get predictions
+    y_pred = model.predict(X_test, verbose=0)
     
-    def sample_batch(n: int) -> Tuple[np.ndarray, np.ndarray]:
-        """Sample a batch of inputs and compute prices."""
-        # Sample parameters
-        S = np.random.uniform(*config.spot_range, n)
-        K = np.random.uniform(*config.strike_range, n)
-        T = np.random.uniform(*config.expiry_range, n)
-        sigma = np.random.uniform(*config.vol_range, n)
-        r = np.random.uniform(*config.rate_range, n)
-        
-        # Compute prices
-        prices = np.array([
-            bs_call_price(s, k, t, sig, rate)
-            for s, k, t, sig, rate in zip(S, K, T, sigma, r)
-        ])
-        
-        # Create feature matrix
-        # Use normalized features for better training
-        moneyness = np.log(K / S)  # Log-moneyness
-        X = np.column_stack([moneyness, T, sigma, r])
-        
-        # Normalize price by spot
-        y = prices / S
-        
-        return X, y
+    # Denormalize (multiply by spot)
+    prices_pred = y_pred.flatten() * spots_test
+    prices_true = y_test.flatten() * spots_test
     
-    X_train, y_train = sample_batch(config.n_train)
-    X_val, y_val = sample_batch(config.n_val)
-    X_test, y_test = sample_batch(config.n_test)
+    # Compute metrics
+    errors = prices_pred - prices_true
+    abs_errors = np.abs(errors)
+    rel_errors = np.abs(errors) / (prices_true + 1e-8)
     
     return {
-        'X_train': X_train, 'y_train': y_train,
-        'X_val': X_val, 'y_val': y_val,
-        'X_test': X_test, 'y_test': y_test,
+        "rmse": float(np.sqrt(np.mean(errors**2))),
+        "mae": float(np.mean(abs_errors)),
+        "mape": float(np.mean(rel_errors) * 100),
+        "max_error": float(np.max(abs_errors)),
+        "r2": float(1 - np.var(errors) / np.var(prices_true)),
     }
 
 
-# =============================================================================
-# SIMPLE NEURAL NETWORK (NumPy-based)
-# =============================================================================
-
-class SimpleNeuralPricer:
+def speed_comparison(
+    model,
+    n_samples: int = 10000,
+    config: PricingDataConfig = None,
+) -> Dict[str, float]:
     """
-    Simple feedforward neural network for option pricing.
+    Compare neural pricer speed vs analytical BSM.
     
-    Uses NumPy for portability (no PyTorch/TensorFlow dependency).
-    For production, use src/machine_learning/models/pricing/.
-    
-    Architecture:
-        Input (4) -> Dense(64) -> ReLU -> Dense(64) -> ReLU -> Dense(1)
-    
-    Example:
-        model = SimpleNeuralPricer(input_dim=4, hidden_dims=[64, 64])
-        model.train(X_train, y_train, X_val, y_val, epochs=100)
-        predictions = model.predict(X_test)
+    Returns
+    -------
+    dict
+        Timing results.
     """
+    config = config or PricingDataConfig(seed=999)
+    rng = np.random.default_rng(config.seed)
     
-    def __init__(
-        self,
-        input_dim: int = 4,
-        hidden_dims: List[int] = None,
-        learning_rate: float = 0.001,
-    ) -> None:
-        """Initialize neural network."""
-        if hidden_dims is None:
-            hidden_dims = [64, 64]
-        
-        self.learning_rate = learning_rate
-        self.layers = []
-        
-        # Initialize weights
-        dims = [input_dim] + hidden_dims + [1]
-        for i in range(len(dims) - 1):
-            # Xavier initialization
-            scale = np.sqrt(2.0 / (dims[i] + dims[i + 1]))
-            W = np.random.randn(dims[i], dims[i + 1]) * scale
-            b = np.zeros((1, dims[i + 1]))
-            self.layers.append({'W': W, 'b': b})
-        
-        # Training history
-        self.train_losses: List[float] = []
-        self.val_losses: List[float] = []
+    # Generate test data
+    spots = rng.uniform(*config.spot_range, n_samples)
+    strikes = rng.uniform(*config.strike_range, n_samples)
+    expiries = rng.uniform(*config.expiry_range, n_samples)
+    vols = rng.uniform(*config.vol_range, n_samples)
+    rates = rng.uniform(*config.rate_range, n_samples)
     
-    def _relu(self, x: np.ndarray) -> np.ndarray:
-        """ReLU activation."""
-        return np.maximum(0, x)
+    # Neural pricer timing
+    X_test = np.column_stack([
+        np.log(spots / strikes),
+        expiries,
+        vols,
+        rates,
+        np.ones(n_samples),  # All calls
+    ]).astype(np.float32)
     
-    def _relu_grad(self, x: np.ndarray) -> np.ndarray:
-        """ReLU gradient."""
-        return (x > 0).astype(float)
+    # Warm-up
+    _ = model.predict(X_test[:100], verbose=0)
     
-    def forward(self, X: np.ndarray) -> Tuple[np.ndarray, List]:
-        """Forward pass."""
-        activations = [X]
-        a = X
-        
-        for i, layer in enumerate(self.layers):
-            z = a @ layer['W'] + layer['b']
-            if i < len(self.layers) - 1:
-                a = self._relu(z)
-            else:
-                a = z  # Linear output
-            activations.append(a)
-        
-        return a, activations
+    start = time.time()
+    _ = model.predict(X_test, verbose=0)
+    neural_time = time.time() - start
     
-    def predict(self, X: np.ndarray) -> np.ndarray:
-        """Make predictions."""
-        output, _ = self.forward(X)
-        return output.flatten()
+    # BSM timing
+    start = time.time()
+    for i in range(n_samples):
+        _ = vanilla_price(
+            option_type="call",
+            spot=float(spots[i]),
+            strike=float(strikes[i]),
+            expiry=float(expiries[i]),
+            discount_rate=float(rates[i]),
+            carry=float(rates[i]),
+            vol=float(vols[i]),
+        )
+    bsm_time = time.time() - start
     
-    def _backward(
-        self,
-        X: np.ndarray,
-        y: np.ndarray,
-        activations: List,
-    ) -> List[dict]:
-        """Backward pass."""
-        m = X.shape[0]
-        gradients = []
-        
-        # Output layer gradient
-        y = y.reshape(-1, 1)
-        dz = activations[-1] - y  # MSE gradient
-        
-        for i in range(len(self.layers) - 1, -1, -1):
-            a_prev = activations[i]
-            
-            dW = a_prev.T @ dz / m
-            db = np.sum(dz, axis=0, keepdims=True) / m
-            
-            gradients.insert(0, {'dW': dW, 'db': db})
-            
-            if i > 0:
-                da_prev = dz @ self.layers[i]['W'].T
-                # Pre-ReLU gradient
-                z_prev = a_prev
-                dz = da_prev * self._relu_grad(z_prev)
-        
-        return gradients
-    
-    def _update_weights(self, gradients: List[dict]) -> None:
-        """Update weights using gradients."""
-        for layer, grad in zip(self.layers, gradients):
-            layer['W'] -= self.learning_rate * grad['dW']
-            layer['b'] -= self.learning_rate * grad['db']
-    
-    def train(
-        self,
-        X_train: np.ndarray,
-        y_train: np.ndarray,
-        X_val: np.ndarray,
-        y_val: np.ndarray,
-        epochs: int = 100,
-        batch_size: int = 256,
-        verbose: bool = True,
-    ) -> None:
-        """
-        Train the neural network.
-        
-        Parameters
-        ----------
-        X_train, y_train : np.ndarray
-            Training data.
-        X_val, y_val : np.ndarray
-            Validation data.
-        epochs : int
-            Number of training epochs.
-        batch_size : int
-            Mini-batch size.
-        verbose : bool
-            Print progress.
-        """
-        n_samples = X_train.shape[0]
-        n_batches = n_samples // batch_size
-        
-        for epoch in range(epochs):
-            # Shuffle data
-            idx = np.random.permutation(n_samples)
-            X_shuffled = X_train[idx]
-            y_shuffled = y_train[idx]
-            
-            epoch_loss = 0.0
-            
-            for i in range(n_batches):
-                start = i * batch_size
-                end = start + batch_size
-                
-                X_batch = X_shuffled[start:end]
-                y_batch = y_shuffled[start:end]
-                
-                # Forward pass
-                output, activations = self.forward(X_batch)
-                
-                # Compute loss
-                loss = np.mean((output.flatten() - y_batch) ** 2)
-                epoch_loss += loss
-                
-                # Backward pass
-                gradients = self._backward(X_batch, y_batch, activations)
-                
-                # Update weights
-                self._update_weights(gradients)
-            
-            # Record losses
-            train_loss = epoch_loss / n_batches
-            val_pred = self.predict(X_val)
-            val_loss = np.mean((val_pred - y_val) ** 2)
-            
-            self.train_losses.append(train_loss)
-            self.val_losses.append(val_loss)
-            
-            if verbose and (epoch + 1) % 20 == 0:
-                logger.info(
-                    f"Epoch {epoch + 1:>3}/{epochs}: "
-                    f"Train Loss = {train_loss:.6f}, "
-                    f"Val Loss = {val_loss:.6f}"
-                )
+    return {
+        "neural_time_ms": neural_time * 1000,
+        "bsm_time_ms": bsm_time * 1000,
+        "speedup": bsm_time / neural_time,
+        "neural_per_option_us": neural_time / n_samples * 1e6,
+        "bsm_per_option_us": bsm_time / n_samples * 1e6,
+    }
 
 
 # =============================================================================
 # MAIN WORKFLOW
 # =============================================================================
 
-def run_neural_pricer() -> Tuple[SimpleNeuralPricer, dict, dict]:
+def run_neural_pricer() -> Tuple[TrainingResult, Dict[str, float], Dict[str, float]]:
     """
-    Run the neural pricer workflow.
+    Run the complete neural pricer workflow.
     
     Returns
     -------
     Tuple
-        Trained model, data, and evaluation metrics.
+        Training result, evaluation metrics, and speed comparison.
     """
+    if not TF_AVAILABLE:
+        raise RuntimeError("TensorFlow is required for this example. Please install: pip install tensorflow")
+    
     logger.info("=" * 70)
-    logger.info("SECTION 1: Data Generation")
+    logger.info("SECTION 1: Data Generation (using QuantStrata BSM)")
     logger.info("=" * 70)
     
     config = PricingDataConfig(
-        n_train=30000,
-        n_val=5000,
-        n_test=5000,
+        n_train=50000,
+        n_val=10000,
+        n_test=10000,
+        seed=42,
     )
     
     logger.info("")
-    logger.info("Generating training data from BSM prices...")
-    data = generate_training_data(config)
+    logger.info("Generating training data from analytical BSM prices...")
     
-    logger.info(f"  Train samples: {config.n_train:,}")
-    logger.info(f"  Val samples:   {config.n_val:,}")
-    logger.info(f"  Test samples:  {config.n_test:,}")
-    logger.info(f"  Features:      moneyness, T, σ, r")
+    X_train, y_train = generate_pricing_data(config, config.n_train)
+    config.seed = 43  # Different seed for validation
+    X_val, y_val = generate_pricing_data(config, config.n_val)
+    config.seed = 44  # Different seed for test
+    X_test, y_test = generate_pricing_data(config, config.n_test)
     
-    # Train model
+    logger.info(f"  Train samples: {len(X_train):,}")
+    logger.info(f"  Val samples:   {len(X_val):,}")
+    logger.info(f"  Test samples:  {len(X_test):,}")
+    logger.info(f"  Features:      {X_train.shape[1]} (moneyness, T, σ, r, is_call)")
+    
+    # Create model using QuantStrata MLPPricer
     logger.info("")
     logger.info("=" * 70)
-    logger.info("SECTION 2: Training Neural Pricer")
+    logger.info("SECTION 2: Model Creation (QuantStrata MLPPricer)")
     logger.info("=" * 70)
     
-    model = SimpleNeuralPricer(
-        input_dim=4,
-        hidden_dims=[64, 64],
-        learning_rate=0.01,
+    model = create_mlp_pricer(
+        n_features=5,
+        hidden_units=[128, 64, 32],
+        activation="relu",
+        dropout_rate=0.1,
+        use_batch_norm=True,
+        output_activation="softplus",  # Ensure positive prices
     )
     
     logger.info("")
-    logger.info("Model architecture: 4 -> 64 -> 64 -> 1")
-    logger.info("Training...")
-    logger.info("")
+    logger.info(f"  Model: {model.name}")
+    logger.info(f"  Architecture: 5 -> 128 -> 64 -> 32 -> 1")
+    logger.info(f"  Activation: ReLU (softplus output)")
+    logger.info(f"  Batch normalization: Yes")
+    logger.info(f"  Dropout: 10%")
     
-    model.train(
-        data['X_train'], data['y_train'],
-        data['X_val'], data['y_val'],
+    # Training using QuantStrata Trainer
+    logger.info("")
+    logger.info("=" * 70)
+    logger.info("SECTION 3: Training (QuantStrata Trainer)")
+    logger.info("=" * 70)
+    
+    training_config = TrainingConfig(
         epochs=100,
         batch_size=256,
+        optimizer=OptimizerConfig(name="adam", learning_rate=0.001),
+        loss="mse",
+        metrics=["mae"],
+        early_stopping=EarlyStoppingConfig(patience=10, min_delta=1e-6),
+        seed=42,
+        verbose=1,
     )
     
-    # Evaluate
-    logger.info("")
-    logger.info("=" * 70)
-    logger.info("SECTION 3: Evaluation")
-    logger.info("=" * 70)
-    
-    # Test set evaluation
-    y_pred = model.predict(data['X_test'])
-    y_true = data['y_test']
-    
-    mse = np.mean((y_pred - y_true) ** 2)
-    rmse = np.sqrt(mse)
-    mae = np.mean(np.abs(y_pred - y_true))
-    mape = np.mean(np.abs((y_pred - y_true) / (y_true + 1e-8))) * 100
-    r2 = 1 - np.sum((y_pred - y_true) ** 2) / np.sum((y_true - np.mean(y_true)) ** 2)
-    
-    metrics = {
-        'mse': mse,
-        'rmse': rmse,
-        'mae': mae,
-        'mape': mape,
-        'r2': r2,
-    }
+    trainer = Trainer(model, training_config)
+    trainer.compile()
     
     logger.info("")
-    logger.info("Test Set Metrics:")
-    logger.info(f"  RMSE:  {rmse:.6f}")
-    logger.info(f"  MAE:   {mae:.6f}")
-    logger.info(f"  MAPE:  {mape:.2f}%")
-    logger.info(f"  R²:    {r2:.4f}")
+    logger.info(f"  Epochs: {training_config.epochs}")
+    logger.info(f"  Batch size: {training_config.batch_size}")
+    logger.info(f"  Optimizer: Adam (lr={training_config.optimizer.learning_rate})")
+    logger.info(f"  Early stopping: patience={training_config.early_stopping.patience}")
+    logger.info("")
+    
+    training_result = trainer.fit(
+        train_data=(X_train, y_train),
+        val_data=(X_val, y_val),
+    )
+    
+    logger.info("")
+    logger.info(f"  Training completed in {training_result.total_time_seconds:.1f}s")
+    logger.info(f"  Best epoch: {training_result.best_epoch}")
+    logger.info(f"  Best val loss: {training_result.best_val_loss:.6f}")
+    logger.info(f"  Early stopped: {training_result.stopped_early}")
+    
+    # Evaluation
+    logger.info("")
+    logger.info("=" * 70)
+    logger.info("SECTION 4: Evaluation")
+    logger.info("=" * 70)
+    
+    # Generate spots for denormalization
+    rng = np.random.default_rng(44)
+    spots_test = rng.uniform(50.0, 150.0, config.n_test)
+    
+    eval_metrics = evaluate_pricer(model, X_test, y_test, spots_test)
+    
+    logger.info("")
+    logger.info("  Test Set Metrics:")
+    logger.info(f"    RMSE:       ${eval_metrics['rmse']:.4f}")
+    logger.info(f"    MAE:        ${eval_metrics['mae']:.4f}")
+    logger.info(f"    MAPE:       {eval_metrics['mape']:.2f}%")
+    logger.info(f"    Max Error:  ${eval_metrics['max_error']:.4f}")
+    logger.info(f"    R²:         {eval_metrics['r2']:.6f}")
     
     # Speed comparison
     logger.info("")
-    logger.info("Speed Comparison:")
+    logger.info("=" * 70)
+    logger.info("SECTION 5: Speed Comparison")
+    logger.info("=" * 70)
     
-    # BSM timing
-    start = time.time()
-    for _ in range(1000):
-        bs_call_price(100, 100, 1.0, 0.2, 0.05)
-    bsm_time = (time.time() - start) / 1000 * 1000  # ms
+    speed_metrics = speed_comparison(model, n_samples=10000)
     
-    # Neural timing
-    test_input = data['X_test'][:1000]
-    start = time.time()
-    _ = model.predict(test_input)
-    neural_time = (time.time() - start) / 1000 * 1000  # ms per sample
+    logger.info("")
+    logger.info(f"  Pricing 10,000 options:")
+    logger.info(f"    Neural Pricer: {speed_metrics['neural_time_ms']:.2f} ms ({speed_metrics['neural_per_option_us']:.2f} μs/option)")
+    logger.info(f"    BSM Analytical: {speed_metrics['bsm_time_ms']:.2f} ms ({speed_metrics['bsm_per_option_us']:.2f} μs/option)")
+    logger.info(f"    Speedup:       {speed_metrics['speedup']:.1f}x")
     
-    logger.info(f"  BSM (single):    {bsm_time:.4f} ms")
-    logger.info(f"  Neural (batch):  {neural_time:.4f} ms")
-    logger.info(f"  Speedup:         {bsm_time/neural_time:.1f}x")
-    
-    return model, data, metrics
+    return training_result, eval_metrics, speed_metrics
 
 
 # =============================================================================
 # VISUALIZATION
 # =============================================================================
 
-def visualize_pricer(model: SimpleNeuralPricer, data: dict, metrics: dict) -> None:
-    """Visualize neural pricer results."""
+def visualize_results(
+    training_result: TrainingResult,
+    eval_metrics: Dict[str, float],
+    speed_metrics: Dict[str, float],
+) -> None:
+    """Visualize training and evaluation results."""
     if not MATPLOTLIB_AVAILABLE or not ENABLE_PLOTTING:
-        logger.info("Skipping plots (matplotlib not available or disabled)")
+        logger.info("Skipping plots")
         return
     
     logger.info("")
     logger.info("=" * 70)
-    logger.info("SECTION 4: Visualization")
+    logger.info("SECTION 6: Visualization")
     logger.info("=" * 70)
     
-    plt.style.use('seaborn-v0_8-whitegrid')
-    
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    
-    y_pred = model.predict(data['X_test'])
-    y_true = data['y_test']
-    
-    # -------------------------------------------------------------------------
-    # Plot 1: Training history
-    # -------------------------------------------------------------------------
-    ax = axes[0, 0]
-    ax.plot(model.train_losses, label='Train', color='#2E86AB')
-    ax.plot(model.val_losses, label='Validation', color='#E94F37')
-    ax.set_xlabel('Epoch')
-    ax.set_ylabel('MSE Loss')
-    ax.set_title('Training History')
-    ax.legend()
-    ax.set_yscale('log')
-    ax.grid(True, alpha=0.3)
-    
-    # -------------------------------------------------------------------------
-    # Plot 2: Predicted vs Actual
-    # -------------------------------------------------------------------------
-    ax = axes[0, 1]
-    ax.scatter(y_true * 100, y_pred * 100, alpha=0.3, s=10, color='#2E86AB')
-    ax.plot([0, 30], [0, 30], 'r--', linewidth=2, label='Perfect fit')
-    ax.set_xlabel('BSM Price (% of spot)')
-    ax.set_ylabel('Neural Price (% of spot)')
-    ax.set_title(f'Predicted vs Actual (R² = {metrics["r2"]:.4f})')
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    
-    # -------------------------------------------------------------------------
-    # Plot 3: Error distribution
-    # -------------------------------------------------------------------------
-    ax = axes[1, 0]
-    errors = (y_pred - y_true) * 100
-    ax.hist(errors, bins=50, density=True, alpha=0.7, color='#2E86AB')
-    ax.axvline(0, color='red', linestyle='--', linewidth=2)
-    ax.set_xlabel('Pricing Error (% of spot)')
-    ax.set_ylabel('Density')
-    ax.set_title(f'Error Distribution (MAE = {metrics["mae"]*100:.3f}%)')
-    ax.grid(True, alpha=0.3)
-    
-    # -------------------------------------------------------------------------
-    # Plot 4: Error vs moneyness
-    # -------------------------------------------------------------------------
-    ax = axes[1, 1]
-    moneyness = data['X_test'][:, 0]  # Log-moneyness
-    ax.scatter(moneyness, np.abs(errors), alpha=0.3, s=10, color='#2E86AB')
-    ax.set_xlabel('Log-Moneyness (ln(K/S))')
-    ax.set_ylabel('Absolute Error (% of spot)')
-    ax.set_title('Error vs Moneyness')
-    ax.grid(True, alpha=0.3)
-    
-    plt.tight_layout()
-    plt.show(block=True)
+    # Use TrainingResult's built-in plotting if available
+    if hasattr(training_result, 'plot_history'):
+        training_result.plot_history()
+    else:
+        # Manual plotting
+        plt.style.use('seaborn-v0_8-whitegrid')
+        
+        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+        
+        # Training history
+        ax = axes[0]
+        epochs = range(1, len(training_result.history['loss']) + 1)
+        ax.plot(epochs, training_result.history['loss'], label='Train Loss', color='#2E86AB')
+        if 'val_loss' in training_result.history:
+            ax.plot(epochs, training_result.history['val_loss'], label='Val Loss', color='#E94F37')
+        ax.axvline(training_result.best_epoch, color='green', linestyle='--', alpha=0.7, label=f'Best ({training_result.best_epoch})')
+        ax.set_xlabel('Epoch')
+        ax.set_ylabel('MSE Loss')
+        ax.set_title('Training History')
+        ax.legend()
+        ax.set_yscale('log')
+        ax.grid(True, alpha=0.3)
+        
+        # Speed comparison
+        ax = axes[1]
+        methods = ['Neural Pricer', 'BSM Analytical']
+        times = [speed_metrics['neural_time_ms'], speed_metrics['bsm_time_ms']]
+        colors = ['#2E86AB', '#E94F37']
+        
+        bars = ax.bar(methods, times, color=colors, alpha=0.8)
+        ax.set_ylabel('Time (ms) for 10k options')
+        ax.set_title(f'Speed Comparison ({speed_metrics["speedup"]:.1f}x speedup)')
+        
+        # Add value labels
+        for bar, t in zip(bars, times):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 5, 
+                    f'{t:.1f}ms', ha='center', va='bottom')
+        
+        ax.grid(True, alpha=0.3, axis='y')
+        
+        plt.tight_layout()
+        plt.show(block=True)
     
     logger.info("Visualization complete")
 
@@ -572,7 +528,7 @@ def visualize_pricer(model: SimpleNeuralPricer, data: dict, metrics: dict) -> No
 # =============================================================================
 
 def print_summary() -> None:
-    """Print summary of key concepts."""
+    """Print key takeaways."""
     logger.info("")
     logger.info("=" * 70)
     logger.info("SUMMARY")
@@ -583,27 +539,25 @@ def print_summary() -> None:
     │                         KEY TAKEAWAYS                                │
     ├─────────────────────────────────────────────────────────────────────┤
     │                                                                      │
-    │  1. Neural Pricer Design:                                           │
-    │     - Input: normalized features (moneyness, T, σ, r)               │
-    │     - Output: price / spot (normalized)                             │
-    │     - Architecture: feedforward network with ReLU                   │
+    │  1. QuantStrata ML Infrastructure:                                  │
+    │     - MLPPricer: Production neural network for option pricing       │
+    │     - Trainer: High-level training interface with best practices    │
+    │     - TrainingConfig: Comprehensive configuration management        │
     │                                                                      │
-    │  2. Training Data:                                                  │
-    │     - Generate from analytical pricer (BSM) or MC                   │
-    │     - Cover full parameter space uniformly                          │
-    │     - Normalize inputs and outputs for training                     │
+    │  2. Data Generation:                                                │
+    │     - Use analytical BSM (vanilla_price) as ground truth            │
+    │     - Normalize features (moneyness, not raw spot/strike)           │
+    │     - Normalize targets (price/spot ratio)                          │
     │                                                                      │
-    │  3. Performance:                                                    │
-    │     - Accuracy: <0.1% error achievable with enough data             │
-    │     - Speed: 10-100x faster than MC for exotics                     │
-    │     - Scalability: batch inference for large portfolios             │
+    │  3. Model Architecture:                                             │
+    │     - Hidden layers: [128, 64, 32] works well for vanilla options   │
+    │     - Batch normalization for training stability                    │
+    │     - Softplus output ensures positive prices                       │
     │                                                                      │
-    │  4. Production Use:                                                 │
-    │     - Real-time pricing for risk calculations                       │
-    │     - Greeks via automatic differentiation                          │
-    │     - Regular retraining and validation                             │
-    │                                                                      │
-    │  NEXT: See 02_calibration_ml.py for model calibration               │
+    │  4. Production Deployment:                                          │
+    │     - Significant speedup for batch pricing                         │
+    │     - Validate RMSE/MAPE against business tolerance                 │
+    │     - Monitor for distribution shift in production                  │
     │                                                                      │
     └─────────────────────────────────────────────────────────────────────┘
     """
@@ -611,31 +565,18 @@ def print_summary() -> None:
 
 
 # =============================================================================
-# MAIN ENTRY POINT
+# MAIN
 # =============================================================================
 
 def main(args: argparse.Namespace) -> None:
-    """
-    Main entry point for the example.
-    
-    Parameters
-    ----------
-    args : argparse.Namespace
-        Command-line arguments.
-    """
+    """Main entry point."""
     global ENABLE_PLOTTING
     ENABLE_PLOTTING = args.plot
     
     try:
-        # Run neural pricer workflow
-        model, data, metrics = run_neural_pricer()
-        
-        # Visualization
-        visualize_pricer(model, data, metrics)
-        
-        # Summary
+        training_result, eval_metrics, speed_metrics = run_neural_pricer()
+        visualize_results(training_result, eval_metrics, speed_metrics)
         print_summary()
-        
         logger.info("Example completed successfully!")
         
     except Exception as e:
@@ -644,22 +585,9 @@ def main(args: argparse.Namespace) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Neural Network Option Pricer Example",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument(
-        "--plot",
-        action="store_true",
-        default=True,
-        help="Enable plotting (default: True)",
-    )
-    parser.add_argument(
-        "--no-plot",
-        action="store_false",
-        dest="plot",
-        help="Disable plotting",
-    )
+    parser = argparse.ArgumentParser(description="Neural Pricer Example")
+    parser.add_argument("--plot", action="store_true", default=True)
+    parser.add_argument("--no-plot", action="store_false", dest="plot")
     
     args = parser.parse_args()
     main(args)
