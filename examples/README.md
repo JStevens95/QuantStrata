@@ -2,15 +2,68 @@
 
 This directory contains comprehensive examples demonstrating the QuantStrata library's capabilities for FX derivatives pricing, risk management, and market data handling.
 
+**These examples are designed to be production-ready and representative of workflows used at quant hedge funds.**
+
 ## Directory Structure
 
 ```
 examples/
-├── fundamentals/     # Core market data concepts
-├── pricing/          # Option pricing methods
-├── risk/             # Risk management and scenarios
-└── showcase/         # Visual demonstrations
+├── fundamentals/     # Core market data concepts and building blocks
+├── pricing/          # Option pricing methods (BSM, MC, FD)
+├── risk/             # Risk management, scenarios, and VaR
+├── pipelines/        # Production pipeline examples
+├── showcase/         # Visual demonstrations
+├── notebooks/        # Interactive Jupyter notebooks
+└── workflows/        # End-to-end application workflows
 ```
+
+---
+
+## Production-Grade Examples
+
+The following examples demonstrate **hedge fund-quality** implementations:
+
+### Scenario Generation & Risk
+
+| Example | Description | Key Features |
+|---------|-------------|--------------|
+| `risk/fx_option_scenario_pnl.py` | **FX Option Scenario PnL Analysis** | Full term structure simulation with `FactorModelGenerator`, PCA-based curve/vol dynamics, VaR/ES |
+| `pipelines/run_var.py` | **VaR Pipeline** | Historical, parametric, and Monte Carlo VaR methods |
+| `fundamentals/07_timeseries_generation.py` | **Time Series Generation Tutorial** | GBM, Heston, OU dynamics with correlation |
+
+### Pricing & Greeks
+
+| Example | Description | Key Features |
+|---------|-------------|--------------|
+| `pricing/01_fx_vanilla_pricing.py` | **FX Vanilla Pricing** | BSM, Monte Carlo, convergence analysis |
+| `pricing/02_exotic_options.py` | **Exotic Options** | Barriers, digitals, touch options |
+| `pricing/03_portfolio_pricing.py` | **Portfolio Pricing** | Aggregation, portfolio Greeks |
+
+---
+
+## Two-Tier Scenario Generation
+
+QuantStrata provides two approaches to scenario generation:
+
+### Tier 1: TimeseriesGenerator (Simple)
+```python
+# For scalar risk factors - quick prototyping
+from src.marketdata.scenarios.timeseries import TimeseriesGenerator
+```
+- Output: `[T, S]` per factor
+- Use: Learning, simple VaR, testing
+
+### Tier 2: FactorModelGenerator (Production)
+```python
+# For full term structures - hedge fund production
+from src.marketdata.scenarios.timeseries import FactorModelGenerator
+```
+- Output: 
+  - Curves: `[T, S, n_tenors]`
+  - Vol surfaces: `[T, S, n_exp, n_strike]`
+- Use: Production VaR, XVA, stress testing
+
+See `docs/reference/marketdata/scenario_generation.md` for full documentation.
 
 ---
 
@@ -26,6 +79,7 @@ Learn the core building blocks of the library.
 | `04_timeseries_datasets.py` | MarketDataset, Panels, multi-day data |
 | `05_market_snapshots.py` | Extracting snapshots for pricing |
 | `06_scenario_shocks.py` | SpotShock, VolShock, ParallelRateShock |
+| `07_timeseries_generation.py` | **Comprehensive time series generation tutorial** |
 
 **Start here** if you're new to the library.
 
@@ -37,7 +91,7 @@ Learn to price FX options using different methods.
 
 | Script | Description |
 |--------|-------------|
-| `01_single_fx_vanilla.py` | BSM, Monte Carlo, Finite Difference comparison |
+| `01_fx_vanilla_pricing.py` | BSM, Monte Carlo, Finite Difference comparison |
 | `02_exotic_options.py` | Barriers, Asians, Lookbacks, Touch options |
 | `03_portfolio_pricing.py` | Portfolio aggregation, Greeks |
 
@@ -53,12 +107,30 @@ Learn to manage risk with scenarios and sensitivities.
 |--------|-------------|
 | `01_scenario_analysis.py` | Scenario shocks, stress testing, P&L |
 | `02_sensitivities_computation.py` | Greeks, bump-and-reprice, engine |
+| `fx_option_scenario_pnl.py` | **Production scenario PnL with full term structures** |
 
-**Key concepts:** Scenario P&L, Greeks validation, risk reports.
+**Key concepts:** Scenario P&L, VaR, ES, Greeks validation.
 
 ---
 
-## Part 4: Showcase
+## Part 4: Pipelines
+
+Production pipeline examples using the orchestrator framework.
+
+| Script | Description |
+|--------|-------------|
+| `run_var.py` | Value-at-Risk computation pipeline |
+| `run_calibrate_heston.py` | Heston model calibration pipeline |
+| `run_calibrate_sabr.py` | SABR model calibration pipeline |
+| `run_build_curves.py` | Curve construction pipeline |
+| `run_build_vol_surface.py` | Vol surface building pipeline |
+| `run_portfolio_from_config.py` | Portfolio pricing from config |
+| `run_train_gnn_pricer.py` | ML-based pricer training |
+| `run_train_neural_sde.py` | Neural SDE training |
+
+---
+
+## Part 5: Showcase
 
 Publication-quality visualizations.
 
@@ -77,17 +149,20 @@ Publication-quality visualizations.
 From the repository root:
 
 ```bash
-# Run a specific example
-cd examples/fundamentals
-python 01_market_ids_and_quotes.py
+# Set PYTHONPATH and run
+cd /path/to/QuantStrata
+PYTHONPATH=. python examples/fundamentals/01_market_ids_and_quotes.py
 
-# Or from anywhere
-python examples/fundamentals/01_market_ids_and_quotes.py
+# Or for risk examples
+PYTHONPATH=. python examples/risk/fx_option_scenario_pnl.py
+
+# With optional plotting
+PYTHONPATH=. python examples/risk/fx_option_scenario_pnl.py --plot
 ```
 
 ### Dependencies
 
-Most examples require only:
+Most examples require:
 - numpy
 - matplotlib
 - scipy
@@ -102,20 +177,58 @@ The QuantStrata library itself (`src/`).
 
 1. Start with `fundamentals/01_market_ids_and_quotes.py`
 2. Work through all fundamentals in order
-3. Move to `pricing/01_single_fx_vanilla.py`
+3. Move to `pricing/01_fx_vanilla_pricing.py`
 4. Explore exotic options and portfolios
 
-### For Practitioners
+### For Practitioners / Hedge Fund Context
 
 1. Skim fundamentals for API reference
-2. Focus on `pricing/` for method comparison
-3. Deep dive into `risk/` for production patterns
+2. Study `fundamentals/07_timeseries_generation.py` for scenario concepts
+3. Deep dive into `risk/fx_option_scenario_pnl.py` for production patterns
+4. Review `pipelines/run_var.py` for orchestrator usage
 
-### For Interviewers/Reviewers
+### For Interviewers / Reviewers
 
 1. Check `showcase/` for visual demonstrations
-2. Review `docs/mathematics/` for theory
-3. Examine test coverage in `tests/`
+2. Review `risk/fx_option_scenario_pnl.py` for production-quality code
+3. Examine `docs/reference/marketdata/scenario_generation.md` for architecture
+4. Review test coverage in `tests/`
+
+---
+
+## Hedge Fund Workflow Example
+
+The `risk/fx_option_scenario_pnl.py` example demonstrates a complete hedge fund workflow:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    HEDGE FUND SCENARIO ANALYSIS                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  1. DEFINE RISK FACTORS                                                  │
+│     ├── FX.SPOT.EURUSD (GBM)                                            │
+│     ├── IR.CURVE.USD (3 PCA factors: level, slope, curvature)           │
+│     ├── IR.CURVE.EUR (3 PCA factors)                                    │
+│     └── FX.VOL.EURUSD (3 factors: ATM, skew, smile)                     │
+│                                                                          │
+│  2. BUILD CORRELATION MATRIX                                             │
+│     └── 10×10 matrix capturing cross-asset dependencies                 │
+│                                                                          │
+│  3. GENERATE SCENARIOS (FactorModelGenerator)                            │
+│     ├── Spot paths: [T+1, n_scenarios]                                  │
+│     ├── Curve paths: [T+1, n_scenarios, n_tenors]                       │
+│     └── Vol paths: [T+1, n_scenarios, n_exp, n_strike]                  │
+│                                                                          │
+│  4. FULL REVALUATION                                                     │
+│     └── Price option at each scenario using BSM                         │
+│                                                                          │
+│  5. COMPUTE RISK METRICS                                                 │
+│     ├── VaR (95%, 99%)                                                  │
+│     ├── Expected Shortfall                                              │
+│     └── PnL distribution statistics                                     │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -126,29 +239,19 @@ All examples follow consistent patterns:
 - **Docstrings**: Clear description at top of each file
 - **Sections**: Numbered sections with headers
 - **Print output**: Explanatory text and results
-- **Plots**: Professional matplotlib visualizations
-- **Summary**: Key takeaways at the end
-
----
-
-## Generating Plots
-
-Examples that generate plots save them to the current directory:
-
-```bash
-cd examples/fundamentals
-python 03_volatility_surfaces.py
-# Creates: volatility_surface.png
-```
+- **Plots**: Professional matplotlib visualizations (optional `--plot` flag)
+- **Type hints**: Full type annotations throughout
+- **Error handling**: Graceful fallbacks for missing dependencies
 
 ---
 
 ## Related Documentation
 
-- `docs/mathematics/` - Detailed mathematical derivations
+- `docs/reference/marketdata/scenario_generation.md` - Scenario generation architecture
+- `docs/mathematics/` - Mathematical derivations
 - `docs/notebooks/` - Interactive Jupyter notebooks
-- `docs/PHASE_1_COMPLETE.md` - Phase 1 summary
+- `tests/unit/marketdata/scenarios/` - Comprehensive test suite
 
 ---
 
-*QuantStrata Examples | Phase 1 Complete*
+*QuantStrata Examples | Production-Grade Quant Library*
