@@ -1,50 +1,47 @@
 #!/usr/bin/env python3
 """
 ===============================================================================
-P&L Attribution: Greek-Based Explain
+P&L Attribution: Explaining Daily P&L by Risk Factors
 ===============================================================================
 
 This example demonstrates P&L attribution - decomposing portfolio P&L into
-contributions from individual risk factors using Greeks.
+contributions from each risk factor (Greeks-based explain).
 
 Learning Objectives
 -------------------
-1. **P&L Attribution**: Understand how to explain P&L by risk factor
-2. **Greek-Based Decomposition**: Use delta, gamma, vega, rho for explain
-3. **Residual Analysis**: Identify unexplained P&L and model limitations
-4. **Production Workflow**: End-of-day P&L explain process
+1. **P&L Explain**: Decompose P&L into delta, gamma, vega, theta, and residual
+2. **First-Order Attribution**: P&L ≈ Δ·ΔS + ν·Δσ + Θ·Δt
+3. **Second-Order Effects**: Include gamma for large moves
+4. **Residual Analysis**: Identify unexplained P&L (model error, higher order)
 
 Mathematical Framework
 ----------------------
-First-order Taylor expansion of portfolio value:
+Taylor expansion of option value V(S, σ, t):
 
-    ΔV ≈ Δ·ΔS + ½Γ·(ΔS)² + ν·Δσ + ρ·Δr + Θ·Δt
+    ΔV ≈ ∂V/∂S · ΔS + ∂V/∂σ · Δσ + ∂V/∂t · Δt + ½ ∂²V/∂S² · (ΔS)²
 
-P&L Attribution:
-    - Delta P&L:    Δ × ΔS (spot move contribution)
-    - Gamma P&L:    ½ × Γ × (ΔS)² (convexity contribution)
-    - Vega P&L:     ν × Δσ (vol move contribution)
-    - Rho P&L:      ρ × Δr (rate move contribution)
-    - Theta P&L:    Θ × Δt (time decay)
-    - Residual:     Actual P&L - Sum of attributed
+In terms of Greeks:
+    ΔV ≈ Δ·ΔS + ν·Δσ + Θ·Δt + ½Γ·(ΔS)²
 
-Residual represents:
-    - Higher-order terms (vanna, volga, charm, etc.)
-    - Model error
-    - Discrete hedging effects
+Where:
+    - Delta P&L:  Δ · ΔS
+    - Vega P&L:   ν · Δσ  
+    - Theta P&L:  Θ · Δt (typically negative for long options)
+    - Gamma P&L:  ½Γ · (ΔS)²
+    - Residual:   Actual P&L - Explained P&L (higher-order terms, model error)
 
 Production Context
 ------------------
 At a hedge fund:
-- P&L explain is mandatory at end of day
-- Large residuals trigger investigation
-- Attribution drives risk factor analysis
-- Used for performance attribution to traders
+- P&L explain is run daily to validate portfolio P&L
+- Large unexplained P&L triggers investigation (model issues, data errors)
+- Attribution drives hedging decisions (which risk factors dominate?)
+- Risk management monitors breakdown to ensure limits aren't breached
 
 Prerequisites
 -------------
 - Understanding of Greeks (examples/risk/02_sensitivities_computation.py)
-- Understanding of scenarios (examples/risk/01_scenario_analysis.py)
+- Portfolio pricing (examples/pricing/03_portfolio_pricing.py)
 
 Run This Example
 ----------------
@@ -66,7 +63,7 @@ import logging
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple
 
 import numpy as np
 
@@ -84,23 +81,10 @@ from src.marketdata.core.interfaces import Quote
 from src.marketdata.core.market import Market
 from src.marketdata.curves.term_structure import FlatZeroRateCurve
 from src.marketdata.surfaces.vol_surface import FlatVolSurface
-from src.marketdata.scenarios.shocks import SpotShock, VolShock
 
 from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
 from src.portfolio.core import Portfolio, Position
-from src.portfolio.portfolio import PortfolioPricer
-from src.pricers.registry import PricerRegistry
 from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer
-
-# Try to import attribution module
-try:
-    from src.risk.attribution.runner import (
-        attribute_portfolio_scenarios,
-        AttributionConfig,
-    )
-    ATTRIBUTION_AVAILABLE = True
-except ImportError:
-    ATTRIBUTION_AVAILABLE = False
 
 
 # =============================================================================
@@ -141,446 +125,491 @@ EURUSD_VOL = MarketId(asset_class="FX", mkt_type="VOL", name="EURUSD")
 
 
 # =============================================================================
-# DATA CLASSES
+# DATA STRUCTURES
 # =============================================================================
 
 @dataclass
 class MarketMove:
-    """Represents a market move from T-1 to T."""
+    """Represents a market move from T to T+1."""
     spot_t0: float
     spot_t1: float
     vol_t0: float
     vol_t1: float
-    r_dom_t0: float
-    r_dom_t1: float
-    r_for_t0: float
-    r_for_t1: float
+    dt: float  # Time elapsed (in years)
     
     @property
     def delta_spot(self) -> float:
+        """Absolute spot change."""
         return self.spot_t1 - self.spot_t0
     
     @property
     def delta_vol(self) -> float:
+        """Absolute vol change (in decimal)."""
         return self.vol_t1 - self.vol_t0
     
     @property
-    def delta_r_dom(self) -> float:
-        return self.r_dom_t1 - self.r_dom_t0
-    
-    @property
-    def delta_r_for(self) -> float:
-        return self.r_for_t1 - self.r_for_t0
+    def spot_return(self) -> float:
+        """Spot return (percentage)."""
+        return (self.spot_t1 - self.spot_t0) / self.spot_t0
 
 
 @dataclass
-class AttributionResult:
+class PnLAttribution:
     """P&L attribution breakdown."""
-    actual_pnl: float
     delta_pnl: float
     gamma_pnl: float
     vega_pnl: float
     theta_pnl: float
-    rho_dom_pnl: float
-    rho_for_pnl: float
+    explained_pnl: float
+    actual_pnl: float
     residual: float
     
     @property
-    def explained_pnl(self) -> float:
-        return (
-            self.delta_pnl + self.gamma_pnl + self.vega_pnl +
-            self.theta_pnl + self.rho_dom_pnl + self.rho_for_pnl
-        )
-    
-    @property
     def explain_ratio(self) -> float:
+        """Ratio of explained to actual P&L."""
         if abs(self.actual_pnl) < 1e-10:
-            return 1.0 if abs(self.residual) < 1e-10 else 0.0
+            return 1.0
         return self.explained_pnl / self.actual_pnl
 
 
 # =============================================================================
-# SECTION 1: Setup
+# SECTION 1: Market Setup
 # =============================================================================
 
-def create_market_t0() -> Tuple[Market, Dict[str, float]]:
+def create_markets(
+    spot_t0: float,
+    spot_t1: float,
+    vol_t0: float,
+    vol_t1: float,
+    r_usd: float,
+    r_eur: float,
+) -> Tuple[Market, Market]:
     """
-    Create T-1 (yesterday's) market snapshot.
+    Create T0 and T1 market snapshots.
     
     Returns
     -------
-    Tuple[Market, Dict]
-        Market and parameters.
+    Tuple[Market, Market]
+        Markets at T0 and T1.
     """
-    logger.info("=" * 70)
-    logger.info("SECTION 1: Market Setup")
-    logger.info("=" * 70)
-    
-    # T-1 market data
-    spot = 1.0850
-    vol = 0.10
-    r_dom = 0.05
-    r_for = 0.04
-    
-    market = Market(
+    # T0 market
+    market_t0 = Market(
         asof="2026-01-27",
-        quotes={EURUSD_SPOT: Quote(value=spot)},
+        quotes={EURUSD_SPOT: Quote(value=spot_t0)},
         curves={
-            USD_CURVE: FlatZeroRateCurve(continuously_compounded_rate=r_dom),
-            EUR_CURVE: FlatZeroRateCurve(continuously_compounded_rate=r_for),
+            USD_CURVE: FlatZeroRateCurve(continuously_compounded_rate=r_usd),
+            EUR_CURVE: FlatZeroRateCurve(continuously_compounded_rate=r_eur),
         },
-        vols={EURUSD_VOL: FlatVolSurface(sigma=vol)},
+        vols={EURUSD_VOL: FlatVolSurface(sigma=vol_t0)},
     )
     
-    params = {"spot": spot, "vol": vol, "r_dom": r_dom, "r_for": r_for}
-    
-    logger.info("")
-    logger.info("T-1 (Yesterday) Market:")
-    logger.info(f"  EUR/USD Spot: {spot:.4f}")
-    logger.info(f"  Volatility:   {vol:.2%}")
-    logger.info(f"  USD Rate:     {r_dom:.2%}")
-    logger.info(f"  EUR Rate:     {r_for:.2%}")
-    
-    return market, params
-
-
-def create_market_t1(move: MarketMove) -> Market:
-    """
-    Create T (today's) market snapshot after market moves.
-    
-    Parameters
-    ----------
-    move : MarketMove
-        Market move from T-1 to T.
-    
-    Returns
-    -------
-    Market
-        Today's market.
-    """
-    return Market(
+    # T1 market
+    market_t1 = Market(
         asof="2026-01-28",
-        quotes={EURUSD_SPOT: Quote(value=move.spot_t1)},
+        quotes={EURUSD_SPOT: Quote(value=spot_t1)},
         curves={
-            USD_CURVE: FlatZeroRateCurve(continuously_compounded_rate=move.r_dom_t1),
-            EUR_CURVE: FlatZeroRateCurve(continuously_compounded_rate=move.r_for_t1),
+            USD_CURVE: FlatZeroRateCurve(continuously_compounded_rate=r_usd),
+            EUR_CURVE: FlatZeroRateCurve(continuously_compounded_rate=r_eur),
         },
-        vols={EURUSD_VOL: FlatVolSurface(sigma=move.vol_t1)},
+        vols={EURUSD_VOL: FlatVolSurface(sigma=vol_t1)},
     )
+    
+    return market_t0, market_t1
 
+
+# =============================================================================
+# SECTION 2: Portfolio Construction
+# =============================================================================
 
 def build_portfolio() -> Portfolio:
     """
-    Build a portfolio for P&L attribution.
+    Build a sample portfolio for P&L attribution.
     
     Returns
     -------
     Portfolio
-        Sample portfolio.
+        Portfolio with multiple positions.
     """
     positions = [
+        # Long ATM call
         Position(
-            position_id="EURUSD_CALL_ATM",
+            position_id="LONG_CALL_ATM",
             instrument=EuropeanFxVanillaOption(
                 option_type="call",
-                strike=1.08,
-                expiry=0.5,
+                strike=1.0850,
+                expiry=0.25,  # 3 months
                 notional=10_000_000,
                 spot_id=EURUSD_SPOT,
                 domestic_curve_id=USD_CURVE,
                 foreign_curve_id=EUR_CURVE,
                 vol_id=EURUSD_VOL,
             ),
-            quantity=1,
+            quantity=1.0,
         ),
+        # Short OTM put
         Position(
-            position_id="EURUSD_PUT_OTM",
+            position_id="SHORT_PUT_OTM",
             instrument=EuropeanFxVanillaOption(
                 option_type="put",
-                strike=1.05,
-                expiry=0.5,
+                strike=1.0500,
+                expiry=0.25,
                 notional=5_000_000,
                 spot_id=EURUSD_SPOT,
                 domestic_curve_id=USD_CURVE,
                 foreign_curve_id=EUR_CURVE,
                 vol_id=EURUSD_VOL,
             ),
-            quantity=1,
+            quantity=-1.0,
+        ),
+        # Long 1Y straddle
+        Position(
+            position_id="LONG_STRADDLE_CALL",
+            instrument=EuropeanFxVanillaOption(
+                option_type="call",
+                strike=1.0850,
+                expiry=1.0,
+                notional=3_000_000,
+                spot_id=EURUSD_SPOT,
+                domestic_curve_id=USD_CURVE,
+                foreign_curve_id=EUR_CURVE,
+                vol_id=EURUSD_VOL,
+            ),
+            quantity=1.0,
+        ),
+        Position(
+            position_id="LONG_STRADDLE_PUT",
+            instrument=EuropeanFxVanillaOption(
+                option_type="put",
+                strike=1.0850,
+                expiry=1.0,
+                notional=3_000_000,
+                spot_id=EURUSD_SPOT,
+                domestic_curve_id=USD_CURVE,
+                foreign_curve_id=EUR_CURVE,
+                vol_id=EURUSD_VOL,
+            ),
+            quantity=1.0,
         ),
     ]
-    
-    logger.info("")
-    logger.info("Portfolio:")
-    for pos in positions:
-        opt = pos.instrument
-        logger.info(f"  {pos.position_id}: {opt.option_type.upper()} K={opt.strike}, T={opt.expiry}Y, N={opt.notional:,.0f}")
     
     return Portfolio(positions=positions)
 
 
-def setup_pricer() -> Tuple[PricerRegistry, PortfolioPricer]:
-    """Setup pricer infrastructure."""
-    registry = PricerRegistry()
-    registry.register(EuropeanFxVanillaOption, FxEuropeanVanillaBsmPricer())
-    portfolio_pricer = PortfolioPricer(pricer_registry=registry)
-    return registry, portfolio_pricer
-
-
 # =============================================================================
-# SECTION 2: P&L Attribution Calculation
+# SECTION 3: P&L Attribution Engine
 # =============================================================================
 
-def compute_greeks(
+def compute_portfolio_greeks(
     portfolio: Portfolio,
     market: Market,
-    portfolio_pricer: PortfolioPricer,
+    pricer: FxEuropeanVanillaBsmPricer,
 ) -> Dict[str, float]:
     """
-    Compute portfolio Greeks at T-1.
+    Compute aggregate portfolio Greeks.
     
     Returns
     -------
     Dict[str, float]
-        Portfolio Greeks.
+        Total delta, gamma, vega, theta.
     """
-    result = portfolio_pricer.price(portfolio, market)
-    greeks = result.totals.greeks
+    total_delta = 0.0
+    total_gamma = 0.0
+    total_vega = 0.0
+    total_theta = 0.0
+    
+    for pos in portfolio.positions:
+        greeks = pricer.greeks(pos.instrument, market)
+        total_delta += pos.quantity * greeks.get('delta', 0)
+        total_gamma += pos.quantity * greeks.get('gamma', 0)
+        total_vega += pos.quantity * greeks.get('vega', 0)
+        total_theta += pos.quantity * greeks.get('theta', 0)
     
     return {
-        "pv": result.totals.pv,
-        "delta": greeks.get("delta", 0),
-        "gamma": greeks.get("gamma", 0),
-        "vega": greeks.get("vega", 0),
-        "theta": greeks.get("theta", 0),
-        "rho_domestic": greeks.get("rho_domestic", greeks.get("rho", 0)),
-        "rho_foreign": greeks.get("rho_foreign", 0),
+        'delta': total_delta,
+        'gamma': total_gamma,
+        'vega': total_vega,
+        'theta': total_theta,
     }
 
 
-def attribute_pnl(
+def compute_portfolio_pv(
+    portfolio: Portfolio,
+    market: Market,
+    pricer: FxEuropeanVanillaBsmPricer,
+) -> float:
+    """Compute total portfolio PV."""
+    total_pv = 0.0
+    for pos in portfolio.positions:
+        pv = pricer.price(pos.instrument, market)
+        total_pv += pos.quantity * pv
+    return total_pv
+
+
+def compute_pnl_attribution(
     portfolio: Portfolio,
     market_t0: Market,
     market_t1: Market,
-    move: MarketMove,
-    portfolio_pricer: PortfolioPricer,
-) -> AttributionResult:
+    market_move: MarketMove,
+    pricer: FxEuropeanVanillaBsmPricer,
+) -> PnLAttribution:
     """
-    Attribute P&L to risk factors using Greeks.
+    Compute P&L attribution using Taylor expansion.
     
     Parameters
     ----------
     portfolio : Portfolio
         The portfolio.
     market_t0 : Market
-        Yesterday's market.
+        Market at T0.
     market_t1 : Market
-        Today's market.
-    move : MarketMove
-        Market move data.
-    portfolio_pricer : PortfolioPricer
-        Portfolio pricer.
+        Market at T1.
+    market_move : MarketMove
+        Market move details.
+    pricer : FxEuropeanVanillaBsmPricer
+        The pricer.
     
     Returns
     -------
-    AttributionResult
-        P&L attribution breakdown.
-    
-    Mathematical Details
-    --------------------
-    We use Taylor expansion around T-1 values:
-    
-        ΔV ≈ Δ·ΔS + ½Γ·(ΔS)² + ν·Δσ + Θ·Δt + ρ_d·Δr_d + ρ_f·Δr_f
-    
-    where Greeks are computed at T-1 market.
+    PnLAttribution
+        P&L breakdown.
     """
-    logger.info("")
-    logger.info("=" * 70)
-    logger.info("SECTION 2: P&L Attribution")
-    logger.info("=" * 70)
+    # Compute Greeks at T0
+    greeks_t0 = compute_portfolio_greeks(portfolio, market_t0, pricer)
     
-    # Get T-1 and T portfolio values
-    pv_t0 = portfolio_pricer.price(portfolio, market_t0).totals.pv
-    pv_t1 = portfolio_pricer.price(portfolio, market_t1).totals.pv
-    
+    # Compute actual P&L
+    pv_t0 = compute_portfolio_pv(portfolio, market_t0, pricer)
+    pv_t1 = compute_portfolio_pv(portfolio, market_t1, pricer)
     actual_pnl = pv_t1 - pv_t0
     
-    # Get Greeks at T-1
-    greeks = compute_greeks(portfolio, market_t0, portfolio_pricer)
+    # Taylor expansion attribution
+    # Delta P&L: Δ × ΔS
+    delta_pnl = greeks_t0['delta'] * market_move.delta_spot
     
-    logger.info("")
-    logger.info("Portfolio Values:")
-    logger.info(f"  PV (T-1): ${pv_t0:,.2f}")
-    logger.info(f"  PV (T):   ${pv_t1:,.2f}")
-    logger.info(f"  Actual P&L: ${actual_pnl:,.2f}")
+    # Gamma P&L: ½Γ × (ΔS)²
+    gamma_pnl = 0.5 * greeks_t0['gamma'] * (market_move.delta_spot ** 2)
     
-    logger.info("")
-    logger.info("T-1 Greeks:")
-    logger.info(f"  Delta (Δ):        {greeks['delta']:,.2f}")
-    logger.info(f"  Gamma (Γ):        {greeks['gamma']:,.2f}")
-    logger.info(f"  Vega (ν):         {greeks['vega']:,.2f}")
-    logger.info(f"  Theta (Θ):        {greeks['theta']:,.2f}")
-    logger.info(f"  Rho Domestic:     {greeks['rho_domestic']:,.2f}")
-    logger.info(f"  Rho Foreign:      {greeks['rho_foreign']:,.2f}")
+    # Vega P&L: ν × Δσ (vega is per 1% vol move, so multiply by 100)
+    vega_pnl = greeks_t0['vega'] * market_move.delta_vol * 100
     
-    # Compute attributed P&L
-    delta_pnl = greeks["delta"] * move.delta_spot
-    gamma_pnl = 0.5 * greeks["gamma"] * move.delta_spot ** 2
-    vega_pnl = greeks["vega"] * move.delta_vol
-    theta_pnl = greeks["theta"] * (1 / 252)  # 1 day
-    rho_dom_pnl = greeks["rho_domestic"] * move.delta_r_dom
-    rho_for_pnl = greeks["rho_foreign"] * move.delta_r_for
+    # Theta P&L: Θ × Δt (theta is daily decay)
+    theta_pnl = greeks_t0['theta'] * market_move.dt * 365  # Convert to daily
     
-    explained = delta_pnl + gamma_pnl + vega_pnl + theta_pnl + rho_dom_pnl + rho_for_pnl
-    residual = actual_pnl - explained
+    # Explained P&L
+    explained_pnl = delta_pnl + gamma_pnl + vega_pnl + theta_pnl
     
-    logger.info("")
-    logger.info("Market Moves:")
-    logger.info(f"  ΔS (spot):        {move.delta_spot:+.4f} ({move.delta_spot/move.spot_t0*100:+.2f}%)")
-    logger.info(f"  Δσ (vol):         {move.delta_vol*100:+.2f} vol points")
-    logger.info(f"  Δr_dom:           {move.delta_r_dom*100:+.2f} bps")
-    logger.info(f"  Δr_for:           {move.delta_r_for*100:+.2f} bps")
+    # Residual (unexplained)
+    residual = actual_pnl - explained_pnl
     
-    return AttributionResult(
-        actual_pnl=actual_pnl,
+    return PnLAttribution(
         delta_pnl=delta_pnl,
         gamma_pnl=gamma_pnl,
         vega_pnl=vega_pnl,
         theta_pnl=theta_pnl,
-        rho_dom_pnl=rho_dom_pnl,
-        rho_for_pnl=rho_for_pnl,
+        explained_pnl=explained_pnl,
+        actual_pnl=actual_pnl,
         residual=residual,
     )
 
 
 # =============================================================================
-# SECTION 3: Display Results
+# SECTION 4: Run Attribution
 # =============================================================================
 
-def display_attribution(result: AttributionResult) -> None:
-    """Display P&L attribution breakdown."""
-    logger.info("")
-    logger.info("=" * 70)
-    logger.info("SECTION 3: P&L Attribution Breakdown")
-    logger.info("=" * 70)
-    
-    logger.info("")
-    logger.info("P&L Attribution:")
-    logger.info("-" * 50)
-    logger.info(f"{'Factor':<20} {'P&L':>15} {'% of Total':>15}")
-    logger.info("-" * 50)
-    
-    total = abs(result.actual_pnl) if abs(result.actual_pnl) > 1e-10 else 1
-    
-    logger.info(f"{'Delta':<20} ${result.delta_pnl:>14,.2f} {result.delta_pnl/total*100:>14.1f}%")
-    logger.info(f"{'Gamma':<20} ${result.gamma_pnl:>14,.2f} {result.gamma_pnl/total*100:>14.1f}%")
-    logger.info(f"{'Vega':<20} ${result.vega_pnl:>14,.2f} {result.vega_pnl/total*100:>14.1f}%")
-    logger.info(f"{'Theta':<20} ${result.theta_pnl:>14,.2f} {result.theta_pnl/total*100:>14.1f}%")
-    logger.info(f"{'Rho (Domestic)':<20} ${result.rho_dom_pnl:>14,.2f} {result.rho_dom_pnl/total*100:>14.1f}%")
-    logger.info(f"{'Rho (Foreign)':<20} ${result.rho_for_pnl:>14,.2f} {result.rho_for_pnl/total*100:>14.1f}%")
-    logger.info("-" * 50)
-    logger.info(f"{'Explained':<20} ${result.explained_pnl:>14,.2f} {result.explained_pnl/total*100:>14.1f}%")
-    logger.info(f"{'Residual':<20} ${result.residual:>14,.2f} {result.residual/total*100:>14.1f}%")
-    logger.info("-" * 50)
-    logger.info(f"{'ACTUAL P&L':<20} ${result.actual_pnl:>14,.2f} {'100.0':>14}%")
-    
-    logger.info("")
-    logger.info("Quality Metrics:")
-    logger.info(f"  Explain Ratio:    {result.explain_ratio:.1%}")
-    logger.info(f"  Residual Ratio:   {abs(result.residual)/total*100:.1f}%")
-    
-    if abs(result.residual / total) > 0.10:
-        logger.warning("  ⚠ Large residual (>10%) - investigate higher-order effects")
-    else:
-        logger.info("  ✓ Residual within acceptable bounds")
-
-
-# =============================================================================
-# SECTION 4: Multiple Scenarios
-# =============================================================================
-
-def run_scenario_attribution(
-    portfolio: Portfolio,
-    market_t0: Market,
-    params: Dict[str, float],
-    portfolio_pricer: PortfolioPricer,
-) -> List[Tuple[str, MarketMove, AttributionResult]]:
+def run_pnl_attribution() -> Tuple[PnLAttribution, Dict[str, float]]:
     """
-    Run attribution for multiple market scenarios.
+    Run P&L attribution analysis.
     
     Returns
     -------
-    List[Tuple[str, MarketMove, AttributionResult]]
-        List of (scenario_name, move, attribution).
+    Tuple[PnLAttribution, Dict[str, float]]
+        Attribution results and Greeks.
+    """
+    logger.info("=" * 70)
+    logger.info("SECTION 1: P&L Attribution Setup")
+    logger.info("=" * 70)
+    
+    # Market parameters
+    spot_t0 = 1.0850
+    spot_t1 = 1.0920  # Spot moved up 70 pips
+    vol_t0 = 0.10
+    vol_t1 = 0.105  # Vol increased 50 bps
+    r_usd = 0.05
+    r_eur = 0.04
+    dt = 1 / 365  # 1 day
+    
+    market_move = MarketMove(
+        spot_t0=spot_t0,
+        spot_t1=spot_t1,
+        vol_t0=vol_t0,
+        vol_t1=vol_t1,
+        dt=dt,
+    )
+    
+    logger.info("")
+    logger.info("Market Move (T0 → T1):")
+    logger.info(f"  Spot:      {spot_t0:.4f} → {spot_t1:.4f} (Δ = {market_move.delta_spot:+.4f}, {market_move.spot_return*100:+.2f}%)")
+    logger.info(f"  Vol:       {vol_t0*100:.1f}% → {vol_t1*100:.1f}% (Δ = {market_move.delta_vol*100:+.2f}%)")
+    logger.info(f"  Time:      1 day")
+    
+    # Create markets
+    market_t0, market_t1 = create_markets(
+        spot_t0, spot_t1, vol_t0, vol_t1, r_usd, r_eur
+    )
+    
+    # Build portfolio
+    portfolio = build_portfolio()
+    
+    logger.info("")
+    logger.info(f"Portfolio: {len(portfolio.positions)} positions")
+    for pos in portfolio.positions:
+        opt = pos.instrument
+        logger.info(f"  {pos.position_id}: {opt.option_type} K={opt.strike:.4f} T={opt.expiry:.2f}y qty={pos.quantity:+.0f}")
+    
+    # Create pricer
+    pricer = FxEuropeanVanillaBsmPricer()
+    
+    # Compute Greeks at T0
+    logger.info("")
+    logger.info("=" * 70)
+    logger.info("SECTION 2: Portfolio Greeks at T0")
+    logger.info("=" * 70)
+    
+    greeks_t0 = compute_portfolio_greeks(portfolio, market_t0, pricer)
+    
+    logger.info("")
+    logger.info("Aggregate Greeks:")
+    logger.info(f"  Delta (Δ): {greeks_t0['delta']:>15,.2f}")
+    logger.info(f"  Gamma (Γ): {greeks_t0['gamma']:>15,.2f}")
+    logger.info(f"  Vega (ν):  {greeks_t0['vega']:>15,.2f}")
+    logger.info(f"  Theta (Θ): {greeks_t0['theta']:>15,.2f}")
+    
+    # Compute attribution
+    logger.info("")
+    logger.info("=" * 70)
+    logger.info("SECTION 3: P&L Attribution")
+    logger.info("=" * 70)
+    
+    attribution = compute_pnl_attribution(
+        portfolio, market_t0, market_t1, market_move, pricer
+    )
+    
+    pv_t0 = compute_portfolio_pv(portfolio, market_t0, pricer)
+    pv_t1 = compute_portfolio_pv(portfolio, market_t1, pricer)
+    
+    logger.info("")
+    logger.info("Portfolio Value:")
+    logger.info(f"  PV (T0):        ${pv_t0:>15,.2f}")
+    logger.info(f"  PV (T1):        ${pv_t1:>15,.2f}")
+    logger.info(f"  Actual P&L:     ${attribution.actual_pnl:>15,.2f}")
+    
+    logger.info("")
+    logger.info("P&L Decomposition:")
+    logger.info("-" * 50)
+    logger.info(f"  Delta P&L:      ${attribution.delta_pnl:>15,.2f}  (Δ × ΔS)")
+    logger.info(f"  Gamma P&L:      ${attribution.gamma_pnl:>15,.2f}  (½Γ × ΔS²)")
+    logger.info(f"  Vega P&L:       ${attribution.vega_pnl:>15,.2f}  (ν × Δσ)")
+    logger.info(f"  Theta P&L:      ${attribution.theta_pnl:>15,.2f}  (Θ × Δt)")
+    logger.info("-" * 50)
+    logger.info(f"  Explained P&L:  ${attribution.explained_pnl:>15,.2f}")
+    logger.info(f"  Actual P&L:     ${attribution.actual_pnl:>15,.2f}")
+    logger.info(f"  Residual:       ${attribution.residual:>15,.2f}")
+    logger.info("")
+    logger.info(f"  Explain Ratio:  {attribution.explain_ratio*100:>14.1f}%")
+    
+    return attribution, greeks_t0
+
+
+# =============================================================================
+# SECTION 5: Multi-Day Attribution
+# =============================================================================
+
+def run_multiday_attribution() -> List[PnLAttribution]:
+    """
+    Run attribution over multiple days.
+    
+    Returns
+    -------
+    List[PnLAttribution]
+        Attribution for each day.
     """
     logger.info("")
     logger.info("=" * 70)
-    logger.info("SECTION 4: Multi-Scenario Attribution")
+    logger.info("SECTION 4: Multi-Day P&L Attribution")
     logger.info("=" * 70)
     
-    scenarios = [
-        ("Spot +1%", MarketMove(
-            spot_t0=params["spot"], spot_t1=params["spot"] * 1.01,
-            vol_t0=params["vol"], vol_t1=params["vol"],
-            r_dom_t0=params["r_dom"], r_dom_t1=params["r_dom"],
-            r_for_t0=params["r_for"], r_for_t1=params["r_for"],
-        )),
-        ("Spot -1%", MarketMove(
-            spot_t0=params["spot"], spot_t1=params["spot"] * 0.99,
-            vol_t0=params["vol"], vol_t1=params["vol"],
-            r_dom_t0=params["r_dom"], r_dom_t1=params["r_dom"],
-            r_for_t0=params["r_for"], r_for_t1=params["r_for"],
-        )),
-        ("Vol +2pts", MarketMove(
-            spot_t0=params["spot"], spot_t1=params["spot"],
-            vol_t0=params["vol"], vol_t1=params["vol"] + 0.02,
-            r_dom_t0=params["r_dom"], r_dom_t1=params["r_dom"],
-            r_for_t0=params["r_for"], r_for_t1=params["r_for"],
-        )),
-        ("Spot +2%, Vol +1pt", MarketMove(
-            spot_t0=params["spot"], spot_t1=params["spot"] * 1.02,
-            vol_t0=params["vol"], vol_t1=params["vol"] + 0.01,
-            r_dom_t0=params["r_dom"], r_dom_t1=params["r_dom"],
-            r_for_t0=params["r_for"], r_for_t1=params["r_for"],
-        )),
-        ("Rates +25bp", MarketMove(
-            spot_t0=params["spot"], spot_t1=params["spot"],
-            vol_t0=params["vol"], vol_t1=params["vol"],
-            r_dom_t0=params["r_dom"], r_dom_t1=params["r_dom"] + 0.0025,
-            r_for_t0=params["r_for"], r_for_t1=params["r_for"] + 0.0025,
-        )),
-    ]
+    # Simulate 5 days of market moves
+    np.random.seed(42)
     
-    results = []
+    spot_t0 = 1.0850
+    vol_t0 = 0.10
+    r_usd = 0.05
+    r_eur = 0.04
+    
+    # Daily returns and vol changes
+    daily_returns = np.random.normal(0, 0.007, 5)  # ~70bps daily vol
+    vol_changes = np.random.normal(0, 0.003, 5)  # Vol changes
+    
+    portfolio = build_portfolio()
+    pricer = FxEuropeanVanillaBsmPricer()
+    
+    attributions: List[PnLAttribution] = []
     
     logger.info("")
-    logger.info("Scenario Attribution Summary:")
-    logger.info("-" * 90)
-    logger.info(f"{'Scenario':<20} {'Actual':>12} {'Delta':>10} {'Gamma':>10} {'Vega':>10} {'Residual':>10} {'Explain':>10}")
-    logger.info("-" * 90)
+    logger.info(f"{'Day':<6} {'ΔSpot':>10} {'ΔVol':>10} {'Actual':>12} {'Explained':>12} {'Residual':>12}")
+    logger.info("-" * 72)
     
-    for name, move in scenarios:
-        market_t1 = create_market_t1(move)
-        attr = attribute_pnl(portfolio, market_t0, market_t1, move, portfolio_pricer)
-        results.append((name, move, attr))
+    for day in range(5):
+        spot_t1 = spot_t0 * (1 + daily_returns[day])
+        vol_t1 = vol_t0 + vol_changes[day]
+        vol_t1 = max(0.05, min(0.30, vol_t1))  # Bound vol
+        
+        market_move = MarketMove(
+            spot_t0=spot_t0,
+            spot_t1=spot_t1,
+            vol_t0=vol_t0,
+            vol_t1=vol_t1,
+            dt=1/365,
+        )
+        
+        market_t0, market_t1 = create_markets(
+            spot_t0, spot_t1, vol_t0, vol_t1, r_usd, r_eur
+        )
+        
+        attr = compute_pnl_attribution(
+            portfolio, market_t0, market_t1, market_move, pricer
+        )
+        attributions.append(attr)
         
         logger.info(
-            f"{name:<20} ${attr.actual_pnl:>10,.0f} ${attr.delta_pnl:>8,.0f} "
-            f"${attr.gamma_pnl:>8,.0f} ${attr.vega_pnl:>8,.0f} "
-            f"${attr.residual:>8,.0f} {attr.explain_ratio:>9.1%}"
+            f"Day {day+1:<3} {market_move.delta_spot*10000:>+8.1f}bp {vol_changes[day]*100:>+8.2f}% "
+            f"${attr.actual_pnl:>10,.0f} ${attr.explained_pnl:>10,.0f} ${attr.residual:>10,.0f}"
         )
+        
+        # Roll forward
+        spot_t0 = spot_t1
+        vol_t0 = vol_t1
     
-    logger.info("-" * 90)
+    # Summary
+    total_actual = sum(a.actual_pnl for a in attributions)
+    total_explained = sum(a.explained_pnl for a in attributions)
+    total_residual = sum(a.residual for a in attributions)
     
-    return results
+    logger.info("-" * 72)
+    logger.info(
+        f"{'TOTAL':<6} {'':<10} {'':<10} "
+        f"${total_actual:>10,.0f} ${total_explained:>10,.0f} ${total_residual:>10,.0f}"
+    )
+    
+    return attributions
 
 
 # =============================================================================
-# SECTION 5: Visualization
+# SECTION 6: Visualization
 # =============================================================================
 
 def visualize_attribution(
-    result: AttributionResult,
-    scenario_results: List[Tuple[str, MarketMove, AttributionResult]],
+    attribution: PnLAttribution,
+    multiday: List[PnLAttribution],
 ) -> None:
     """Create attribution visualizations."""
     if not MATPLOTLIB_AVAILABLE or not ENABLE_PLOTTING:
@@ -597,88 +626,93 @@ def visualize_attribution(
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     
     # -------------------------------------------------------------------------
-    # Plot 1: P&L Attribution Waterfall
+    # Plot 1: Single-day attribution breakdown
     # -------------------------------------------------------------------------
     ax = axes[0, 0]
-    
-    factors = ['Delta', 'Gamma', 'Vega', 'Theta', 'Rho Dom', 'Rho For', 'Residual']
+    components = ['Delta', 'Gamma', 'Vega', 'Theta', 'Residual']
     values = [
-        result.delta_pnl, result.gamma_pnl, result.vega_pnl,
-        result.theta_pnl, result.rho_dom_pnl, result.rho_for_pnl, result.residual
+        attribution.delta_pnl,
+        attribution.gamma_pnl,
+        attribution.vega_pnl,
+        attribution.theta_pnl,
+        attribution.residual,
     ]
+    colors = ['#2E86AB' if v >= 0 else '#E94F37' for v in values]
     
-    # Waterfall chart
-    cumulative = 0
-    for i, (factor, value) in enumerate(zip(factors, values)):
-        color = '#10B981' if value >= 0 else '#E94F37'
-        ax.bar(i, value, bottom=cumulative, color=color, alpha=0.8)
-        cumulative += value
+    bars = ax.barh(components, values, color=colors)
+    ax.axvline(0, color='black', linewidth=0.5)
+    ax.set_xlabel('P&L ($)')
+    ax.set_title('Single-Day P&L Attribution')
+    ax.grid(True, alpha=0.3, axis='x')
     
-    # Add total bar
-    ax.bar(len(factors), result.actual_pnl, color='#2E86AB', alpha=0.8)
-    factors.append('Total')
-    
-    ax.set_xticks(range(len(factors)))
-    ax.set_xticklabels(factors, rotation=45, ha='right')
-    ax.axhline(0, color='black', linewidth=0.5)
-    ax.set_ylabel('P&L ($)')
-    ax.set_title('P&L Attribution Waterfall')
-    ax.grid(True, alpha=0.3, axis='y')
+    for bar, val in zip(bars, values):
+        ax.text(
+            val + (500 if val >= 0 else -500),
+            bar.get_y() + bar.get_height() / 2,
+            f'${val:,.0f}',
+            ha='left' if val >= 0 else 'right',
+            va='center',
+            fontsize=9,
+        )
     
     # -------------------------------------------------------------------------
-    # Plot 2: Attribution Pie Chart
+    # Plot 2: Multi-day cumulative P&L
     # -------------------------------------------------------------------------
     ax = axes[0, 1]
+    days = range(1, len(multiday) + 1)
+    cum_actual = np.cumsum([a.actual_pnl for a in multiday])
+    cum_explained = np.cumsum([a.explained_pnl for a in multiday])
     
-    abs_values = [abs(v) for v in values[:-1]]  # Exclude residual
-    labels = factors[:-2]  # Exclude residual and total
-    colors = ['#2E86AB', '#8B5CF6', '#F59E0B', '#6B7280', '#10B981', '#E94F37']
-    
-    if sum(abs_values) > 0:
-        ax.pie(abs_values, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90)
-        ax.set_title('Attribution by Factor (Absolute)')
-    else:
-        ax.text(0.5, 0.5, "No P&L to attribute", ha='center', va='center')
+    ax.plot(days, cum_actual / 1000, 'b-', linewidth=2, label='Actual')
+    ax.plot(days, cum_explained / 1000, 'g--', linewidth=2, label='Explained')
+    ax.fill_between(days, cum_actual / 1000, cum_explained / 1000, alpha=0.3, color='red', label='Residual')
+    ax.set_xlabel('Day')
+    ax.set_ylabel('Cumulative P&L ($000s)')
+    ax.set_title('Multi-Day P&L: Actual vs Explained')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
     
     # -------------------------------------------------------------------------
-    # Plot 3: Scenario Comparison
+    # Plot 3: Attribution breakdown over time
     # -------------------------------------------------------------------------
     ax = axes[1, 0]
+    delta_pnls = [a.delta_pnl for a in multiday]
+    gamma_pnls = [a.gamma_pnl for a in multiday]
+    vega_pnls = [a.vega_pnl for a in multiday]
+    theta_pnls = [a.theta_pnl for a in multiday]
     
-    scenario_names = [r[0] for r in scenario_results]
-    actuals = [r[2].actual_pnl for r in scenario_results]
-    explained = [r[2].explained_pnl for r in scenario_results]
+    width = 0.2
+    x = np.arange(len(multiday))
     
-    x = np.arange(len(scenario_names))
-    width = 0.35
+    ax.bar(x - 1.5*width, delta_pnls, width, label='Delta', color='#2E86AB')
+    ax.bar(x - 0.5*width, gamma_pnls, width, label='Gamma', color='#10B981')
+    ax.bar(x + 0.5*width, vega_pnls, width, label='Vega', color='#8B5CF6')
+    ax.bar(x + 1.5*width, theta_pnls, width, label='Theta', color='#F59E0B')
     
-    ax.bar(x - width/2, actuals, width, label='Actual P&L', color='#2E86AB')
-    ax.bar(x + width/2, explained, width, label='Explained P&L', color='#10B981')
-    
-    ax.set_xticks(x)
-    ax.set_xticklabels(scenario_names, rotation=45, ha='right')
+    ax.axhline(0, color='black', linewidth=0.5)
+    ax.set_xlabel('Day')
     ax.set_ylabel('P&L ($)')
-    ax.set_title('Actual vs Explained P&L by Scenario')
+    ax.set_title('Daily P&L by Component')
+    ax.set_xticks(x)
+    ax.set_xticklabels([f'Day {i+1}' for i in range(len(multiday))])
     ax.legend()
     ax.grid(True, alpha=0.3, axis='y')
     
     # -------------------------------------------------------------------------
-    # Plot 4: Explain Ratio by Scenario
+    # Plot 4: Explain ratio
     # -------------------------------------------------------------------------
     ax = axes[1, 1]
+    explain_ratios = [a.explain_ratio * 100 for a in multiday]
     
-    explain_ratios = [r[2].explain_ratio * 100 for r in scenario_results]
-    
-    colors = ['#10B981' if r >= 90 else '#F59E0B' if r >= 80 else '#E94F37' for r in explain_ratios]
-    
-    bars = ax.barh(scenario_names, explain_ratios, color=colors)
-    ax.axvline(100, color='gray', linestyle='--', alpha=0.7)
-    ax.axvline(90, color='#F59E0B', linestyle='--', alpha=0.5, label='90% threshold')
-    
-    ax.set_xlabel('Explain Ratio (%)')
-    ax.set_title('Attribution Quality by Scenario')
-    ax.set_xlim(0, 110)
-    ax.grid(True, alpha=0.3, axis='x')
+    bars = ax.bar(days, explain_ratios, color=['#10B981' if r > 90 else '#F59E0B' if r > 80 else '#E94F37' for r in explain_ratios])
+    ax.axhline(100, color='black', linestyle='--', alpha=0.5)
+    ax.axhline(90, color='green', linestyle=':', alpha=0.5, label='90% threshold')
+    ax.set_xlabel('Day')
+    ax.set_ylabel('Explain Ratio (%)')
+    ax.set_title('Daily Explain Ratio (>90% is good)')
+    ax.set_ylim(0, 120)
+    ax.legend()
+    ax.grid(True, alpha=0.3, axis='y')
     
     plt.tight_layout()
     plt.show(block=True)
@@ -702,27 +736,26 @@ def print_summary() -> None:
     │                         KEY TAKEAWAYS                                │
     ├─────────────────────────────────────────────────────────────────────┤
     │                                                                      │
-    │  1. P&L Attribution:                                                │
-    │     - Decomposes P&L into risk factor contributions                 │
-    │     - Uses Taylor expansion: ΔV ≈ Δ·ΔS + ½Γ·(ΔS)² + ν·Δσ + ...      │
+    │  1. P&L Attribution Formula:                                        │
+    │     ΔV ≈ Δ·ΔS + ½Γ·(ΔS)² + ν·Δσ + Θ·Δt                            │
     │                                                                      │
-    │  2. Key Components:                                                 │
-    │     - Delta P&L: First-order spot sensitivity                       │
-    │     - Gamma P&L: Convexity (second-order) effect                    │
-    │     - Vega P&L: Volatility move contribution                        │
-    │     - Theta P&L: Time decay (always negative for long options)      │
+    │  2. Component Interpretation:                                       │
+    │     - Delta P&L: Directional exposure to spot                       │
+    │     - Gamma P&L: Convexity benefit/cost from large moves            │
+    │     - Vega P&L: Vol exposure                                        │
+    │     - Theta P&L: Time decay (usually negative for long options)     │
     │                                                                      │
     │  3. Residual Analysis:                                              │
-    │     - Residual = Actual - Explained                                 │
-    │     - Large residual indicates higher-order effects or model error  │
-    │     - Target: Explain ratio > 90%                                   │
+    │     - Small residual = model explains P&L well                      │
+    │     - Large residual = investigate! (model error, data issue)       │
+    │     - Target: >90% explain ratio                                    │
     │                                                                      │
     │  4. Production Use:                                                 │
-    │     - End-of-day P&L explain is mandatory                           │
-    │     - Drives investigation into large moves                         │
-    │     - Performance attribution by trader/strategy                    │
+    │     - Daily P&L validation                                          │
+    │     - Risk factor contribution monitoring                           │
+    │     - Hedging effectiveness analysis                                │
     │                                                                      │
-    │  NEXT: See 04_delta_hedging.py for dynamic hedging                  │
+    │  NEXT: See 04_delta_hedging.py for hedging workflow                 │
     │                                                                      │
     └─────────────────────────────────────────────────────────────────────┘
     """
@@ -735,7 +768,7 @@ def print_summary() -> None:
 
 def main(args: argparse.Namespace) -> None:
     """
-    Main entry point.
+    Main entry point for the example.
     
     Parameters
     ----------
@@ -746,34 +779,14 @@ def main(args: argparse.Namespace) -> None:
     ENABLE_PLOTTING = args.plot
     
     try:
-        # Section 1: Setup
-        market_t0, params = create_market_t0()
-        portfolio = build_portfolio()
-        registry, portfolio_pricer = setup_pricer()
+        # Single-day attribution
+        attribution, greeks = run_pnl_attribution()
         
-        # Define a sample market move
-        move = MarketMove(
-            spot_t0=params["spot"], spot_t1=params["spot"] * 1.015,  # +1.5%
-            vol_t0=params["vol"], vol_t1=params["vol"] + 0.005,      # +0.5 vol pts
-            r_dom_t0=params["r_dom"], r_dom_t1=params["r_dom"],
-            r_for_t0=params["r_for"], r_for_t1=params["r_for"],
-        )
+        # Multi-day attribution
+        multiday = run_multiday_attribution()
         
-        market_t1 = create_market_t1(move)
-        
-        # Section 2: P&L Attribution
-        result = attribute_pnl(portfolio, market_t0, market_t1, move, portfolio_pricer)
-        
-        # Section 3: Display
-        display_attribution(result)
-        
-        # Section 4: Multi-scenario
-        scenario_results = run_scenario_attribution(
-            portfolio, market_t0, params, portfolio_pricer
-        )
-        
-        # Section 5: Visualization
-        visualize_attribution(result, scenario_results)
+        # Visualization
+        visualize_attribution(attribution, multiday)
         
         # Summary
         print_summary()

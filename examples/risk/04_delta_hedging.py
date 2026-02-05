@@ -1,51 +1,49 @@
 #!/usr/bin/env python3
 """
 ===============================================================================
-Delta Hedging: Dynamic Risk Management
+Delta Hedging: Dynamic Hedging Workflow
 ===============================================================================
 
-This example demonstrates delta hedging - the practice of dynamically adjusting
-a hedge position to neutralize directional risk from option positions.
+This example demonstrates dynamic delta hedging - maintaining a delta-neutral
+position through continuous rebalancing as the market moves.
 
 Learning Objectives
 -------------------
-1. **Delta Hedging Theory**: Understand delta-neutral portfolios
-2. **Discrete Hedging**: Impact of rebalancing frequency
-3. **Transaction Costs**: Trade-off between hedge quality and costs
-4. **Hedging P&L**: Gamma/theta relationship and hedging costs
+1. **Delta Hedging**: Understand the goal of eliminating directional risk
+2. **Rebalancing**: See how hedging positions change with spot and time
+3. **Transaction Costs**: Understand the trade-off between hedge accuracy and costs
+4. **Hedge Effectiveness**: Measure P&L volatility reduction from hedging
 
 Mathematical Framework
 ----------------------
-Delta-Neutral Portfolio:
-    Δ_portfolio + Δ_hedge = 0
-    
-For a short call option with delta Δ, we hold Δ shares of underlying.
+Delta hedge position for a short option:
+    Hedge Position = +Δ (buy delta shares to offset option delta)
 
-Discrete Hedging P&L:
-    Over interval dt with hedge position h = Δ(t-):
-    
-    Hedge P&L = h × ΔS
-    Option P&L = -ΔC (we're short the option)
-    
-    Net P&L ≈ ½Γ(ΔS)² - Θ·dt - transaction costs
+For a call with Δ = 0.5:
+    - Short 1 call (Δ = -0.5)
+    - Buy 0.5 shares (Δ = +0.5)
+    - Net delta = 0 (delta neutral)
 
-The hedge P&L matches first-order option movement, leaving:
-    - Gamma P&L: Positive when large moves (long gamma)
-    - Theta decay: Negative (option loses time value)
-    - Transaction costs: From rebalancing
+As spot moves, delta changes (gamma effect):
+    ΔΔ ≈ Γ × ΔS
+
+Requiring rebalancing to maintain neutrality.
+
+Hedging P&L decomposition:
+    Hedge P&L = Gamma P&L - Transaction Costs - Theta Decay
 
 Production Context
 ------------------
 At a hedge fund:
-- Delta hedging is the most common risk management technique
-- Rebalancing frequency depends on gamma exposure and costs
-- Real-time delta monitoring for large portfolios
-- Hedge slippage tracking and analysis
+- Options desks hedge to isolate vol/gamma exposure
+- Rebalancing frequency is a key decision (cost vs accuracy)
+- Perfect hedging is impossible (discrete rebalancing, transaction costs)
+- Gamma P&L should offset theta over time (hedging earns vol carry)
 
 Prerequisites
 -------------
-- Understanding of Greeks (examples/risk/02_sensitivities_computation.py)
-- Understanding of P&L attribution (examples/risk/03_pnl_attribution.py)
+- Greeks computation (examples/risk/02_sensitivities_computation.py)
+- P&L attribution (examples/risk/03_pnl_attribution.py)
 
 Run This Example
 ----------------
@@ -64,7 +62,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import math
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -77,6 +74,18 @@ import numpy as np
 # -----------------------------------------------------------------------------
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
+
+# -----------------------------------------------------------------------------
+# QuantStrata imports
+# -----------------------------------------------------------------------------
+from src.marketdata.core.ids import MarketId
+from src.marketdata.core.interfaces import Quote
+from src.marketdata.core.market import Market
+from src.marketdata.curves.term_structure import FlatZeroRateCurve
+from src.marketdata.surfaces.vol_surface import FlatVolSurface
+
+from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
+from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer
 
 
 # =============================================================================
@@ -106,462 +115,417 @@ except ImportError:
 
 
 # =============================================================================
-# BLACK-SCHOLES FUNCTIONS
+# CONSTANTS
 # =============================================================================
 
-def norm_cdf(x: float) -> float:
-    """Standard normal CDF."""
-    return 0.5 * (1 + math.erf(x / math.sqrt(2)))
-
-
-def norm_pdf(x: float) -> float:
-    """Standard normal PDF."""
-    return math.exp(-0.5 * x ** 2) / math.sqrt(2 * math.pi)
-
-
-def bs_d1d2(S: float, K: float, T: float, r: float, q: float, sigma: float) -> Tuple[float, float]:
-    """Compute d1 and d2."""
-    if T <= 0:
-        return 0.0, 0.0
-    sqrt_T = math.sqrt(T)
-    d1 = (math.log(S / K) + (r - q + 0.5 * sigma ** 2) * T) / (sigma * sqrt_T)
-    d2 = d1 - sigma * sqrt_T
-    return d1, d2
-
-
-def bs_call_price(S: float, K: float, T: float, r: float, q: float, sigma: float) -> float:
-    """Black-Scholes call price."""
-    if T <= 0:
-        return max(S - K, 0)
-    d1, d2 = bs_d1d2(S, K, T, r, q, sigma)
-    return S * math.exp(-q * T) * norm_cdf(d1) - K * math.exp(-r * T) * norm_cdf(d2)
-
-
-def bs_delta(S: float, K: float, T: float, r: float, q: float, sigma: float, is_call: bool = True) -> float:
-    """Black-Scholes delta."""
-    if T <= 0:
-        if is_call:
-            return 1.0 if S > K else 0.0
-        else:
-            return -1.0 if S < K else 0.0
-    d1, _ = bs_d1d2(S, K, T, r, q, sigma)
-    if is_call:
-        return math.exp(-q * T) * norm_cdf(d1)
-    else:
-        return math.exp(-q * T) * (norm_cdf(d1) - 1)
-
-
-def bs_gamma(S: float, K: float, T: float, r: float, q: float, sigma: float) -> float:
-    """Black-Scholes gamma."""
-    if T <= 0:
-        return 0.0
-    d1, _ = bs_d1d2(S, K, T, r, q, sigma)
-    return math.exp(-q * T) * norm_pdf(d1) / (S * sigma * math.sqrt(T))
-
-
-def bs_theta(S: float, K: float, T: float, r: float, q: float, sigma: float, is_call: bool = True) -> float:
-    """Black-Scholes theta (per year)."""
-    if T <= 0:
-        return 0.0
-    d1, d2 = bs_d1d2(S, K, T, r, q, sigma)
-    sqrt_T = math.sqrt(T)
-    
-    term1 = -S * math.exp(-q * T) * norm_pdf(d1) * sigma / (2 * sqrt_T)
-    
-    if is_call:
-        term2 = q * S * math.exp(-q * T) * norm_cdf(d1)
-        term3 = -r * K * math.exp(-r * T) * norm_cdf(d2)
-    else:
-        term2 = -q * S * math.exp(-q * T) * norm_cdf(-d1)
-        term3 = r * K * math.exp(-r * T) * norm_cdf(-d2)
-    
-    return term1 + term2 + term3
+EURUSD_SPOT = MarketId(asset_class="FX", mkt_type="SPOT", name="EURUSD")
+USD_CURVE = MarketId(asset_class="IR", mkt_type="CURVE", name="USD_OIS")
+EUR_CURVE = MarketId(asset_class="IR", mkt_type="CURVE", name="EUR_OIS")
+EURUSD_VOL = MarketId(asset_class="FX", mkt_type="VOL", name="EURUSD")
 
 
 # =============================================================================
-# DATA CLASSES
+# DATA STRUCTURES
 # =============================================================================
 
 @dataclass
-class HedgingParams:
-    """Hedging simulation parameters."""
-    S0: float = 100.0           # Initial spot
-    K: float = 100.0            # Strike (ATM)
-    T: float = 0.25             # Time to expiry (3 months)
-    r: float = 0.05             # Risk-free rate
-    q: float = 0.0              # Dividend yield
-    sigma: float = 0.20         # Volatility
-    notional: float = 1_000_000 # Option notional
+class HedgingConfig:
+    """Configuration for hedging simulation."""
+    # Option parameters
+    spot: float = 1.0850
+    strike: float = 1.0850  # ATM
+    expiry: float = 0.25  # 3 months
+    vol: float = 0.10
+    r_dom: float = 0.05
+    r_for: float = 0.04
+    notional: float = 10_000_000
     
-    # Hedging parameters
-    rebalance_freq: int = 1     # Rebalance every N days
-    transaction_cost: float = 0.001  # 10 bps per trade
+    # Simulation parameters
+    n_steps: int = 63  # Daily steps (~3 months)
+    n_paths: int = 1000  # MC paths
+    
+    # Transaction costs
+    proportional_cost: float = 0.0001  # 1 bp
+    
+    # Rebalancing
+    rebalance_frequency: int = 1  # Every n steps
+
+
+@dataclass
+class HedgeState:
+    """State of the hedge at a point in time."""
+    time: float
+    spot: float
+    option_value: float
+    delta: float
+    gamma: float
+    hedge_position: float
+    cash: float
+    portfolio_value: float
+    cumulative_costs: float
 
 
 @dataclass
 class HedgingResult:
-    """Result of hedging simulation."""
-    times: np.ndarray
-    spots: np.ndarray
-    option_values: np.ndarray
-    hedge_positions: np.ndarray
-    cash: np.ndarray
-    portfolio_values: np.ndarray
-    deltas: np.ndarray
-    gammas: np.ndarray
-    total_trades: int
-    total_cost: float
-    final_pnl: float
-    pnl_std: float
+    """Result of a hedging simulation."""
+    states: List[HedgeState] = field(default_factory=list)
+    final_pnl: float = 0.0
+    pnl_std: float = 0.0
+    total_costs: float = 0.0
+    n_rebalances: int = 0
 
 
 # =============================================================================
-# SECTION 1: GBM Simulation
+# SECTION 1: Black-Scholes Utilities
 # =============================================================================
 
-def simulate_gbm_path(
+def bs_d1d2(S: float, K: float, T: float, sigma: float, r: float, q: float) -> Tuple[float, float]:
+    """Compute d1 and d2."""
+    if T <= 0:
+        return 0.0, 0.0
+    sqrt_T = np.sqrt(T)
+    d1 = (np.log(S / K) + (r - q + 0.5 * sigma**2) * T) / (sigma * sqrt_T)
+    d2 = d1 - sigma * sqrt_T
+    return d1, d2
+
+
+def bs_call_price(S: float, K: float, T: float, sigma: float, r: float, q: float) -> float:
+    """Black-Scholes call price."""
+    if T <= 0:
+        return max(S - K, 0)
+    d1, d2 = bs_d1d2(S, K, T, sigma, r, q)
+    from scipy.stats import norm
+    return S * np.exp(-q * T) * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+
+
+def bs_call_delta(S: float, K: float, T: float, sigma: float, r: float, q: float) -> float:
+    """Black-Scholes call delta."""
+    if T <= 0:
+        return 1.0 if S > K else 0.0
+    d1, _ = bs_d1d2(S, K, T, sigma, r, q)
+    from scipy.stats import norm
+    return np.exp(-q * T) * norm.cdf(d1)
+
+
+def bs_call_gamma(S: float, K: float, T: float, sigma: float, r: float, q: float) -> float:
+    """Black-Scholes call gamma."""
+    if T <= 0:
+        return 0.0
+    d1, _ = bs_d1d2(S, K, T, sigma, r, q)
+    from scipy.stats import norm
+    return np.exp(-q * T) * norm.pdf(d1) / (S * sigma * np.sqrt(T))
+
+
+# =============================================================================
+# SECTION 2: GBM Simulation
+# =============================================================================
+
+def simulate_gbm_paths(
     S0: float,
     r: float,
     q: float,
     sigma: float,
     T: float,
     n_steps: int,
+    n_paths: int,
     seed: int = 42,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> np.ndarray:
     """
-    Simulate a single GBM path.
-    
-    Parameters
-    ----------
-    S0 : float
-        Initial spot.
-    r : float
-        Risk-free rate.
-    q : float
-        Dividend yield.
-    sigma : float
-        Volatility.
-    T : float
-        Time horizon.
-    n_steps : int
-        Number of time steps.
-    seed : int
-        Random seed.
-    
-    Returns
-    -------
-    Tuple[np.ndarray, np.ndarray]
-        Time grid and spot path.
-    """
-    np.random.seed(seed)
-    
-    dt = T / n_steps
-    times = np.linspace(0, T, n_steps + 1)
-    
-    # Generate returns
-    drift = (r - q - 0.5 * sigma ** 2) * dt
-    diffusion = sigma * np.sqrt(dt) * np.random.randn(n_steps)
-    
-    # Build path
-    log_returns = drift + diffusion
-    spots = np.zeros(n_steps + 1)
-    spots[0] = S0
-    spots[1:] = S0 * np.exp(np.cumsum(log_returns))
-    
-    return times, spots
-
-
-# =============================================================================
-# SECTION 2: Delta Hedging Simulation
-# =============================================================================
-
-def run_delta_hedge(params: HedgingParams, seed: int = 42) -> HedgingResult:
-    """
-    Run delta hedging simulation.
-    
-    Parameters
-    ----------
-    params : HedgingParams
-        Hedging parameters.
-    seed : int
-        Random seed.
-    
-    Returns
-    -------
-    HedgingResult
-        Hedging simulation result.
-    
-    Algorithm
-    ---------
-    1. Start short 1 call option
-    2. At each rebalance date:
-       - Compute delta
-       - Adjust hedge to be delta-neutral
-       - Pay transaction costs
-    3. At expiry:
-       - Settle option payoff
-       - Liquidate hedge
-       - Compute final P&L
-    """
-    # Trading days to expiry
-    n_days = int(params.T * 252)
-    
-    # Simulate path
-    times, spots = simulate_gbm_path(
-        params.S0, params.r, params.q, params.sigma, params.T, n_days, seed
-    )
-    
-    # Initialize tracking arrays
-    option_values = np.zeros(n_days + 1)
-    hedge_positions = np.zeros(n_days + 1)
-    cash = np.zeros(n_days + 1)
-    deltas = np.zeros(n_days + 1)
-    gammas = np.zeros(n_days + 1)
-    
-    # Initial setup
-    time_to_expiry = params.T
-    S = spots[0]
-    
-    # Option value (we are SHORT the option)
-    option_values[0] = bs_call_price(S, params.K, time_to_expiry, params.r, params.q, params.sigma)
-    
-    # Initial delta and hedge
-    delta = bs_delta(S, params.K, time_to_expiry, params.r, params.q, params.sigma)
-    deltas[0] = delta
-    gammas[0] = bs_gamma(S, params.K, time_to_expiry, params.r, params.q, params.sigma)
-    
-    # Initial hedge: buy delta shares to offset short option
-    hedge_positions[0] = delta * params.notional
-    
-    # Cash: receive option premium, pay for initial hedge
-    initial_cost = hedge_positions[0] * S * (1 + params.transaction_cost)
-    cash[0] = option_values[0] * params.notional - initial_cost
-    
-    total_trades = 1
-    total_cost = hedge_positions[0] * S * params.transaction_cost
-    
-    # Simulation loop
-    dt = params.T / n_days
-    
-    for i in range(1, n_days + 1):
-        S = spots[i]
-        time_to_expiry = params.T - i * dt
-        
-        # Compute option value
-        if time_to_expiry > 0:
-            option_values[i] = bs_call_price(S, params.K, time_to_expiry, params.r, params.q, params.sigma)
-            delta = bs_delta(S, params.K, time_to_expiry, params.r, params.q, params.sigma)
-            gamma = bs_gamma(S, params.K, time_to_expiry, params.r, params.q, params.sigma)
-        else:
-            option_values[i] = max(S - params.K, 0)
-            delta = 1.0 if S > params.K else 0.0
-            gamma = 0.0
-        
-        deltas[i] = delta
-        gammas[i] = gamma
-        
-        # Rebalance check
-        if i % params.rebalance_freq == 0 and time_to_expiry > 0:
-            # Target hedge position
-            target_hedge = delta * params.notional
-            trade_size = target_hedge - hedge_positions[i - 1]
-            
-            if abs(trade_size) > 1e-6:
-                trade_cost = abs(trade_size) * S * params.transaction_cost
-                cash[i] = cash[i - 1] - trade_size * S - trade_cost
-                hedge_positions[i] = target_hedge
-                total_trades += 1
-                total_cost += trade_cost
-            else:
-                cash[i] = cash[i - 1]
-                hedge_positions[i] = hedge_positions[i - 1]
-        else:
-            cash[i] = cash[i - 1]
-            hedge_positions[i] = hedge_positions[i - 1]
-    
-    # Final settlement
-    final_S = spots[-1]
-    option_payoff = max(final_S - params.K, 0) * params.notional
-    
-    # We're short the option, so we pay the payoff
-    final_cash = cash[-1] - option_payoff
-    
-    # Liquidate hedge
-    final_cash += hedge_positions[-1] * final_S * (1 - params.transaction_cost)
-    total_cost += hedge_positions[-1] * final_S * params.transaction_cost
-    
-    # Portfolio value at each step
-    portfolio_values = cash - option_values * params.notional + hedge_positions * spots
-    
-    # Final P&L
-    initial_premium = option_values[0] * params.notional
-    final_pnl = final_cash
-    
-    # P&L volatility (daily changes)
-    daily_pnl = np.diff(portfolio_values)
-    pnl_std = np.std(daily_pnl)
-    
-    return HedgingResult(
-        times=times,
-        spots=spots,
-        option_values=option_values,
-        hedge_positions=hedge_positions,
-        cash=cash,
-        portfolio_values=portfolio_values,
-        deltas=deltas,
-        gammas=gammas,
-        total_trades=total_trades,
-        total_cost=total_cost,
-        final_pnl=final_pnl,
-        pnl_std=pnl_std,
-    )
-
-
-# =============================================================================
-# SECTION 3: Display Results
-# =============================================================================
-
-def display_hedging_results(result: HedgingResult, params: HedgingParams) -> None:
-    """Display hedging simulation results."""
-    logger.info("")
-    logger.info("=" * 70)
-    logger.info("SECTION 3: Hedging Simulation Results")
-    logger.info("=" * 70)
-    
-    logger.info("")
-    logger.info("Simulation Parameters:")
-    logger.info(f"  Initial Spot:     ${params.S0:.2f}")
-    logger.info(f"  Strike:           ${params.K:.2f}")
-    logger.info(f"  Time to Expiry:   {params.T:.2f} years ({int(params.T * 252)} days)")
-    logger.info(f"  Volatility:       {params.sigma:.1%}")
-    logger.info(f"  Notional:         ${params.notional:,.0f}")
-    logger.info(f"  Rebalance Freq:   Every {params.rebalance_freq} day(s)")
-    logger.info(f"  Transaction Cost: {params.transaction_cost:.2%}")
-    
-    logger.info("")
-    logger.info("Simulation Results:")
-    logger.info(f"  Final Spot:       ${result.spots[-1]:.2f}")
-    logger.info(f"  Spot Return:      {(result.spots[-1] / result.spots[0] - 1) * 100:+.2f}%")
-    logger.info(f"  Option Payoff:    ${max(result.spots[-1] - params.K, 0) * params.notional:,.0f}")
-    
-    logger.info("")
-    logger.info("Hedging Statistics:")
-    logger.info(f"  Total Trades:     {result.total_trades}")
-    logger.info(f"  Total Cost:       ${result.total_cost:,.2f}")
-    logger.info(f"  Final P&L:        ${result.final_pnl:,.2f}")
-    logger.info(f"  Daily P&L Std:    ${result.pnl_std:,.2f}")
-    
-    # Theoretical hedge cost (theta)
-    initial_theta = bs_theta(params.S0, params.K, params.T, params.r, params.q, params.sigma)
-    expected_theta_cost = -initial_theta * params.T * params.notional
-    
-    logger.info("")
-    logger.info("Theoretical Comparison:")
-    logger.info(f"  Initial Theta:    ${initial_theta * params.notional / 252:.2f}/day")
-    logger.info(f"  Expected Cost:    ${expected_theta_cost:,.2f} (approximate)")
-
-
-# =============================================================================
-# SECTION 4: Rebalancing Frequency Analysis
-# =============================================================================
-
-def analyze_rebalance_frequency(params: HedgingParams) -> List[Tuple[int, HedgingResult]]:
-    """
-    Analyze impact of rebalancing frequency on hedging quality.
-    
-    Returns
-    -------
-    List[Tuple[int, HedgingResult]]
-        List of (frequency, result) tuples.
-    """
-    logger.info("")
-    logger.info("=" * 70)
-    logger.info("SECTION 4: Rebalancing Frequency Analysis")
-    logger.info("=" * 70)
-    
-    frequencies = [1, 2, 5, 10, 21]  # Daily, 2-day, weekly, 2-week, monthly
-    results = []
-    
-    logger.info("")
-    logger.info("Impact of Rebalancing Frequency:")
-    logger.info("-" * 70)
-    logger.info(f"{'Frequency':<15} {'Trades':>10} {'Cost':>15} {'P&L Std':>15} {'Final P&L':>15}")
-    logger.info("-" * 70)
-    
-    for freq in frequencies:
-        params_copy = HedgingParams(
-            S0=params.S0, K=params.K, T=params.T,
-            r=params.r, q=params.q, sigma=params.sigma,
-            notional=params.notional,
-            rebalance_freq=freq,
-            transaction_cost=params.transaction_cost,
-        )
-        
-        result = run_delta_hedge(params_copy, seed=42)
-        results.append((freq, result))
-        
-        freq_label = f"Every {freq} day(s)"
-        logger.info(
-            f"{freq_label:<15} {result.total_trades:>10} ${result.total_cost:>13,.0f} "
-            f"${result.pnl_std:>13,.0f} ${result.final_pnl:>13,.0f}"
-        )
-    
-    logger.info("-" * 70)
-    
-    logger.info("")
-    logger.info("Key Insight:")
-    logger.info("  More frequent rebalancing → Lower P&L volatility but higher costs")
-    logger.info("  Optimal frequency balances hedge quality vs transaction costs")
-    
-    return results
-
-
-# =============================================================================
-# SECTION 5: Monte Carlo Analysis
-# =============================================================================
-
-def run_monte_carlo_hedging(params: HedgingParams, n_paths: int = 1000) -> np.ndarray:
-    """
-    Run Monte Carlo simulation of hedging outcomes.
+    Simulate GBM paths.
     
     Returns
     -------
     np.ndarray
-        Final P&L for each path.
+        Shape (n_steps + 1, n_paths) with spot paths.
     """
-    logger.info("")
-    logger.info("=" * 70)
-    logger.info("SECTION 5: Monte Carlo Hedging Analysis")
-    logger.info("=" * 70)
+    np.random.seed(seed)
+    dt = T / n_steps
     
-    logger.info(f"Running {n_paths} hedging simulations...")
+    drift = (r - q - 0.5 * sigma**2) * dt
+    diffusion = sigma * np.sqrt(dt)
     
-    final_pnls = np.zeros(n_paths)
+    Z = np.random.randn(n_steps, n_paths)
+    log_returns = drift + diffusion * Z
     
-    for i in range(n_paths):
-        result = run_delta_hedge(params, seed=i)
-        final_pnls[i] = result.final_pnl
+    paths = np.zeros((n_steps + 1, n_paths))
+    paths[0, :] = S0
+    paths[1:, :] = S0 * np.exp(np.cumsum(log_returns, axis=0))
     
-    logger.info("")
-    logger.info("Monte Carlo Results:")
-    logger.info(f"  Mean P&L:         ${np.mean(final_pnls):,.2f}")
-    logger.info(f"  Std P&L:          ${np.std(final_pnls):,.2f}")
-    logger.info(f"  5th Percentile:   ${np.percentile(final_pnls, 5):,.2f}")
-    logger.info(f"  95th Percentile:  ${np.percentile(final_pnls, 95):,.2f}")
-    logger.info(f"  % Profitable:     {(final_pnls > 0).mean() * 100:.1f}%")
-    
-    return final_pnls
+    return paths
 
 
 # =============================================================================
-# SECTION 6: Visualization
+# SECTION 3: Hedging Simulation
+# =============================================================================
+
+def run_single_hedge_path(
+    path: np.ndarray,
+    config: HedgingConfig,
+) -> List[HedgeState]:
+    """
+    Run delta hedging along a single price path.
+    
+    Parameters
+    ----------
+    path : np.ndarray
+        Spot price path.
+    config : HedgingConfig
+        Hedging configuration.
+    
+    Returns
+    -------
+    List[HedgeState]
+        Hedge states at each time step.
+    """
+    dt = config.expiry / config.n_steps
+    states: List[HedgeState] = []
+    
+    # Initial state
+    S = path[0]
+    T = config.expiry
+    
+    option_value = bs_call_price(S, config.strike, T, config.vol, config.r_dom, config.r_for) * config.notional
+    delta = bs_call_delta(S, config.strike, T, config.vol, config.r_dom, config.r_for) * config.notional
+    gamma = bs_call_gamma(S, config.strike, T, config.vol, config.r_dom, config.r_for) * config.notional
+    
+    # We sold the option, so we receive the premium
+    # To delta hedge, we buy delta shares
+    hedge_position = delta  # Shares to buy (in notional terms: delta * S)
+    cash = option_value - hedge_position * S  # Received premium, paid for hedge
+    cumulative_costs = 0.0
+    
+    states.append(HedgeState(
+        time=0.0,
+        spot=S,
+        option_value=option_value,
+        delta=delta,
+        gamma=gamma,
+        hedge_position=hedge_position,
+        cash=cash,
+        portfolio_value=cash + hedge_position * S - option_value,
+        cumulative_costs=cumulative_costs,
+    ))
+    
+    # Simulate through time
+    for step in range(1, config.n_steps + 1):
+        S = path[step]
+        T = config.expiry - step * dt
+        T = max(T, 0)
+        
+        # New option value and Greeks
+        new_option_value = bs_call_price(S, config.strike, T, config.vol, config.r_dom, config.r_for) * config.notional
+        new_delta = bs_call_delta(S, config.strike, T, config.vol, config.r_dom, config.r_for) * config.notional
+        new_gamma = bs_call_gamma(S, config.strike, T, config.vol, config.r_dom, config.r_for) * config.notional
+        
+        # Update cash with interest and hedge P&L
+        cash = cash * np.exp(config.r_dom * dt)  # Cash earns interest
+        cash += hedge_position * S * (np.exp((config.r_dom - config.r_for) * dt) - 1)  # Carry
+        
+        # Rebalance hedge
+        if step % config.rebalance_frequency == 0 or step == config.n_steps:
+            trade_size = new_delta - hedge_position
+            trade_cost = abs(trade_size * S) * config.proportional_cost
+            
+            cash -= trade_size * S + trade_cost
+            hedge_position = new_delta
+            cumulative_costs += trade_cost
+        
+        # Portfolio value: cash + hedge value - option liability
+        portfolio_value = cash + hedge_position * S - new_option_value
+        
+        states.append(HedgeState(
+            time=step * dt,
+            spot=S,
+            option_value=new_option_value,
+            delta=new_delta,
+            gamma=new_gamma,
+            hedge_position=hedge_position,
+            cash=cash,
+            portfolio_value=portfolio_value,
+            cumulative_costs=cumulative_costs,
+        ))
+        
+        option_value = new_option_value
+    
+    return states
+
+
+def run_hedging_simulation(config: HedgingConfig) -> Tuple[HedgingResult, np.ndarray]:
+    """
+    Run full hedging simulation across multiple paths.
+    
+    Returns
+    -------
+    Tuple[HedgingResult, np.ndarray]
+        Hedging result and final P&Ls.
+    """
+    logger.info("=" * 70)
+    logger.info("SECTION 1: Hedging Simulation Setup")
+    logger.info("=" * 70)
+    
+    logger.info("")
+    logger.info("Option Parameters:")
+    logger.info(f"  Spot:      {config.spot}")
+    logger.info(f"  Strike:    {config.strike}")
+    logger.info(f"  Expiry:    {config.expiry:.2f} years ({int(config.expiry*252)} days)")
+    logger.info(f"  Vol:       {config.vol:.1%}")
+    logger.info(f"  Notional:  ${config.notional:,.0f}")
+    
+    logger.info("")
+    logger.info("Simulation Parameters:")
+    logger.info(f"  Steps:     {config.n_steps}")
+    logger.info(f"  Paths:     {config.n_paths}")
+    logger.info(f"  Rebalance: Every {config.rebalance_frequency} step(s)")
+    logger.info(f"  Cost:      {config.proportional_cost*10000:.1f} bps")
+    
+    # Simulate paths
+    logger.info("")
+    logger.info("=" * 70)
+    logger.info("SECTION 2: Running Simulation")
+    logger.info("=" * 70)
+    
+    paths = simulate_gbm_paths(
+        S0=config.spot,
+        r=config.r_dom,
+        q=config.r_for,
+        sigma=config.vol,
+        T=config.expiry,
+        n_steps=config.n_steps,
+        n_paths=config.n_paths,
+    )
+    
+    logger.info("")
+    logger.info(f"Simulated {config.n_paths} GBM paths")
+    
+    # Run hedging on each path
+    final_pnls = []
+    total_costs = []
+    
+    for i in range(config.n_paths):
+        states = run_single_hedge_path(paths[:, i], config)
+        final_pnls.append(states[-1].portfolio_value)
+        total_costs.append(states[-1].cumulative_costs)
+    
+    final_pnls = np.array(final_pnls)
+    total_costs = np.array(total_costs)
+    
+    # Store one sample path for visualization
+    sample_states = run_single_hedge_path(paths[:, 0], config)
+    
+    result = HedgingResult(
+        states=sample_states,
+        final_pnl=np.mean(final_pnls),
+        pnl_std=np.std(final_pnls),
+        total_costs=np.mean(total_costs),
+        n_rebalances=config.n_steps // config.rebalance_frequency,
+    )
+    
+    logger.info("")
+    logger.info("Simulation complete")
+    
+    return result, final_pnls
+
+
+# =============================================================================
+# SECTION 4: Compare Rebalancing Frequencies
+# =============================================================================
+
+def compare_rebalancing_frequencies(config: HedgingConfig) -> List[Tuple[int, float, float, float]]:
+    """
+    Compare different rebalancing frequencies.
+    
+    Returns
+    -------
+    List[Tuple[int, float, float, float]]
+        List of (frequency, mean_pnl, std_pnl, mean_costs).
+    """
+    logger.info("")
+    logger.info("=" * 70)
+    logger.info("SECTION 3: Rebalancing Frequency Analysis")
+    logger.info("=" * 70)
+    
+    frequencies = [1, 5, 10, 21, 63]  # Daily, weekly, bi-weekly, monthly, quarterly
+    results = []
+    
+    logger.info("")
+    logger.info(f"{'Frequency':<15} {'Mean P&L':>12} {'Std P&L':>12} {'Mean Costs':>12} {'Sharpe':>10}")
+    logger.info("-" * 61)
+    
+    for freq in frequencies:
+        cfg = HedgingConfig(
+            spot=config.spot,
+            strike=config.strike,
+            expiry=config.expiry,
+            vol=config.vol,
+            r_dom=config.r_dom,
+            r_for=config.r_for,
+            notional=config.notional,
+            n_steps=config.n_steps,
+            n_paths=500,  # Fewer paths for speed
+            proportional_cost=config.proportional_cost,
+            rebalance_frequency=freq,
+        )
+        
+        result, pnls = run_hedging_simulation.__wrapped__(cfg) if hasattr(run_hedging_simulation, '__wrapped__') else run_hedging_simulation_silent(cfg)
+        
+        sharpe = result.final_pnl / result.pnl_std if result.pnl_std > 0 else 0
+        
+        freq_label = {1: 'Daily', 5: 'Weekly', 10: 'Bi-weekly', 21: 'Monthly', 63: 'Quarterly'}.get(freq, f'{freq} steps')
+        
+        logger.info(
+            f"{freq_label:<15} ${result.final_pnl:>10,.0f} ${result.pnl_std:>10,.0f} "
+            f"${result.total_costs:>10,.0f} {sharpe:>9.2f}"
+        )
+        
+        results.append((freq, result.final_pnl, result.pnl_std, result.total_costs))
+    
+    return results
+
+
+def run_hedging_simulation_silent(config: HedgingConfig) -> Tuple[HedgingResult, np.ndarray]:
+    """Run simulation without logging."""
+    paths = simulate_gbm_paths(
+        S0=config.spot,
+        r=config.r_dom,
+        q=config.r_for,
+        sigma=config.vol,
+        T=config.expiry,
+        n_steps=config.n_steps,
+        n_paths=config.n_paths,
+    )
+    
+    final_pnls = []
+    total_costs = []
+    
+    for i in range(config.n_paths):
+        states = run_single_hedge_path(paths[:, i], config)
+        final_pnls.append(states[-1].portfolio_value)
+        total_costs.append(states[-1].cumulative_costs)
+    
+    final_pnls = np.array(final_pnls)
+    total_costs = np.array(total_costs)
+    
+    sample_states = run_single_hedge_path(paths[:, 0], config)
+    
+    result = HedgingResult(
+        states=sample_states,
+        final_pnl=np.mean(final_pnls),
+        pnl_std=np.std(final_pnls),
+        total_costs=np.mean(total_costs),
+        n_rebalances=config.n_steps // config.rebalance_frequency,
+    )
+    
+    return result, final_pnls
+
+
+# =============================================================================
+# SECTION 5: Visualization
 # =============================================================================
 
 def visualize_hedging(
     result: HedgingResult,
-    freq_results: List[Tuple[int, HedgingResult]],
-    mc_pnls: np.ndarray,
-    params: HedgingParams,
+    final_pnls: np.ndarray,
+    freq_comparison: List[Tuple[int, float, float, float]],
 ) -> None:
     """Create hedging visualizations."""
     if not MATPLOTLIB_AVAILABLE or not ENABLE_PLOTTING:
@@ -570,83 +534,95 @@ def visualize_hedging(
     
     logger.info("")
     logger.info("=" * 70)
-    logger.info("SECTION 6: Visualization")
+    logger.info("SECTION 4: Visualization")
     logger.info("=" * 70)
     
     plt.style.use('seaborn-v0_8-whitegrid')
     
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     
-    # -------------------------------------------------------------------------
-    # Plot 1: Spot path and hedge position
-    # -------------------------------------------------------------------------
-    ax1 = axes[0, 0]
-    ax1_twin = ax1.twinx()
-    
-    ax1.plot(result.times * 252, result.spots, 'b-', linewidth=1.5, label='Spot')
-    ax1.axhline(params.K, color='gray', linestyle='--', alpha=0.7, label=f'Strike = {params.K}')
-    
-    ax1_twin.plot(result.times * 252, result.hedge_positions / 1000, 'g-', linewidth=1, alpha=0.7, label='Hedge (000s)')
-    
-    ax1.set_xlabel('Trading Days')
-    ax1.set_ylabel('Spot Price ($)', color='blue')
-    ax1_twin.set_ylabel('Hedge Position (000s)', color='green')
-    ax1.set_title('Spot Price and Hedge Position')
-    ax1.legend(loc='upper left')
-    ax1_twin.legend(loc='upper right')
+    states = result.states
+    times = [s.time for s in states]
     
     # -------------------------------------------------------------------------
-    # Plot 2: Delta and Gamma over time
+    # Plot 1: Spot and Delta path
     # -------------------------------------------------------------------------
-    ax2 = axes[0, 1]
-    ax2_twin = ax2.twinx()
+    ax = axes[0, 0]
+    spots = [s.spot for s in states]
+    deltas = [s.delta / 10_000_000 for s in states]  # Normalize
     
-    ax2.plot(result.times * 252, result.deltas, 'b-', linewidth=1.5, label='Delta')
-    ax2_twin.plot(result.times * 252, result.gammas * result.spots, 'r-', linewidth=1, alpha=0.7, label='Dollar Gamma')
+    ax2 = ax.twinx()
+    ax.plot(times, spots, 'b-', linewidth=2, label='Spot')
+    ax2.plot(times, deltas, 'g--', linewidth=2, label='Delta')
     
-    ax2.set_xlabel('Trading Days')
-    ax2.set_ylabel('Delta', color='blue')
-    ax2_twin.set_ylabel('Dollar Gamma', color='red')
-    ax2.set_title('Greeks Evolution')
-    ax2.legend(loc='upper left')
-    ax2_twin.legend(loc='upper right')
-    
-    # -------------------------------------------------------------------------
-    # Plot 3: Rebalancing frequency comparison
-    # -------------------------------------------------------------------------
-    ax3 = axes[1, 0]
-    
-    frequencies = [r[0] for r in freq_results]
-    costs = [r[1].total_cost for r in freq_results]
-    pnl_stds = [r[1].pnl_std for r in freq_results]
-    
-    ax3_twin = ax3.twinx()
-    
-    bars = ax3.bar([f"Every {f}d" for f in frequencies], costs, color='#E94F37', alpha=0.7, label='Transaction Costs')
-    ax3_twin.plot([f"Every {f}d" for f in frequencies], pnl_stds, 'b-o', linewidth=2, markersize=8, label='P&L Std')
-    
-    ax3.set_xlabel('Rebalancing Frequency')
-    ax3.set_ylabel('Transaction Costs ($)', color='#E94F37')
-    ax3_twin.set_ylabel('Daily P&L Std ($)', color='blue')
-    ax3.set_title('Rebalancing Frequency Trade-off')
-    ax3.legend(loc='upper left')
-    ax3_twin.legend(loc='upper right')
+    ax.set_xlabel('Time (years)')
+    ax.set_ylabel('Spot', color='blue')
+    ax2.set_ylabel('Delta (normalized)', color='green')
+    ax.set_title('Spot Path and Delta Evolution')
+    ax.legend(loc='upper left')
+    ax2.legend(loc='upper right')
+    ax.grid(True, alpha=0.3)
     
     # -------------------------------------------------------------------------
-    # Plot 4: Monte Carlo P&L distribution
+    # Plot 2: Portfolio value and hedge position
     # -------------------------------------------------------------------------
-    ax4 = axes[1, 1]
+    ax = axes[0, 1]
+    portfolio_values = [s.portfolio_value for s in states]
     
-    ax4.hist(mc_pnls, bins=50, density=True, color='#2E86AB', alpha=0.7, edgecolor='white')
-    ax4.axvline(0, color='black', linestyle='-', linewidth=1)
-    ax4.axvline(np.mean(mc_pnls), color='#E94F37', linestyle='--', linewidth=2, label=f'Mean: ${np.mean(mc_pnls):,.0f}')
-    ax4.axvline(np.percentile(mc_pnls, 5), color='gray', linestyle=':', linewidth=1.5, label=f'5th pct: ${np.percentile(mc_pnls, 5):,.0f}')
+    ax.plot(times, [v / 1000 for v in portfolio_values], 'b-', linewidth=2)
+    ax.axhline(0, color='black', linestyle='--', alpha=0.5)
+    ax.fill_between(
+        times, [v / 1000 for v in portfolio_values], 0,
+        where=[v > 0 for v in portfolio_values],
+        alpha=0.3, color='green',
+    )
+    ax.fill_between(
+        times, [v / 1000 for v in portfolio_values], 0,
+        where=[v <= 0 for v in portfolio_values],
+        alpha=0.3, color='red',
+    )
+    ax.set_xlabel('Time (years)')
+    ax.set_ylabel('Portfolio Value ($000s)')
+    ax.set_title('Hedged Portfolio Value Over Time')
+    ax.grid(True, alpha=0.3)
     
-    ax4.set_xlabel('Final P&L ($)')
-    ax4.set_ylabel('Density')
-    ax4.set_title('Monte Carlo Hedging P&L Distribution')
-    ax4.legend()
-    ax4.grid(True, alpha=0.3)
+    # -------------------------------------------------------------------------
+    # Plot 3: Final P&L distribution
+    # -------------------------------------------------------------------------
+    ax = axes[1, 0]
+    ax.hist(final_pnls / 1000, bins=50, density=True, alpha=0.7, color='#2E86AB')
+    ax.axvline(np.mean(final_pnls) / 1000, color='red', linestyle='--', linewidth=2, label=f'Mean: ${np.mean(final_pnls):,.0f}')
+    ax.axvline(0, color='black', linestyle='-', linewidth=1)
+    ax.set_xlabel('Final P&L ($000s)')
+    ax.set_ylabel('Density')
+    ax.set_title(f'Final P&L Distribution (Std: ${np.std(final_pnls):,.0f})')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    
+    # -------------------------------------------------------------------------
+    # Plot 4: Rebalancing frequency comparison
+    # -------------------------------------------------------------------------
+    ax = axes[1, 1]
+    freqs = [r[0] for r in freq_comparison]
+    stds = [r[2] for r in freq_comparison]
+    costs = [r[3] for r in freq_comparison]
+    
+    x = np.arange(len(freqs))
+    width = 0.35
+    
+    ax2 = ax.twinx()
+    bars1 = ax.bar(x - width/2, [s/1000 for s in stds], width, label='P&L Std', color='#2E86AB')
+    bars2 = ax2.bar(x + width/2, [c/1000 for c in costs], width, label='Total Costs', color='#E94F37')
+    
+    ax.set_xlabel('Rebalancing Frequency')
+    ax.set_ylabel('P&L Std ($000s)', color='#2E86AB')
+    ax2.set_ylabel('Costs ($000s)', color='#E94F37')
+    ax.set_title('Trade-off: Hedge Accuracy vs Transaction Costs')
+    ax.set_xticks(x)
+    ax.set_xticklabels(['Daily', 'Weekly', 'Bi-weekly', 'Monthly', 'Quarterly'])
+    ax.legend(loc='upper left')
+    ax2.legend(loc='upper right')
+    ax.grid(True, alpha=0.3, axis='y')
     
     plt.tight_layout()
     plt.show(block=True)
@@ -670,26 +646,26 @@ def print_summary() -> None:
     │                         KEY TAKEAWAYS                                │
     ├─────────────────────────────────────────────────────────────────────┤
     │                                                                      │
-    │  1. Delta Hedging:                                                  │
-    │     - Hold Δ shares to offset option delta                          │
-    │     - Rebalance as delta changes (spot/time moves)                  │
+    │  1. Delta Hedging Goal:                                             │
+    │     - Eliminate directional (delta) risk                            │
+    │     - Isolate gamma/vol exposure                                    │
     │                                                                      │
-    │  2. Hedging P&L:                                                    │
-    │     - Gamma P&L: ½Γ(ΔS)² (positive for large moves)                 │
-    │     - Theta cost: Θ·Δt (pay time decay)                             │
-    │     - Transaction costs from rebalancing                            │
+    │  2. Rebalancing Trade-off:                                          │
+    │     - More frequent: Lower P&L variance, higher costs               │
+    │     - Less frequent: Higher P&L variance, lower costs               │
+    │     - Optimal frequency depends on vol, gamma, and costs            │
     │                                                                      │
-    │  3. Rebalancing Trade-off:                                          │
-    │     - More frequent → better hedge, higher costs                    │
-    │     - Less frequent → worse hedge, lower costs                      │
-    │     - Optimal depends on gamma exposure and cost structure          │
+    │  3. Hedging P&L Sources:                                            │
+    │     - Gamma P&L: ½Γ × (ΔS)² (positive for long gamma)              │
+    │     - Theta decay: Θ × Δt (negative for long options)               │
+    │     - Transaction costs: Proportional to rebalancing                │
     │                                                                      │
     │  4. Production Considerations:                                      │
-    │     - Real-time delta monitoring                                    │
-    │     - Threshold-based rebalancing (not just time-based)             │
-    │     - Hedge slippage analysis                                       │
+    │     - Optimal hedge ratio may differ from delta                     │
+    │     - Consider hedging bands (don't rebalance for small moves)      │
+    │     - RL can learn better hedging strategies than delta hedge       │
     │                                                                      │
-    │  NEXT: See examples/ml/ for RL-based hedging                        │
+    │  NEXT: See q_learning/01_hedging_agent.py for RL hedging            │
     │                                                                      │
     └─────────────────────────────────────────────────────────────────────┘
     """
@@ -702,7 +678,7 @@ def print_summary() -> None:
 
 def main(args: argparse.Namespace) -> None:
     """
-    Main entry point.
+    Main entry point for the example.
     
     Parameters
     ----------
@@ -712,43 +688,27 @@ def main(args: argparse.Namespace) -> None:
     global ENABLE_PLOTTING
     ENABLE_PLOTTING = args.plot
     
-    logger.info("=" * 70)
-    logger.info("Delta Hedging Example")
-    logger.info("=" * 70)
-    
     try:
-        # Setup parameters
-        params = HedgingParams(
-            S0=100.0,
-            K=100.0,
-            T=0.25,  # 3 months
-            r=0.05,
-            q=0.0,
-            sigma=0.20,
-            notional=1_000_000,
-            rebalance_freq=1,  # Daily
-            transaction_cost=0.001,  # 10 bps
-        )
+        # Configuration
+        config = HedgingConfig()
         
-        # Section 2: Run single simulation
+        # Run main simulation
+        result, final_pnls = run_hedging_simulation(config)
+        
+        # Display results
         logger.info("")
-        logger.info("=" * 70)
-        logger.info("SECTION 2: Single Path Hedging Simulation")
-        logger.info("=" * 70)
+        logger.info("Hedging Results:")
+        logger.info("-" * 50)
+        logger.info(f"  Mean Final P&L:  ${result.final_pnl:>12,.2f}")
+        logger.info(f"  P&L Std Dev:     ${result.pnl_std:>12,.2f}")
+        logger.info(f"  Total Costs:     ${result.total_costs:>12,.2f}")
+        logger.info(f"  # Rebalances:    {result.n_rebalances:>12}")
         
-        result = run_delta_hedge(params, seed=42)
+        # Compare rebalancing frequencies
+        freq_comparison = compare_rebalancing_frequencies(config)
         
-        # Section 3: Display results
-        display_hedging_results(result, params)
-        
-        # Section 4: Frequency analysis
-        freq_results = analyze_rebalance_frequency(params)
-        
-        # Section 5: Monte Carlo
-        mc_pnls = run_monte_carlo_hedging(params, n_paths=500)
-        
-        # Section 6: Visualization
-        visualize_hedging(result, freq_results, mc_pnls, params)
+        # Visualization
+        visualize_hedging(result, final_pnls, freq_comparison)
         
         # Summary
         print_summary()
