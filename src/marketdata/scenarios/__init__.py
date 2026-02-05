@@ -10,12 +10,14 @@ Submodules
 - interfaces: Protocols (MarketView, ScenarioShock, ScenarioPack)
 - runner: Basic scenario runner utilities
 - timeseries: Monte Carlo time series generation for risk factors
+- historical: Non-parametric historical simulation (bootstrap, filtered)
 
 Architecture
 ------------
 This module sits in marketdata/ because it produces market data objects:
 - Shocks transform Market → MarketView
-- TimeseriesGenerator produces MarketDataset
+- TimeseriesGenerator produces MarketDataset (parametric Monte Carlo)
+- HistoricalSimulator produces MarketDataset (non-parametric resampling)
 
 The risk/scenarios/ module consumes these for portfolio PnL calculation.
 
@@ -50,6 +52,28 @@ Example: Monte Carlo Time Series
 ...     n_scenarios=10000,
 ... )
 >>> dataset = TimeseriesGenerator(config).generate(seed=42)
+
+Example: Historical Simulation
+------------------------------
+>>> from src.marketdata.scenarios.historical import (
+...     HistoricalSimulator,
+...     HistoricalConfig,
+... )
+>>>
+>>> config = HistoricalConfig(
+...     historical_returns=returns,  # (n_assets, n_obs) array
+...     asset_ids=["FX.SPOT.EUR", "FX.SPOT.GBP"],
+...     method="filtered_block",
+...     current_volatility=np.array([0.08, 0.10]),
+...     block_length=20,
+... )
+>>> simulator = HistoricalSimulator(config)
+>>> dataset = simulator.generate_dataset(
+...     initial_values={"FX.SPOT.EUR": 1.10, "FX.SPOT.GBP": 1.25},
+...     n_scenarios=10000,
+...     horizon=252,
+...     start_date="2024-01-01",
+... )
 """
 
 # Re-export key classes for convenience
@@ -81,6 +105,17 @@ from src.marketdata.scenarios.timeseries import (
     FactorDynamicsSpec,
 )
 
+# Historical simulation
+from src.marketdata.scenarios.historical import (
+    HistoricalSimulator,
+    HistoricalConfig,
+    BootstrapConfig,
+    BlockBootstrap,
+    StationaryBootstrap,
+    FilteredConfig,
+    FilteredHistorical,
+)
+
 __all__ = [
     # Shock objects
     "SpotShock",
@@ -94,7 +129,7 @@ __all__ = [
     # Correlated shock driver
     "ScenarioSpec",
     "ScenarioDriver",
-    # Time series generation
+    # Time series generation (Monte Carlo)
     "TimeseriesGenerator",
     "TimeseriesConfig",
     "RiskFactorSpec",
@@ -103,4 +138,12 @@ __all__ = [
     "HestonDynamicsSpec",
     "OUDynamicsSpec",
     "FactorDynamicsSpec",
+    # Historical simulation
+    "HistoricalSimulator",
+    "HistoricalConfig",
+    "BootstrapConfig",
+    "BlockBootstrap",
+    "StationaryBootstrap",
+    "FilteredConfig",
+    "FilteredHistorical",
 ]

@@ -700,7 +700,8 @@ def example_8_full_portfolio_simulation():
 
     # Demonstrate snapshot access
     print("\nSample market snapshots:")
-    for t_idx, label in [(0, "Start"), (125, "Mid-year"), (-1, "End")]:
+    end_idx = len(dataset.dates) - 1
+    for t_idx, label in [(0, "Start"), (125, "Mid-year"), (end_idx, "End")]:
         market = dataset.snapshot(time_idx=t_idx, scenario_idx=0)
         print(f"\n  {label} ({market.asof}):")
         print(f"    EUR/USD: {market.quote(factors[0].market_id):.4f}")
