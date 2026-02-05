@@ -225,26 +225,36 @@ def heston_characteristic_function(u: complex, params: HestonParams, T: float) -
 # =============================================================================
 
 def bsm_call_price(S, K, T, r, q, sigma):
-    """Black-Scholes call price."""
-    d1 = (np.log(S/K) + (r - q + 0.5*sigma**2)*T) / (sigma*np.sqrt(T))
-    d2 = d1 - sigma*np.sqrt(T)
-    return S*np.exp(-q*T)*norm.cdf(d1) - K*np.exp(-r*T)*norm.cdf(d2)
+    """Black-Scholes call price using library function."""
+    from src.models.analytic.black_scholes_merton.base import vanilla_price
+    carry = r - q
+    return vanilla_price(
+        option_type="call", spot=S, strike=K, expiry=T,
+        discount_rate=r, carry=carry, vol=sigma
+    )
 
 def implied_vol_newton(price, S, K, T, r, q, max_iter=100, tol=1e-8):
-    """Compute implied volatility using Newton-Raphson."""
+    """Compute implied volatility using Newton-Raphson with library functions."""
+    from src.models.analytic.black_scholes_merton.base import vanilla_price, vanilla_vega
+    
     sigma = 0.20  # Initial guess
+    carry = r - q
     
     for _ in range(max_iter):
-        d1 = (np.log(S/K) + (r - q + 0.5*sigma**2)*T) / (sigma*np.sqrt(T))
-        
-        # Price and vega
-        bsm_price = bsm_call_price(S, K, T, r, q, sigma)
-        vega = S * np.exp(-q*T) * np.sqrt(T) * norm.pdf(d1)
+        # Price and vega using library
+        bsm_price_val = vanilla_price(
+            option_type="call", spot=S, strike=K, expiry=T,
+            discount_rate=r, carry=carry, vol=sigma
+        )
+        vega = vanilla_vega(
+            spot=S, strike=K, expiry=T,
+            discount_rate=r, carry=carry, vol=sigma
+        )
         
         if vega < 1e-10:
             break
             
-        diff = bsm_price - price
+        diff = bsm_price_val - price
         if abs(diff) < tol:
             break
             

@@ -407,26 +407,35 @@ def step_4_price_exotics(sabr_params):
 
 
 def _bsm_call(F, K, T, sigma, df):
-    """Simple BSM call price."""
-    from scipy.stats import norm
-    d1 = (math.log(F/K) + 0.5*sigma**2*T) / (sigma*math.sqrt(T))
-    d2 = d1 - sigma*math.sqrt(T)
-    return df * (F * norm.cdf(d1) - K * norm.cdf(d2))
+    """BSM call price using library function (forward-based)."""
+    from src.models.analytic.black_scholes_merton.base import vanilla_price
+    # For forward-based pricing: spot = F*df, discount_rate = 0, carry = 0
+    # Simpler: use undiscounted price and multiply by df
+    undiscounted = vanilla_price(
+        option_type="call", spot=F, strike=K, expiry=T,
+        discount_rate=0.0, carry=0.0, vol=sigma
+    )
+    return df * undiscounted
 
 
 def _bsm_put(F, K, T, sigma, df):
-    """Simple BSM put price."""
-    from scipy.stats import norm
-    d1 = (math.log(F/K) + 0.5*sigma**2*T) / (sigma*math.sqrt(T))
-    d2 = d1 - sigma*math.sqrt(T)
-    return df * (K * norm.cdf(-d2) - F * norm.cdf(-d1))
+    """BSM put price using library function (forward-based)."""
+    from src.models.analytic.black_scholes_merton.base import vanilla_price
+    undiscounted = vanilla_price(
+        option_type="put", spot=F, strike=K, expiry=T,
+        discount_rate=0.0, carry=0.0, vol=sigma
+    )
+    return df * undiscounted
 
 
 def _digital_call(F, K, T, sigma, df):
-    """Simple digital call price (pays 1 if F > K)."""
-    from scipy.stats import norm
-    d2 = (math.log(F/K) - 0.5*sigma**2*T) / (sigma*math.sqrt(T))
-    return df * norm.cdf(d2)
+    """Digital call price using library function."""
+    from src.models.analytic.black_scholes_merton.base import digital_cash_price
+    undiscounted = digital_cash_price(
+        option_type="call", spot=F, strike=K, expiry=T,
+        discount_rate=0.0, carry=0.0, vol=sigma, cash_amount=1.0
+    )
+    return df * undiscounted
 
 
 def step_5_model_comparison():
