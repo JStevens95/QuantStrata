@@ -1,0 +1,168 @@
+# =============================================================================
+# Option Analytics Workflow — Skeleton Config
+# =============================================================================
+# This config drives the full pipeline chain: market data → portfolio → pricing
+# → sensitivities → scenarios → VaR → plots. The run script builds one
+# RunConfig per pipeline and passes the relevant params to each.
+#
+# Usage:
+#   python run_option_analytics.py
+#   python run_option_analytics.py --config path/to/config.yaml
+#   python run_option_analytics.py --config path/to/config.yaml --no-plots
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Workflow control (optional: which pipelines to run, flags)
+# -----------------------------------------------------------------------------
+workflow:
+  # Pipeline names in execution order (default: full chain)
+  pipelines:
+    - marketdata.build_timeseries
+    - portfolio.build_from_config
+    - pricing.price_portfolio
+    - risk.compute_sensitivities
+    - risk.run_scenarios
+    - risk.compute_var
+  # Optional: run calibration.volatility_surface before pricing (future)
+  run_calibration: false
+  # Generate plots after pipeline chain (can override via CLI --no-plots)
+  generate_plots: true
+
+# -----------------------------------------------------------------------------
+# I/O: artifact and log paths
+# -----------------------------------------------------------------------------
+io:
+  workdir: "./artifacts/option_analytics"
+  artifacts_dir: "artifacts"
+  logs_dir: "logs"
+
+# -----------------------------------------------------------------------------
+# Pipeline-specific parameters (each pipeline reads its block from params)
+# -----------------------------------------------------------------------------
+params:
+  # ---------- marketdata.build_timeseries ----------
+  # Produces: MARKET, DATASET
+  marketdata:
+    ids:
+      - "FX.SPOT.EURUSD"
+      - "FX.VOL.EURUSD"
+      - "IR.ZERO.USD"
+      - "IR.ZERO.EUR"
+    start: "2024-01-01"
+    end: "2024-12-31"
+    freq: "D"
+    scenarios: 1
+    provider:
+      type: synthetic
+      seed: 42
+      name: SyntheticProvider
+    snapshot:
+      time: last
+      scenario_idx: 0
+
+  # ---------- portfolio.build_from_config ----------
+  # Produces: PORTFOLIO, POSITIONS, INSTRUMENTS
+  portfolio:
+    name: "Option_Analytics_Demo_Book"
+    base_currency: "USD"
+    positions:
+      - id: "pos_001"
+        instrument:
+          type: "FxVanillaOption"
+          underlying: "EURUSD"
+          strike: 1.10
+          expiry: 0.25
+          option_type: "call"
+          notional: 10000000
+        quantity: 1
+        direction: "long"
+      - id: "pos_002"
+        instrument:
+          type: "FxVanillaOption"
+          underlying: "EURUSD"
+          strike: 1.05
+          expiry: 0.25
+          option_type: "put"
+          notional: 10000000
+        quantity: 1
+        direction: "short"
+
+  # ---------- pricing.price_portfolio ----------
+  # Consumes: MARKET, PORTFOLIO. Produces: PORTFOLIO_PRICING_RESULT, etc.
+  pricing: {}
+
+  # ---------- risk (sensitivities, scenarios, var) ----------
+  # risk.compute_sensitivities reads params.sensitivities
+  sensitivities:
+    greeks:
+      - delta
+      - gamma
+      - vega
+      - theta
+      - rho
+    bump_sizes:
+      spot: 0.01
+      vol: 0.01
+      rate: 0.0001
+    aggregation:
+      - underlying
+      - currency
+    cross_gamma: false
+
+  # risk.run_scenarios reads params.risk.scenarios
+  risk:
+    scenarios:
+      - name: "spot_up_1pct"
+        type: "spot"
+        key: "FX.SPOT.EURUSD"
+        mode: "relative"
+        bump: 0.01
+      - name: "spot_down_1pct"
+        type: "spot"
+        key: "FX.SPOT.EURUSD"
+        mode: "relative"
+        bump: -0.01
+      - name: "vol_up_25bp"
+        type: "vol"
+        key: "FX.VOL.EURUSD"
+        mode: "absolute"
+        bump: 0.0025
+      - name: "usd_rate_up_10bp"
+        type: "rate_parallel"
+        key: "IR.ZERO.USD"
+        mode: "absolute"
+        bump: 0.001
+
+  # risk.compute_var reads params.var
+  var:
+    confidence_levels: [0.95, 0.99]
+    horizon_days: 1
+    methods:
+      historical:
+        enabled: true
+        lookback_days: 252
+        decay: 0.94
+      parametric:
+        enabled: true
+        covariance: "exponential"
+        decay: 0.94
+      monte_carlo:
+        enabled: true
+        n_simulations: 10000
+        model: "gbm"
+    compute_es: true
+    decomposition: true
+
+  # ---------- plots (used by plots.py) ----------
+  plots:
+    output_dir: "plots"   # relative to io.workdir
+    enabled:
+      - portfolio_summary
+      - greeks_surface
+      - vol_surface
+      - scenario_pnl
+      - var_summary
+      - greeks_by_underlying
+    # Optional: format and DPI
+    format: "png"
+    dpi: 150
