@@ -392,8 +392,8 @@ class NeuralSDE:
         """
         Fit Neural SDE to observed paths.
         
-        Uses maximum likelihood estimation via score matching
-        (simplified for demonstration).
+        Uses MSE loss on drift prediction + variance matching for diffusion.
+        This provides interpretable, always-positive loss values.
         
         Parameters
         ----------
@@ -411,9 +411,15 @@ class NeuralSDE:
         n_paths, n_steps_plus_1, _ = observed_paths.shape
         n_steps = n_steps_plus_1 - 1
         dt = T / n_steps
+        sqrt_dt = np.sqrt(dt)
+        
+        # Compute empirical increments for diffusion target
+        # dX = X_{t+1} - X_t, empirical volatility from data
+        increments = np.diff(observed_paths, axis=1)  # (n_paths, n_steps, state_dim)
         
         for epoch in range(epochs):
-            epoch_loss = 0.0
+            epoch_drift_loss = 0.0
+            epoch_diff_loss = 0.0
             n_batches = 0
             
             # Shuffle paths
@@ -422,57 +428,61 @@ class NeuralSDE:
             for batch_start in range(0, n_paths, batch_size):
                 batch_idx = perm[batch_start:batch_start + batch_size]
                 batch_paths = observed_paths[batch_idx]
-                
-                batch_loss = 0.0
+                batch_increments = increments[batch_idx]
                 
                 # Process each time step
                 for i in range(n_steps):
                     t = i * dt
                     X = batch_paths[:, i, :]
-                    X_next = batch_paths[:, i + 1, :]
+                    dX_actual = batch_increments[:, i, :]  # Actual increment
                     
                     # Forward pass
                     mu = self.drift(X, t)
                     sigma = self.diffusion(X, t)
                     
-                    # Predicted next state (Euler-Maruyama mean)
-                    X_pred = X + mu * dt
+                    # Drift prediction: dX ≈ μ·dt, so μ ≈ dX/dt
+                    # MSE loss on drift
+                    drift_target = dX_actual / dt
+                    drift_loss = np.mean((mu - drift_target) ** 2)
                     
-                    # Residual
-                    residual = X_next - X_pred
+                    # Diffusion: match variance of residuals
+                    # Var(dX - μ·dt) = σ²·dt, so σ ≈ |dX - μ·dt| / sqrt(dt)
+                    residual = dX_actual - mu * dt
+                    empirical_vol = np.abs(residual) / sqrt_dt
+                    diff_loss = np.mean((sigma - empirical_vol) ** 2)
                     
-                    # Negative log-likelihood (Gaussian)
-                    # L = 0.5 * (residual / (sigma * sqrt(dt)))^2 + log(sigma)
-                    normalized_residual = residual / (sigma * np.sqrt(dt) + 1e-6)
+                    epoch_drift_loss += drift_loss
+                    epoch_diff_loss += diff_loss
                     
-                    loss = 0.5 * np.mean(normalized_residual**2) + np.mean(np.log(sigma + 1e-6))
-                    batch_loss += loss
-                    
-                    # Backward pass
-                    grad_pred = -residual / (sigma**2 * dt + 1e-6) / len(batch_idx)
-                    grad_mu = grad_pred * dt
-                    
-                    # Update drift network
+                    # Backward pass for drift
+                    grad_mu = 2 * (mu - drift_target) / len(batch_idx)
                     t_vec = np.full((len(batch_idx), 1), t)
                     inputs = np.hstack([X, t_vec])
-                    _ = self.drift_net.forward(inputs)  # Recompute for backprop
+                    _ = self.drift_net.forward(inputs)
                     self.drift_net.backward(grad_mu)
                     self.drift_net.update_params(self.learning_rate)
                     
-                    # Update diffusion network (simplified gradient)
-                    grad_sigma = (1 / (sigma + 1e-6) - normalized_residual**2 / (sigma + 1e-6)) / len(batch_idx)
+                    # Backward pass for diffusion
+                    grad_sigma = 2 * (sigma - empirical_vol) / len(batch_idx)
                     _ = self.diffusion_net.forward(inputs)
                     self.diffusion_net.backward(grad_sigma)
-                    self.diffusion_net.update_params(self.learning_rate)
+                    self.diffusion_net.update_params(self.learning_rate * 0.1)  # Slower for stability
                 
-                epoch_loss += batch_loss
                 n_batches += 1
             
-            avg_loss = epoch_loss / (n_batches * n_steps)
-            self.train_losses.append(avg_loss)
+            # Combined loss (weighted sum)
+            avg_drift_loss = epoch_drift_loss / (n_batches * n_steps)
+            avg_diff_loss = epoch_diff_loss / (n_batches * n_steps)
+            total_loss = avg_drift_loss + 0.1 * avg_diff_loss  # Weight diffusion less
+            
+            self.train_losses.append(total_loss)
             
             if verbose and (epoch + 1) % 20 == 0:
-                logger.info(f"Epoch {epoch + 1:>3}/{epochs}: Loss = {avg_loss:.6f}")
+                logger.info(
+                    f"Epoch {epoch + 1:>3}/{epochs}: "
+                    f"Drift Loss = {avg_drift_loss:.6f}, "
+                    f"Diff Loss = {avg_diff_loss:.6f}"
+                )
 
 
 # =============================================================================
