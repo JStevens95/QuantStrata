@@ -362,7 +362,7 @@ def calibrate_with_optimization(
         fix_v0_to_atm=True,  # Reduce parameters
         enforce_feller=True,
         use_global_optimizer=False,  # Local only for fair speed comparison
-        max_iter=200,
+        max_iter=80,  # Reduced for faster comparison (was 200)
         verbose=False,
     )
     
@@ -396,9 +396,14 @@ def compute_calibration_error(
 # MAIN WORKFLOW
 # =============================================================================
 
-def run_calibration_ml() -> Dict[str, any]:
+def run_calibration_ml(fast: bool = False) -> Dict[str, any]:
     """
     Run the ML calibration workflow.
+    
+    Parameters
+    ----------
+    fast : bool
+        If True, use reduced samples and comparison count for quicker run (~1-2 min).
     
     Returns
     -------
@@ -412,11 +417,15 @@ def run_calibration_ml() -> Dict[str, any]:
     logger.info("SECTION 1: Data Generation (Heston Vol Surfaces)")
     logger.info("=" * 70)
     
+    # Use smaller dataset for reasonable runtime; full run can use n_samples=15000
+    n_samples = 4000 if fast else 8000
     config = CalibrationDataConfig(
-        n_samples=15000,
+        n_samples=n_samples,
         seed=42,
     )
     
+    if fast:
+        logger.info("  (Fast mode: reduced samples and comparison count)")
     logger.info("")
     logger.info(f"Generating {config.n_samples:,} Heston vol surfaces...")
     logger.info(f"  Grid: {len(config.moneyness_grid)} strikes x {len(config.expiry_grid)} expiries")
@@ -458,18 +467,19 @@ def run_calibration_ml() -> Dict[str, any]:
     )
     
     early_stop = tf.keras.callbacks.EarlyStopping(
-        patience=15,
+        patience=10,
         restore_best_weights=True,
     )
     
     logger.info("")
     logger.info("Training neural calibrator...")
     
+    max_epochs = 60 if fast else 100
     history = model.fit(
         X_train, y_train,
         validation_data=(X_val, y_val),
-        epochs=100,
-        batch_size=64,
+        epochs=max_epochs,
+        batch_size=128,
         callbacks=[early_stop],
         verbose=1,
     )
@@ -480,7 +490,8 @@ def run_calibration_ml() -> Dict[str, any]:
     logger.info("SECTION 3: ML vs Traditional Calibration Comparison")
     logger.info("=" * 70)
     
-    n_test_samples = min(50, len(X_test))
+    # Fewer comparison samples for reasonable runtime (each optimization is costly)
+    n_test_samples = min(12, len(X_test))
     
     ml_times = []
     opt_times = []
@@ -567,7 +578,7 @@ def run_calibration_ml() -> Dict[str, any]:
 # =============================================================================
 
 def visualize_results(results: Dict) -> None:
-    """Visualize calibration comparison."""
+    """Visualize calibration comparison (single figure, both panels visible)."""
     if not MATPLOTLIB_AVAILABLE or not ENABLE_PLOTTING:
         logger.info("Skipping plots")
         return
@@ -579,13 +590,14 @@ def visualize_results(results: Dict) -> None:
     
     plt.style.use('seaborn-v0_8-whitegrid')
     
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    fig.suptitle('Heston ML Calibration', fontsize=14, fontweight='bold', y=1.02)
     
-    # Training history
+    # 1. Training history
     ax = axes[0]
     epochs = range(1, len(results['history']['loss']) + 1)
-    ax.plot(epochs, results['history']['loss'], label='Train Loss', color='#2E86AB')
-    ax.plot(epochs, results['history']['val_loss'], label='Val Loss', color='#E94F37')
+    ax.plot(epochs, results['history']['loss'], label='Train Loss', color='#2E86AB', linewidth=2)
+    ax.plot(epochs, results['history']['val_loss'], label='Val Loss', color='#E94F37', linewidth=2)
     ax.set_xlabel('Epoch')
     ax.set_ylabel('MSE Loss')
     ax.set_title('Neural Calibrator Training')
@@ -593,26 +605,31 @@ def visualize_results(results: Dict) -> None:
     ax.set_yscale('log')
     ax.grid(True, alpha=0.3)
     
-    # Speed/accuracy comparison
+    # 2. Speed vs accuracy: dual-axis bar + line
     ax = axes[1]
     methods = ['Neural\nNetwork', 'Optimization', 'Hybrid\n(ML+Opt)']
     times = [results['ml_mean_time'], results['opt_mean_time'], results['hybrid_mean_time']]
     errors = [results['ml_mean_error']*100, results['opt_mean_error']*100, results['hybrid_mean_error']*100]
     colors = ['#2E86AB', '#E94F37', '#28A745']
     
-    # Bar chart for time
-    bars = ax.bar(methods, times, color=colors, alpha=0.8)
-    ax.set_ylabel('Time (ms)', color='navy')
-    ax.tick_params(axis='y', labelcolor='navy')
+    x = np.arange(len(methods))
+    width = 0.35
+    bars = ax.bar(x - width/2, times, width, label='Time (ms)', color=colors, alpha=0.8, edgecolor='white')
+    ax.set_ylabel('Time (ms)', color='#2E86AB')
+    ax.tick_params(axis='y', labelcolor='#2E86AB')
     
-    # Secondary axis for error
     ax2 = ax.twinx()
-    ax2.plot(methods, errors, 'ko-', linewidth=2, markersize=8, label='RMSE')
-    ax2.set_ylabel('RMSE (%)', color='red')
-    ax2.tick_params(axis='y', labelcolor='red')
+    ax2.plot(x, errors, 'ko-', linewidth=2.5, markersize=10, label='RMSE (%)')
+    ax2.set_ylabel('RMSE (vol pts %)', color='#E94F37')
+    ax2.tick_params(axis='y', labelcolor='#E94F37')
     
-    ax.set_title('Calibration: Speed vs Accuracy Trade-off')
+    ax.set_xticks(x)
+    ax.set_xticklabels(methods)
+    ax.set_title('Calibration: Speed vs Accuracy')
     ax.grid(True, alpha=0.3, axis='y')
+    # Add time labels on bars
+    for bar, t in zip(bars, times):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 2, f'{t:.0f}ms', ha='center', va='bottom', fontsize=10)
     
     plt.tight_layout()
     plt.show(block=True)
@@ -672,7 +689,7 @@ def main(args: argparse.Namespace) -> None:
     ENABLE_PLOTTING = args.plot
     
     try:
-        results = run_calibration_ml()
+        results = run_calibration_ml(fast=args.fast)
         visualize_results(results)
         print_summary()
         logger.info("Example completed successfully!")
@@ -686,6 +703,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ML Calibration Example")
     parser.add_argument("--plot", action="store_true", default=True)
     parser.add_argument("--no-plot", action="store_false", dest="plot")
+    parser.add_argument("--fast", action="store_true", help="Use reduced samples and comparison count (~1-2 min)")
     
     args = parser.parse_args()
     main(args)

@@ -326,7 +326,7 @@ def plot_local_vol_surface(params: BSMParams):
     
     plt.tight_layout()
     plt.savefig('local_vol_surface.png', dpi=150, bbox_inches='tight')
-    plt.show()
+    plt.show(block=True)
 
 def plot_heston_dynamics(params: HestonParams):
     """Visualize Heston model dynamics."""
@@ -398,7 +398,7 @@ def plot_heston_dynamics(params: HestonParams):
     
     plt.tight_layout()
     plt.savefig('heston_dynamics.png', dpi=150, bbox_inches='tight')
-    plt.show()
+    plt.show(block=True)
 
 def plot_implied_vol_comparison(bsm_params: BSMParams, heston_params: HestonParams):
     """Compare implied volatility smiles from different models."""
@@ -460,7 +460,7 @@ def plot_implied_vol_comparison(bsm_params: BSMParams, heston_params: HestonPara
     
     plt.tight_layout()
     plt.savefig('implied_vol_comparison.png', dpi=150, bbox_inches='tight')
-    plt.show()
+    plt.show(block=True)
 
 def plot_model_comparison_exotic(bsm_params: BSMParams, heston_params: HestonParams):
     """Compare models on exotic option pricing."""
@@ -526,7 +526,7 @@ def plot_model_comparison_exotic(bsm_params: BSMParams, heston_params: HestonPar
     
     plt.tight_layout()
     plt.savefig('model_comparison_exotic.png', dpi=150, bbox_inches='tight')
-    plt.show()
+    plt.show(block=True)
 
 # =============================================================================
 # Main Execution

@@ -324,14 +324,14 @@ def speed_comparison(
 # MAIN WORKFLOW
 # =============================================================================
 
-def run_neural_pricer() -> Tuple[TrainingResult, Dict[str, float], Dict[str, float]]:
+def run_neural_pricer() -> Tuple[TrainingResult, Dict[str, float], Dict[str, float], "tf.keras.Model", np.ndarray, np.ndarray, np.ndarray]:
     """
     Run the complete neural pricer workflow.
     
     Returns
     -------
     Tuple
-        Training result, evaluation metrics, and speed comparison.
+        Training result, evaluation metrics, speed comparison, model, X_test, y_test, spots_test.
     """
     if not TF_AVAILABLE:
         raise RuntimeError("TensorFlow is required for this example. Please install: pip install tensorflow")
@@ -393,8 +393,8 @@ def run_neural_pricer() -> Tuple[TrainingResult, Dict[str, float], Dict[str, flo
         epochs=100,
         batch_size=256,
         optimizer=OptimizerConfig(name="adam", learning_rate=0.001),
-        loss="mse",
-        metrics=["mae"],
+        loss="mae",
+        metrics=["mse", "mae"],
         early_stopping=EarlyStoppingConfig(patience=10, min_delta=1e-6),
         seed=42,
         verbose=1,
@@ -455,7 +455,7 @@ def run_neural_pricer() -> Tuple[TrainingResult, Dict[str, float], Dict[str, flo
     logger.info(f"    BSM Analytical: {speed_metrics['bsm_time_ms']:.2f} ms ({speed_metrics['bsm_per_option_us']:.2f} μs/option)")
     logger.info(f"    Speedup:       {speed_metrics['speedup']:.1f}x")
     
-    return training_result, eval_metrics, speed_metrics
+    return training_result, eval_metrics, speed_metrics, model, X_test, y_test, spots_test
 
 
 # =============================================================================
@@ -466,8 +466,12 @@ def visualize_results(
     training_result: TrainingResult,
     eval_metrics: Dict[str, float],
     speed_metrics: Dict[str, float],
+    model=None,
+    X_test: Optional[np.ndarray] = None,
+    y_test: Optional[np.ndarray] = None,
+    spots_test: Optional[np.ndarray] = None,
 ) -> None:
-    """Visualize training and evaluation results."""
+    """Visualize training and evaluation results in a single figure (all panels visible)."""
     if not MATPLOTLIB_AVAILABLE or not ENABLE_PLOTTING:
         logger.info("Skipping plots")
         return
@@ -477,48 +481,78 @@ def visualize_results(
     logger.info("SECTION 6: Visualization")
     logger.info("=" * 70)
     
-    # Use TrainingResult's built-in plotting if available
-    if hasattr(training_result, 'plot_history'):
-        training_result.plot_history()
-    else:
-        # Manual plotting
-        plt.style.use('seaborn-v0_8-whitegrid')
-        
-        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-        
-        # Training history
-        ax = axes[0]
-        epochs = range(1, len(training_result.history['loss']) + 1)
-        ax.plot(epochs, training_result.history['loss'], label='Train Loss', color='#2E86AB')
-        if 'val_loss' in training_result.history:
-            ax.plot(epochs, training_result.history['val_loss'], label='Val Loss', color='#E94F37')
-        ax.axvline(training_result.best_epoch, color='green', linestyle='--', alpha=0.7, label=f'Best ({training_result.best_epoch})')
-        ax.set_xlabel('Epoch')
-        ax.set_ylabel('MSE Loss')
-        ax.set_title('Training History')
+    plt.style.use('seaborn-v0_8-whitegrid')
+    
+    # Single figure with 2x2 grid so all plots are visible at once
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig.suptitle('Neural Pricer: Training and Evaluation', fontsize=14, fontweight='bold', y=1.02)
+    
+    # 1. Training history
+    ax = axes[0, 0]
+    epochs = range(1, len(training_result.history['loss']) + 1)
+    ax.plot(epochs, training_result.history['loss'], label='Train Loss', color='#2E86AB', linewidth=2)
+    if 'val_loss' in training_result.history:
+        ax.plot(epochs, training_result.history['val_loss'], label='Val Loss', color='#E94F37', linewidth=2)
+    ax.axvline(training_result.best_epoch, color='green', linestyle='--', alpha=0.8, label=f'Best ({training_result.best_epoch})')
+    ax.set_xlabel('Epoch')
+    ax.set_ylabel('Loss')
+    ax.set_title('Training History')
+    ax.legend()
+    ax.set_yscale('log')
+    ax.grid(True, alpha=0.3)
+    
+    # 2. Prediction vs actual (if test data and model provided)
+    ax = axes[0, 1]
+    if model is not None and X_test is not None and y_test is not None and spots_test is not None:
+        n_show = min(2000, len(X_test))  # Subsample for clear scatter
+        idx = np.random.RandomState(42).choice(len(X_test), n_show, replace=False)
+        y_pred = model.predict(X_test[idx], verbose=0).flatten()
+        prices_pred = y_pred * spots_test[idx]
+        prices_true = y_test[idx].flatten() * spots_test[idx]
+        ax.scatter(prices_true, prices_pred, alpha=0.4, s=8, c='#2E86AB', edgecolors='none')
+        lims = [min(prices_true.min(), prices_pred.min()), max(prices_true.max(), prices_pred.max())]
+        ax.plot(lims, lims, 'k--', linewidth=2, label='Perfect fit')
+        ax.set_xlabel('BSM Price')
+        ax.set_ylabel('Neural Pricer Price')
+        ax.set_title('Prediction vs Actual')
         ax.legend()
-        ax.set_yscale('log')
-        ax.grid(True, alpha=0.3)
-        
-        # Speed comparison
-        ax = axes[1]
-        methods = ['Neural Pricer', 'BSM Analytical']
-        times = [speed_metrics['neural_time_ms'], speed_metrics['bsm_time_ms']]
-        colors = ['#2E86AB', '#E94F37']
-        
-        bars = ax.bar(methods, times, color=colors, alpha=0.8)
-        ax.set_ylabel('Time (ms) for 10k options')
-        ax.set_title(f'Speed Comparison ({speed_metrics["speedup"]:.1f}x speedup)')
-        
-        # Add value labels
-        for bar, t in zip(bars, times):
-            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 5, 
-                    f'{t:.1f}ms', ha='center', va='bottom')
-        
-        ax.grid(True, alpha=0.3, axis='y')
-        
-        plt.tight_layout()
-        plt.show(block=True)
+        ax.set_aspect('equal', adjustable='box')
+    else:
+        ax.text(0.5, 0.5, 'Prediction vs Actual\n(no test data)', ha='center', va='center', transform=ax.transAxes)
+        ax.set_title('Prediction vs Actual')
+    ax.grid(True, alpha=0.3)
+    
+    # 3. Error distribution (if test data and model provided)
+    ax = axes[1, 0]
+    if model is not None and X_test is not None and y_test is not None and spots_test is not None:
+        y_pred = model.predict(X_test, verbose=0).flatten()
+        errors = (y_pred * spots_test) - (y_test.flatten() * spots_test)
+        ax.hist(errors, bins=50, color='#2E86AB', alpha=0.7, edgecolor='white', density=True)
+        ax.axvline(0, color='black', linestyle='--', linewidth=2)
+        ax.axvline(np.mean(errors), color='#E94F37', linestyle='-', linewidth=2, label=f'Mean: ${np.mean(errors):.4f}')
+        ax.set_xlabel('Pricing Error ($)')
+        ax.set_ylabel('Density')
+        ax.set_title('Error Distribution')
+        ax.legend()
+    else:
+        ax.text(0.5, 0.5, 'Error Distribution\n(no test data)', ha='center', va='center', transform=ax.transAxes)
+        ax.set_title('Error Distribution')
+    ax.grid(True, alpha=0.3)
+    
+    # 4. Speed comparison
+    ax = axes[1, 1]
+    methods = ['Neural Pricer', 'BSM Analytical']
+    times = [speed_metrics['neural_time_ms'], speed_metrics['bsm_time_ms']]
+    colors = ['#2E86AB', '#E94F37']
+    bars = ax.bar(methods, times, color=colors, alpha=0.8, edgecolor='white')
+    ax.set_ylabel('Time (ms) for 10k options')
+    ax.set_title(f'Speed Comparison ({speed_metrics["speedup"]:.1f}x speedup)')
+    for bar, t in zip(bars, times):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 5, f'{t:.1f}ms', ha='center', va='bottom', fontsize=11)
+    ax.grid(True, alpha=0.3, axis='y')
+    
+    plt.tight_layout()
+    plt.show(block=True)
     
     logger.info("Visualization complete")
 
@@ -574,8 +608,11 @@ def main(args: argparse.Namespace) -> None:
     ENABLE_PLOTTING = args.plot
     
     try:
-        training_result, eval_metrics, speed_metrics = run_neural_pricer()
-        visualize_results(training_result, eval_metrics, speed_metrics)
+        training_result, eval_metrics, speed_metrics, model, X_test, y_test, spots_test = run_neural_pricer()
+        visualize_results(
+            training_result, eval_metrics, speed_metrics,
+            model=model, X_test=X_test, y_test=y_test, spots_test=spots_test,
+        )
         print_summary()
         logger.info("Example completed successfully!")
         

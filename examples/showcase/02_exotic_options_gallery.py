@@ -322,7 +322,7 @@ def plot_barrier_analysis(params: MarketParams, paths: np.ndarray):
     
     plt.tight_layout()
     plt.savefig('barrier_analysis.png', dpi=150, bbox_inches='tight')
-    plt.show()
+    plt.show(block=True)
 
 def plot_asian_analysis(params: MarketParams, paths: np.ndarray):
     """Visualize Asian option behavior."""
@@ -403,7 +403,7 @@ def plot_asian_analysis(params: MarketParams, paths: np.ndarray):
     
     plt.tight_layout()
     plt.savefig('asian_analysis.png', dpi=150, bbox_inches='tight')
-    plt.show()
+    plt.show(block=True)
 
 def plot_lookback_analysis(params: MarketParams, paths: np.ndarray):
     """Visualize lookback option behavior."""
@@ -508,7 +508,7 @@ def plot_lookback_analysis(params: MarketParams, paths: np.ndarray):
     
     plt.tight_layout()
     plt.savefig('lookback_analysis.png', dpi=150, bbox_inches='tight')
-    plt.show()
+    plt.show(block=True)
 
 def plot_exotic_comparison(params: MarketParams, paths: np.ndarray):
     """Compare all exotic option types."""
@@ -564,7 +564,7 @@ def plot_exotic_comparison(params: MarketParams, paths: np.ndarray):
     
     plt.tight_layout()
     plt.savefig('exotic_comparison.png', dpi=150, bbox_inches='tight')
-    plt.show()
+    plt.show(block=True)
 
 # =============================================================================
 # Main Execution

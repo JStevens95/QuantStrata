@@ -930,7 +930,7 @@ def plot_results(results: Dict, save_path: Optional[str] = None) -> None:
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
         print(f"\nPlot saved to: {save_path}")
     else:
-        plt.show()
+        plt.show(block=True)
 
 
 # =============================================================================
