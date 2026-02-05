@@ -75,7 +75,7 @@ Run from the repo root (so `src` is on the path). You should see a price and Gre
 ## 3. Next steps
 
 - **Full documentation:** [Documentation overview](README.md) — guides, reference, and project structure.
-- **Interactive tutorials:** [Tutorials (Jupyter notebooks)](tutorials/README.md) — calibration, pricing, risk, and more.
+- **Interactive tutorials:** [Tutorials (Jupyter notebooks)](docs/tutorials/README.md) — calibration, pricing, risk, and more.
 - **Examples:** Scripts in `examples/` for market data, pricing, and risk.
 
 For contributing and coding standards, see the [development](development/) docs.

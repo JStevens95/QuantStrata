@@ -6,7 +6,7 @@
 **Python:** 3.12+ required  
 **Tests:** 1,787 passing
 
-**New here?** See the [Quick Start](QUICKSTART.md) to install and run your first pricing example. Contributors: see [Best Practices](BEST_PRACTICES.md). API reference (Sphinx): build with `pip install -r requirements-docs.txt` then `sphinx-build -b html docs/source docs/build/html`; output in `docs/build/html/`.
+**New here?** See the [Quick Start](QUICKSTART.md) to install and run your first pricing example. Contributors: see [Best Practices](docs/BEST_PRACTICES.md). API reference (Sphinx): build with `pip install -r requirements-docs.txt` then `sphinx-build -b html docs/source docs/build/html`; output in `docs/build/html/`.
 
 ---
 
@@ -48,12 +48,12 @@ Interactive Jupyter notebooks with worked examples.
 
 | Category | Notebooks |
 |----------|-----------|
-| **Backtesting** | [Introduction](tutorials/backtesting/backtesting_introduction.ipynb) |
-| **Calibration** | [Framework](tutorials/calibration/calibration_framework.ipynb), [Curves](tutorials/calibration/calibration_curve_bootstrapping.ipynb), [Vol Surface](tutorials/calibration/calibration_volatility_surface.ipynb), [Local Vol](tutorials/calibration/local_volatility_analysis.ipynb), [Heston](tutorials/calibration/stochastic_vol_heston_analysis.ipynb) |
-| **Pricing** | [FX Options](tutorials/pricing/fx_options_pricing.ipynb), [Equity Options](tutorials/pricing/equity_options_pricing.ipynb), [IR Instruments](tutorials/pricing/ir_instruments_pricing.ipynb), [Bonds](tutorials/pricing/bond_pricing.ipynb), [Multi-Asset](tutorials/pricing/multi_asset_options.ipynb) |
-| **Models** | [SABR](tutorials/pricing/sabr_model.ipynb), [LMM](tutorials/pricing/lmm_pricing.ipynb), [Jump/Lévy](tutorials/pricing/jump_levy_models.ipynb), [Advanced MC](tutorials/pricing/advanced_mc_methods.ipynb) |
-| **Instruments** | [Vanilla](tutorials/instruments/vanilla_options_analysis.ipynb), [Barrier](tutorials/instruments/barrier_options_analysis.ipynb), [Digital](tutorials/instruments/digital_options_analysis.ipynb), [Touch](tutorials/instruments/touch_options_analysis.ipynb), [Asian](tutorials/instruments/asian_options_analysis.ipynb), [Lookback](tutorials/instruments/lookback_options_analysis.ipynb) |
-| **Market Data** | [Synthetic Data](tutorials/market-data/synthetic_data_generation.ipynb), [IR Vol Surfaces](tutorials/market-data/ir_volatility_surfaces.ipynb) |
+| **Backtesting** | [Introduction](docs/tutorials/backtesting/backtesting_introduction.ipynb) |
+| **Calibration** | [Framework](docs/tutorials/calibration/calibration_framework.ipynb), [Curves](docs/tutorials/calibration/calibration_curve_bootstrapping.ipynb), [Vol Surface](docs/tutorials/calibration/calibration_volatility_surface.ipynb), [Local Vol](docs/tutorials/calibration/local_volatility_analysis.ipynb), [Heston](docs/tutorials/calibration/stochastic_vol_heston_analysis.ipynb) |
+| **Pricing** | [FX Options](docs/tutorials/pricing/fx_options_pricing.ipynb), [Equity Options](docs/tutorials/pricing/equity_options_pricing.ipynb), [IR Instruments](docs/tutorials/pricing/ir_instruments_pricing.ipynb), [Bonds](docs/tutorials/pricing/bond_pricing.ipynb), [Multi-Asset](docs/tutorials/pricing/multi_asset_options.ipynb) |
+| **Models** | [SABR](docs/tutorials/pricing/sabr_model.ipynb), [LMM](docs/tutorials/pricing/lmm_pricing.ipynb), [Jump/Lévy](docs/tutorials/pricing/jump_levy_models.ipynb), [Advanced MC](docs/tutorials/pricing/advanced_mc_methods.ipynb) |
+| **Instruments** | [Vanilla](docs/tutorials/instruments/vanilla_options_analysis.ipynb), [Barrier](docs/tutorials/instruments/barrier_options_analysis.ipynb), [Digital](docs/tutorials/instruments/digital_options_analysis.ipynb), [Touch](docs/tutorials/instruments/touch_options_analysis.ipynb), [Asian](docs/tutorials/instruments/asian_options_analysis.ipynb), [Lookback](docs/tutorials/instruments/lookback_options_analysis.ipynb) |
+| **Market Data** | [Synthetic Data](docs/tutorials/market-data/synthetic_data_generation.ipynb), [IR Vol Surfaces](docs/tutorials/market-data/ir_volatility_surfaces.ipynb) |
 | **Machine Learning** | [ML Pipeline (TensorFlow)](tutorials/machine_learning/ml_lifecycle_tutorial.ipynb) — Comprehensive TF-native tutorial |
 
 ### Architecture
@@ -62,9 +62,9 @@ Visual and detailed documentation of library structure and component interaction
 
 | Document | Description |
 |----------|-------------|
-| [Architecture Overview](architecture/README.md) | Design principles and layer overview |
-| [Ecosystem Diagrams](architecture/ecosystem_diagrams.md) | Visual diagrams: module interactions, data flows, workflows |
-| [Component Reference](architecture/component_reference.md) | Detailed reference: what each module provides and requires |
+| [Architecture Overview](docs/architecture/README.md) | Design principles and layer overview |
+| [Ecosystem Diagrams](docs/architecture/ecosystem_diagrams.md) | Visual diagrams: module interactions, data flows, workflows |
+| [Component Reference](docs/architecture/component_reference.md) | Detailed reference: what each module provides and requires |
 
 ### Development
 
@@ -72,7 +72,7 @@ Internal documentation for contributors.
 
 | Document | Description |
 |----------|-------------|
-| [Roadmap](development/roadmap.md) | Implementation phases and status |
+| [Roadmap](docs/development/roadmap.md) | Implementation phases and status |
 | [Progress](development/progress/) | Phase completion reports |
 
 ---

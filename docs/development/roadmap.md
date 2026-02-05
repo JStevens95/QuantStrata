@@ -759,7 +759,7 @@ linear products that should be implemented before options on them (swaptions).
 
 ### 6.1 Tutorials & Examples
 - [x] **Quick Start Guide**
-  - Created: [docs/QUICKSTART.md](../QUICKSTART.md) — install, venv, first pricing example; links to full docs and tutorials.
+  - Created: [docs/QUICKSTART.md](../../QUICKSTART.md) — install, venv, first pricing example; links to full docs and tutorials.
   - Use case: Onboarding new users
 
 - [x] **Jupyter Notebooks**
