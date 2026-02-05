@@ -37,6 +37,17 @@ At a hedge fund:
 - Used in risk calculation, scenario analysis, and optimization
 - Requires careful validation against benchmark pricers
 
+Why Results May Vary / Production Considerations
+-------------------------------------------------
+- This example uses constant (flat) parameters for data generation; production
+  would use library Market with GridVolSurface and ZeroRateCurve from real
+  market data or calibrated models (no FlatVolSurface/FlatZeroRateCurve in
+  production pricing).
+- Accuracy depends on training set size, architecture, and early stopping;
+  increase n_train or tune hidden_units for better fit.
+- For exotics or smile-sensitive products, train on full vol surface inputs
+  and use production vol/curve types throughout.
+
 Prerequisites
 -------------
 - TensorFlow 2.x installed

@@ -35,6 +35,16 @@ At a hedge fund:
 - Transaction costs significantly impact performance
 - Regime changes require ongoing monitoring and retraining
 
+Why Results May Vary / Production Considerations
+-------------------------------------------------
+- This example uses synthetic or simple price series; production would
+  use real market data and risk-neutral/real-world dynamics with
+  ZeroRateCurve and volatility surfaces (GridVolSurface), not flat curves.
+- Performance is sensitive to reward design, transaction costs, and
+  train/test regime; run multiple seeds and validate out-of-sample.
+- For a front-office setting, integrate with the library's market data
+  and pricing stack for realistic PnL and risk metrics.
+
 Prerequisites
 -------------
 - Basic RL concepts

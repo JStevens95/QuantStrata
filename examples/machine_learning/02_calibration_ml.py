@@ -40,6 +40,15 @@ At a hedge fund:
 - Speed: minutes → milliseconds with ML
 - ML provides warm start for optimization refinement
 
+Why Results May Vary / Production Considerations
+-------------------------------------------------
+- Training data is synthetic (Heston-generated vol surfaces); production would
+  use real market smiles and ZeroRateCurve/GridVolSurface (no flat curves).
+- ML-only calibration is fast but less accurate; hybrid (ML + optimization) is
+  recommended for production. Use --fast for a shorter run.
+- For real desks, train on historical calibrated parameters and enforce
+  Feller condition and parameter bounds in post-processing.
+
 Prerequisites
 -------------
 - Neural pricing (01_neural_pricer.py)

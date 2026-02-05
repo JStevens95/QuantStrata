@@ -170,11 +170,12 @@ def bs_delta(S: float, K: float, T: float, r: float, q: float, sigma: float, is_
 
 
 def bs_gamma(S: float, K: float, T: float, r: float, q: float, sigma: float) -> float:
-    """Black-Scholes gamma using library function."""
+    """Black-Scholes gamma using library function (same for call/put)."""
     if T <= 1e-10:
         return 0.0
     carry = r - q
     return _lib_vanilla_gamma(
+        option_type="call",
         spot=S, strike=K, expiry=T,
         discount_rate=r, carry=carry, vol=sigma
     )
@@ -187,6 +188,7 @@ def bs_vega(S: float, K: float, T: float, r: float, q: float, sigma: float) -> f
     carry = r - q
     # Library returns vega per 1 vol point, we divide by 100 for per 1% move
     return _lib_vanilla_vega(
+        option_type="call",
         spot=S, strike=K, expiry=T,
         discount_rate=r, carry=carry, vol=sigma
     ) / 100

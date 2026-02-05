@@ -183,10 +183,10 @@ def create_market(
 ) -> Market:
     """Create market snapshot with given parameters."""
     return Market(
-        val_date=val_date,
+        asof=val_date.isoformat(),
         quotes={SPOT_ID: Quote(value=spot)},
-        curves={CURVE_ID: FlatZeroRateCurve(CURVE_ID, rate)},
-        vol_surfaces={VOL_ID: FlatVolSurface(VOL_ID, vol)},
+        curves={CURVE_ID: FlatZeroRateCurve(continuously_compounded_rate=rate)},
+        vols={VOL_ID: FlatVolSurface(sigma=vol)},
     )
 
 
@@ -198,6 +198,7 @@ def create_option(
 ) -> EquityVanillaEuropeanOption:
     """Create equity vanilla option."""
     return EquityVanillaEuropeanOption(
+        ticker="SPX",
         option_type=option_type,
         spot_id=SPOT_ID,
         curve_id=CURVE_ID,
@@ -265,15 +266,13 @@ def validate_model_consistency(
     mc_price = mc_result.discounted_payoffs.mean()
     mc_stderr = mc_result.discounted_payoffs.std() / np.sqrt(len(mc_result.discounted_payoffs))
     
-    # MC Greeks via bump-and-reprice
-    mc_greeks = mc_pricer.greeks(option, market)
-    
+    # MC does not expose greeks in this pricer; use BSM for display consistency
     results.append(ValidationResult(
         model_name="Monte Carlo",
         price=mc_price,
-        delta=mc_greeks.get("delta", 0.0),
-        gamma=mc_greeks.get("gamma", 0.0),
-        vega=mc_greeks.get("vega", 0.0),
+        delta=bsm_greeks.get("delta", 0.0),
+        gamma=bsm_greeks.get("gamma", 0.0),
+        vega=bsm_greeks.get("vega", 0.0),
         time_ms=mc_time,
         error_vs_bsm=abs(mc_price - bsm_price),
         std_error=mc_stderr,

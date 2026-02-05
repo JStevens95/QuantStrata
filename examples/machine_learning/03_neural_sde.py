@@ -37,6 +37,16 @@ At a hedge fund:
 - Used for pricing, risk simulation, scenario generation
 - Requires careful validation against known benchmarks
 
+Why Results May Vary / Production Considerations
+-------------------------------------------------
+- This example uses synthetic GBM paths; production would feed historical
+  returns and use Market data (ZeroRateCurve, GridVolSurface) for realistic
+  drift/vol and no flat curves in risk or pricing.
+- Learned dynamics are data-dependent; more paths and tuning moment/pathwise
+  weights improve fit. Validate against known models (e.g. Heston) before use.
+- For production, enforce no-arbitrage and use proper curve/vol inputs in
+  downstream pricing and scenario engines.
+
 Prerequisites
 -------------
 - SDE fundamentals

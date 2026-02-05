@@ -201,13 +201,13 @@ def create_market(
 ) -> Market:
     """Create market snapshot with given parameters."""
     return Market(
-        val_date=val_date,
+        asof=val_date.isoformat(),
         quotes={EURUSD_SPOT: Quote(value=spot)},
         curves={
-            USD_CURVE: FlatZeroRateCurve(USD_CURVE, r_dom),
-            EUR_CURVE: FlatZeroRateCurve(EUR_CURVE, r_for),
+            USD_CURVE: FlatZeroRateCurve(continuously_compounded_rate=r_dom),
+            EUR_CURVE: FlatZeroRateCurve(continuously_compounded_rate=r_for),
         },
-        vol_surfaces={EURUSD_VOL: FlatVolSurface(EURUSD_VOL, vol)},
+        vols={EURUSD_VOL: FlatVolSurface(sigma=vol)},
     )
 
 
@@ -292,6 +292,7 @@ def compute_greeks_from_model(
     )
     
     vega = vanilla_vega(
+        option_type="call",
         spot=spot,
         strike=strike,
         expiry=expiry,

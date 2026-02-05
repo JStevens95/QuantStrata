@@ -181,13 +181,13 @@ class PricingResult:
 def create_market(params: OptionParams) -> Market:
     """Create market snapshot from parameters."""
     return Market(
-        val_date=date.today(),
+        asof=date.today().isoformat(),
         quotes={EURUSD_SPOT: Quote(value=params.spot)},
         curves={
-            USD_CURVE: FlatZeroRateCurve(USD_CURVE, params.r_dom),
-            EUR_CURVE: FlatZeroRateCurve(EUR_CURVE, params.r_for),
+            USD_CURVE: FlatZeroRateCurve(continuously_compounded_rate=params.r_dom),
+            EUR_CURVE: FlatZeroRateCurve(continuously_compounded_rate=params.r_for),
         },
-        vol_surfaces={EURUSD_VOL: FlatVolSurface(EURUSD_VOL, params.vol)},
+        vols={EURUSD_VOL: FlatVolSurface(sigma=params.vol)},
     )
 
 

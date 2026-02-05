@@ -35,6 +35,16 @@ At a hedge fund:
 - Adapts to different market regimes
 - Requires careful validation against benchmarks
 
+Why Results May Vary / Production Considerations
+-------------------------------------------------
+- The environment uses library pricers; in production, feed them with
+  real market data: ZeroRateCurve and GridVolSurface (no FlatCurves/FlatVol).
+- Example results depend on seeds, episode count, and hyperparameters;
+  tune learning rate, epsilon decay, and network size for your use case.
+- Validate the agent against delta-hedge and other benchmarks on
+  out-of-sample paths; production would use proper curve/vol inputs and
+  realistic transaction costs.
+
 Prerequisites
 -------------
 - Basic RL concepts (state, action, reward)

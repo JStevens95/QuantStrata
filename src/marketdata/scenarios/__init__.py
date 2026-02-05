@@ -105,16 +105,20 @@ from src.marketdata.scenarios.timeseries import (
     FactorDynamicsSpec,
 )
 
-# Historical simulation
-from src.marketdata.scenarios.historical import (
-    HistoricalSimulator,
-    HistoricalConfig,
-    BootstrapConfig,
-    BlockBootstrap,
-    StationaryBootstrap,
-    FilteredConfig,
-    FilteredHistorical,
-)
+# Historical simulation (optional: requires pandas)
+try:
+    from src.marketdata.scenarios.historical import (
+        HistoricalSimulator,
+        HistoricalConfig,
+        BootstrapConfig,
+        BlockBootstrap,
+        StationaryBootstrap,
+        FilteredConfig,
+        FilteredHistorical,
+    )
+    _HISTORICAL_AVAILABLE = True
+except ImportError:
+    _HISTORICAL_AVAILABLE = False
 
 __all__ = [
     # Shock objects
@@ -138,12 +142,14 @@ __all__ = [
     "HestonDynamicsSpec",
     "OUDynamicsSpec",
     "FactorDynamicsSpec",
-    # Historical simulation
-    "HistoricalSimulator",
-    "HistoricalConfig",
-    "BootstrapConfig",
-    "BlockBootstrap",
-    "StationaryBootstrap",
-    "FilteredConfig",
-    "FilteredHistorical",
 ]
+if _HISTORICAL_AVAILABLE:
+    __all__ += [
+        "HistoricalSimulator",
+        "HistoricalConfig",
+        "BootstrapConfig",
+        "BlockBootstrap",
+        "StationaryBootstrap",
+        "FilteredConfig",
+        "FilteredHistorical",
+    ]
