@@ -7,6 +7,13 @@ Pipeline Example: risk.compute_var
 This script demonstrates how to use the `risk.compute_var` pipeline to compute
 Value-at-Risk (VaR) using multiple methodologies.
 
+Learning Objectives
+-------------------
+1. **VaR Fundamentals**: Understand VaR as a risk measure
+2. **Multiple Methods**: Compare Historical, Parametric, and Monte Carlo VaR
+3. **Expected Shortfall**: Understand CVaR as a coherent risk measure
+4. **Pipeline Integration**: Use orchestrator for risk workflows
+
 What This Pipeline Does
 -----------------------
 1. Loads portfolio and market from state
@@ -17,12 +24,20 @@ What This Pipeline Does
 6. Computes Expected Shortfall (CVaR)
 7. Compares methods and writes report
 
-Key Concepts: Value-at-Risk
----------------------------
-**VaR** answers: "What is the maximum loss at a given confidence level?"
+Mathematical Framework
+----------------------
+Value-at-Risk Definition:
+    VaR_α = inf{x : P(L > x) ≤ 1 - α}
+    
+    "The loss that will NOT be exceeded with probability α"
 
-- **VaR(95%)**: The loss that will NOT be exceeded 95% of the time
-- **VaR(99%)**: The loss that will NOT be exceeded 99% of the time
+For α = 95%:
+    VaR_95% = 1.645 × σ (parametric, normal assumption)
+
+Expected Shortfall (CVaR):
+    ES_α = E[L | L > VaR_α]
+    
+    "The average loss when VaR is exceeded"
 
 VaR Methods
 -----------
@@ -38,15 +53,25 @@ VaR Methods
    - Pros: Flexible, can model any distribution
    - Cons: Computationally intensive, model-dependent
 
-Expected Shortfall (CVaR)
--------------------------
-"What is the AVERAGE loss when VaR is exceeded?"
-CVaR is more conservative and coherent than VaR.
+Production Context
+------------------
+At a hedge fund:
+- VaR is computed daily (and intraday) for risk limits
+- Regulatory VaR (Basel III) uses 99% 10-day VaR
+- Internal VaR typically uses 95% or 99% 1-day
+- ES is preferred as it's a coherent risk measure
+
+Prerequisites
+-------------
+- Understanding of examples/fundamentals/ and examples/risk/
+- Familiarity with orchestrator framework
 
 Run This Example
 ----------------
-    python examples/pipelines/run_var.py
+    cd /path/to/QuantStrata
+    PYTHONPATH=. python examples/pipelines/run_var.py
 
+Author: QuantStrata Team
 ===============================================================================
 """
 
@@ -54,33 +79,66 @@ Run This Example
 # IMPORTS
 # =============================================================================
 
+from __future__ import annotations
+
+import argparse
+import logging
 import sys
-from pathlib import Path
 from datetime import date
+from pathlib import Path
+from typing import Dict, Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+# -----------------------------------------------------------------------------
+# Path setup
+# -----------------------------------------------------------------------------
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
 
+# -----------------------------------------------------------------------------
+# Orchestrator framework
+# -----------------------------------------------------------------------------
 from src.orchestrator.config.schemas import RunConfig, IOConfig
 from src.orchestrator.config.validate import validate_run_config
 from src.orchestrator.runtime.entrypoints import run_pipeline_from_config
 from src.orchestrator.core.state_keys import StateKeys as Keys
 
-# Prerequisites
+# -----------------------------------------------------------------------------
+# Market data and instruments
+# -----------------------------------------------------------------------------
 from src.marketdata.core.market import Market
 from src.marketdata.core.ids import MarketId
 from src.marketdata.core.interfaces import Quote
 from src.marketdata.curves.term_structure import FlatZeroRateCurve
 from src.marketdata.surfaces.vol_surface import FlatVolSurface
 from src.portfolio.core import Portfolio, Position
-from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
+from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
 
 
 # =============================================================================
-# HELPER: BUILD MARKET AND PORTFOLIO
+# LOGGING SETUP
+# =============================================================================
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)-8s | %(message)s',
+    datefmt='%H:%M:%S',
+)
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# MARKET AND PORTFOLIO BUILDERS
 # =============================================================================
 
 def build_market() -> Market:
-    """Build market snapshot for VaR computation."""
+    """
+    Build market snapshot for VaR computation.
+    
+    Returns
+    -------
+    Market
+        Market snapshot with spots, curves, and vols.
+    """
     return Market(
         asof=date.today(),
         quotes={
@@ -97,13 +155,19 @@ def build_market() -> Market:
 
 
 def build_portfolio() -> Portfolio:
-    """Build a sample portfolio for VaR computation."""
+    """
+    Build a sample portfolio for VaR computation.
     
+    Returns
+    -------
+    Portfolio
+        Portfolio with large directional and hedging positions.
+    """
     positions = [
         # Large directional position
         Position(
             position_id="EURUSD_LONG_CALL",
-            instrument=FxVanillaEuropeanOption(
+            instrument=EuropeanFxVanillaOption(
                 option_type="call",
                 notional=50_000_000,  # $50M notional
                 strike=1.10,
@@ -119,7 +183,7 @@ def build_portfolio() -> Portfolio:
         # Partially hedging put
         Position(
             position_id="EURUSD_LONG_PUT",
-            instrument=FxVanillaEuropeanOption(
+            instrument=EuropeanFxVanillaOption(
                 option_type="put",
                 notional=30_000_000,
                 strike=1.05,
@@ -141,8 +205,14 @@ def build_portfolio() -> Portfolio:
 # =============================================================================
 
 def build_config() -> RunConfig:
-    """Build configuration for VaR computation."""
+    """
+    Build configuration for VaR computation.
     
+    Returns
+    -------
+    RunConfig
+        Validated configuration for the VaR pipeline.
+    """
     config = RunConfig(
         pipeline="risk.compute_var",
         
@@ -188,157 +258,251 @@ def build_config() -> RunConfig:
 
 
 # =============================================================================
-# MAIN EXECUTION
+# RESULTS DISPLAY
 # =============================================================================
 
-def main() -> None:
-    """Execute the VaR pipeline and display results."""
-    
-    print("=" * 70)
-    print("Pipeline Example: risk.compute_var")
-    print("=" * 70)
-    print()
-    
-    # -------------------------------------------------------------------------
-    # Step 1: Build prerequisites
-    # -------------------------------------------------------------------------
-    print("[1/5] Building market and portfolio...")
-    market = build_market()
-    portfolio = build_portfolio()
-    
-    # Calculate approximate portfolio value
-    portfolio_value = sum(
-        p.instrument.notional * 0.02  # Rough option premium estimate
-        for p in portfolio
-    )
-    
-    print(f"      Portfolio positions: {len(portfolio)}")
-    print(f"      Approximate PV: ${portfolio_value:,.0f}")
-    print()
-    
-    # -------------------------------------------------------------------------
-    # Step 2: Build configuration
-    # -------------------------------------------------------------------------
-    print("[2/5] Building configuration...")
-    cfg = build_config()
-    print(f"      Pipeline: {cfg.pipeline}")
-    print(f"      Confidence levels: 95%, 99%")
-    print(f"      Methods: Historical, Parametric, Monte Carlo")
-    print()
-    
-    # -------------------------------------------------------------------------
-    # Step 3: Execute the pipeline
-    # -------------------------------------------------------------------------
-    print("[3/5] Executing pipeline...")
-    
-    initial_state = {
-        Keys.MARKET: market,
-        Keys.PORTFOLIO: portfolio,
-    }
-    
-    ctx = run_pipeline_from_config(cfg, initial_state=initial_state)
-    print("      Pipeline completed successfully!")
-    print()
-    
-    # -------------------------------------------------------------------------
-    # Step 4: Extract results
-    # -------------------------------------------------------------------------
-    print("[4/5] Extracting results...")
-    
-    historical_var = ctx.state.get(Keys.HISTORICAL_VAR, {})
-    parametric_var = ctx.state.get(Keys.PARAMETRIC_VAR, {})
-    monte_carlo_var = ctx.state.get(Keys.MONTE_CARLO_VAR, {})
-    expected_shortfall = ctx.state.get(Keys.EXPECTED_SHORTFALL, {})
-    var_report = ctx.state.get(Keys.VAR_REPORT, {})
-    
-    print()
-    
-    # -------------------------------------------------------------------------
-    # Step 5: Display VaR Report
-    # -------------------------------------------------------------------------
-    print("[5/5] Value-at-Risk Report")
-    print("=" * 70)
-    print()
-    
-    # VaR by method
-    print("VaR by Method (1-Day Horizon):")
-    print("-" * 70)
-    print(f"{'Method':<20} {'VaR(95%)':>15} {'VaR(99%)':>15}")
-    print("-" * 70)
+def display_var_results(
+    historical_var: Dict[float, float],
+    parametric_var: Dict[float, float],
+    monte_carlo_var: Dict[float, float],
+) -> None:
+    """Display VaR results by method."""
+    logger.info("")
+    logger.info("VaR by Method (1-Day Horizon):")
+    logger.info("-" * 70)
+    logger.info(f"{'Method':<20} {'VaR(95%)':>15} {'VaR(99%)':>15}")
+    logger.info("-" * 70)
     
     # Historical VaR
     h95 = historical_var.get(0.95, 0)
     h99 = historical_var.get(0.99, 0)
-    print(f"{'Historical':<20} ${h95:>14,.0f} ${h99:>14,.0f}")
+    logger.info(f"{'Historical':<20} ${h95:>14,.0f} ${h99:>14,.0f}")
     
     # Parametric VaR
     p95 = parametric_var.get(0.95, 0)
     p99 = parametric_var.get(0.99, 0)
-    print(f"{'Parametric':<20} ${p95:>14,.0f} ${p99:>14,.0f}")
+    logger.info(f"{'Parametric':<20} ${p95:>14,.0f} ${p99:>14,.0f}")
     
     # Monte Carlo VaR
     m95 = monte_carlo_var.get(0.95, 0)
     m99 = monte_carlo_var.get(0.99, 0)
-    print(f"{'Monte Carlo':<20} ${m95:>14,.0f} ${m99:>14,.0f}")
+    logger.info(f"{'Monte Carlo':<20} ${m95:>14,.0f} ${m99:>14,.0f}")
     
-    print("-" * 70)
-    print()
+    logger.info("-" * 70)
+
+
+def display_expected_shortfall(expected_shortfall: Dict[str, Dict[float, float]]) -> None:
+    """Display Expected Shortfall results."""
+    logger.info("")
+    logger.info("Expected Shortfall (CVaR):")
+    logger.info("-" * 50)
     
-    # Expected Shortfall
-    print("Expected Shortfall (CVaR):")
-    print("-" * 50)
     es_historical = expected_shortfall.get("historical", {})
     es95 = es_historical.get(0.95, 0)
     es99 = es_historical.get(0.99, 0)
-    print(f"  ES(95%): ${es95:>12,.0f}")
-    print(f"  ES(99%): ${es99:>12,.0f}")
-    print()
     
-    # -------------------------------------------------------------------------
-    # VaR Comparison
-    # -------------------------------------------------------------------------
-    print("Method Comparison:")
-    print("-" * 70)
+    logger.info(f"  ES(95%): ${es95:>12,.0f}")
+    logger.info(f"  ES(99%): ${es99:>12,.0f}")
+
+
+def display_method_comparison(
+    historical_var: Dict[float, float],
+    parametric_var: Dict[float, float],
+    monte_carlo_var: Dict[float, float],
+) -> None:
+    """Display method comparison."""
+    h95 = historical_var.get(0.95, 0)
+    p95 = parametric_var.get(0.95, 0)
+    m95 = monte_carlo_var.get(0.95, 0)
+    
+    h99 = historical_var.get(0.99, 0)
+    p99 = parametric_var.get(0.99, 0)
+    m99 = monte_carlo_var.get(0.99, 0)
+    
+    logger.info("")
+    logger.info("Method Comparison:")
+    logger.info("-" * 70)
     
     var_95_values = [h95, p95, m95]
-    var_99_values = [h99, p99, m99]
     
-    # Most/least conservative
     if any(var_95_values):
         most_conservative = max(var_95_values)
         least_conservative = min(var_95_values)
         spread = most_conservative - least_conservative
         
-        print(f"  VaR(95%) spread:    ${spread:,.0f} between methods")
-        print(f"  Most conservative:  ${most_conservative:,.0f}")
-        print(f"  Least conservative: ${least_conservative:,.0f}")
-    print()
+        logger.info(f"  VaR(95%) spread:    ${spread:,.0f} between methods")
+        logger.info(f"  Most conservative:  ${most_conservative:,.0f}")
+        logger.info(f"  Least conservative: ${least_conservative:,.0f}")
+
+
+def display_interpretation(
+    historical_var: Dict[float, float],
+    expected_shortfall: Dict[str, Dict[float, float]],
+    portfolio_value: float,
+) -> None:
+    """Display VaR interpretation."""
+    h95 = historical_var.get(0.95, 0)
+    h99 = historical_var.get(0.99, 0)
     
-    # -------------------------------------------------------------------------
-    # Interpretation
-    # -------------------------------------------------------------------------
-    print("Interpretation:")
-    print("-" * 70)
-    print(f"  At 95% confidence, daily losses should not exceed ~${h95:,.0f}")
-    print(f"  At 99% confidence, daily losses should not exceed ~${h99:,.0f}")
-    print()
-    print(f"  However, when VaR is exceeded (5% of days at 95% level),")
-    print(f"  the AVERAGE loss (ES) is ~${es95:,.0f}")
-    print()
+    es_historical = expected_shortfall.get("historical", {})
+    es95 = es_historical.get(0.95, 0)
     
-    # Risk metrics as % of portfolio
+    logger.info("")
+    logger.info("Interpretation:")
+    logger.info("-" * 70)
+    logger.info(f"  At 95% confidence, daily losses should not exceed ~${h95:,.0f}")
+    logger.info(f"  At 99% confidence, daily losses should not exceed ~${h99:,.0f}")
+    logger.info("")
+    logger.info(f"  However, when VaR is exceeded (5% of days at 95% level),")
+    logger.info(f"  the AVERAGE loss (ES) is ~${es95:,.0f}")
+    
     if portfolio_value > 0:
-        print(f"  VaR(95%) as % of portfolio: {h95/portfolio_value*100:.2f}%")
-        print(f"  VaR(99%) as % of portfolio: {h99/portfolio_value*100:.2f}%")
-    print()
+        logger.info("")
+        logger.info(f"  VaR(95%) as % of portfolio: {h95 / portfolio_value * 100:.2f}%")
+        logger.info(f"  VaR(99%) as % of portfolio: {h99 / portfolio_value * 100:.2f}%")
+
+
+# =============================================================================
+# SUMMARY
+# =============================================================================
+
+def print_summary() -> None:
+    """Print summary of key concepts."""
+    logger.info("")
+    logger.info("=" * 70)
+    logger.info("SUMMARY")
+    logger.info("=" * 70)
     
-    print("Artifacts saved to:", cfg.io.workdir)
-    print()
+    summary = """
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │                         KEY TAKEAWAYS                                │
+    ├─────────────────────────────────────────────────────────────────────┤
+    │                                                                      │
+    │  1. VaR Definition:                                                 │
+    │     - "Maximum loss at a given confidence level"                    │
+    │     - VaR(95%) = loss NOT exceeded 95% of the time                  │
+    │                                                                      │
+    │  2. VaR Methods:                                                    │
+    │     - Historical: Uses actual returns, no distribution assumption   │
+    │     - Parametric: Assumes normal, fast but underestimates tails     │
+    │     - Monte Carlo: Flexible but computationally intensive           │
+    │                                                                      │
+    │  3. Expected Shortfall:                                             │
+    │     - ES = average loss WHEN VaR is exceeded                        │
+    │     - More conservative and coherent than VaR                       │
+    │                                                                      │
+    │  4. Production Use:                                                 │
+    │     - Daily risk limits and breach monitoring                       │
+    │     - Regulatory capital (Basel III)                                │
+    │     - Method comparison for model risk                              │
+    │                                                                      │
+    │  NEXT: See run_build_curves.py for curve bootstrapping              │
+    │                                                                      │
+    └─────────────────────────────────────────────────────────────────────┘
+    """
+    logger.info(summary)
 
 
 # =============================================================================
-# ENTRY POINT
+# MAIN ENTRY POINT
 # =============================================================================
+
+def main(args: argparse.Namespace) -> None:
+    """
+    Execute the VaR pipeline and display results.
+    
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Command-line arguments.
+    """
+    logger.info("=" * 70)
+    logger.info("Pipeline Example: risk.compute_var")
+    logger.info("=" * 70)
+    
+    try:
+        # ---------------------------------------------------------------------
+        # Step 1: Build prerequisites
+        # ---------------------------------------------------------------------
+        logger.info("")
+        logger.info("[1/5] Building market and portfolio...")
+        market = build_market()
+        portfolio = build_portfolio()
+        
+        # Calculate approximate portfolio value
+        portfolio_value = sum(
+            p.instrument.notional * 0.02  # Rough option premium estimate
+            for p in portfolio.positions
+        )
+        
+        logger.info(f"      Portfolio positions: {len(portfolio.positions)}")
+        logger.info(f"      Approximate PV: ${portfolio_value:,.0f}")
+        
+        # ---------------------------------------------------------------------
+        # Step 2: Build configuration
+        # ---------------------------------------------------------------------
+        logger.info("")
+        logger.info("[2/5] Building configuration...")
+        cfg = build_config()
+        logger.info(f"      Pipeline: {cfg.pipeline}")
+        logger.info(f"      Confidence levels: 95%, 99%")
+        logger.info(f"      Methods: Historical, Parametric, Monte Carlo")
+        
+        # ---------------------------------------------------------------------
+        # Step 3: Execute the pipeline
+        # ---------------------------------------------------------------------
+        logger.info("")
+        logger.info("[3/5] Executing pipeline...")
+        
+        initial_state = {
+            Keys.MARKET: market,
+            Keys.PORTFOLIO: portfolio,
+        }
+        
+        ctx = run_pipeline_from_config(cfg, initial_state=initial_state)
+        logger.info("      Pipeline completed successfully!")
+        
+        # ---------------------------------------------------------------------
+        # Step 4: Extract results
+        # ---------------------------------------------------------------------
+        logger.info("")
+        logger.info("[4/5] Extracting results...")
+        
+        historical_var = ctx.state.get(Keys.HISTORICAL_VAR, {})
+        parametric_var = ctx.state.get(Keys.PARAMETRIC_VAR, {})
+        monte_carlo_var = ctx.state.get(Keys.MONTE_CARLO_VAR, {})
+        expected_shortfall = ctx.state.get(Keys.EXPECTED_SHORTFALL, {})
+        
+        # ---------------------------------------------------------------------
+        # Step 5: Display VaR Report
+        # ---------------------------------------------------------------------
+        logger.info("")
+        logger.info("[5/5] Value-at-Risk Report")
+        logger.info("=" * 70)
+        
+        display_var_results(historical_var, parametric_var, monte_carlo_var)
+        display_expected_shortfall(expected_shortfall)
+        display_method_comparison(historical_var, parametric_var, monte_carlo_var)
+        display_interpretation(historical_var, expected_shortfall, portfolio_value)
+        
+        logger.info("")
+        logger.info(f"Artifacts saved to: {cfg.io.workdir}")
+        
+        # Summary
+        print_summary()
+        
+        logger.info("Pipeline example completed successfully!")
+        
+    except Exception as e:
+        logger.exception(f"Pipeline failed: {e}")
+        sys.exit(1)
+
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(
+        description="VaR Computation Pipeline Example",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    
+    args = parser.parse_args()
+    main(args)
