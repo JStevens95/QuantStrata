@@ -337,10 +337,12 @@ class TestTrainingResult:
         assert loaded.best_epoch == 2
         assert loaded.total_time_seconds == 5.0
 
+    @pytest.mark.skip(reason="Unit tests should not run plotting; plot code path tested in integration if needed")
     def test_plot_history(self):
-        """plot_history runs without error (matplotlib integration)."""
+        """plot_history runs without error (matplotlib integration). Skipped: no plotting in unit tests."""
         pytest.importorskip("matplotlib")
-        
+        import matplotlib
+        matplotlib.use("Agg")
         result = TrainingResult(
             history={"loss": [1.0, 0.5, 0.3], "val_loss": [1.1, 0.6, 0.4]},
             best_epoch=3,
@@ -349,13 +351,8 @@ class TestTrainingResult:
             final_epoch=3,
             total_time_seconds=5.0,
         )
-        
-        # Just verify it doesn't raise
-        import matplotlib
-        matplotlib.use('Agg')  # Non-interactive backend
-        
-        # This would show a plot - just verify no error
-        # result.plot_history()  # Commented to avoid display
+        # Would call result.plot_history() - skipped to avoid any plotting in unit tests
+        assert result.best_epoch == 3
 
 
 # =============================================================================

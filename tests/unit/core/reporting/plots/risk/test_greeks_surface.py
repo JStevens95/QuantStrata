@@ -1,10 +1,12 @@
-"""Smoke tests for Greeks surface plotter."""
+"""Smoke tests for Greeks surface plotter (no display: use Agg backend)."""
 
 from __future__ import annotations
 
 import pytest
 
 pytest.importorskip("matplotlib")
+import matplotlib
+matplotlib.use("Agg")  # Non-interactive; unit tests must not open plot windows
 
 import numpy as np
 

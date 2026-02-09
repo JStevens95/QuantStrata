@@ -2,13 +2,16 @@
 Unit tests for historical data adapter module.
 
 Tests HistoricalDataAdapter and HistoricalMarketData.
+Requires pandas (skip entire module if not installed).
 """
 
 from datetime import date, timedelta
 
 import numpy as np
-import pandas as pd
 import pytest
+
+# Skip entire module if pandas is not installed (adapter and tests use DataFrame)
+pd = pytest.importorskip("pandas")
 
 from src.deep_hedging.adapters.historical_data import (
     HistoricalDataAdapter,
@@ -120,7 +123,7 @@ class TestHistoricalDataAdapter:
         assert len(data.dates) == n
     
     def test_from_dataframe(self) -> None:
-        """Test creating data from DataFrame."""
+        """Test creating data from DataFrame (uses pandas)."""
         adapter = HistoricalDataAdapter()
         
         np.random.seed(42)

@@ -1,10 +1,12 @@
-"""Smoke tests for PnL-by-scenario and attribution bar plotters."""
+"""Smoke tests for PnL-by-scenario and attribution bar plotters (no display: use Agg)."""
 
 from __future__ import annotations
 
 import pytest
 
 pytest.importorskip("matplotlib")
+import matplotlib
+matplotlib.use("Agg")  # Non-interactive; unit tests must not open plot windows
 
 from src.core.reporting.plots.risk.pnl_scenario import (
     plot_attribution_bars,

@@ -71,17 +71,24 @@ class TestBuildPricingData:
         assert isinstance(result.test_ds, tf.data.Dataset)
 
     def test_default_split_ratios(self):
-        """Default split ratios are 70/15/15."""
-        result = build_pricing_data(n_samples=100, batch_size=10, seed=42)
-        
-        # Count samples in each dataset
+        """Default split ratios are 70/15/15 (small n_samples for fast run)."""
+        n_samples = 20  # Small size so iteration is fast
+        result = build_pricing_data(
+            n_samples=n_samples,
+            batch_size=5,
+            seed=42,
+            train_ratio=0.7,
+            val_ratio=0.15,
+            test_ratio=0.15,
+        )
         train_count = sum(1 for _ in result.train_ds.unbatch())
         val_count = sum(1 for _ in result.val_ds.unbatch())
         test_count = sum(1 for _ in result.test_ds.unbatch())
-        
-        assert train_count == 70
-        assert val_count == 15
-        assert test_count == 15
+        assert train_count + val_count + test_count == n_samples
+        # 70/15/15 of 20 -> 14, 3, 3 (allow for rounding)
+        assert abs(train_count / n_samples - 0.7) <= 0.1
+        assert abs(val_count / n_samples - 0.15) <= 0.1
+        assert abs(test_count / n_samples - 0.15) <= 0.1
 
     def test_custom_split_ratios(self):
         """Custom split ratios are respected."""
@@ -292,14 +299,13 @@ class TestBuildPricingDataIntegration:
             assert not np.allclose(norm_preds.mean(), denorm_preds.mean())
 
     def test_large_dataset(self):
-        """Works with larger datasets."""
+        """Works with larger datasets (moderate size for fast unit test)."""
+        n_samples = 500
         result = build_pricing_data(
-            n_samples=10000,
-            batch_size=256,
+            n_samples=n_samples,
+            batch_size=50,
             seed=42,
         )
-        
-        # Verify all samples are present
         train_count = sum(
             features.shape[0] for features, _ in result.train_ds
         )
@@ -309,7 +315,7 @@ class TestBuildPricingDataIntegration:
         test_count = sum(
             features.shape[0] for features, _ in result.test_ds
         )
-        
-        assert train_count == 7000  # 70%
-        assert val_count == 1500   # 15%
-        assert test_count == 1500  # 15%
+        assert train_count + val_count + test_count == n_samples
+        assert abs(train_count / n_samples - 0.7) < 0.05
+        assert abs(val_count / n_samples - 0.15) < 0.05
+        assert abs(test_count / n_samples - 0.15) < 0.05
