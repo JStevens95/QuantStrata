@@ -188,7 +188,7 @@ def _parse_vol_quotes(
 # Pipeline Steps
 # =============================================================================
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadVolQuotesStep(Step):
     """
     Step 1: Load vol quotes from configuration.
@@ -236,7 +236,7 @@ class LoadVolQuotesStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ConvertQuotesStep(Step):
     """
     Step 2: Convert quotes to standard strike/expiry format.
@@ -341,7 +341,7 @@ class ConvertQuotesStep(Step):
         return float(strike)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildRawSurfaceStep(Step):
     """
     Step 3: Build raw vol surface from quotes.
@@ -400,7 +400,7 @@ class BuildRawSurfaceStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ValidateArbitrageStep(Step):
     """
     Step 4: Validate arbitrage constraints.
@@ -495,7 +495,7 @@ class ValidateArbitrageStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class InterpolateSurfaceStep(Step):
     """
     Step 5: Apply surface interpolation.
@@ -610,7 +610,7 @@ class InterpolateSurfaceStep(Step):
         return vols
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class StoreSurfaceStep(Step):
     """
     Step 6: Store surface in artifacts and log summary.

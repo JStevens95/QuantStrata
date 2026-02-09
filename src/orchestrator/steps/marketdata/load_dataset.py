@@ -14,7 +14,7 @@ from src.orchestrator.core.errors import ConfigError
 from src.orchestrator.core.step import Step
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadDatasetStep(Step):
     """
     Load a MarketDataset from disk.

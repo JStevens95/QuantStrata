@@ -23,7 +23,6 @@ def run_cliquet_example() -> None:
     from src.instruments.equity.options.cliquet import EquityCliquetOption
     from src.pricers.equity.cliquet_gbm_mc import (
         CliquetMarketData,
-        CliquetMcConfig,
         EquityCliquetGbmMcPricer,
     )
 
@@ -52,8 +51,7 @@ def run_cliquet_example() -> None:
         valuation_date=start,
     )
 
-    config = CliquetMcConfig(n_paths=25_000, seed=42, compute_greeks=True)
-    pricer = EquityCliquetGbmMcPricer(config=config)
+    pricer = EquityCliquetGbmMcPricer(n_paths=25_000, seed=42, compute_greeks=True)
     result = pricer.price(cliquet, market)
 
     print("  Cliquet (equity, GBM MC)")

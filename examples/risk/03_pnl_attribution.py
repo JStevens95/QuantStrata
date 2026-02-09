@@ -82,9 +82,9 @@ from src.marketdata.core.market import Market
 from src.marketdata.curves.term_structure import FlatZeroRateCurve
 from src.marketdata.surfaces.vol_surface import FlatVolSurface
 
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
+from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
 from src.portfolio.core import Portfolio, Position
-from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer
+from src.pricers.fx.european_bsm import FxVanillaEuropeanOptionBsmPricer
 
 
 # =============================================================================
@@ -234,7 +234,7 @@ def build_portfolio() -> Portfolio:
         # Long ATM call
         Position(
             position_id="LONG_CALL_ATM",
-            instrument=EuropeanFxVanillaOption(
+            instrument=FxVanillaEuropeanOption(
                 option_type="call",
                 strike=1.0850,
                 expiry=0.25,  # 3 months
@@ -249,7 +249,7 @@ def build_portfolio() -> Portfolio:
         # Short OTM put
         Position(
             position_id="SHORT_PUT_OTM",
-            instrument=EuropeanFxVanillaOption(
+            instrument=FxVanillaEuropeanOption(
                 option_type="put",
                 strike=1.0500,
                 expiry=0.25,
@@ -264,7 +264,7 @@ def build_portfolio() -> Portfolio:
         # Long 1Y straddle
         Position(
             position_id="LONG_STRADDLE_CALL",
-            instrument=EuropeanFxVanillaOption(
+            instrument=FxVanillaEuropeanOption(
                 option_type="call",
                 strike=1.0850,
                 expiry=1.0,
@@ -278,7 +278,7 @@ def build_portfolio() -> Portfolio:
         ),
         Position(
             position_id="LONG_STRADDLE_PUT",
-            instrument=EuropeanFxVanillaOption(
+            instrument=FxVanillaEuropeanOption(
                 option_type="put",
                 strike=1.0850,
                 expiry=1.0,
@@ -302,7 +302,7 @@ def build_portfolio() -> Portfolio:
 def compute_portfolio_greeks(
     portfolio: Portfolio,
     market: Market,
-    pricer: FxEuropeanVanillaBsmPricer,
+    pricer: FxVanillaEuropeanOptionBsmPricer,
 ) -> Dict[str, float]:
     """
     Compute aggregate portfolio Greeks.
@@ -335,7 +335,7 @@ def compute_portfolio_greeks(
 def compute_portfolio_pv(
     portfolio: Portfolio,
     market: Market,
-    pricer: FxEuropeanVanillaBsmPricer,
+    pricer: FxVanillaEuropeanOptionBsmPricer,
 ) -> float:
     """Compute total portfolio PV."""
     total_pv = 0.0
@@ -350,7 +350,7 @@ def compute_pnl_attribution(
     market_t0: Market,
     market_t1: Market,
     market_move: MarketMove,
-    pricer: FxEuropeanVanillaBsmPricer,
+    pricer: FxVanillaEuropeanOptionBsmPricer,
 ) -> PnLAttribution:
     """
     Compute P&L attribution using Taylor expansion.
@@ -365,7 +365,7 @@ def compute_pnl_attribution(
         Market at T1.
     market_move : MarketMove
         Market move details.
-    pricer : FxEuropeanVanillaBsmPricer
+    pricer : FxVanillaEuropeanOptionBsmPricer
         The pricer.
     
     Returns
@@ -466,7 +466,7 @@ def run_pnl_attribution() -> Tuple[PnLAttribution, Dict[str, float]]:
         logger.info(f"  {pos.position_id}: {opt.option_type} K={opt.strike:.4f} T={opt.expiry:.2f}y qty={pos.quantity:+.0f}")
     
     # Create pricer
-    pricer = FxEuropeanVanillaBsmPricer()
+    pricer = FxVanillaEuropeanOptionBsmPricer()
     
     # Compute Greeks at T0
     logger.info("")
@@ -550,7 +550,7 @@ def run_multiday_attribution() -> List[PnLAttribution]:
     vol_changes = np.random.normal(0, 0.003, 5)  # Vol changes
     
     portfolio = build_portfolio()
-    pricer = FxEuropeanVanillaBsmPricer()
+    pricer = FxVanillaEuropeanOptionBsmPricer()
     
     attributions: List[PnLAttribution] = []
     

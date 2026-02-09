@@ -57,7 +57,7 @@ def _hedge_cfg(cfg: RunConfig) -> Dict[str, Any]:
 # Pipeline Steps
 # =============================================================================
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadPortfolioStep(Step):
     """Step 1: Load portfolio to hedge from state."""
     
@@ -74,7 +74,7 @@ class LoadPortfolioStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputeGreeksStep(Step):
     """Step 2: Compute current Greek exposures."""
     
@@ -117,7 +117,7 @@ class ComputeGreeksStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class DefineTargetGreeksStep(Step):
     """Step 3: Define target Greeks from config."""
     
@@ -145,7 +145,7 @@ class DefineTargetGreeksStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class SelectHedgeInstrumentsStep(Step):
     """Step 4: Select available hedging instruments."""
     
@@ -181,7 +181,7 @@ class SelectHedgeInstrumentsStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class OptimiseHedgeStep(Step):
     """Step 5: Solve for optimal hedge quantities."""
     
@@ -241,7 +241,7 @@ class OptimiseHedgeStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildHedgePortfolioStep(Step):
     """Step 6: Construct hedge portfolio."""
     
@@ -282,7 +282,7 @@ class BuildHedgePortfolioStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ValidateHedgeStep(Step):
     """Step 7: Verify residual Greeks within tolerance."""
     

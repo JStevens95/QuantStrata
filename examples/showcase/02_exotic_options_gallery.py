@@ -22,9 +22,15 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import matplotlib.pyplot as plt
 from typing import Tuple, List
 from dataclasses import dataclass
+
+try:
+    import matplotlib.pyplot as plt
+    HAS_MATPLOTLIB = True
+except ImportError:
+    plt = None
+    HAS_MATPLOTLIB = False
 
 # Path setup
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -37,15 +43,19 @@ from src.models.dynamics.gbm_dynamics import GbmDynamicsSimulator
 # Configuration
 # =============================================================================
 
-plt.style.use('seaborn-v0_8-whitegrid')
-plt.rcParams.update({
-    'figure.figsize': (14, 8),
-    'font.size': 11,
-    'axes.titlesize': 14,
-    'axes.labelsize': 12,
-    'legend.fontsize': 10,
-    'lines.linewidth': 2,
-})
+if HAS_MATPLOTLIB:
+    try:
+        plt.style.use('seaborn-v0_8-whitegrid')
+    except OSError:
+        plt.style.use('seaborn-whitegrid')
+    plt.rcParams.update({
+        'figure.figsize': (14, 8),
+        'font.size': 11,
+        'axes.titlesize': 14,
+        'axes.labelsize': 12,
+        'legend.fontsize': 10,
+        'lines.linewidth': 2,
+    })
 
 COLORS = {
     'vanilla': '#2E86AB',
@@ -631,17 +641,18 @@ def main():
     print(f"No-Touch Up (B={B_up}):  {no_touch:.4f}")
     print(f"  Touch Parity Check: {one_touch + no_touch:.4f} ≈ {np.exp(-params.r*params.T):.4f}")
     
-    # Generate plots
-    print("\n" + "-" * 50)
-    print("Generating Visualizations...")
-    print("-" * 50)
-    
-    plot_barrier_analysis(params, paths)
-    plot_asian_analysis(params, paths)
-    plot_lookback_analysis(params, paths)
-    plot_exotic_comparison(params, paths)
-    
-    print("\nPlots saved to current directory.")
+    # Generate plots (optional; skip if matplotlib not available)
+    if HAS_MATPLOTLIB:
+        print("\n" + "-" * 50)
+        print("Generating Visualizations...")
+        print("-" * 50)
+        plot_barrier_analysis(params, paths)
+        plot_asian_analysis(params, paths)
+        plot_lookback_analysis(params, paths)
+        plot_exotic_comparison(params, paths)
+        print("\nPlots saved to current directory.")
+    else:
+        print("\nSkipping plots (matplotlib not available).")
     print("=" * 70)
 
 if __name__ == "__main__":

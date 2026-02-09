@@ -46,7 +46,7 @@ def _var_cfg(cfg: RunConfig) -> Dict[str, Any]:
 # Pipeline Steps
 # =============================================================================
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadPortfolioStep(Step):
     """Step 1: Load portfolio from state."""
     
@@ -58,7 +58,7 @@ class LoadPortfolioStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadHistoricalDataStep(Step):
     """Step 3: Load historical returns for VaR computation."""
     
@@ -81,7 +81,7 @@ class LoadHistoricalDataStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputeHistoricalVaRStep(Step):
     """Step 4: Historical simulation VaR."""
     
@@ -111,7 +111,7 @@ class ComputeHistoricalVaRStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputeParametricVaRStep(Step):
     """Step 5: Parametric (delta-normal) VaR."""
     
@@ -147,7 +147,7 @@ class ComputeParametricVaRStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputeMonteCarloVaRStep(Step):
     """Step 6: Monte Carlo VaR."""
     
@@ -193,7 +193,7 @@ class ComputeMonteCarloVaRStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputeExpectedShortfallStep(Step):
     """Step 7: Compute CVaR/ES for each method."""
     
@@ -230,7 +230,7 @@ class ComputeExpectedShortfallStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class CompareVaRMethodsStep(Step):
     """Step 8: Compare results across methods."""
     
@@ -248,7 +248,7 @@ class CompareVaRMethodsStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class WriteVaRReportStep(Step):
     """Step 9: Write VaR report."""
     

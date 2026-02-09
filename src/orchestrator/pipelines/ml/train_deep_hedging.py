@@ -39,7 +39,7 @@ def _deep_hedging_cfg(cfg: RunConfig) -> Dict[str, Any]:
     return cfg.params.get("deep_hedging", {})
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadHedgingConfigStep(Step):
     """Step 1: Load hedging environment config."""
     def run(self, ctx: Context) -> Context:
@@ -61,7 +61,7 @@ class LoadHedgingConfigStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildEnvironmentStep(Step):
     """Step 2: Create GBMHedgingEnv."""
     def run(self, ctx: Context) -> Context:
@@ -88,7 +88,7 @@ class BuildEnvironmentStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildCostModelStep(Step):
     """Step 3: Create transaction cost model."""
     def run(self, ctx: Context) -> Context:
@@ -107,7 +107,7 @@ class BuildCostModelStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildRiskMeasureStep(Step):
     """Step 4: Create risk measure (CVaR, mean-var)."""
     def run(self, ctx: Context) -> Context:
@@ -125,7 +125,7 @@ class BuildRiskMeasureStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildPolicyNetworkStep(Step):
     """Step 5: Create MLP policy network."""
     def run(self, ctx: Context) -> Context:
@@ -147,7 +147,7 @@ class BuildPolicyNetworkStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildAgentStep(Step):
     """Step 6: Create DeepHedgingAgent."""
     def run(self, ctx: Context) -> Context:
@@ -170,7 +170,7 @@ class BuildAgentStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildBenchmarkAgentStep(Step):
     """Step 7: Create DeltaHedgingAgent benchmark."""
     def run(self, ctx: Context) -> Context:
@@ -186,7 +186,7 @@ class BuildBenchmarkAgentStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class TrainAgentStep(Step):
     """Step 8: Run training loop."""
     def run(self, ctx: Context) -> Context:
@@ -208,7 +208,7 @@ class TrainAgentStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class EvaluateAgentStep(Step):
     """Step 9: Evaluate against benchmark."""
     def run(self, ctx: Context) -> Context:
@@ -236,7 +236,7 @@ class EvaluateAgentStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class CompareAgentsStep(Step):
     """Step 10: Compare performance metrics."""
     def run(self, ctx: Context) -> Context:
@@ -252,7 +252,7 @@ class CompareAgentsStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class SaveAgentStep(Step):
     """Step 11: Save trained agent."""
     def run(self, ctx: Context) -> Context:
@@ -266,7 +266,7 @@ class SaveAgentStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class WriteTrainingReportStep(Step):
     """Step 12: Write training report."""
     def run(self, ctx: Context) -> Context:

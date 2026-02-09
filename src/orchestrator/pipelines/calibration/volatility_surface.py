@@ -38,7 +38,7 @@ def _calibration_cfg(cfg: RunConfig) -> Dict[str, Any]:
     return cfg.params.get("calibration", {})
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadVolQuotesStep(Step):
     """Step 1: Load market vol quotes."""
     def run(self, ctx: Context) -> Context:
@@ -65,7 +65,7 @@ class LoadVolQuotesStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadYieldCurveStep(Step):
     """Step 2: Load yield curves for forward calculation."""
     def run(self, ctx: Context) -> Context:
@@ -76,7 +76,7 @@ class LoadYieldCurveStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class SelectCalibrationMethodStep(Step):
     """Step 3: Select method (Dupire, SABR, SVI)."""
     def run(self, ctx: Context) -> Context:
@@ -92,7 +92,7 @@ class SelectCalibrationMethodStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class SetupCalibrationObjectiveStep(Step):
     """Step 4: Define objective function."""
     def run(self, ctx: Context) -> Context:
@@ -123,7 +123,7 @@ def _compute_model_vol(params: Dict, expiry: float, strike: float, method: str) 
     return 0.10
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class RunCalibrationStep(Step):
     """Step 5: Execute optimisation."""
     def run(self, ctx: Context) -> Context:
@@ -158,7 +158,7 @@ class RunCalibrationStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ValidateCalibrationStep(Step):
     """Step 6: Check calibration quality."""
     def run(self, ctx: Context) -> Context:
@@ -185,7 +185,7 @@ class ValidateCalibrationStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildCalibratedSurfaceStep(Step):
     """Step 7: Build surface from parameters."""
     def run(self, ctx: Context) -> Context:
@@ -203,7 +203,7 @@ class BuildCalibratedSurfaceStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class StoreCalibrationResultStep(Step):
     """Step 8: Store parameters and surface."""
     def run(self, ctx: Context) -> Context:

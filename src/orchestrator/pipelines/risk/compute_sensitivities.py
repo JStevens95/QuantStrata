@@ -46,7 +46,7 @@ def _sensitivities_cfg(cfg: RunConfig) -> Dict[str, Any]:
 # Pipeline Steps
 # =============================================================================
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadPortfolioStep(Step):
     """Step 1: Load portfolio from state."""
     
@@ -59,7 +59,7 @@ class LoadPortfolioStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadMarketStep(Step):
     """Step 2: Load market snapshot from state."""
     
@@ -71,7 +71,7 @@ class LoadMarketStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ConfigureSensitivitiesStep(Step):
     """Step 3: Configure which Greeks to compute."""
     
@@ -101,7 +101,7 @@ class ConfigureSensitivitiesStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputePositionGreeksStep(Step):
     """Step 4: Compute Greeks per position via bump-and-reprice."""
     
@@ -135,7 +135,7 @@ class ComputePositionGreeksStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class AggregateGreeksStep(Step):
     """Step 5: Aggregate Greeks by underlying, currency, desk."""
     
@@ -165,7 +165,7 @@ class AggregateGreeksStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputeCrossGreeksStep(Step):
     """Step 6: Compute cross-gamma matrix (optional)."""
     
@@ -189,7 +189,7 @@ class ComputeCrossGreeksStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class WriteSensitivitiesReportStep(Step):
     """Step 7: Write sensitivity report."""
     

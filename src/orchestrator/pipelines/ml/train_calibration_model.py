@@ -31,7 +31,7 @@ def _cal_model_cfg(cfg: RunConfig) -> Dict[str, Any]:
     return cfg.params.get("calibration_model", {})
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadCalibrationDataStep(Step):
     """Step 1: Load calibration examples."""
     def run(self, ctx: Context) -> Context:
@@ -45,7 +45,7 @@ class LoadCalibrationDataStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildFeatureEngineerStep(Step):
     """Step 2: Engineer input features."""
     def run(self, ctx: Context) -> Context:
@@ -54,7 +54,7 @@ class BuildFeatureEngineerStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildTargetEncoderStep(Step):
     """Step 3: Encode calibration targets."""
     def run(self, ctx: Context) -> Context:
@@ -66,7 +66,7 @@ class BuildTargetEncoderStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class SplitDatasetStep(Step):
     """Step 4: Train/validation/test split."""
     def run(self, ctx: Context) -> Context:
@@ -82,7 +82,7 @@ class SplitDatasetStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildModelStep(Step):
     """Step 5: Create calibration NN."""
     def run(self, ctx: Context) -> Context:
@@ -98,7 +98,7 @@ class BuildModelStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class TrainModelStep(Step):
     """Step 6: Train model."""
     def run(self, ctx: Context) -> Context:
@@ -116,7 +116,7 @@ class TrainModelStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class EvaluateCalibrationStep(Step):
     """Step 7: Evaluate calibration accuracy."""
     def run(self, ctx: Context) -> Context:
@@ -135,7 +135,7 @@ class EvaluateCalibrationStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class CompareWithTraditionalStep(Step):
     """Step 8: Compare speed vs traditional."""
     def run(self, ctx: Context) -> Context:
@@ -148,7 +148,7 @@ class CompareWithTraditionalStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class SaveModelStep(Step):
     """Step 9: Save model."""
     def run(self, ctx: Context) -> Context:
@@ -158,7 +158,7 @@ class SaveModelStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class WriteReportStep(Step):
     """Step 10: Write report."""
     def run(self, ctx: Context) -> Context:

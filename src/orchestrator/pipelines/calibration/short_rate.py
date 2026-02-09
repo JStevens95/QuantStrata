@@ -32,7 +32,7 @@ def _calibration_cfg(cfg: RunConfig) -> Dict[str, Any]:
     return cfg.params.get("calibration", {})
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadYieldCurveStep(Step):
     """Step 1: Load initial yield curve."""
     def run(self, ctx: Context) -> Context:
@@ -42,7 +42,7 @@ class LoadYieldCurveStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadSwaptionVolsStep(Step):
     """Step 2: Load swaption volatilities."""
     def run(self, ctx: Context) -> Context:
@@ -67,7 +67,7 @@ class LoadSwaptionVolsStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class SetupHullWhiteObjectiveStep(Step):
     """Step 3: Define calibration objective."""
     def run(self, ctx: Context) -> Context:
@@ -76,7 +76,7 @@ class SetupHullWhiteObjectiveStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class CalibrateToYieldCurveStep(Step):
     """Step 4: Fit θ(t) to match yield curve."""
     def run(self, ctx: Context) -> Context:
@@ -91,7 +91,7 @@ class CalibrateToYieldCurveStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class CalibrateToSwaptionsStep(Step):
     """Step 5: Fit a, σ to swaption vols."""
     def run(self, ctx: Context) -> Context:
@@ -111,7 +111,7 @@ class CalibrateToSwaptionsStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ValidateCalibrationStep(Step):
     """Step 6: Check yield curve and swaption fit."""
     def run(self, ctx: Context) -> Context:
@@ -138,7 +138,7 @@ class ValidateCalibrationStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class StoreHullWhiteParamsStep(Step):
     """Step 7: Store calibrated parameters."""
     def run(self, ctx: Context) -> Context:

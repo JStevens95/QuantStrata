@@ -32,7 +32,7 @@ def _validation_cfg(cfg: RunConfig) -> Dict[str, Any]:
     return cfg.params.get("validation", {})
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadPortfolioStep(Step):
     """Step 1: Load portfolio from state."""
     def run(self, ctx: Context) -> Context:
@@ -41,7 +41,7 @@ class LoadPortfolioStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadMarketStep(Step):
     """Step 2: Load market snapshot from state."""
     def run(self, ctx: Context) -> Context:
@@ -50,7 +50,7 @@ class LoadMarketStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputeAnalyticGreeksStep(Step):
     """Step 3: Compute closed-form Greeks."""
     def run(self, ctx: Context) -> Context:
@@ -73,7 +73,7 @@ class ComputeAnalyticGreeksStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputeBumpedGreeksStep(Step):
     """Step 4: Compute Greeks via bump-and-reprice."""
     def run(self, ctx: Context) -> Context:
@@ -100,7 +100,7 @@ class ComputeBumpedGreeksStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class CompareGreeksStep(Step):
     """Step 5: Compare analytic vs bumped."""
     def run(self, ctx: Context) -> Context:
@@ -135,7 +135,7 @@ class CompareGreeksStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class IdentifyDiscrepanciesStep(Step):
     """Step 6: Flag positions with large differences."""
     def run(self, ctx: Context) -> Context:
@@ -170,7 +170,7 @@ class IdentifyDiscrepanciesStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class WriteValidationReportStep(Step):
     """Step 7: Write validation report."""
     def run(self, ctx: Context) -> Context:

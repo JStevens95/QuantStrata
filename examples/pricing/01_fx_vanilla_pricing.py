@@ -82,26 +82,26 @@ from src.marketdata.core.market import Market
 from src.marketdata.curves.term_structure import FlatZeroRateCurve
 from src.marketdata.surfaces.vol_surface import FlatVolSurface
 
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
-from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer
+from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
+from src.pricers.fx.european_bsm import FxVanillaEuropeanOptionBsmPricer
 
 # Try to import MC pricer (may have different name)
 try:
-    from src.pricers.fx.european_mc import FxEuropeanVanillaMcPricer
+    from src.pricers.fx.european_mc import FxVanillaEuropeanOptionMcPricer
 except ImportError:
     try:
-        from src.pricers.fx.european_bsm_mc import FxEuropeanVanillaMcPricer
+        from src.pricers.fx.european_bsm_mc import FxVanillaEuropeanOptionMcPricer
     except ImportError:
-        FxEuropeanVanillaMcPricer = None  # type: ignore
+        FxVanillaEuropeanOptionMcPricer = None  # type: ignore
 
 # Try to import FD pricer (optional)
 try:
-    from src.pricers.fx.european_fde import FxEuropeanVanillaFdPricer
+    from src.pricers.fx.european_fde import FxVanillaEuropeanOptionFdPricer
 except ImportError:
     try:
-        from src.pricers.fx.european_bsm_fde import FxEuropeanVanillaFdPricer
+        from src.pricers.fx.european_bsm_fde import FxVanillaEuropeanOptionFdPricer
     except ImportError:
-        FxEuropeanVanillaFdPricer = None  # type: ignore
+        FxVanillaEuropeanOptionFdPricer = None  # type: ignore
 
 
 # =============================================================================
@@ -173,7 +173,7 @@ class ConvergenceRow:
 # =============================================================================
 
 def safe_fd_price(
-    option: EuropeanFxVanillaOption,
+    option: FxVanillaEuropeanOption,
     market: Market,
     n_spot: int,
     n_time: int,
@@ -184,7 +184,7 @@ def safe_fd_price(
     
     Parameters
     ----------
-    option : EuropeanFxVanillaOption
+    option : FxVanillaEuropeanOption
         The option to price.
     market : Market
         Market snapshot.
@@ -200,13 +200,13 @@ def safe_fd_price(
     Optional[float]
         FD price or None if failed.
     """
-    if FxEuropeanVanillaFdPricer is None:
+    if FxVanillaEuropeanOptionFdPricer is None:
         if verbose:
             logger.warning("FD pricer not available")
         return None
     
     try:
-        pricer = FxEuropeanVanillaFdPricer(n_spot=n_spot, n_time=n_time)
+        pricer = FxVanillaEuropeanOptionFdPricer(n_spot=n_spot, n_time=n_time)
         return float(pricer.price(option, market))
     except Exception as e:
         if verbose:
@@ -218,13 +218,13 @@ def safe_fd_price(
 # SECTION 1: Setup - Market and Option
 # =============================================================================
 
-def build_market_and_option() -> Tuple[Market, EuropeanFxVanillaOption, dict]:
+def build_market_and_option() -> Tuple[Market, FxVanillaEuropeanOption, dict]:
     """
     Construct the market snapshot and option instrument.
     
     Returns
     -------
-    Tuple[Market, EuropeanFxVanillaOption, dict]
+    Tuple[Market, FxVanillaEuropeanOption, dict]
         Market, option, and parameters dictionary.
     
     Market Setup
@@ -298,7 +298,7 @@ def build_market_and_option() -> Tuple[Market, EuropeanFxVanillaOption, dict]:
     # -------------------------------------------------------------------------
     # Create the option instrument
     # -------------------------------------------------------------------------
-    option = EuropeanFxVanillaOption(
+    option = FxVanillaEuropeanOption(
         option_type=option_type,
         strike=float(strike),
         expiry=float(expiry),
@@ -335,7 +335,7 @@ def build_market_and_option() -> Tuple[Market, EuropeanFxVanillaOption, dict]:
 # SECTION 2: Pricing and Analysis
 # =============================================================================
 
-def run_pricing(market: Market, option: EuropeanFxVanillaOption, params: dict) -> None:
+def run_pricing(market: Market, option: FxVanillaEuropeanOption, params: dict) -> None:
     """
     Run pricing with BSM, MC, and FD methods and analyze convergence.
     
@@ -343,7 +343,7 @@ def run_pricing(market: Market, option: EuropeanFxVanillaOption, params: dict) -
     ----------
     market : Market
         Market snapshot.
-    option : EuropeanFxVanillaOption
+    option : FxVanillaEuropeanOption
         The option to price.
     params : dict
         Parameters dictionary.
@@ -384,15 +384,15 @@ def run_pricing(market: Market, option: EuropeanFxVanillaOption, params: dict) -
     # -------------------------------------------------------------------------
     # BSM pricing (benchmark)
     # -------------------------------------------------------------------------
-    bsm = FxEuropeanVanillaBsmPricer()
+    bsm = FxVanillaEuropeanOptionBsmPricer()
     bsm_pv = float(bsm.price(option, market))
     bsm_greeks = bsm.greeks(option, market)
     
     # -------------------------------------------------------------------------
     # Monte Carlo pricing
     # -------------------------------------------------------------------------
-    if FxEuropeanVanillaMcPricer is not None:
-        mc = FxEuropeanVanillaMcPricer(n_paths=100_000, seed=42)
+    if FxVanillaEuropeanOptionMcPricer is not None:
+        mc = FxVanillaEuropeanOptionMcPricer(n_paths=100_000, seed=42)
         mc_pv = float(mc.price(option, market))
     else:
         mc_pv = None
@@ -436,7 +436,7 @@ def run_pricing(market: Market, option: EuropeanFxVanillaOption, params: dict) -
     # -------------------------------------------------------------------------
     # MC Convergence sweep
     # -------------------------------------------------------------------------
-    if FxEuropeanVanillaMcPricer is not None:
+    if FxVanillaEuropeanOptionMcPricer is not None:
         run_mc_convergence(option, market, bsm_pv)
     
     # -------------------------------------------------------------------------
@@ -452,7 +452,7 @@ def run_pricing(market: Market, option: EuropeanFxVanillaOption, params: dict) -
 
 
 def run_mc_convergence(
-    option: EuropeanFxVanillaOption,
+    option: FxVanillaEuropeanOption,
     market: Market,
     bsm_pv: float,
 ) -> List[ConvergenceRow]:
@@ -461,7 +461,7 @@ def run_mc_convergence(
     
     Parameters
     ----------
-    option : EuropeanFxVanillaOption
+    option : FxVanillaEuropeanOption
         The option to price.
     market : Market
         Market snapshot.
@@ -477,7 +477,7 @@ def run_mc_convergence(
     mc_rows: List[ConvergenceRow] = []
     
     for n in path_counts:
-        pv_n = float(FxEuropeanVanillaMcPricer(n_paths=n, seed=42).price(option, market))
+        pv_n = float(FxVanillaEuropeanOptionMcPricer(n_paths=n, seed=42).price(option, market))
         abs_err = abs(pv_n - bsm_pv)
         rel_err = abs_err / abs(bsm_pv) if bsm_pv != 0.0 else float("nan")
         mc_rows.append(ConvergenceRow(x=n, pv=pv_n, abs_err=abs_err, rel_err=rel_err))
@@ -494,7 +494,7 @@ def run_mc_convergence(
 
 
 def run_fd_convergence(
-    option: EuropeanFxVanillaOption,
+    option: FxVanillaEuropeanOption,
     market: Market,
     bsm_pv: float,
 ) -> List[ConvergenceRow]:
@@ -503,7 +503,7 @@ def run_fd_convergence(
     
     Parameters
     ----------
-    option : EuropeanFxVanillaOption
+    option : FxVanillaEuropeanOption
         The option to price.
     market : Market
         Market snapshot.
@@ -545,10 +545,10 @@ def run_fd_convergence(
 # =============================================================================
 
 def visualize_results(
-    option: EuropeanFxVanillaOption,
+    option: FxVanillaEuropeanOption,
     market: Market,
     params: dict,
-    bsm: FxEuropeanVanillaBsmPricer,
+    bsm: FxVanillaEuropeanOptionBsmPricer,
     bsm_pv: float,
 ) -> None:
     """
@@ -556,13 +556,13 @@ def visualize_results(
     
     Parameters
     ----------
-    option : EuropeanFxVanillaOption
+    option : FxVanillaEuropeanOption
         The option.
     market : Market
         Market snapshot.
     params : dict
         Parameters dictionary.
-    bsm : FxEuropeanVanillaBsmPricer
+    bsm : FxVanillaEuropeanOptionBsmPricer
         BSM pricer.
     bsm_pv : float
         BSM price.
@@ -589,7 +589,7 @@ def visualize_results(
     unit_prices = []
     
     for k in strikes_plot:
-        opt_k = EuropeanFxVanillaOption(
+        opt_k = FxVanillaEuropeanOption(
             option_type=params["option_type"],
             strike=float(k),
             expiry=params["expiry"],
@@ -614,12 +614,12 @@ def visualize_results(
     # Plot 2: MC convergence (log-log)
     # -------------------------------------------------------------------------
     ax = axes[1]
-    if FxEuropeanVanillaMcPricer is not None:
+    if FxVanillaEuropeanOptionMcPricer is not None:
         path_counts = [1_000, 10_000, 50_000, 100_000, 500_000, 1_000_000]
         mc_abs_errs = []
         
         for n in path_counts:
-            pv_n = float(FxEuropeanVanillaMcPricer(n_paths=n, seed=42).price(option, market))
+            pv_n = float(FxVanillaEuropeanOptionMcPricer(n_paths=n, seed=42).price(option, market))
             mc_abs_errs.append(abs(pv_n - bsm_pv))
         
         mc_abs_errs = np.array(mc_abs_errs)

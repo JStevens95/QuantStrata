@@ -111,7 +111,7 @@ from src.marketdata.core.interfaces import Quote
 from src.marketdata.curves.term_structure import FlatZeroRateCurve
 from src.marketdata.surfaces.vol_surface import FlatVolSurface
 from src.portfolio.core import Portfolio, Position
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
+from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
 
 
 # =============================================================================
@@ -167,7 +167,7 @@ def build_portfolio() -> Portfolio:
         # Large directional position
         Position(
             position_id="EURUSD_LONG_CALL",
-            instrument=EuropeanFxVanillaOption(
+            instrument=FxVanillaEuropeanOption(
                 option_type="call",
                 notional=50_000_000,  # $50M notional
                 strike=1.10,
@@ -183,7 +183,7 @@ def build_portfolio() -> Portfolio:
         # Partially hedging put
         Position(
             position_id="EURUSD_LONG_PUT",
-            instrument=EuropeanFxVanillaOption(
+            instrument=FxVanillaEuropeanOption(
                 option_type="put",
                 notional=30_000_000,
                 strike=1.05,

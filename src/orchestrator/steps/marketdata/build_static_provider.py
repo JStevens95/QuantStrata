@@ -19,7 +19,7 @@ from src.marketdata.providers.static.config import StaticProviderConfig
 from src.marketdata.providers.static.provider import StaticProvider
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildStaticProviderStep(Step):
     """
     Build StaticProvider for a loaded MarketDataset.

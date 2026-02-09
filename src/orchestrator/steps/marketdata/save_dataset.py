@@ -15,7 +15,7 @@ from src.orchestrator.core.errors import ConfigError
 from src.orchestrator.core.step import Step
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class SaveDatasetStep(Step):
     """
     Save the dataset currently in ctx.state["dataset"] into run artifacts.

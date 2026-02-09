@@ -39,7 +39,7 @@ def _backtest_cfg(cfg: RunConfig) -> Dict[str, Any]:
     return cfg.params.get("backtest", {})
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadBacktestConfigStep(Step):
     """Step 1: Load backtest configuration."""
     def run(self, ctx: Context) -> Context:
@@ -60,7 +60,7 @@ class LoadBacktestConfigStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadHistoricalDataStep(Step):
     """Step 2: Load historical market data."""
     def run(self, ctx: Context) -> Context:
@@ -77,7 +77,7 @@ class LoadHistoricalDataStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildStrategyStep(Step):
     """Step 3: Instantiate trading strategy."""
     def run(self, ctx: Context) -> Context:
@@ -96,7 +96,7 @@ class BuildStrategyStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class InitialiseBacktestStep(Step):
     """Step 4: Set up backtest engine."""
     def run(self, ctx: Context) -> Context:
@@ -108,7 +108,7 @@ class InitialiseBacktestStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class RunBacktestStep(Step):
     """Step 5: Execute backtest simulation."""
     def run(self, ctx: Context) -> Context:
@@ -133,7 +133,7 @@ class RunBacktestStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputePerformanceMetricsStep(Step):
     """Step 6: Compute Sharpe, drawdown, etc."""
     def run(self, ctx: Context) -> Context:
@@ -168,7 +168,7 @@ class ComputePerformanceMetricsStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputeAttributionStep(Step):
     """Step 7: Attribute returns to factors."""
     def run(self, ctx: Context) -> Context:
@@ -191,7 +191,7 @@ class ComputeAttributionStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class GenerateTradeLogStep(Step):
     """Step 8: Generate trade history."""
     def run(self, ctx: Context) -> Context:
@@ -202,7 +202,7 @@ class GenerateTradeLogStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class WriteBacktestReportStep(Step):
     """Step 9: Write full report."""
     def run(self, ctx: Context) -> Context:

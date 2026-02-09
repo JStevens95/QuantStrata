@@ -182,7 +182,7 @@ def _build_shock_from_cfg(item: Mapping[str, Any]) -> Tuple[str, Any]:
 # Steps
 # ---------------------------------------------------------------------
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildScenarioPackStep(Step):
     """
     Parse cfg.params and build a scenario pack (list of named shocks).
@@ -209,7 +209,7 @@ class BuildScenarioPackStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class RunScenarioStep(Step):
     """
     Run the scenario engine (apply shocks + reprice portfolio).
@@ -244,7 +244,7 @@ class RunScenarioStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class WriteScenarioReportStep(Step):
     """
     Write scenario artifacts using ArtifactStore.

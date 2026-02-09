@@ -31,7 +31,7 @@ def _calibration_cfg(cfg: RunConfig) -> Dict[str, Any]:
     return cfg.params.get("calibration", {})
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadOptionPricesStep(Step):
     """Step 1: Load vanilla option prices/vols."""
     def run(self, ctx: Context) -> Context:
@@ -54,7 +54,7 @@ class LoadOptionPricesStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadYieldCurveStep(Step):
     """Step 2: Load yield curves."""
     def run(self, ctx: Context) -> Context:
@@ -63,7 +63,7 @@ class LoadYieldCurveStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class SetupHestonObjectiveStep(Step):
     """Step 3: Define Heston pricing objective."""
     def run(self, ctx: Context) -> Context:
@@ -72,7 +72,7 @@ class SetupHestonObjectiveStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class SetInitialParamsStep(Step):
     """Step 4: Set initial parameter guess."""
     def run(self, ctx: Context) -> Context:
@@ -92,7 +92,7 @@ class SetInitialParamsStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class RunCalibrationStep(Step):
     """Step 5: Run optimisation (DE + L-BFGS-B)."""
     def run(self, ctx: Context) -> Context:
@@ -113,7 +113,7 @@ class RunCalibrationStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ValidateFellerConditionStep(Step):
     """Step 6: Check Feller condition (2κθ > σ²)."""
     def run(self, ctx: Context) -> Context:
@@ -136,7 +136,7 @@ class ValidateFellerConditionStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputeModelPricesStep(Step):
     """Step 7: Price options with calibrated params."""
     def run(self, ctx: Context) -> Context:
@@ -152,7 +152,7 @@ class ComputeModelPricesStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputeCalibrationErrorStep(Step):
     """Step 8: Compute pricing errors."""
     def run(self, ctx: Context) -> Context:
@@ -165,7 +165,7 @@ class ComputeCalibrationErrorStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class StoreHestonParamsStep(Step):
     """Step 9: Store calibrated parameters."""
     def run(self, ctx: Context) -> Context:

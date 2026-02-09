@@ -76,11 +76,11 @@ from src.marketdata.curves.term_structure import FlatZeroRateCurve
 from src.marketdata.surfaces.vol_surface import FlatVolSurface
 from src.marketdata.scenarios.shocks import SpotShock, VolShock, ParallelRateShock
 
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
+from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
 from src.portfolio.core import Portfolio, Position
 from src.portfolio.portfolio import PortfolioPricer
 from src.pricers.registry import PricerRegistry
-from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer
+from src.pricers.fx.european_bsm import FxVanillaEuropeanOptionBsmPricer
 
 # Try to import scenario runner (may not exist)
 try:
@@ -191,9 +191,9 @@ def create_market_and_portfolio() -> Tuple[Market, Portfolio, PortfolioPricer, f
         expiry: float,
         is_call: bool,
         notional: float,
-    ) -> EuropeanFxVanillaOption:
+    ) -> FxVanillaEuropeanOption:
         """Create an FX vanilla option with correct API."""
-        return EuropeanFxVanillaOption(
+        return FxVanillaEuropeanOption(
             option_type="call" if is_call else "put",
             strike=strike,
             expiry=expiry,
@@ -225,7 +225,7 @@ def create_market_and_portfolio() -> Tuple[Market, Portfolio, PortfolioPricer, f
     # Setup pricer
     # -------------------------------------------------------------------------
     registry = PricerRegistry()
-    registry.register(EuropeanFxVanillaOption, FxEuropeanVanillaBsmPricer())
+    registry.register(FxVanillaEuropeanOption, FxVanillaEuropeanOptionBsmPricer())
     portfolio_pricer = PortfolioPricer(pricer_registry=registry)
     
     # -------------------------------------------------------------------------

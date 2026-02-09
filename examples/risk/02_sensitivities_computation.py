@@ -81,11 +81,11 @@ from src.marketdata.curves.term_structure import FlatZeroRateCurve
 from src.marketdata.surfaces.vol_surface import FlatVolSurface
 from src.marketdata.scenarios.shocks import SpotShock, VolShock, ParallelRateShock
 
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
+from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
 from src.portfolio.core import Portfolio, Position
 from src.portfolio.portfolio import PortfolioPricer
 from src.pricers.registry import PricerRegistry
-from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer
+from src.pricers.fx.european_bsm import FxVanillaEuropeanOptionBsmPricer
 
 # Try to import sensitivities engine (may not exist in all versions)
 try:
@@ -137,7 +137,7 @@ EURUSD_VOL = MarketId(asset_class="FX", mkt_type="VOL", name="EURUSD")
 # SETUP: Market and Portfolio
 # =============================================================================
 
-def create_market_and_portfolio() -> Tuple[Market, Portfolio, PortfolioPricer, FxEuropeanVanillaBsmPricer, float, dict]:
+def create_market_and_portfolio() -> Tuple[Market, Portfolio, PortfolioPricer, FxVanillaEuropeanOptionBsmPricer, float, dict]:
     """
     Create market, portfolio, and pricers for sensitivity analysis.
     
@@ -174,7 +174,7 @@ def create_market_and_portfolio() -> Tuple[Market, Portfolio, PortfolioPricer, F
     # -------------------------------------------------------------------------
     # Create option with correct API
     # -------------------------------------------------------------------------
-    option = EuropeanFxVanillaOption(
+    option = FxVanillaEuropeanOption(
         option_type="call",
         strike=1.10,
         expiry=1.0,
@@ -193,8 +193,8 @@ def create_market_and_portfolio() -> Tuple[Market, Portfolio, PortfolioPricer, F
     # Setup pricers
     # -------------------------------------------------------------------------
     registry = PricerRegistry()
-    bsm_pricer = FxEuropeanVanillaBsmPricer()
-    registry.register(EuropeanFxVanillaOption, bsm_pricer)
+    bsm_pricer = FxVanillaEuropeanOptionBsmPricer()
+    registry.register(FxVanillaEuropeanOption, bsm_pricer)
     portfolio_pricer = PortfolioPricer(pricer_registry=registry)
     
     # -------------------------------------------------------------------------
@@ -486,7 +486,7 @@ def run_dollar_greeks_analysis(
 def visualize_greeks(
     market: Market,
     portfolio: Portfolio,
-    bsm_pricer: FxEuropeanVanillaBsmPricer,
+    bsm_pricer: FxVanillaEuropeanOptionBsmPricer,
     delta_by_bump: List[Tuple[float, float, float]],
     fd_delta: float,
     fd_gamma: float,
@@ -584,7 +584,7 @@ def visualize_greeks(
     vegas = []
     
     for exp in expiries:
-        temp_option = EuropeanFxVanillaOption(
+        temp_option = FxVanillaEuropeanOption(
             option_type="call",
             strike=option.strike,
             expiry=exp,

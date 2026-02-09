@@ -38,7 +38,7 @@ def _comparison_cfg(cfg: RunConfig) -> Dict[str, Any]:
     return cfg.params.get("comparison", {})
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadComparisonConfigStep(Step):
     """Step 1: Load comparison config."""
     def run(self, ctx: Context) -> Context:
@@ -54,7 +54,7 @@ class LoadComparisonConfigStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadPortfolioStep(Step):
     """Step 2: Load test portfolio."""
     def run(self, ctx: Context) -> Context:
@@ -63,7 +63,7 @@ class LoadPortfolioStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadMarketStep(Step):
     """Step 3: Load market snapshot."""
     def run(self, ctx: Context) -> Context:
@@ -72,7 +72,7 @@ class LoadMarketStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class PriceWithAnalyticStep(Step):
     """Step 4: Price with BSM/analytic."""
     def run(self, ctx: Context) -> Context:
@@ -94,7 +94,7 @@ class PriceWithAnalyticStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class PriceWithMonteCarloStep(Step):
     """Step 5: Price with Monte Carlo."""
     def run(self, ctx: Context) -> Context:
@@ -115,7 +115,7 @@ class PriceWithMonteCarloStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class PriceWithFDEStep(Step):
     """Step 6: Price with finite difference."""
     def run(self, ctx: Context) -> Context:
@@ -136,7 +136,7 @@ class PriceWithFDEStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class CompareResultsStep(Step):
     """Step 7: Compare prices and Greeks."""
     def run(self, ctx: Context) -> Context:
@@ -159,7 +159,7 @@ class CompareResultsStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputeConvergenceStep(Step):
     """Step 8: Check MC/FDE convergence."""
     def run(self, ctx: Context) -> Context:
@@ -183,7 +183,7 @@ class ComputeConvergenceStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class WriteComparisonReportStep(Step):
     """Step 9: Write comparison report."""
     def run(self, ctx: Context) -> Context:

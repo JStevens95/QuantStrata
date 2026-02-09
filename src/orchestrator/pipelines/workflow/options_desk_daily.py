@@ -42,7 +42,7 @@ def _workflow_cfg(cfg: RunConfig) -> Dict[str, Any]:
     return cfg.params.get("workflow", {})
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadMarketDataStep(Step):
     """Step 1: Load today's market data."""
     def run(self, ctx: Context) -> Context:
@@ -79,7 +79,7 @@ class LoadMarketDataStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadYesterdayMarketStep(Step):
     """Step 2: Load T-1 market data."""
     def run(self, ctx: Context) -> Context:
@@ -92,7 +92,7 @@ class LoadYesterdayMarketStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildYieldCurvesStep(Step):
     """Step 3: Bootstrap yield curves."""
     def run(self, ctx: Context) -> Context:
@@ -102,7 +102,7 @@ class BuildYieldCurvesStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class CalibrateVolSurfaceStep(Step):
     """Step 4: Calibrate vol surfaces."""
     def run(self, ctx: Context) -> Context:
@@ -112,7 +112,7 @@ class CalibrateVolSurfaceStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadPortfolioStep(Step):
     """Step 5: Load current portfolio."""
     def run(self, ctx: Context) -> Context:
@@ -143,7 +143,7 @@ class LoadPortfolioStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class PricePortfolioStep(Step):
     """Step 6: Price all positions."""
     def run(self, ctx: Context) -> Context:
@@ -162,7 +162,7 @@ class PricePortfolioStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputeGreeksStep(Step):
     """Step 7: Compute portfolio Greeks."""
     def run(self, ctx: Context) -> Context:
@@ -184,7 +184,7 @@ class ComputeGreeksStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class RunScenariosStep(Step):
     """Step 8: Run stress scenarios."""
     def run(self, ctx: Context) -> Context:
@@ -201,7 +201,7 @@ class RunScenariosStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputeVaRStep(Step):
     """Step 9: Compute Value-at-Risk."""
     def run(self, ctx: Context) -> Context:
@@ -217,7 +217,7 @@ class ComputeVaRStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputePnLAttributionStep(Step):
     """Step 10: Attribute P&L to factors."""
     def run(self, ctx: Context) -> Context:
@@ -235,7 +235,7 @@ class ComputePnLAttributionStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ValidateGreeksStep(Step):
     """Step 11: Validate Greeks vs scenarios."""
     def run(self, ctx: Context) -> Context:
@@ -247,7 +247,7 @@ class ValidateGreeksStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class GenerateDailyReportStep(Step):
     """Step 12: Generate daily report."""
     def run(self, ctx: Context) -> Context:
@@ -274,7 +274,7 @@ class GenerateDailyReportStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class SendAlertsStep(Step):
     """Step 13: Send limit breach alerts."""
     def run(self, ctx: Context) -> Context:

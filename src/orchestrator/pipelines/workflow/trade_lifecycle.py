@@ -37,7 +37,7 @@ def _lifecycle_cfg(cfg: RunConfig) -> Dict[str, Any]:
     return cfg.params.get("trade_lifecycle", {})
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ReceiveTradeRequestStep(Step):
     """Step 1: Receive trade request."""
     def run(self, ctx: Context) -> Context:
@@ -61,7 +61,7 @@ class ReceiveTradeRequestStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ValidateTradeStep(Step):
     """Step 2: Validate trade parameters."""
     def run(self, ctx: Context) -> Context:
@@ -85,7 +85,7 @@ class ValidateTradeStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class PriceTradeStep(Step):
     """Step 3: Price the trade."""
     def run(self, ctx: Context) -> Context:
@@ -109,7 +109,7 @@ class PriceTradeStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class CheckRiskLimitsStep(Step):
     """Step 4: Check risk limits."""
     def run(self, ctx: Context) -> Context:
@@ -141,7 +141,7 @@ class CheckRiskLimitsStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BookTradeStep(Step):
     """Step 5: Book the trade."""
     def run(self, ctx: Context) -> Context:
@@ -167,7 +167,7 @@ class BookTradeStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class UpdatePortfolioStep(Step):
     """Step 6: Update portfolio."""
     def run(self, ctx: Context) -> Context:
@@ -182,7 +182,7 @@ class UpdatePortfolioStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputeIncrementalGreeksStep(Step):
     """Step 7: Compute incremental Greeks."""
     def run(self, ctx: Context) -> Context:
@@ -199,7 +199,7 @@ class ComputeIncrementalGreeksStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class GenerateConfirmationStep(Step):
     """Step 8: Generate booking confirmation."""
     def run(self, ctx: Context) -> Context:
@@ -224,7 +224,7 @@ class GenerateConfirmationStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class UpdateRiskReportsStep(Step):
     """Step 9: Update risk reports."""
     def run(self, ctx: Context) -> Context:

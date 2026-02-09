@@ -168,7 +168,7 @@ def _create_fx_vanilla_option(cfg: Dict[str, Any], idx: int) -> FxVanillaEuropea
 # Pipeline Steps
 # =============================================================================
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ParsePositionConfigStep(Step):
     """
     Step 1: Parse position specifications from config.
@@ -202,7 +202,7 @@ class ParsePositionConfigStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildInstrumentsStep(Step):
     """
     Step 2: Instantiate instrument objects.
@@ -251,7 +251,7 @@ class BuildInstrumentsStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ValidateInstrumentsStep(Step):
     """
     Step 3: Validate instrument parameters.
@@ -285,7 +285,7 @@ class ValidateInstrumentsStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildPositionsStep(Step):
     """
     Step 4: Create Position objects with quantities.
@@ -342,7 +342,7 @@ class BuildPositionsStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class AssemblePortfolioStep(Step):
     """
     Step 5: Assemble positions into Portfolio object.

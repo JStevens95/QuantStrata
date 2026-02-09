@@ -35,7 +35,7 @@ def _attribution_cfg(cfg: RunConfig) -> Dict[str, Any]:
     return cfg.params.get("attribution", {})
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadPortfolioStep(Step):
     """Step 1: Load portfolio from state."""
     def run(self, ctx: Context) -> Context:
@@ -44,7 +44,7 @@ class LoadPortfolioStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadStartMarketStep(Step):
     """Step 2: Load T-1 market snapshot."""
     def run(self, ctx: Context) -> Context:
@@ -57,7 +57,7 @@ class LoadStartMarketStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadEndMarketStep(Step):
     """Step 3: Load T market snapshot."""
     def run(self, ctx: Context) -> Context:
@@ -69,7 +69,7 @@ class LoadEndMarketStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputeStartPVStep(Step):
     """Step 4: Compute T-1 portfolio value."""
     def run(self, ctx: Context) -> Context:
@@ -82,7 +82,7 @@ class ComputeStartPVStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputeEndPVStep(Step):
     """Step 5: Compute T portfolio value."""
     def run(self, ctx: Context) -> Context:
@@ -95,7 +95,7 @@ class ComputeEndPVStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputeTotalPnLStep(Step):
     """Step 6: Compute total P&L."""
     def run(self, ctx: Context) -> Context:
@@ -108,7 +108,7 @@ class ComputeTotalPnLStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputeDeltaPnLStep(Step):
     """Step 7: Attribute to spot moves (delta P&L)."""
     def run(self, ctx: Context) -> Context:
@@ -119,7 +119,7 @@ class ComputeDeltaPnLStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputeGammaPnLStep(Step):
     """Step 8: Attribute to convexity (gamma P&L)."""
     def run(self, ctx: Context) -> Context:
@@ -129,7 +129,7 @@ class ComputeGammaPnLStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputeVegaPnLStep(Step):
     """Step 9: Attribute to vol moves (vega P&L)."""
     def run(self, ctx: Context) -> Context:
@@ -139,7 +139,7 @@ class ComputeVegaPnLStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputeThetaPnLStep(Step):
     """Step 10: Attribute to time decay (theta P&L)."""
     def run(self, ctx: Context) -> Context:
@@ -149,7 +149,7 @@ class ComputeThetaPnLStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputeRhoPnLStep(Step):
     """Step 11: Attribute to rate moves (rho P&L)."""
     def run(self, ctx: Context) -> Context:
@@ -159,7 +159,7 @@ class ComputeRhoPnLStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputeUnexplainedPnLStep(Step):
     """Step 12: Compute residual/unexplained P&L."""
     def run(self, ctx: Context) -> Context:
@@ -177,7 +177,7 @@ class ComputeUnexplainedPnLStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class WriteAttributionReportStep(Step):
     """Step 13: Write attribution report."""
     def run(self, ctx: Context) -> Context:

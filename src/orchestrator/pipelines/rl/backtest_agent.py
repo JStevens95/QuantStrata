@@ -30,7 +30,7 @@ def _rl_cfg(cfg: RunConfig) -> Dict[str, Any]:
     return cfg.params.get("rl", {})
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadAgentStep(Step):
     """Step 1: Load agent from state or from artifact path."""
     def run(self, ctx: Context) -> Context:
@@ -89,7 +89,7 @@ def _stub_agent() -> Any:
     return StubAgent()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildEnvStep(Step):
     """Step 2: Build or load RL environment."""
     def run(self, ctx: Context) -> Context:
@@ -120,7 +120,7 @@ class BuildEnvStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class RunBacktestStep(Step):
     """Step 3: Run BacktestRunner and store result."""
     def run(self, ctx: Context) -> Context:

@@ -35,7 +35,7 @@ def _deep_hedging_backtest_cfg(cfg: RunConfig) -> Dict[str, Any]:
     return dh.get("backtest", {})
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadAgentOrBenchmarkStep(Step):
     """Step 1: Load trained agent from state/path or use delta-hedge benchmark."""
     def run(self, ctx: Context) -> Context:
@@ -53,7 +53,7 @@ class LoadAgentOrBenchmarkStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildBacktestDataStep(Step):
     """Step 2: Build synthetic price/vol paths for backtest (or load from provider)."""
     def run(self, ctx: Context) -> Context:
@@ -79,7 +79,7 @@ class BuildBacktestDataStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class RunBacktestStep(Step):
     """Step 3: Run BacktestEngineAdapter and store result."""
     def run(self, ctx: Context) -> Context:

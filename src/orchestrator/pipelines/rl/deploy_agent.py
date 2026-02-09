@@ -29,7 +29,7 @@ def _rl_cfg(cfg: RunConfig) -> Dict[str, Any]:
     return cfg.params.get("rl", {})
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadAgentStep(Step):
     """Step 1: Load agent from artifact path and put in state."""
     def run(self, ctx: Context) -> Context:

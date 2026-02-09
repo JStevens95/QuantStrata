@@ -21,10 +21,16 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import matplotlib.pyplot as plt
 from dataclasses import dataclass
 from typing import Tuple
 from scipy.stats import norm
+
+try:
+    import matplotlib.pyplot as plt
+    HAS_MATPLOTLIB = True
+except ImportError:
+    plt = None
+    HAS_MATPLOTLIB = False
 
 # Path setup
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -42,15 +48,19 @@ from src.models.stochastic_volatility.heston import (
 # Configuration
 # =============================================================================
 
-plt.style.use('seaborn-v0_8-whitegrid')
-plt.rcParams.update({
-    'figure.figsize': (14, 8),
-    'font.size': 11,
-    'axes.titlesize': 14,
-    'axes.labelsize': 12,
-    'legend.fontsize': 10,
-    'lines.linewidth': 2,
-})
+if HAS_MATPLOTLIB:
+    try:
+        plt.style.use('seaborn-v0_8-whitegrid')
+    except OSError:
+        plt.style.use('seaborn-whitegrid')
+    plt.rcParams.update({
+        'figure.figsize': (14, 8),
+        'font.size': 11,
+        'axes.titlesize': 14,
+        'axes.labelsize': 12,
+        'legend.fontsize': 10,
+        'lines.linewidth': 2,
+    })
 
 COLORS = {
     'bsm': '#2E86AB',
@@ -556,17 +566,18 @@ def main():
     feller = 2 * heston_params.kappa * heston_params.theta / heston_params.xi**2
     print(f"\n  Feller condition: 2κθ/ξ² = {feller:.2f} {'> 1 ✓' if feller > 1 else '< 1 (may touch zero)'}")
     
-    # Generate plots
-    print("\n" + "-" * 50)
-    print("Generating Visualizations...")
-    print("-" * 50)
-    
-    plot_local_vol_surface(bsm_params)
-    plot_heston_dynamics(heston_params)
-    plot_implied_vol_comparison(bsm_params, heston_params)
-    plot_model_comparison_exotic(bsm_params, heston_params)
-    
-    print("\nPlots saved to current directory.")
+    # Generate plots (optional; skip if matplotlib not available)
+    if HAS_MATPLOTLIB:
+        print("\n" + "-" * 50)
+        print("Generating Visualizations...")
+        print("-" * 50)
+        plot_local_vol_surface(bsm_params)
+        plot_heston_dynamics(heston_params)
+        plot_implied_vol_comparison(bsm_params, heston_params)
+        plot_model_comparison_exotic(bsm_params, heston_params)
+        print("\nPlots saved to current directory.")
+    else:
+        print("\nSkipping plots (matplotlib not available).")
     print("=" * 70)
 
 if __name__ == "__main__":

@@ -38,7 +38,7 @@ def _hedging_cfg(cfg: RunConfig) -> Dict[str, Any]:
     return cfg.params.get("hedging_simulation", {})
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadHedgingConfigStep(Step):
     """Step 1: Load hedging configuration."""
     def run(self, ctx: Context) -> Context:
@@ -62,7 +62,7 @@ class LoadHedgingConfigStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildEnvironmentStep(Step):
     """Step 2: Build hedging environment."""
     def run(self, ctx: Context) -> Context:
@@ -83,7 +83,7 @@ class BuildEnvironmentStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class SimulatePathsStep(Step):
     """Step 3: Simulate price paths."""
     def run(self, ctx: Context) -> Context:
@@ -115,7 +115,7 @@ class SimulatePathsStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class RunDeltaHedgingStep(Step):
     """Step 4: Run delta hedging strategy."""
     def run(self, ctx: Context) -> Context:
@@ -151,7 +151,7 @@ class RunDeltaHedgingStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class RunDeepHedgingStep(Step):
     """Step 5: Run deep hedging strategy (if available)."""
     def run(self, ctx: Context) -> Context:
@@ -169,7 +169,7 @@ class RunDeepHedgingStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ComputePnLDistributionsStep(Step):
     """Step 6: Compute hedging P&L distributions."""
     def run(self, ctx: Context) -> Context:
@@ -195,7 +195,7 @@ class ComputePnLDistributionsStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class CompareStrategiesStep(Step):
     """Step 7: Compare strategy performance."""
     def run(self, ctx: Context) -> Context:
@@ -221,7 +221,7 @@ class CompareStrategiesStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class GenerateReportStep(Step):
     """Step 8: Generate hedging report."""
     def run(self, ctx: Context) -> Context:

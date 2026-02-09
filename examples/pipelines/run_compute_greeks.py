@@ -95,7 +95,7 @@ from src.marketdata.core.interfaces import Quote
 from src.marketdata.curves.term_structure import FlatZeroRateCurve
 from src.marketdata.surfaces.vol_surface import FlatVolSurface
 from src.portfolio.core import Portfolio, Position
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
+from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
 
 
 # =============================================================================
@@ -175,7 +175,7 @@ def build_portfolio() -> Portfolio:
     # Long EURUSD call - positive delta, positive gamma, positive vega
     positions.append(Position(
         position_id="EURUSD_CALL_3M",
-        instrument=EuropeanFxVanillaOption(
+        instrument=FxVanillaEuropeanOption(
             option_type="call",
             notional=10_000_000,
             strike=1.10,
@@ -191,7 +191,7 @@ def build_portfolio() -> Portfolio:
     # Short EURUSD put - positive delta (short put), negative vega
     positions.append(Position(
         position_id="EURUSD_PUT_3M",
-        instrument=EuropeanFxVanillaOption(
+        instrument=FxVanillaEuropeanOption(
             option_type="put",
             notional=10_000_000,
             strike=1.05,
@@ -207,7 +207,7 @@ def build_portfolio() -> Portfolio:
     # Long EURUSD straddle (1Y) - gamma/vega position
     positions.append(Position(
         position_id="EURUSD_STRADDLE_1Y_CALL",
-        instrument=EuropeanFxVanillaOption(
+        instrument=FxVanillaEuropeanOption(
             option_type="call",
             notional=5_000_000,
             strike=1.085,  # ATM
@@ -222,7 +222,7 @@ def build_portfolio() -> Portfolio:
     
     positions.append(Position(
         position_id="EURUSD_STRADDLE_1Y_PUT",
-        instrument=EuropeanFxVanillaOption(
+        instrument=FxVanillaEuropeanOption(
             option_type="put",
             notional=5_000_000,
             strike=1.085,
@@ -241,7 +241,7 @@ def build_portfolio() -> Portfolio:
     
     positions.append(Position(
         position_id="GBPUSD_CALL_6M",
-        instrument=EuropeanFxVanillaOption(
+        instrument=FxVanillaEuropeanOption(
             option_type="call",
             notional=8_000_000,
             strike=1.30,

@@ -261,7 +261,7 @@ def _parse_quotes(quotes_config: Dict[str, Any]) -> List[RateQuote]:
 # Pipeline Steps
 # =============================================================================
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadRateQuotesStep(Step):
     """
     Step 1: Load rate quotes from configuration.
@@ -303,7 +303,7 @@ class LoadRateQuotesStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ValidateQuotesStep(Step):
     """
     Step 2: Validate quote consistency and coverage.
@@ -353,7 +353,7 @@ class ValidateQuotesStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BootstrapCurveStep(Step):
     """
     Step 3: Bootstrap discount factors from rate quotes.
@@ -468,7 +468,7 @@ class BootstrapCurveStep(Step):
         return dfs[tenors[-1]]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class InterpolateCurveStep(Step):
     """
     Step 4: Apply interpolation method to create continuous curve.
@@ -526,7 +526,7 @@ class InterpolateCurveStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class StoreCurveStep(Step):
     """
     Step 5: Store curve in artifacts and log final summary.

@@ -48,9 +48,9 @@ def main() -> None:
         },
     )
 
-    artifacts_root = Path(__file__).resolve().parents[1] / "artifacts" / "hedging_backtest"
-    artifacts_root.mkdir(parents=True, exist_ok=True)
-    store = ArtifactStore(artifacts_root=artifacts_root)
+    workdir = Path(__file__).resolve().parents[1] / "artifacts"
+    workdir.mkdir(parents=True, exist_ok=True)
+    store = ArtifactStore(workdir=workdir, run_id="hedging_backtest")
     ctx = Context(
         run_id="run-backtest-hedging-1",
         cfg=config,

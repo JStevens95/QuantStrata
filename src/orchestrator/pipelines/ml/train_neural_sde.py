@@ -32,7 +32,7 @@ def _neural_sde_cfg(cfg: RunConfig) -> Dict[str, Any]:
     return ml.get("neural_sde", {})
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildTrainingDataStep(Step):
     """Step 1: Generate synthetic GBM paths for training (or load from state)."""
     def run(self, ctx: Context) -> Context:
@@ -63,7 +63,7 @@ class BuildTrainingDataStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildModelStep(Step):
     """Step 2: Build NeuralSDEDynamics."""
     def run(self, ctx: Context) -> Context:
@@ -97,7 +97,7 @@ class BuildModelStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class TrainStep(Step):
     """Step 3: Train Neural SDE and store result."""
     def run(self, ctx: Context) -> Context:

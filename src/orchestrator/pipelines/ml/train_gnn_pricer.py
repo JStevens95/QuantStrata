@@ -37,7 +37,7 @@ def _gnn_cfg(cfg: RunConfig) -> Dict[str, Any]:
     return cfg.params.get("gnn_pricer", {})
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class LoadTrainingConfigStep(Step):
     """Step 1: Load ML training config."""
     def run(self, ctx: Context) -> Context:
@@ -47,7 +47,7 @@ class LoadTrainingConfigStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildDatasetStep(Step):
     """Step 2: Build training dataset."""
     def run(self, ctx: Context) -> Context:
@@ -68,7 +68,7 @@ class BuildDatasetStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class SplitDatasetStep(Step):
     """Step 3: Train/validation/test split."""
     def run(self, ctx: Context) -> Context:
@@ -89,7 +89,7 @@ class SplitDatasetStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildDataLoadersStep(Step):
     """Step 4: Create data loaders."""
     def run(self, ctx: Context) -> Context:
@@ -101,7 +101,7 @@ class BuildDataLoadersStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildModelStep(Step):
     """Step 5: Create GNN-RNN hybrid model."""
     def run(self, ctx: Context) -> Context:
@@ -123,7 +123,7 @@ class BuildModelStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class ConfigureOptimizerStep(Step):
     """Step 6: Configure optimizer and scheduler."""
     def run(self, ctx: Context) -> Context:
@@ -142,7 +142,7 @@ class ConfigureOptimizerStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class TrainModelStep(Step):
     """Step 7: Run training loop."""
     def run(self, ctx: Context) -> Context:
@@ -165,7 +165,7 @@ class TrainModelStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class EvaluateModelStep(Step):
     """Step 8: Evaluate on test set."""
     def run(self, ctx: Context) -> Context:
@@ -183,7 +183,7 @@ class EvaluateModelStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class SaveModelStep(Step):
     """Step 9: Save trained model."""
     def run(self, ctx: Context) -> Context:
@@ -195,7 +195,7 @@ class SaveModelStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class WriteTrainingReportStep(Step):
     """Step 10: Write training report."""
     def run(self, ctx: Context) -> Context:
