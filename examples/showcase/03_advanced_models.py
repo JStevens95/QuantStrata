@@ -110,7 +110,10 @@ def local_vol_surface(S: np.ndarray, t: np.ndarray, S0: float = 100,
     S = np.atleast_1d(S)
     t = np.atleast_1d(t)
     
-    if S.ndim == 1 and t.ndim == 1:
+    # Pointwise (S[i], t[i]) when both 1d and same shape; otherwise meshgrid for 2d output
+    if S.ndim == 1 and t.ndim == 1 and S.shape == t.shape:
+        S_grid, t_grid = S, t
+    elif S.ndim == 1 and t.ndim == 1:
         S_grid, t_grid = np.meshgrid(S, t, indexing='ij')
     else:
         S_grid, t_grid = S, t
@@ -257,7 +260,7 @@ def implied_vol_newton(price, S, K, T, r, q, max_iter=100, tol=1e-8):
             discount_rate=r, carry=carry, vol=sigma
         )
         vega = vanilla_vega(
-            spot=S, strike=K, expiry=T,
+            option_type="call", spot=S, strike=K, expiry=T,
             discount_rate=r, carry=carry, vol=sigma
         )
         

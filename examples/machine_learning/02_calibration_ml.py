@@ -405,7 +405,7 @@ def compute_calibration_error(
 # MAIN WORKFLOW
 # =============================================================================
 
-def run_calibration_ml(fast: bool = False) -> Dict[str, any]:
+def run_calibration_ml(fast: bool = False, smoke: bool = False) -> Dict[str, any]:
     """
     Run the ML calibration workflow.
     
@@ -413,6 +413,8 @@ def run_calibration_ml(fast: bool = False) -> Dict[str, any]:
     ----------
     fast : bool
         If True, use reduced samples and comparison count for quicker run (~1-2 min).
+    smoke : bool
+        If True, minimal run for validation (~30-60s): 200 samples, 2 comparisons.
     
     Returns
     -------
@@ -427,13 +429,20 @@ def run_calibration_ml(fast: bool = False) -> Dict[str, any]:
     logger.info("=" * 70)
     
     # Use smaller dataset for reasonable runtime; full run can use n_samples=15000
-    n_samples = 4000 if fast else 8000
+    if smoke:
+        n_samples = 200
+    elif fast:
+        n_samples = 4000
+    else:
+        n_samples = 8000
     config = CalibrationDataConfig(
         n_samples=n_samples,
         seed=42,
     )
     
-    if fast:
+    if smoke:
+        logger.info("  (Smoke mode: minimal samples and comparisons for quick validation)")
+    elif fast:
         logger.info("  (Fast mode: reduced samples and comparison count)")
     logger.info("")
     logger.info(f"Generating {config.n_samples:,} Heston vol surfaces...")
@@ -483,7 +492,7 @@ def run_calibration_ml(fast: bool = False) -> Dict[str, any]:
     logger.info("")
     logger.info("Training neural calibrator...")
     
-    max_epochs = 60 if fast else 100
+    max_epochs = 20 if smoke else (60 if fast else 100)
     history = model.fit(
         X_train, y_train,
         validation_data=(X_val, y_val),
@@ -500,7 +509,8 @@ def run_calibration_ml(fast: bool = False) -> Dict[str, any]:
     logger.info("=" * 70)
     
     # Fewer comparison samples for reasonable runtime (each optimization is costly)
-    n_test_samples = min(12, len(X_test))
+    max_compare = 2 if smoke else 12
+    n_test_samples = min(max_compare, len(X_test))
     
     ml_times = []
     opt_times = []
@@ -703,7 +713,7 @@ def main(args: argparse.Namespace) -> None:
         return
 
     try:
-        results = run_calibration_ml(fast=args.fast)
+        results = run_calibration_ml(fast=args.fast, smoke=args.smoke)
         visualize_results(results)
         print_summary()
         logger.info("Example completed successfully!")
@@ -718,6 +728,7 @@ if __name__ == "__main__":
     parser.add_argument("--plot", action="store_true", default=True)
     parser.add_argument("--no-plot", action="store_false", dest="plot")
     parser.add_argument("--fast", action="store_true", help="Use reduced samples and comparison count (~1-2 min)")
+    parser.add_argument("--smoke", action="store_true", help="Minimal run for validation (~30-60s)")
     
     args = parser.parse_args()
     main(args)

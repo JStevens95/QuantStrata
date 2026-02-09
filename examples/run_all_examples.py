@@ -90,6 +90,9 @@ def main() -> None:
         timeout = LONG_TIMEOUT if run_long and rel in SKIP_LONG_OR_OPTIONAL else DEFAULT_TIMEOUT
         use_no_plot = _script_supports_no_plot(repo_root, py, rel, env)
         run_args = [py, rel, "--no-plot"] if use_no_plot else [py, rel]
+        # Calibration ML is slow; use --smoke when run with --long so it completes within timeout
+        if run_long and "02_calibration_ml.py" in rel:
+            run_args.append("--smoke")
 
         try:
             result = subprocess.run(
