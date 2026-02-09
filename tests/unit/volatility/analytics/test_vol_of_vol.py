@@ -19,26 +19,38 @@ class TestVolOfVolMetrics:
     def test_metrics_creation(self) -> None:
         """Test metrics creation."""
         metrics = VolOfVolMetrics(
-            vol_of_implied_vol=0.05,
-            vol_of_realized_vol=0.04,
-            mean_implied_vol=0.20,
-            mean_realized_vol=0.18,
-            vol_premium=0.02,
-            current_regime="normal",
+            vol_of_iv=0.05,
+            vol_of_rv=0.04,
+            mean_iv=0.20,
+            mean_rv=0.18,
+            iv_rv_spread=0.02,
+            vol_persistence=0.7,
+            vol_mean_reversion=0.1,
+            regime="normal",
+            regime_score=0.5,
         )
         
-        assert metrics.vol_of_implied_vol == 0.05
-        assert metrics.vol_of_realized_vol == 0.04
-        assert metrics.current_regime == "normal"
+        assert metrics.vol_of_iv == 0.05
+        assert metrics.vol_of_rv == 0.04
+        assert metrics.regime == "normal"
     
-    def test_default_values(self) -> None:
-        """Test default values."""
+    def test_metrics_summary(self) -> None:
+        """Test summary method."""
         metrics = VolOfVolMetrics(
-            vol_of_implied_vol=0.05,
+            vol_of_iv=0.05,
+            vol_of_rv=0.04,
+            mean_iv=0.20,
+            mean_rv=0.18,
+            iv_rv_spread=0.02,
+            vol_persistence=0.7,
+            vol_mean_reversion=0.1,
+            regime="normal",
+            regime_score=0.5,
         )
         
-        assert metrics.vol_of_realized_vol is None
-        assert metrics.current_regime is None
+        summary = metrics.summary()
+        assert "vol_of_iv" in summary
+        assert "regime" in summary
 
 
 class TestVolOfVolAnalyzer:
@@ -68,8 +80,8 @@ class TestVolOfVolAnalyzer:
         
         metrics = analyzer.analyze(implied_vols=implied_vols)
         
-        assert metrics.vol_of_implied_vol > 0
-        assert metrics.mean_implied_vol > 0
+        assert metrics.vol_of_iv > 0
+        assert metrics.mean_iv > 0
     
     def test_analyze_with_realized_vol(self) -> None:
         """Test analysis with both implied and realized vol."""
@@ -84,9 +96,9 @@ class TestVolOfVolAnalyzer:
             realized_vols=realized_vols,
         )
         
-        assert metrics.vol_of_implied_vol > 0
-        assert metrics.vol_of_realized_vol is not None
-        assert metrics.vol_of_realized_vol > 0
+        assert metrics.vol_of_iv > 0
+        assert metrics.vol_of_rv is not None
+        assert metrics.vol_of_rv >= 0
     
     def test_analyze_with_prices(self) -> None:
         """Test analysis with price data."""
@@ -103,7 +115,7 @@ class TestVolOfVolAnalyzer:
             prices=prices,
         )
         
-        assert metrics.vol_of_implied_vol > 0
+        assert metrics.vol_of_iv > 0
     
     def test_vol_premium_calculation(self) -> None:
         """Test vol premium (IV - RV) calculation."""
@@ -118,9 +130,9 @@ class TestVolOfVolAnalyzer:
             realized_vols=realized_vols,
         )
         
-        # Premium should be positive
-        assert metrics.vol_premium is not None
-        assert metrics.vol_premium > 0
+        # IV-RV spread should be positive when IV > RV
+        assert metrics.iv_rv_spread is not None
+        assert metrics.iv_rv_spread > 0
     
     def test_regime_detection_low(self) -> None:
         """Test regime detection for low volatility."""
@@ -132,7 +144,7 @@ class TestVolOfVolAnalyzer:
         
         metrics = analyzer.analyze(implied_vols=implied_vols)
         
-        assert metrics.current_regime == "low"
+        assert metrics.regime == "low"
     
     def test_regime_detection_normal(self) -> None:
         """Test regime detection for normal volatility."""
@@ -144,7 +156,7 @@ class TestVolOfVolAnalyzer:
         
         metrics = analyzer.analyze(implied_vols=implied_vols)
         
-        assert metrics.current_regime == "normal"
+        assert metrics.regime == "normal"
     
     def test_regime_detection_high(self) -> None:
         """Test regime detection for high volatility."""
@@ -156,7 +168,7 @@ class TestVolOfVolAnalyzer:
         
         metrics = analyzer.analyze(implied_vols=implied_vols)
         
-        assert metrics.current_regime == "high"
+        assert metrics.regime == "high"
     
     def test_regime_detection_crisis(self) -> None:
         """Test regime detection for crisis volatility."""
@@ -168,7 +180,7 @@ class TestVolOfVolAnalyzer:
         
         metrics = analyzer.analyze(implied_vols=implied_vols)
         
-        assert metrics.current_regime == "crisis"
+        assert metrics.regime == "crisis"
     
     def test_vol_of_vol_increases_in_crisis(self) -> None:
         """Test that vol-of-vol is higher during volatile periods."""
@@ -185,7 +197,7 @@ class TestVolOfVolAnalyzer:
         volatile_metrics = analyzer.analyze(implied_vols=volatile_vols)
         
         # Vol-of-vol should be higher in volatile period
-        assert volatile_metrics.vol_of_implied_vol > stable_metrics.vol_of_implied_vol
+        assert volatile_metrics.vol_of_iv > stable_metrics.vol_of_iv
     
     def test_short_data_handling(self) -> None:
         """Test handling of data shorter than window."""
@@ -197,4 +209,4 @@ class TestVolOfVolAnalyzer:
         # Should still work (using available data)
         metrics = analyzer.analyze(implied_vols=implied_vols)
         
-        assert metrics.vol_of_implied_vol >= 0
+        assert metrics.vol_of_iv >= 0

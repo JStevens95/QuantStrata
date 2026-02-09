@@ -20,8 +20,11 @@ class TestRiskParityResult:
         """Test result creation."""
         result = RiskParityResult(
             weights=np.array([0.3, 0.35, 0.35]),
-            risk_contributions=np.array([0.33, 0.33, 0.34]),
             volatility=0.10,
+            risk_contributions=np.array([0.33, 0.33, 0.34]),
+            marginal_risks=np.array([0.1, 0.1, 0.1]),
+            target_budgets=np.array([1 / 3, 1 / 3, 1 / 3]),
+            budget_deviation=0.0,
         )
         
         assert len(result.weights) == 3

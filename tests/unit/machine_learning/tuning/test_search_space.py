@@ -10,6 +10,9 @@ from pathlib import Path
 
 import pytest
 
+# Skip entire module if TensorFlow is not available
+pytest.importorskip("tensorflow")
+
 from src.machine_learning.tuning.search_space import (
     MedianPruner,
     OptunaSearchSpace,

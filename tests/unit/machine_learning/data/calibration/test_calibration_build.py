@@ -7,6 +7,9 @@ Tests build_calibration_dataset() and CalibrationDataResult.
 import pytest
 import numpy as np
 
+# Skip entire module if TensorFlow is not available
+pytest.importorskip("tensorflow")
+
 from src.machine_learning.data.calibration.build import (
     CalibrationDataResult,
     build_calibration_dataset,

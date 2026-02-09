@@ -19,14 +19,19 @@ class TestBlackLittermanResult:
     def test_result_creation(self) -> None:
         """Test result creation."""
         result = BlackLittermanResult(
+            prior_returns=np.array([0.07, 0.08, 0.09]),
             posterior_returns=np.array([0.08, 0.09, 0.10]),
             posterior_covariance=np.eye(3) * 0.04,
+            n_views=0,
+            view_matrix=np.zeros((0, 3)),
+            view_returns=np.array([]),
+            view_confidences=np.array([]),
             optimal_weights=np.array([0.3, 0.35, 0.35]),
-            equilibrium_returns=np.array([0.07, 0.08, 0.09]),
         )
         
         assert len(result.posterior_returns) == 3
         assert result.posterior_covariance.shape == (3, 3)
+        assert len(result.prior_returns) == 3
 
 
 class TestBlackLittermanModel:
@@ -66,7 +71,7 @@ class TestBlackLittermanModel:
             covariance=cov,
         )
         
-        eq_returns = model.equilibrium_returns
+        eq_returns = model.equilibrium_returns()
         
         # Should have one return per asset
         assert len(eq_returns) == 3
@@ -102,10 +107,10 @@ class TestBlackLittermanModel:
         
         result = model.posterior(views=[], confidences=[])
         
-        # Posterior should equal equilibrium with no views
+        # Posterior should equal prior (equilibrium) with no views
         np.testing.assert_array_almost_equal(
             result.posterior_returns,
-            result.equilibrium_returns,
+            result.prior_returns,
         )
     
     def test_posterior_absolute_view(self, simple_inputs: tuple) -> None:
@@ -123,8 +128,8 @@ class TestBlackLittermanModel:
         
         result = model.posterior(views=views, confidences=confidences)
         
-        # Posterior return for asset 0 should be between equilibrium and view
-        eq = result.equilibrium_returns[0]
+        # Posterior return for asset 0 should be between prior (equilibrium) and view
+        eq = result.prior_returns[0]
         view = 0.10
         post = result.posterior_returns[0]
         
@@ -148,8 +153,8 @@ class TestBlackLittermanModel:
         # Posterior returns should reflect the relative view
         spread = result.posterior_returns[0] - result.posterior_returns[2]
         
-        # Should be closer to 2% than equilibrium spread
-        eq_spread = result.equilibrium_returns[0] - result.equilibrium_returns[2]
+        # Should be closer to 2% than prior (equilibrium) spread
+        eq_spread = result.prior_returns[0] - result.prior_returns[2]
         assert abs(spread - 0.02) <= abs(eq_spread - 0.02)
     
     def test_high_confidence_view(self, simple_inputs: tuple) -> None:
@@ -185,8 +190,8 @@ class TestBlackLittermanModel:
         
         result = model.posterior(views=views, confidences=confidences)
         
-        # Posterior should be close to equilibrium
-        eq = result.equilibrium_returns[0]
+        # Posterior should be close to prior (equilibrium)
+        eq = result.prior_returns[0]
         assert abs(result.posterior_returns[0] - eq) < abs(0.15 - eq)
     
     def test_optimal_weights_sum_to_one(self, simple_inputs: tuple) -> None:

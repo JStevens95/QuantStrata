@@ -23,18 +23,21 @@ class TestDispersionConfig:
         """Test default configuration."""
         config = DispersionConfig()
         
-        assert config.min_spread > 0
-        assert 0 <= config.target_vega_neutral <= 1
+        assert config.implied_corr_threshold_long < config.implied_corr_threshold_short
+        assert config.index_notional > 0
+        assert config.hedge_ratio == 1.0
     
     def test_custom_config(self) -> None:
         """Test custom configuration."""
         config = DispersionConfig(
-            min_spread=0.02,
-            target_vega_neutral=0.8,
+            implied_corr_threshold_long=0.5,
+            implied_corr_threshold_short=0.85,
+            index_notional=2_000_000,
         )
         
-        assert config.min_spread == 0.02
-        assert config.target_vega_neutral == 0.8
+        assert config.implied_corr_threshold_long == 0.5
+        assert config.implied_corr_threshold_short == 0.85
+        assert config.index_notional == 2_000_000
 
 
 class TestDispersionAnalysis:
@@ -44,15 +47,16 @@ class TestDispersionAnalysis:
         """Test analysis result creation."""
         analysis = DispersionAnalysis(
             index_vol=0.18,
-            constituent_vols=np.array([0.22, 0.25, 0.20]),
+            avg_constituent_vol=0.22,
+            weighted_constituent_vol=0.21,
             implied_correlation=0.65,
-            dispersion_spread=0.03,
-            is_attractive=True,
+            signal="neutral",
+            signal_strength=0.0,
         )
         
         assert analysis.index_vol == 0.18
         assert analysis.implied_correlation == 0.65
-        assert analysis.is_attractive is True
+        assert analysis.signal == "neutral"
 
 
 class TestDispersionTrader:
@@ -98,7 +102,7 @@ class TestDispersionTrader:
         )
         
         assert analysis.index_vol == 0.18
-        assert len(analysis.constituent_vols) == 3
+        assert analysis.avg_constituent_vol > 0
         assert 0 <= analysis.implied_correlation <= 1
     
     def test_analyze_with_correlation_matrix(self) -> None:
@@ -122,8 +126,8 @@ class TestDispersionTrader:
         
         assert analysis.index_vol == 0.20
     
-    def test_dispersion_spread_calculation(self) -> None:
-        """Test that dispersion spread is calculated."""
+    def test_dispersion_signal(self) -> None:
+        """Test that signal is set from implied correlation."""
         trader = DispersionTrader(
             index_ticker="INDEX",
             constituents=["A", "B", "C"],
@@ -135,50 +139,48 @@ class TestDispersionTrader:
             constituent_vols=np.array([0.20, 0.22, 0.18]),
         )
         
-        # Dispersion spread should be positive when constituents vol > index vol
-        weighted_vol = np.sum(trader.weights * np.array([0.20, 0.22, 0.18]))
-        if weighted_vol > 0.15:
-            assert analysis.dispersion_spread >= 0
+        assert analysis.signal in ("neutral", "long_dispersion", "short_dispersion")
+        assert analysis.implied_correlation >= -1 and analysis.implied_correlation <= 1
     
-    def test_is_attractive_flag(self) -> None:
-        """Test attractiveness flag."""
+    def test_signal_strength(self) -> None:
+        """Test signal strength is set when correlation is extreme."""
         trader = DispersionTrader(
             index_ticker="INDEX",
             constituents=["A", "B"],
-            config=DispersionConfig(min_spread=0.01),
+            config=DispersionConfig(implied_corr_threshold_long=0.3, implied_corr_threshold_short=0.8),
         )
         
-        # Large dispersion should be attractive
         analysis = trader.analyze(
             index_vol=0.10,
             constituent_vols=np.array([0.25, 0.25]),
         )
         
-        # Whether attractive depends on implementation
-        assert isinstance(analysis.is_attractive, bool)
+        assert isinstance(analysis.signal_strength, (int, float))
 
 
 class TestComputeRealizedCorrelation:
-    """Tests for realized correlation computation."""
+    """Tests for realized correlation computation (returns a matrix; use average for scalar)."""
     
     def test_perfect_correlation(self) -> None:
         """Test with perfectly correlated returns."""
         returns = np.random.randn(100)
         returns_matrix = np.column_stack([returns, returns, returns])
         
-        realized_corr = compute_realized_correlation(returns_matrix)
+        corr_matrix = compute_realized_correlation(returns_matrix)
+        avg_corr = compute_average_correlation(corr_matrix)
         
-        assert abs(realized_corr - 1.0) < 0.01
+        assert abs(avg_corr - 1.0) < 0.01
     
     def test_uncorrelated_returns(self) -> None:
         """Test with uncorrelated returns."""
         np.random.seed(42)
         returns_matrix = np.random.randn(1000, 5)
         
-        realized_corr = compute_realized_correlation(returns_matrix)
+        corr_matrix = compute_realized_correlation(returns_matrix)
+        avg_corr = compute_average_correlation(corr_matrix)
         
         # Should be close to zero for random uncorrelated data
-        assert abs(realized_corr) < 0.15
+        assert abs(avg_corr) < 0.15
     
     def test_moderate_correlation(self) -> None:
         """Test with moderately correlated returns."""
@@ -189,10 +191,11 @@ class TestComputeRealizedCorrelation:
         # Returns with common factor
         returns_matrix = common_factor.reshape(-1, 1) * 0.7 + idio
         
-        realized_corr = compute_realized_correlation(returns_matrix)
+        corr_matrix = compute_realized_correlation(returns_matrix)
+        avg_corr = compute_average_correlation(corr_matrix)
         
         # Should be positive and moderate
-        assert 0.3 < realized_corr < 0.9
+        assert 0.3 < avg_corr < 0.9
 
 
 class TestComputeAverageCorrelation:

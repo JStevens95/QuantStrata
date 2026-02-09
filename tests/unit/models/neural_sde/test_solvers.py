@@ -22,7 +22,9 @@ class TestSolverConfig:
         """Test default configuration."""
         config = SolverConfig()
         
-        assert config.dt is None or config.dt > 0
+        assert config.seed is None or isinstance(config.seed, int)
+        assert config.antithetic in (True, False)
+        assert config.positivity in (True, False)
     
     def test_custom_config(self) -> None:
         """Test custom configuration."""

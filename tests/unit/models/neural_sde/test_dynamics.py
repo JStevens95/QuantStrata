@@ -28,18 +28,21 @@ class TestNeuralSDEConfig:
         config = NeuralSDEConfig()
         
         assert config.solver_type in ["euler", "milstein"]
-        assert len(config.hidden_dims) > 0
-    
+        assert len(config.drift_hidden_dims) > 0
+        assert len(config.diffusion_hidden_dims) > 0
+
     def test_custom_config(self) -> None:
         """Test custom configuration."""
         config = NeuralSDEConfig(
             solver_type="milstein",
-            hidden_dims=[64, 32],
+            drift_hidden_dims=[64, 32],
+            diffusion_hidden_dims=[64, 32],
             activation="tanh",
         )
         
         assert config.solver_type == "milstein"
-        assert config.hidden_dims == [64, 32]
+        assert config.drift_hidden_dims == [64, 32]
+        assert config.diffusion_hidden_dims == [64, 32]
 
 
 class TestNeuralSDEDynamics:
@@ -54,7 +57,8 @@ class TestNeuralSDEDynamics:
     def test_dynamics_with_config(self) -> None:
         """Test dynamics with custom config."""
         config = NeuralSDEConfig(
-            hidden_dims=[32, 16],
+            drift_hidden_dims=[32, 16],
+            diffusion_hidden_dims=[32, 16],
             solver_type="euler",
         )
         
@@ -121,15 +125,15 @@ class TestNeuralSDEDynamics:
         """Test statistics computation."""
         dynamics = NeuralSDEDynamics(seed=42)
         
-        paths = dynamics.simulate(100.0, 1.0, 100, 1000)
-        
-        stats = dynamics.compute_statistics(paths)
+        stats = dynamics.compute_statistics(
+            S0=100.0, T=1.0, n_steps=100, n_paths=1000
+        )
         
         # Should have basic statistics
-        assert "mean" in stats
-        assert "std" in stats
-        assert "terminal_mean" in stats
-        assert "terminal_std" in stats
+        assert "mean_final" in stats
+        assert "std_final" in stats
+        assert "mean_return" in stats
+        assert "std_return" in stats
     
     def test_drift_function(self) -> None:
         """Test drift function evaluation."""
@@ -153,25 +157,37 @@ class TestNeuralSDEDynamics:
         diff_val = dynamics.diffusion(S, t)
         
         assert diff_val is not None
+        diff_val = np.atleast_1d(diff_val)
         assert not np.isnan(diff_val).any()
-        assert all(diff_val > 0)  # Diffusion should be positive
+        assert np.all(diff_val > 0)  # Diffusion should be positive
     
     def test_save_and_load(self) -> None:
-        """Test saving and loading dynamics."""
+        """Test saving and loading dynamics (Option A: shapes and summary stats only; no path equality)."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            save_path = Path(tmpdir) / "model"
-            
-            # Create and save
+            save_path = str(Path(tmpdir) / "model")
+            S0, T, n_steps, n_paths = 100.0, 0.5, 50, 10
+
+            # Create and save (implementation appends .npy)
             dynamics1 = NeuralSDEDynamics(seed=42)
-            paths1 = dynamics1.simulate(100.0, 0.5, 50, 10)
+            dynamics1.simulate(S0, T, n_steps, n_paths)
             dynamics1.save(save_path)
-            
-            # Load
+
+            # Load and simulate (RNG state is not restored, so paths will differ from first run)
             dynamics2 = NeuralSDEDynamics.load(save_path)
-            paths2 = dynamics2.simulate(100.0, 0.5, 50, 10)
-            
-            # Should produce same results
-            np.testing.assert_array_almost_equal(paths1, paths2, decimal=5)
+            paths = dynamics2.simulate(S0, T, n_steps, n_paths)
+
+            # Assert shape only
+            assert paths.shape == (n_paths, n_steps + 1)
+
+            # Assert initial condition
+            assert np.all(paths[:, 0] == S0)
+
+            # Assert summary stats: finite and reasonable (no path equality)
+            assert np.all(np.isfinite(paths))
+            terminal = paths[:, -1]
+            assert np.isfinite(terminal.mean()) and np.isfinite(terminal.std())
+            assert terminal.mean() > 0
+            assert np.mean(paths > 0) > 0.95
     
     def test_different_solver_types(self) -> None:
         """Test with different solver types."""

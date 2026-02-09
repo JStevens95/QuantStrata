@@ -46,7 +46,7 @@ class TestCovarianceEstimator:
         """Test sample covariance estimation."""
         estimator = CovarianceEstimator()
         
-        cov = estimator.sample(sample_returns)
+        cov = estimator.estimate(sample_returns)
         
         # Should be square and correct size
         assert cov.shape == (5, 5)
@@ -62,7 +62,7 @@ class TestCovarianceEstimator:
         """Test exponentially weighted covariance estimation."""
         estimator = CovarianceEstimator()
         
-        cov = estimator.ewm(sample_returns, halflife=60)
+        cov = estimator.estimate_ewm(sample_returns, halflife=60)
         
         # Should be square and symmetric
         assert cov.shape == (5, 5)
@@ -72,8 +72,8 @@ class TestCovarianceEstimator:
         """Test that EWM and sample give different results."""
         estimator = CovarianceEstimator()
         
-        sample_cov = estimator.sample(sample_returns)
-        ewm_cov = estimator.ewm(sample_returns, halflife=30)
+        sample_cov = estimator.estimate(sample_returns)
+        ewm_cov = estimator.estimate_ewm(sample_returns, halflife=30)
         
         # They should differ
         assert not np.allclose(sample_cov, ewm_cov)
@@ -82,7 +82,7 @@ class TestCovarianceEstimator:
         """Test constant correlation estimator."""
         estimator = CovarianceEstimator()
         
-        cov = estimator.constant_correlation(sample_returns)
+        cov = estimator.estimate_constant_correlation(sample_returns)
         
         # Should be symmetric
         np.testing.assert_array_almost_equal(cov, cov.T)
@@ -100,8 +100,8 @@ class TestCovarianceEstimator:
         estimator_daily = CovarianceEstimator(annualization=1)
         estimator_annual = CovarianceEstimator(annualization=252)
         
-        cov_daily = estimator_daily.sample(sample_returns, annualize=True)
-        cov_annual = estimator_annual.sample(sample_returns, annualize=True)
+        cov_daily = estimator_daily.estimate(sample_returns, annualize=True)
+        cov_annual = estimator_annual.estimate(sample_returns, annualize=True)
         
         # Annual should be 252x daily
         ratio = np.mean(cov_annual) / np.mean(cov_daily)
@@ -180,7 +180,7 @@ class TestShrinkageEstimator:
             annualize=False,
         )
         
-        sample_cov = basic_estimator.sample(sample_returns, annualize=False)
+        sample_cov = basic_estimator.estimate(sample_returns, annualize=False)
         
         np.testing.assert_array_almost_equal(result.covariance, sample_cov, decimal=5)
     
@@ -189,7 +189,7 @@ class TestShrinkageEstimator:
         basic_estimator = CovarianceEstimator()
         shrinkage_estimator = ShrinkageEstimator()
         
-        sample_cov = basic_estimator.sample(sample_returns, annualize=False)
+        sample_cov = basic_estimator.estimate(sample_returns, annualize=False)
         shrunk = shrinkage_estimator.estimate(
             sample_returns,
             annualize=False,

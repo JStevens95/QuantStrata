@@ -84,8 +84,10 @@ class TestNeuralDriftNetwork:
         
         output = network(S, t)
         
-        assert isinstance(output, np.ndarray)
-        assert output.shape == (1,) or output.shape == ()
+        # May return 0-d array or (1,) array
+        out = np.atleast_1d(output)
+        assert out.size == 1
+        assert np.isfinite(out).all()
     
     def test_forward_pass_array(self) -> None:
         """Test forward pass with array inputs."""
@@ -161,7 +163,10 @@ class TestNeuralDiffusionNetwork:
         
         output = network(S, t)
         
-        assert isinstance(output, np.ndarray)
+        out = np.atleast_1d(output)
+        assert out.size == 1
+        assert np.isfinite(out).all()
+        assert (out > 0).all()
     
     def test_forward_pass_array(self) -> None:
         """Test forward pass with array inputs."""
@@ -208,6 +213,7 @@ class TestNeuralDiffusionNetwork:
         t = np.array([0.5])
         
         output = network(S, t)
+        output = np.atleast_1d(output)
         
         # Should be reasonable (not exploding)
         assert output[0] < 10.0

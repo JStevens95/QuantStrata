@@ -24,13 +24,11 @@ class TestCliquetPricingResult:
         """Test result creation."""
         result = CliquetPricingResult(
             price=5.0,
-            std_error=0.1,
-            expected_n_capped=2.5,
-            expected_n_floored=1.2,
+            standard_error=0.1,
         )
         
         assert result.price == 5.0
-        assert result.std_error == 0.1
+        assert result.standard_error == 0.1
 
 
 class TestCliquetMarketData:
@@ -41,7 +39,7 @@ class TestCliquetMarketData:
         data = CliquetMarketData(
             spot=100.0,
             volatility=0.20,
-            rate=0.05,
+            risk_free_rate=0.05,
             dividend_yield=0.02,
         )
         
@@ -56,9 +54,9 @@ class TestEquityCliquetGbmMcPricer:
     def sample_cliquet(self) -> EquityCliquetOption:
         """Create sample cliquet option."""
         return EquityCliquetOption(
-            underlying="SPX",
+            underlying_id="SPX",
             start_date=date.today(),
-            maturity_date=date.today() + timedelta(days=365),
+            end_date=date.today() + timedelta(days=365),
             reset_dates=[date.today() + timedelta(days=i * 30) for i in range(1, 13)],
             local_cap=0.05,
             local_floor=-0.03,
@@ -73,7 +71,7 @@ class TestEquityCliquetGbmMcPricer:
         return CliquetMarketData(
             spot=100.0,
             volatility=0.20,
-            rate=0.05,
+            risk_free_rate=0.05,
             dividend_yield=0.0,
         )
     
@@ -110,14 +108,14 @@ class TestEquityCliquetGbmMcPricer:
         result_many = pricer_many.price(sample_cliquet, sample_market_data)
         
         # More paths should have smaller error
-        assert result_many.std_error < result_few.std_error
+        assert result_many.standard_error < result_few.standard_error
     
     def test_local_cap_effect(self, sample_market_data: CliquetMarketData) -> None:
         """Test that local cap affects price."""
         cliquet_low_cap = EquityCliquetOption(
-            underlying="SPX",
+            underlying_id="SPX",
             start_date=date.today(),
-            maturity_date=date.today() + timedelta(days=365),
+            end_date=date.today() + timedelta(days=365),
             reset_dates=[date.today() + timedelta(days=i * 30) for i in range(1, 13)],
             local_cap=0.02,  # Low cap
             local_floor=-0.03,
@@ -127,9 +125,9 @@ class TestEquityCliquetGbmMcPricer:
         )
         
         cliquet_high_cap = EquityCliquetOption(
-            underlying="SPX",
+            underlying_id="SPX",
             start_date=date.today(),
-            maturity_date=date.today() + timedelta(days=365),
+            end_date=date.today() + timedelta(days=365),
             reset_dates=[date.today() + timedelta(days=i * 30) for i in range(1, 13)],
             local_cap=0.10,  # High cap
             local_floor=-0.03,
@@ -174,4 +172,4 @@ class TestEquityCliquetGbmMcPricer:
         
         # Antithetic should generally reduce variance
         # Note: Not always guaranteed for all payoffs
-        assert result_anti.std_error <= result_no_anti.std_error * 1.5
+        assert result_anti.standard_error <= result_no_anti.standard_error * 1.5

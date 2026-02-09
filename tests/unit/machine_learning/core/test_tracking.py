@@ -10,6 +10,9 @@ from pathlib import Path
 
 import pytest
 
+# Skip entire module if TensorFlow is not available (core imports base which needs TF)
+pytest.importorskip("tensorflow")
+
 from src.machine_learning.core.tracking import (
     InMemoryTracker,
     RunInfo,

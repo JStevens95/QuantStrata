@@ -9,6 +9,9 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+# Skip entire module if TensorFlow is not available
+pytest.importorskip("tensorflow")
+
 from src.machine_learning.core.types import (
     TrainingConfig,
     TrainingResult,

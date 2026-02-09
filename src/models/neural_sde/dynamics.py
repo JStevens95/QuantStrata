@@ -314,7 +314,10 @@ class NeuralSDEDynamics:
                 "S_std": self.config.S_std,
             },
         }
-        np.save(path, params, allow_pickle=True)
+        path_str = str(path)
+        if not path_str.endswith(".npy"):
+            path_str = path_str + ".npy"
+        np.save(path_str, params, allow_pickle=True)
     
     @classmethod
     def load(cls, path: str) -> "NeuralSDEDynamics":
@@ -331,7 +334,10 @@ class NeuralSDEDynamics:
         NeuralSDEDynamics
             Loaded model.
         """
-        params = np.load(path, allow_pickle=True).item()
+        path_str = str(path)
+        if not path_str.endswith(".npy"):
+            path_str = path_str + ".npy"
+        params = np.load(path_str, allow_pickle=True).item()
         
         config = NeuralSDEConfig(**params["config"])
         model = cls(config=config)

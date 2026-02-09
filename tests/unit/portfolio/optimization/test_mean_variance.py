@@ -22,8 +22,8 @@ class TestMVConstraints:
         constraints = MVConstraints()
         
         assert constraints.long_only is True
-        assert constraints.max_weight is None
-        assert constraints.min_weight is None
+        assert constraints.max_weight == 1.0
+        assert constraints.min_weight == 0.0  # set in __post_init__ when long_only
     
     def test_custom_constraints(self) -> None:
         """Test custom constraints."""
@@ -31,7 +31,7 @@ class TestMVConstraints:
             long_only=False,
             max_weight=0.3,
             min_weight=-0.1,
-            max_sector_weight={"tech": 0.4},
+            sector_limits={"tech": 0.4},
         )
         
         assert constraints.long_only is False
@@ -120,16 +120,20 @@ class TestMeanVarianceOptimizer:
         assert abs(result.volatility - 0.15) < 0.02
     
     def test_optimize_min_variance(self, simple_inputs: tuple) -> None:
-        """Test minimum variance portfolio."""
+        """Test minimum variance portfolio (optimize with no target return/vol)."""
         returns, cov = simple_inputs
         optimizer = MeanVarianceOptimizer()
         
-        result = optimizer.min_variance(covariance=cov)
+        # No target return or volatility -> minimizes variance subject to budget
+        result = optimizer.optimize(
+            expected_returns=returns,
+            covariance=cov,
+        )
         
         # Weights should sum to 1
         assert abs(sum(result.weights) - 1.0) < 1e-6
         
-        # Should have minimum possible variance
+        # Should have minimum possible variance (positive)
         assert result.volatility > 0
     
     def test_long_only_constraint(self, simple_inputs: tuple) -> None:

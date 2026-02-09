@@ -75,23 +75,23 @@ class TestVarianceSwapResult:
         """Test result creation."""
         result = VarianceSwapResult(
             fair_variance=0.042,
-            strike_variance=0.04,
-            mtm=5000.0,
-            notional=100_000,
-            maturity=0.5,
+            fair_vol=0.204,
+            swap_value=5000.0,
+            replication_cost=100.0,
+            discrete_adjustment=0.001,
         )
         
         assert result.fair_variance == 0.042
-        assert result.mtm == 5000.0
+        assert result.swap_value == 5000.0
     
     def test_fair_vol_property(self) -> None:
         """Test fair volatility property."""
         result = VarianceSwapResult(
             fair_variance=0.04,
-            strike_variance=0.04,
-            mtm=0.0,
-            notional=100_000,
-            maturity=1.0,
+            fair_vol=0.20,
+            swap_value=0.0,
+            replication_cost=0.0,
+            discrete_adjustment=0.0,
         )
         
         assert abs(result.fair_vol - 0.20) < 1e-10
@@ -141,9 +141,9 @@ class TestVarianceSwapPricer:
         # Fair variance should be positive
         assert result.fair_variance > 0
         
-        # Result should have all required fields
-        assert result.notional == swap.notional
-        assert result.maturity == swap.maturity
+        # Result should have required fields
+        assert result.fair_vol > 0
+        assert hasattr(result, "swap_value")
     
     def test_price_at_the_money_strike(self) -> None:
         """Test that ATM strike gives reasonable results."""
@@ -209,9 +209,9 @@ class TestVarianceSwapPricer:
             rate=0.0,
         )
         
-        # If fair var > strike var, MTM should be positive (long position profits)
+        # If fair var > strike var, swap value should be positive (long position profits)
         if result.fair_variance > swap.strike_var:
-            assert result.mtm >= 0
+            assert result.swap_value >= 0
 
 
 class TestCalculateRealizedVariance:
