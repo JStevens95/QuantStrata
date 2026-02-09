@@ -57,38 +57,50 @@ class TestBacktestResult:
     
     def test_mean_pnl_return(self) -> None:
         """Test mean P&L return calculation."""
-        result = BacktestResult()
-        result.pnl_returns = [0.1, 0.05, -0.02, 0.08, 0.03]
-        
+        result = BacktestResult(
+            episodes=[],
+            total_steps=0,
+            total_time_seconds=0.0,
+            pnl_returns=[0.1, 0.05, -0.02, 0.08, 0.03],
+        )
         expected = np.mean([0.1, 0.05, -0.02, 0.08, 0.03])
         assert abs(result.mean_pnl_return - expected) < 1e-10
     
     def test_mean_pnl_return_empty(self) -> None:
         """Test mean P&L return with empty list."""
-        result = BacktestResult()
-        result.pnl_returns = []
-        
+        result = BacktestResult(
+            episodes=[],
+            total_steps=0,
+            total_time_seconds=0.0,
+            pnl_returns=[],
+        )
         assert result.mean_pnl_return == 0.0
     
     def test_std_pnl_return(self) -> None:
         """Test std P&L return calculation."""
-        result = BacktestResult()
-        result.pnl_returns = [0.1, 0.05, -0.02, 0.08, 0.03]
-        
+        result = BacktestResult(
+            episodes=[],
+            total_steps=0,
+            total_time_seconds=0.0,
+            pnl_returns=[0.1, 0.05, -0.02, 0.08, 0.03],
+        )
         expected = np.std(result.pnl_returns)
         assert abs(result.std_pnl_return - expected) < 1e-10
     
     def test_std_pnl_return_single_element(self) -> None:
         """Test std with single element."""
-        result = BacktestResult()
-        result.pnl_returns = [0.1]
-        
+        result = BacktestResult(
+            episodes=[],
+            total_steps=0,
+            total_time_seconds=0.0,
+            pnl_returns=[0.1],
+        )
         assert result.std_pnl_return == 0.0
 
 
 # Mock agent and environment for testing
 class MockAgent:
-    """Mock RL agent for testing."""
+    """Mock RL agent for testing (conforms to RLAgent protocol)."""
     
     def __init__(self, action: int = 2) -> None:
         self.action = action
@@ -96,7 +108,13 @@ class MockAgent:
     def act(self, state: np.ndarray, deterministic: bool = True) -> int:
         return self.action
     
-    def select_action(self, state: np.ndarray) -> int:
+    def select_action(
+        self,
+        state: np.ndarray,
+        training: bool = False,
+        explore: bool = False,
+        **kwargs: Any,
+    ) -> int:
         return self.action
 
 
@@ -139,8 +157,8 @@ class TestBacktestRunner:
         
         runner = BacktestRunner(agent=agent, env=env, config=config)
         
-        assert runner._agent is agent
-        assert runner._env is env
+        assert runner.agent is agent
+        assert runner.env is env
     
     def test_run_single_episode(self) -> None:
         """Test running a single episode."""
@@ -227,6 +245,7 @@ class TestEpisodeResult:
             episode_id=0,
             total_reward=1.5,
             n_steps=100,
+            final_info={},
         )
         
         assert result.episode_id == 0
@@ -239,8 +258,9 @@ class TestEpisodeResult:
             episode_id=0,
             total_reward=1.0,
             n_steps=50,
+            final_info={},
         )
         
         assert result.rewards == []
         assert result.actions == []
-        assert result.info == {}
+        assert result.final_info == {}

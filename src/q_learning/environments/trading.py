@@ -118,6 +118,11 @@ class SimpleDataProvider:
         """Get price at index."""
         return self.prices[idx]
     
+    def get_window(self, start_idx: int, window_size: int) -> np.ndarray:
+        """Get price window [start_idx : start_idx + window_size], shape (window_size, n_assets)."""
+        end_idx = start_idx + window_size
+        return self.prices[start_idx:end_idx].copy()
+    
     def get_features(self, idx: int) -> Optional[np.ndarray]:
         """Get features at index."""
         if self.features is None:
@@ -313,7 +318,8 @@ class TradingEnvironment:
             a_idx = int(np.clip(action, 0, self.n_actions - 1))
             target_position_frac = self._action_map[a_idx]
         else:
-            target_position_frac = float(np.clip(action, -1, 1))
+            a = np.asarray(action)
+            target_position_frac = float(np.clip(a.flat[0] if a.size else 0.0, -1.0, 1.0))
         
         # Scale by max position
         target_position_frac *= self.config.max_position

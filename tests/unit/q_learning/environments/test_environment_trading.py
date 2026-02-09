@@ -76,8 +76,8 @@ class TestSimpleDataProvider:
         window = provider.get_window(10, 5)
         
         assert window.shape == (5, 1)
-        assert window[0, 0] == 105
-        assert window[-1, 0] == 109
+        assert window[0, 0] == 110  # prices[10]
+        assert window[-1, 0] == 114  # prices[14]
 
 
 class TestTradingEnvironment:
