@@ -617,7 +617,12 @@ def main(args: argparse.Namespace) -> None:
     """Main entry point."""
     global ENABLE_PLOTTING
     ENABLE_PLOTTING = args.plot
-    
+
+    if not TF_AVAILABLE:
+        logger.warning("TensorFlow is not installed. Skipping neural pricer example (no error). Install with: pip install tensorflow")
+        logger.info("Example skipped successfully (exit 0).")
+        return
+
     try:
         training_result, eval_metrics, speed_metrics, model, X_test, y_test, spots_test = run_neural_pricer()
         visualize_results(
@@ -626,7 +631,7 @@ def main(args: argparse.Namespace) -> None:
         )
         print_summary()
         logger.info("Example completed successfully!")
-        
+
     except Exception as e:
         logger.exception(f"Example failed: {e}")
         sys.exit(1)

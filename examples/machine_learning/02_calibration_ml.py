@@ -696,13 +696,18 @@ def main(args: argparse.Namespace) -> None:
     """Main entry point."""
     global ENABLE_PLOTTING
     ENABLE_PLOTTING = args.plot
-    
+
+    if not TF_AVAILABLE:
+        logger.warning("TensorFlow is not installed. Skipping calibration ML example (no error). Install with: pip install tensorflow")
+        logger.info("Example skipped successfully (exit 0).")
+        return
+
     try:
         results = run_calibration_ml(fast=args.fast)
         visualize_results(results)
         print_summary()
         logger.info("Example completed successfully!")
-        
+
     except Exception as e:
         logger.exception(f"Example failed: {e}")
         sys.exit(1)

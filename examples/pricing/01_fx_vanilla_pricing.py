@@ -206,7 +206,7 @@ def safe_fd_price(
         return None
     
     try:
-        pricer = FxVanillaEuropeanOptionFdPricer(n_spot=n_spot, n_time=n_time)
+        pricer = FxVanillaEuropeanOptionFdPricer(n_space=n_spot, n_time_steps=n_time)
         return float(pricer.price(option, market))
     except Exception as e:
         if verbose:
