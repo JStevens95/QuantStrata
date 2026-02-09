@@ -64,6 +64,16 @@ class HistoricalMarketData:
     dates: List[date]
     returns: np.ndarray = field(default_factory=lambda: np.array([]))
     realized_vol: np.ndarray = field(default_factory=lambda: np.array([]))
+
+    def __post_init__(self) -> None:
+        """Validate dates are present and match length of prices."""
+        n = len(self.prices)
+        if not self.dates:
+            raise ValueError("dates must be non-empty and match length of prices")
+        if len(self.dates) != n:
+            raise ValueError(
+                f"dates length ({len(self.dates)}) must match prices length ({n})"
+            )
     
     @property
     def n_steps(self) -> int:

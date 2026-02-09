@@ -71,21 +71,22 @@ class TestBuildPricingData:
         assert isinstance(result.test_ds, tf.data.Dataset)
 
     def test_default_split_ratios(self):
-        """Default split ratios are 70/15/15 (small n_samples for fast run)."""
-        n_samples = 20  # Small size so iteration is fast
+        """Default split ratios are 70/15/15; minimal n_samples and batch iteration for fast run."""
+        n_samples = 30
+        batch_size = 10
         result = build_pricing_data(
             n_samples=n_samples,
-            batch_size=5,
+            batch_size=batch_size,
             seed=42,
             train_ratio=0.7,
             val_ratio=0.15,
             test_ratio=0.15,
         )
-        train_count = sum(1 for _ in result.train_ds.unbatch())
-        val_count = sum(1 for _ in result.val_ds.unbatch())
-        test_count = sum(1 for _ in result.test_ds.unbatch())
+        # Count by batch (avoids slow unbatch() over full dataset)
+        train_count = sum(int(f.shape[0]) for f, _ in result.train_ds)
+        val_count = sum(int(f.shape[0]) for f, _ in result.val_ds)
+        test_count = sum(int(f.shape[0]) for f, _ in result.test_ds)
         assert train_count + val_count + test_count == n_samples
-        # 70/15/15 of 20 -> 14, 3, 3 (allow for rounding)
         assert abs(train_count / n_samples - 0.7) <= 0.1
         assert abs(val_count / n_samples - 0.15) <= 0.1
         assert abs(test_count / n_samples - 0.15) <= 0.1

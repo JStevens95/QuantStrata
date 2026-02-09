@@ -2,16 +2,13 @@
 Unit tests for historical data adapter module.
 
 Tests HistoricalDataAdapter and HistoricalMarketData.
-Requires pandas (skip entire module if not installed).
+Pandas is only required for test_from_dataframe; other tests run without it.
 """
 
 from datetime import date, timedelta
 
 import numpy as np
 import pytest
-
-# Skip entire module if pandas is not installed (adapter and tests use DataFrame)
-pd = pytest.importorskip("pandas")
 
 from src.deep_hedging.adapters.historical_data import (
     HistoricalDataAdapter,
@@ -23,29 +20,31 @@ class TestHistoricalMarketData:
     """Tests for HistoricalMarketData dataclass."""
     
     def test_data_creation(self) -> None:
-        """Test data creation."""
+        """Test data creation with explicit dates variable."""
         n = 100
+        dates = [date.today() - timedelta(days=i) for i in range(n)]
         data = HistoricalMarketData(
             prices=np.random.randn(n) + 100,
             volatilities=np.ones(n) * 0.2,
             rates=np.ones(n) * 0.05,
-            dates=[date.today() - timedelta(days=i) for i in range(n)],
+            dates=dates,
         )
-        
         assert len(data.prices) == n
         assert len(data.volatilities) == n
         assert len(data.rates) == n
-    
-    def test_data_without_dates(self) -> None:
-        """Test data without dates."""
+        assert data.dates is not None and len(data.dates) == n
+
+    def test_data_without_dates_raises(self) -> None:
+        """HistoricalMarketData rejects empty dates (dates=[] must raise)."""
         n = 50
-        data = HistoricalMarketData(
-            prices=np.random.randn(n) + 100,
-            volatilities=np.ones(n) * 0.2,
-            rates=np.ones(n) * 0.05,
-        )
-        
-        assert data.dates is None or len(data.dates) == 0
+        with pytest.raises(ValueError) as exc_info:
+            HistoricalMarketData(
+                prices=np.random.randn(n) + 100,
+                volatilities=np.ones(n) * 0.2,
+                rates=np.ones(n) * 0.05,
+                dates=[],
+            )
+        assert "dates" in str(exc_info.value).lower()
 
 
 class TestHistoricalDataAdapter:
@@ -124,6 +123,7 @@ class TestHistoricalDataAdapter:
     
     def test_from_dataframe(self) -> None:
         """Test creating data from DataFrame (uses pandas)."""
+        pd = pytest.importorskip("pandas")
         adapter = HistoricalDataAdapter()
         
         np.random.seed(42)
