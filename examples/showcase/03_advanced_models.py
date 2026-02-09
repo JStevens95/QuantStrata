@@ -3,11 +3,12 @@
 Advanced Volatility Models: Local Volatility and Heston Stochastic Volatility
 
 This example demonstrates advanced volatility modeling beyond constant BSM:
+- Flat BSM: path simulation via GbmDynamicsSimulator (production library)
 - Local Volatility (Dupire): σ(S, t) deterministic function
-- Heston Stochastic Volatility: σ follows its own diffusion
+- Heston Stochastic Volatility: library HestonDynamics / HestonSimulation
 
 Topics Covered:
-- Model dynamics and simulation
+- Model dynamics and simulation (library GBM + Heston)
 - Volatility smile generation
 - Impact on exotic option pricing
 - Model calibration concepts
@@ -91,6 +92,46 @@ class HestonParams:
     xi: float = 0.30         # Vol-of-vol
     rho: float = -0.70       # Spot-vol correlation
     T: float = 1.0
+
+# =============================================================================
+# BSM (Flat Vol) Path Simulation — Production Library
+# =============================================================================
+
+def simulate_bsm_paths(
+    params: BSMParams,
+    n_paths: int = 10000,
+    n_steps: int = 252,
+    seed: int | None = 42,
+    scheme: GbmScheme = "exact",
+) -> np.ndarray:
+    """
+    Simulate GBM paths with constant volatility using the library GbmDynamicsSimulator.
+
+    This is the production-ready way to generate flat BSM paths for benchmarking
+    and comparison with local vol / Heston. Uses the exact (log-space) scheme by default.
+
+    Returns
+    -------
+    np.ndarray
+        Spot paths, shape (n_steps + 1, n_paths). Row 0 is S0; row -1 is terminal spot.
+    """
+    rng = np.random.default_rng(seed)
+    normals = rng.standard_normal((n_paths, n_steps))
+
+    simulator = GbmDynamicsSimulator(
+        drift=params.r - params.q,
+        vol=params.sigma,
+    )
+    paths_lib = simulator.simulate_paths(
+        spot0=params.S0,
+        maturity=params.T,
+        n_steps=n_steps,
+        n_paths=n_paths,
+        normals=normals,
+        scheme=scheme,
+    )
+    # (n_paths, n_steps+1) -> (n_steps+1, n_paths) for compatibility with rest of script
+    return paths_lib.T
 
 # =============================================================================
 # Local Volatility Model
@@ -373,11 +414,11 @@ def plot_heston_dynamics(params: HestonParams):
     
     # Terminal distribution comparison
     ax = axes[1, 0]
-    
-    # BSM terminal
-    bsm_params = BSMParams(S0=params.S0, r=params.r, q=params.q, 
+
+    # BSM terminal (library GbmDynamicsSimulator, flat vol)
+    bsm_params = BSMParams(S0=params.S0, r=params.r, q=params.q,
                            sigma=np.sqrt(params.V0), T=params.T)
-    bsm_paths = simulate_local_vol_paths(bsm_params, n_paths=10000, n_steps=252, seed=123)
+    bsm_paths = simulate_bsm_paths(bsm_params, n_paths=10000, n_steps=252, seed=123)
     
     ax.hist(bsm_paths[-1, :], bins=50, alpha=0.5, density=True,
            color=COLORS['bsm'], label='BSM')
@@ -416,10 +457,9 @@ def plot_heston_dynamics(params: HestonParams):
 def plot_implied_vol_comparison(bsm_params: BSMParams, heston_params: HestonParams):
     """Compare implied volatility smiles from different models."""
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-    
-    # Simulate paths
-    bsm_paths = simulate_local_vol_paths(bsm_params, n_paths=50000, seed=42)
-    lv_paths = simulate_local_vol_paths(bsm_params, n_paths=50000, seed=42)  # LV simulation
+
+    # Simulate paths: BSM flat vol via GbmDynamicsSimulator; Heston via library
+    bsm_paths = simulate_bsm_paths(bsm_params, n_paths=50000, seed=42)
     heston_paths, _ = simulate_heston_paths(heston_params, n_paths=50000, seed=42)
     
     strikes = np.linspace(bsm_params.S0 * 0.8, bsm_params.S0 * 1.2, 15)
@@ -478,9 +518,9 @@ def plot_implied_vol_comparison(bsm_params: BSMParams, heston_params: HestonPara
 def plot_model_comparison_exotic(bsm_params: BSMParams, heston_params: HestonParams):
     """Compare models on exotic option pricing."""
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-    
-    # Simulate
-    bsm_paths = simulate_local_vol_paths(bsm_params, n_paths=50000, seed=42)
+
+    # Simulate: BSM via GbmDynamicsSimulator, Heston via library
+    bsm_paths = simulate_bsm_paths(bsm_params, n_paths=50000, seed=42)
     heston_paths, _ = simulate_heston_paths(heston_params, n_paths=50000, seed=42)
     
     K = bsm_params.S0
