@@ -13,7 +13,7 @@ from src.orchestrator.core.step import Step
 from src.orchestrator.core.errors import StepError
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class AppendStep(Step):
     """
     Simple step that appends its name into ctx.state["trace"].
@@ -28,7 +28,7 @@ class AppendStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class FailingStep(Step):
     """Step that always raises (used to test safe_run wrapping)."""
 

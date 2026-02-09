@@ -10,7 +10,7 @@ from src.orchestrator.core.step import Step
 from src.orchestrator.runtime.entrypoints import run_pipeline_from_config
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class SetStateStep(Step):
     def run(self, ctx):
         ctx.put("hello", "world")

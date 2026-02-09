@@ -168,7 +168,7 @@ def _resolve_snapshot_time_index(dataset: Any, time_spec: Union[str, int]) -> in
 # Steps (single responsibility; stable ctx.state keys)
 # =============================================================================
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildProviderStep(Step):
     """
     Build the MarketDataProvider and attach it to Context.provider.
@@ -183,7 +183,7 @@ class BuildProviderStep(Step):
         return ctx  # return Context for downstream steps
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildMarketIdsStep(Step):
     """
     Parse configured MarketId strings and store MarketId objects in ctx.state.
@@ -208,7 +208,7 @@ class BuildMarketIdsStep(Step):
         return ctx  # return Context for downstream steps
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildUniverseStep(Step):
     """
     Build a Universe from MarketIds.
@@ -227,7 +227,7 @@ class BuildUniverseStep(Step):
         return ctx  # return Context for downstream steps
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildTimeseriesRequestStep(Step):
     """
     Build a TimeseriesRequest from config + ctx.state["universe"].
@@ -271,7 +271,7 @@ class BuildTimeseriesRequestStep(Step):
         return ctx  # return Context for downstream steps
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildDatasetStep(Step):
     """
     Build an in-memory MarketDataset via provider.get_timeseries(request).
@@ -295,7 +295,7 @@ class BuildDatasetStep(Step):
         return ctx  # return Context for downstream steps
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildSnapshotStep(Step):
     """
     Optional: take a Market snapshot from the dataset.

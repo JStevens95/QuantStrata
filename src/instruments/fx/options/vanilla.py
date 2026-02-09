@@ -40,10 +40,6 @@ class FxVanillaEuropeanOption:
             raise ValueError("expiry must be >= 0.")
 
 
-# Alias for backward compatibility with examples and docs
-EuropeanFxVanillaOption = FxVanillaEuropeanOption
-
-
 @dataclass(frozen=True, slots=True)
 class FxVanillaAmericanOption:
     """

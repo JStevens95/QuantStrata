@@ -67,6 +67,30 @@ See `docs/reference/marketdata/scenario_generation.md` for full documentation.
 
 ---
 
+## Production Data: Curves, Surfaces, and Hedging Env
+
+For **production-grade** examples we use full term structures and volatility surfaces—**not** flat curves or flat vol.
+
+### ZeroRateCurve and GridVolSurface
+
+- **ZeroRateCurve**: Tenor grid and zero rates with interpolation (from `src.marketdata.curves.term_structure`). Use for discount and forward curves in pricing.
+- **GridVolSurface**: Expiry × strike grid of implied volatilities with interpolation (from `src.marketdata.surfaces.vol_surface`). Use for option pricing and Greeks.
+
+**Do not use** `FlatZeroRateCurve` or `FlatVolSurface` in production examples; they are for tests and quick demos only. See `risk/fx_option_var_production.py` and the ML/RL hedging examples for the correct pattern.
+
+### Hedging environment pricing callables
+
+The RL hedging environment (`src.q_learning.environments.hedging`) can be wired to **library pricers** with full market data via optional callables on `HedgingEnvConfig`:
+
+- **price_fn(spot, strike, tau, option_type) → float**
+- **delta_fn(spot, strike, tau, option_type) → float**
+- **gamma_fn(spot, strike, tau) → float**
+- **vega_fn(spot, strike, tau) → float**
+
+When all four are set, the environment uses them instead of inline Black–Scholes; you can build a `Market` with `ZeroRateCurve` and `GridVolSurface`, create an FX (or equity) pricer, and pass lambdas that call the pricer. The examples under `ml/` and `q_learning/` use this pattern so that pricing is production-grade (no flat vol/curves).
+
+---
+
 ## Part 1: Fundamentals
 
 Learn the core building blocks of the library.
@@ -172,6 +196,20 @@ PYTHONPATH=. python examples/risk/fx_option_scenario_pnl.py
 
 # With optional plotting
 PYTHONPATH=. python examples/risk/fx_option_scenario_pnl.py --plot
+```
+
+### Run-all script
+
+To run all examples (with `--no-plot` where supported) and get a pass/fail summary:
+
+```bash
+PYTHONPATH=. python examples/run_all_examples.py
+```
+
+Long-running and ML/RL examples (e.g. `ml/02_rl_hedging_agent.py`, `q_learning/01_hedging_agent.py`) are skipped by default. Include them with a longer timeout using:
+
+```bash
+PYTHONPATH=. python examples/run_all_examples.py --long
 ```
 
 ### Dependencies

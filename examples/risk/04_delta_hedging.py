@@ -85,7 +85,7 @@ from src.marketdata.core.market import Market
 from src.marketdata.curves.term_structure import FlatZeroRateCurve
 from src.marketdata.surfaces.vol_surface import FlatVolSurface
 
-from src.instruments.fx.options.vanilla import EuropeanFxVanillaOption
+from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
 from src.pricers.fx.european_bsm import FxEuropeanVanillaBsmPricer
 
 # BSM model for direct Greeks computation
@@ -211,9 +211,9 @@ def create_market(
     )
 
 
-def create_option(config: HedgingConfig) -> EuropeanFxVanillaOption:
+def create_option(config: HedgingConfig) -> FxVanillaEuropeanOption:
     """Create FX vanilla option from config."""
-    return EuropeanFxVanillaOption(
+    return FxVanillaEuropeanOption(
         option_type="call",
         spot_id=EURUSD_SPOT,
         domestic_curve_id=USD_CURVE,
@@ -358,7 +358,7 @@ def run_single_hedge_path(
     path: np.ndarray,
     config: HedgingConfig,
     pricer: FxEuropeanVanillaBsmPricer,
-    option: EuropeanFxVanillaOption,
+    option: FxVanillaEuropeanOption,
 ) -> HedgingResult:
     """
     Run hedging simulation on a single path.

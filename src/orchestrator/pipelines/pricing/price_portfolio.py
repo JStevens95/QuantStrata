@@ -57,7 +57,7 @@ def _pricing_cfg(cfg: RunConfig) -> Dict[str, Any]:
 # Steps
 # =============================================================================
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class BuildPricerRegistryStep(Step):
     """
     Build the PricerRegistry used by PortfolioPricer.
@@ -88,7 +88,7 @@ class BuildPricerRegistryStep(Step):
         return ctx
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class PricePortfolioStep(Step):
     """
     Price a Portfolio using PortfolioPricer and the registry.
