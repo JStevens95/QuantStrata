@@ -47,6 +47,12 @@ Why Results May Vary / Production Considerations
 - For production, enforce no-arbitrage and use proper curve/vol inputs in
   downstream pricing and scenario engines.
 
+Production checklist (hedge fund)
+---------------------------------
+- Use --seed for reproducibility; use --output-dir to save config and metrics for audit.
+- Feed historical returns and Market (ZeroRateCurve, GridVolSurface) for realistic dynamics.
+- Validate against known models; enforce no-arbitrage before use in pricing/risk.
+
 Prerequisites
 -------------
 - SDE fundamentals
@@ -682,10 +688,21 @@ def main(args: argparse.Namespace) -> None:
     """Main entry point."""
     global ENABLE_PLOTTING
     ENABLE_PLOTTING = args.plot
+    seed = getattr(args, "seed", 42)
+    output_dir = getattr(args, "output_dir", None)
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
     
+    np.random.seed(seed)
     try:
         training_results, results = run_neural_sde()
         visualize_results(results)
+        if output_dir is not None:
+            import json
+            with open(output_dir / "run_config.json", "w") as f:
+                json.dump({"script": "03_neural_sde", "seed": seed}, f, indent=2)
+            logger.info("Saved run_config to %s", output_dir)
         print_summary()
         logger.info("Example completed successfully!")
         
@@ -698,6 +715,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Neural SDE Example")
     parser.add_argument("--plot", action="store_true", default=True)
     parser.add_argument("--no-plot", action="store_false", dest="plot")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
+    parser.add_argument("--output-dir", type=str, default=None, metavar="DIR", help="Save run config to DIR")
     
     args = parser.parse_args()
     main(args)

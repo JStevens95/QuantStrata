@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-from typing import Union, TypeAlias
+import sys
+from typing import Union
 from dataclasses import dataclass
+
+# slots=True requires Python 3.10+
+_DATACLASS_KW = {"frozen": True, "slots": True} if sys.version_info >= (3, 10) else {"frozen": True}
 
 from src.models.payoffs.base import BasePayoff1D, BasePathPayoff1D
 from src.models.payoffs.vanilla import VanillaPayoff
@@ -35,14 +39,14 @@ from src.models.payoffs.types import OptionType
 # Public payoff type (we ONLY traffic in the concrete base classes)
 # ======================================================================================
 
-Payoff1D: TypeAlias = Union[BasePayoff1D, BasePathPayoff1D]
+Payoff1D = Union[BasePayoff1D, BasePathPayoff1D]
 
 
 # ======================================================================================
 # Factory / router
 # ======================================================================================
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class PayoffFactory:
     """
     Central payoff router: instrument -> payoff object.

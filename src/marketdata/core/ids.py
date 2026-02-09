@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from typing import Iterable, List, Mapping, Tuple, Union
+
+# slots=True requires Python 3.10+
+_DATACLASS_KW = {"frozen": True, "slots": True} if sys.version_info >= (3, 10) else {"frozen": True}
 
 Qualifier = Tuple[str, str]
 QualifiersInput = Union[None, Mapping[str, str], Iterable[Qualifier]]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class MarketId:
     """
     Canonical identifier for any market object used across QuantStrata.

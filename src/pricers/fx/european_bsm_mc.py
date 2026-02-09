@@ -1,9 +1,13 @@
 # src/pricers/fx/european_mc.py
 from __future__ import annotations  # Enable forward references.
 
+import sys
 import numpy as np  # NumPy for fast vectorized Monte Carlo operations.
 from dataclasses import dataclass  # Dataclasses for small immutable pricer/config objects.
 from typing import Literal, Optional  # Literal for payoff-type tags; Optional for seed/paths.
+
+# slots=True requires Python 3.10+
+_DATACLASS_KW = {"frozen": True, "slots": True} if sys.version_info >= (3, 10) else {"frozen": True}
 
 from src.instruments.core.types import TouchStyle
 from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption  # FX vanilla instrument.
@@ -28,7 +32,7 @@ from src.models.payoffs.factory import build_payoff_1d, require_terminal_payoff,
 # Simulation artifacts (returned by run(...), so callers can plot/analyse without rerunning)
 # ======================================================================================
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class FxVanillaOptionMcSimulation:
     """
     Reusable Monte Carlo simulation artifact for a single *vanilla* trade on a single Market snapshot.
@@ -63,7 +67,7 @@ class FxVanillaOptionMcSimulation:
     paths: Optional[np.ndarray] = None  # Optional stored paths, shape (n_kept, n_steps+1).
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class FxDigitalOptionMcSimulation:
     """
     Reusable Monte Carlo simulation artifact for a single *digital* trade on a single Market snapshot.
@@ -100,7 +104,7 @@ class FxDigitalOptionMcSimulation:
 
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class FxBarrierOptionMcSimulation:
     """
     Reusable Monte Carlo simulation artifact for a single *barrier* trade on a single Market snapshot.
@@ -140,7 +144,7 @@ class FxBarrierOptionMcSimulation:
     paths: Optional[np.ndarray] = None  # Optional stored paths, shape (n_kept, n_steps+1).
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class FxAsianOptionMcSimulation:
     """
     Reusable Monte Carlo simulation artifact for a single Asian option trade.
@@ -181,7 +185,7 @@ class FxAsianOptionMcSimulation:
     paths: Optional[np.ndarray] = None  # Optional stored paths, shape (n_kept, n_steps+1).
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class FxLookbackOptionMcSimulation:
     """
     Reusable Monte Carlo simulation artifact for a single lookback option trade.
@@ -223,7 +227,7 @@ class FxLookbackOptionMcSimulation:
     paths: Optional[np.ndarray] = None  # Optional stored paths, shape (n_kept, n_steps+1).
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class FxDoubleBarrierOptionMcSimulation:
     """
     Monte Carlo simulation artifact for a double barrier option.
@@ -314,7 +318,7 @@ class FxDoubleBarrierOptionMcSimulation:
     paths: Optional[np.ndarray] = None  # Optional stored paths.
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class FxTouchOptionMcSimulation:
     """
     Monte Carlo simulation artifact for a touch option.
@@ -394,7 +398,7 @@ class FxTouchOptionMcSimulation:
 # Vanilla MC pricer (already integrated with payoff library via VanillaPayoff)
 # ======================================================================================
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class FxVanillaEuropeanOptionMcPricer:
     """
     Monte Carlo pricer for European FX vanilla options under Garman–Kohlhagen.
@@ -556,7 +560,7 @@ class FxVanillaEuropeanOptionMcPricer:
 # Digital MC pricer (cash + asset digitals in one adapter, using payoff library)
 # ======================================================================================
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class FxDigitalEuropeanOptionMcPricer:
     """
     Monte Carlo pricer for European FX digital options under Garman–Kohlhagen.
@@ -725,7 +729,7 @@ class FxDigitalEuropeanOptionMcPricer:
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class FxBarrierEuropeanOptionMcPricer:
     """
     Monte Carlo pricer for European FX single-barrier options under Garman–Kohlhagen.
@@ -947,7 +951,7 @@ class FxBarrierEuropeanOptionMcPricer:
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class FxAsianEuropeanOptionMcPricer:
     """
     Monte Carlo pricer for European FX Asian options under Garman–Kohlhagen.
@@ -1315,7 +1319,7 @@ class FxAsianEuropeanOptionMcPricer:
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class FxLookbackEuropeanOptionMcPricer:
     """
     Monte Carlo pricer for European FX Lookback options under Garman–Kohlhagen.
@@ -1691,7 +1695,7 @@ class FxLookbackEuropeanOptionMcPricer:
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class FxDoubleBarrierEuropeanOptionMcPricer:
     """
     Monte Carlo pricer for European FX double barrier options.
@@ -2018,7 +2022,7 @@ class FxDoubleBarrierEuropeanOptionMcPricer:
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class FxTouchEuropeanOptionMcPricer:
     """
     Monte Carlo pricer for European FX touch options.

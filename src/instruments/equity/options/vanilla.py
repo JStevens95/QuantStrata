@@ -8,13 +8,17 @@ Author: QuantStrata Team
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 
 from src.marketdata.core.ids import MarketId
 from src.models.payoffs.types import OptionType
 
+# slots=True requires Python 3.10+
+_DATACLASS_KW = {"frozen": True, "slots": True} if sys.version_info >= (3, 10) else {"frozen": True}
 
-@dataclass(frozen=True, slots=True)
+
+@dataclass(**_DATACLASS_KW)
 class EquityVanillaEuropeanOption:
     """
     European vanilla equity option (call/put).
@@ -114,7 +118,7 @@ class EquityVanillaEuropeanOption:
             raise ValueError("curve_id must be a MarketId instance.")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class EquityVanillaAmericanOption:
     """
     American vanilla equity option (call/put) with early exercise.

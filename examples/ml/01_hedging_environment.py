@@ -54,6 +54,12 @@ Why Results May Vary / Production Considerations
   risk aversion; tune and validate against delta-hedge on out-of-sample
   paths with realistic costs and market data.
 
+Production checklist (hedge fund)
+---------------------------------
+- Use --seed for reproducibility; use --output-dir to save config and plots for audit.
+- Pricing already uses ZeroRateCurve + GridVolSurface (no flat curves/vols).
+- Tune n_steps, proportional_cost, risk_aversion; validate on out-of-sample paths.
+
 Prerequisites
 -------------
 - Understanding of delta hedging (examples/risk/04_delta_hedging.py)
@@ -75,10 +81,11 @@ Author: QuantStrata Team
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Optional
 
 import numpy as np
 
@@ -234,7 +241,7 @@ def build_production_pricing_callables(
 # SECTION 1: Environment Setup
 # =============================================================================
 
-def create_hedging_environment() -> Tuple[HedgingEnvironment, HedgingEnvConfig]:
+def create_hedging_environment(seed: int = 42) -> Tuple[HedgingEnvironment, HedgingEnvConfig]:
     """
     Create and configure the hedging environment.
     
@@ -301,7 +308,7 @@ def create_hedging_environment() -> Tuple[HedgingEnvironment, HedgingEnvConfig]:
         drift=0.0,
     )
 
-    env = HedgingEnvironment(config=config, seed=42)
+    env = HedgingEnvironment(config=config, seed=seed)
     
     logger.info("")
     logger.info("Pricing:          ZeroRateCurve + GridVolSurface (production-grade, no FlatVol/FlatCurves)")
@@ -562,8 +569,9 @@ def visualize_results(
     episode_data: Dict[str, Any],
     benchmark_results: Dict[str, np.ndarray],
     config: HedgingEnvConfig,
+    output_dir: Optional[Path] = None,
 ) -> None:
-    """Create visualizations."""
+    """Create visualizations. If output_dir is set, save figure for audit."""
     if not MATPLOTLIB_AVAILABLE or not ENABLE_PLOTTING:
         logger.info("Skipping plots (matplotlib not available or disabled)")
         return
@@ -664,6 +672,11 @@ def visualize_results(
     ax4.grid(True, alpha=0.3)
     
     plt.tight_layout()
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        plt.gcf().savefig(output_dir / "hedging_environment.png", dpi=150, bbox_inches="tight")
+        logger.info("Saved: %s", output_dir / "hedging_environment.png")
     plt.show(block=True)
     
     logger.info("Visualization complete")
@@ -727,10 +740,19 @@ def main(args: argparse.Namespace) -> None:
     """
     global ENABLE_PLOTTING
     ENABLE_PLOTTING = args.plot
+    seed = getattr(args, "seed", 42)
+    output_dir = getattr(args, "output_dir", None)
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        with open(output_dir / "run_config.json", "w") as f:
+            json.dump({"script": "01_hedging_environment", "seed": seed}, f, indent=2)
+        logger.info("Output dir: %s", output_dir)
     
+    np.random.seed(seed)
     try:
         # Section 1: Setup
-        env, config = create_hedging_environment()
+        env, config = create_hedging_environment(seed=seed)
         
         # Section 2: Basic API
         demonstrate_environment_api(env)
@@ -742,7 +764,7 @@ def main(args: argparse.Namespace) -> None:
         episode_data = run_detailed_episode(env)
         
         # Section 5: Visualization
-        visualize_results(episode_data, benchmark_results, config)
+        visualize_results(episode_data, benchmark_results, config, output_dir=output_dir)
         
         # Summary
         print_summary()
@@ -771,6 +793,8 @@ if __name__ == "__main__":
         dest="plot",
         help="Disable plotting",
     )
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
+    parser.add_argument("--output-dir", type=str, default=None, metavar="DIR", help="Save run_config and plots to DIR")
     
     args = parser.parse_args()
     main(args)

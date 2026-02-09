@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 import math
+
+# slots=True requires Python 3.10+
+_DATACLASS_KW = {"frozen": True, "slots": True} if sys.version_info >= (3, 10) else {"frozen": True}
 
 
 @runtime_checkable
@@ -35,7 +39,7 @@ class VolSurface(Protocol):
         ...
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class Quote:
     """
     Scalar market quote wrapper.

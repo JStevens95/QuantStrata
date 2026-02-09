@@ -34,6 +34,7 @@ Implementation Notes
 
 from __future__ import annotations
 
+import sys
 import numpy as np
 from dataclasses import dataclass
 from typing import Literal
@@ -42,8 +43,11 @@ from src.models.payoffs.base import BasePathPayoff1D, _as_paths_array
 from src.models.payoffs.types import BarrierDirection
 from src.instruments.core.types import TouchStyle
 
+# slots=True requires Python 3.10+
+_DATACLASS_KW = {"frozen": True, "slots": True} if sys.version_info >= (3, 10) else {"frozen": True}
 
-@dataclass(frozen=True, slots=True)
+
+@dataclass(**_DATACLASS_KW)
 class TouchPayoff(BasePathPayoff1D):
     """
     Touch (binary barrier) payoff for one-touch and no-touch options.

@@ -17,14 +17,18 @@ Author: QuantStrata
 """
 from __future__ import annotations
 
+import sys
 import numpy as np
 from typing import Literal, Optional
 from dataclasses import dataclass
 
 from src.marketdata.core.types import ExtrapolationMode, VolType, StrikeSpace
 
+# slots=True requires Python 3.10+
+_DATACLASS_KW = {"frozen": True, "slots": True} if sys.version_info >= (3, 10) else {"frozen": True}
 
-@dataclass(frozen=True, slots=True)
+
+@dataclass(**_DATACLASS_KW)
 class FlatVolSurface:
     """
     Flat implied volatility surface.
@@ -65,7 +69,7 @@ class FlatVolSurface:
         return float(self.implied_vol(expiry, strike))
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class GridVolSurface:
     """
     2D implied volatility surface defined on a grid (expiry x strike) with bilinear interpolation.
@@ -270,7 +274,7 @@ def _bilinear_interp_flat(
 # =============================================================================
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class SwaptionVolCube:
     """
     3D Swaption Volatility Cube: expiry x tenor x strike.
@@ -468,7 +472,7 @@ class SwaptionVolCube:
         return float(v0 * (1 - we) + v1 * we)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class FlatSwaptionVolCube:
     """
     Flat swaption volatility cube (constant vol across all expiries/tenors/strikes).
@@ -507,7 +511,7 @@ class FlatSwaptionVolCube:
         return strikes, vols
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class CapFloorVolSurface:
     """
     2D Cap/Floor Volatility Surface: expiry x strike.
@@ -614,7 +618,7 @@ class CapFloorVolSurface:
         return float(v0 * (1 - we) + v1 * we)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class FlatCapFloorVolSurface:
     """
     Flat cap/floor volatility surface (constant vol).

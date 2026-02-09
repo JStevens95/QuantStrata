@@ -47,6 +47,12 @@ Why Results May Vary / Production Considerations
   network size) and number of episodes; run multiple seeds and compare
   to delta-hedge on out-of-sample paths with realistic costs.
 
+Production checklist (hedge fund)
+---------------------------------
+- Use --seed for reproducibility; use --output-dir to save metrics and training config.
+- Environment uses ZeroRateCurve + GridVolSurface; run multiple seeds and OOS validation.
+- Compare RL vs delta-hedge PnL with realistic transaction costs before deployment.
+
 Prerequisites
 -------------
 - Understanding of RL environment (examples/ml/01_hedging_environment.py)
@@ -68,11 +74,12 @@ Author: QuantStrata Team
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any, Optional
 
 import numpy as np
 
@@ -409,7 +416,7 @@ def _build_production_pricing_callables(
     return price_fn, delta_fn, gamma_fn, vega_fn
 
 
-def create_environment() -> Tuple[HedgingEnvironment, HedgingEnvConfig]:
+def create_environment(seed: int = 42) -> Tuple[HedgingEnvironment, HedgingEnvConfig]:
     """Create hedging environment (ZeroRateCurve + GridVolSurface, production-grade)."""
     logger.info("=" * 70)
     logger.info("SECTION 1: Environment Setup")
@@ -435,7 +442,7 @@ def create_environment() -> Tuple[HedgingEnvironment, HedgingEnvConfig]:
         risk_aversion=0.1,
     )
 
-    env = HedgingEnvironment(config=config)
+    env = HedgingEnvironment(config=config, seed=seed)
     
     logger.info(f"  State dimension: {env.observation_space_dim}")
     logger.info(f"  Action range: [-2.0, 2.0]")
@@ -659,8 +666,9 @@ def visualize_results(
     episode_pnls: List[float],
     rl_pnls: np.ndarray,
     delta_pnls: np.ndarray,
+    output_dir: Optional[Path] = None,
 ) -> None:
-    """Create training and evaluation visualizations."""
+    """Create training and evaluation visualizations. If output_dir set, save figure for audit."""
     if not MATPLOTLIB_AVAILABLE or not ENABLE_PLOTTING:
         logger.info("Skipping plots (matplotlib not available or disabled)")
         return
@@ -747,6 +755,11 @@ def visualize_results(
     ax4.grid(True, alpha=0.3)
     
     plt.tight_layout()
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        fig.savefig(output_dir / "rl_hedging_agent.png", dpi=150, bbox_inches="tight")
+        logger.info("Saved: %s", output_dir / "rl_hedging_agent.png")
     plt.show(block=True)
     
     logger.info("Visualization complete")
@@ -810,10 +823,16 @@ def main(args: argparse.Namespace) -> None:
     """
     global ENABLE_PLOTTING
     ENABLE_PLOTTING = args.plot
+    seed = getattr(args, "seed", 42)
+    output_dir = getattr(args, "output_dir", None)
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
     
+    np.random.seed(seed)
     try:
         # Section 1: Setup
-        env, env_config = create_environment()
+        env, env_config = create_environment(seed=seed)
         
         # Agent configuration
         agent_config = AgentConfig(
@@ -832,8 +851,21 @@ def main(args: argparse.Namespace) -> None:
         # Section 3: Evaluation
         rl_pnls, delta_pnls = evaluate_agent(env, policy, n_episodes=300)
         
+        # Audit trail: save run config and evaluation metrics
+        if output_dir is not None:
+            with open(output_dir / "run_config.json", "w") as f:
+                json.dump({"script": "02_rl_hedging_agent", "seed": seed}, f, indent=2)
+            with open(output_dir / "evaluation_metrics.json", "w") as f:
+                json.dump({
+                    "rl_pnl_mean": float(np.mean(rl_pnls)),
+                    "rl_pnl_std": float(np.std(rl_pnls)),
+                    "delta_pnl_mean": float(np.mean(delta_pnls)),
+                    "delta_pnl_std": float(np.std(delta_pnls)),
+                }, f, indent=2)
+            logger.info("Output dir: %s", output_dir)
+        
         # Section 4: Visualization
-        visualize_results(episode_rewards, episode_pnls, rl_pnls, delta_pnls)
+        visualize_results(episode_rewards, episode_pnls, rl_pnls, delta_pnls, output_dir=output_dir)
         
         # Summary
         print_summary()
@@ -862,6 +894,8 @@ if __name__ == "__main__":
         dest="plot",
         help="Disable plotting",
     )
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
+    parser.add_argument("--output-dir", type=str, default=None, metavar="DIR", help="Save run_config, metrics, and plots to DIR")
     
     args = parser.parse_args()
     main(args)

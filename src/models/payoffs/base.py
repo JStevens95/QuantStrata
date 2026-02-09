@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import sys
 import numpy as np
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 from src.models.payoffs.types import OptionType
+
+# slots=True requires Python 3.10+
+_DATACLASS_KW = {"frozen": True, "slots": True} if sys.version_info >= (3, 10) else {"frozen": True}
 
 
 # ======================================================================================
@@ -94,7 +98,7 @@ class PathPayoff1D(Protocol):
 # Base classes (runtime convenience)
 # ======================================================================================
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class BasePayoff1D:
     """
     Convenience base class for terminal-only payoffs.
@@ -120,7 +124,7 @@ class BasePayoff1D:
         return self.terminal(spot)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class BasePathPayoff1D:
     """
     Convenience base class for path-dependent payoffs.

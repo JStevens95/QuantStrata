@@ -36,15 +36,19 @@ Note: At the spot level S=K, local vol equals "instantaneous" vol.
 
 from __future__ import annotations
 
+import sys
 import numpy as np
 from dataclasses import dataclass
 from typing import Literal, Optional
+
+# slots=True requires Python 3.10+
+_DATACLASS_KW = {"frozen": True, "slots": True} if sys.version_info >= (3, 10) else {"frozen": True}
 
 # Extrapolation mode (consistent with vol_surface.py).
 ExtrapolationMode = Literal["flat", "error"]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class LocalVolSurface:
     """
     2D Local Volatility surface σ(S, t) defined on a grid with bilinear interpolation.
@@ -235,7 +239,7 @@ class LocalVolSurface:
         return (len(self.times), len(self.spots))
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class FlatLocalVolSurface:
     """
     Flat (constant) local volatility surface.

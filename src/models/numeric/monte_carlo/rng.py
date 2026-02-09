@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import sys
 import numpy as np
 from dataclasses import dataclass, field
 from typing import Iterator, Optional, Tuple
+
+# slots=True requires Python 3.10+
+_DATACLASS_KW = {"slots": True} if sys.version_info >= (3, 10) else {}
 
 
 def _effective_n(n: int, *, antithetic: bool) -> int:
@@ -21,7 +25,7 @@ def _effective_n(n: int, *, antithetic: bool) -> int:
     return int(n if (n % 2 == 0) else (n + 1))
 
 
-@dataclass(slots=True)
+@dataclass(**_DATACLASS_KW)
 class NormalRng:
     """
     Reproducible standard normal generator using NumPy's Generator (PCG64).

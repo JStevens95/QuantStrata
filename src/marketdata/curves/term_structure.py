@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import sys
 import numpy as np
 from dataclasses import dataclass
 
 from src.marketdata.core.types import ExtrapolationMode
+
+# slots=True requires Python 3.10+
+_DATACLASS_KW = {"frozen": True, "slots": True} if sys.version_info >= (3, 10) else {"frozen": True}
 
 
 def _validate_forward_inputs(*, t1: float, t2: float) -> None:
@@ -54,7 +58,7 @@ def _interp_linear_extrap(*, x: np.ndarray, y: np.ndarray, xq: float) -> float:
     return float(np.interp(xq, x, y))
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class FlatZeroRateCurve:
     """
     Flat continuously-compounded discount curve.
@@ -76,7 +80,7 @@ class FlatZeroRateCurve:
         return float(self.continuously_compounded_rate)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class ZeroRateCurve:
     """
     Continuously-compounded zero rate discount curve defined on a tenor grid, with interpolation.

@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import sys
 import numpy as np
 from dataclasses import dataclass
 
 from src.models.payoffs.base import BasePayoff1D, _as_float_array, _validate_option_type
 from src.models.payoffs.types import OptionType
 
+# slots=True requires Python 3.10+
+_DATACLASS_KW = {"frozen": True, "slots": True} if sys.version_info >= (3, 10) else {"frozen": True}
 
-@dataclass(frozen=True, slots=True)
+
+@dataclass(**_DATACLASS_KW)
 class VanillaPayoff(BasePayoff1D):
     """
     Vanilla payoff max(S-K,0) or max(K-S,0) per unit notional.

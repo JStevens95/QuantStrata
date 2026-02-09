@@ -1,9 +1,13 @@
 # src/models/numeric/dynamics/gbm.py
 from __future__ import annotations
 
+import sys
 import numpy as np
 from dataclasses import dataclass
 from typing import Callable, Literal
+
+# slots=True requires Python 3.10+
+_DATACLASS_KW = {"frozen": True, "slots": True} if sys.version_info >= (3, 10) else {"frozen": True}
 
 
 # --------------------------------------------------------------------------------------
@@ -135,7 +139,7 @@ _GBM_STEP_FUNCTIONS: dict[GbmScheme, _GbmStepFn] = {
 # Public dynamics object
 # --------------------------------------------------------------------------------------
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class GbmDynamicsSimulator:
     """
     Geometric Brownian Motion (GBM) dynamics simulator.

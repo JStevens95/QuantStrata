@@ -40,6 +40,7 @@ Interview Points
 """
 from __future__ import annotations
 
+import sys
 import numpy as np
 from dataclasses import dataclass
 from typing import Literal
@@ -48,8 +49,11 @@ from src.models.payoffs.base import BasePathPayoff1D, _as_paths_array, _validate
 from src.models.payoffs.types import OptionType
 from src.instruments.core.types import LookbackType
 
+# slots=True requires Python 3.10+
+_DATACLASS_KW = {"frozen": True, "slots": True} if sys.version_info >= (3, 10) else {"frozen": True}
 
-@dataclass(frozen=True, slots=True)
+
+@dataclass(**_DATACLASS_KW)
 class LookbackPayoff(BasePathPayoff1D):
     """
     Lookback option payoff (path-dependent): pays based on path extremum.

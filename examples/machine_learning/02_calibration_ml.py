@@ -49,6 +49,12 @@ Why Results May Vary / Production Considerations
 - For real desks, train on historical calibrated parameters and enforce
   Feller condition and parameter bounds in post-processing.
 
+Production checklist (hedge fund)
+---------------------------------
+- Use --seed for reproducibility; use --output-dir to save calibration metrics for audit.
+- Use real market smiles and GridVolSurface; prefer hybrid (ML init + optimization) for sign-off.
+- Enforce Feller condition and parameter bounds in post-processing.
+
 Prerequisites
 -------------
 - Neural pricing (01_neural_pricer.py)
@@ -706,15 +712,29 @@ def main(args: argparse.Namespace) -> None:
     """Main entry point."""
     global ENABLE_PLOTTING
     ENABLE_PLOTTING = args.plot
+    seed = getattr(args, "seed", 42)
+    output_dir = getattr(args, "output_dir", None)
+    if output_dir is not None:
+        from pathlib import Path
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
     if not TF_AVAILABLE:
         logger.warning("TensorFlow is not installed. Skipping calibration ML example (no error). Install with: pip install tensorflow")
         logger.info("Example skipped successfully (exit 0).")
         return
 
+    np.random.seed(seed)
+    if TF_AVAILABLE:
+        tf.random.set_seed(seed)
     try:
         results = run_calibration_ml(fast=args.fast, smoke=args.smoke)
         visualize_results(results)
+        if output_dir is not None:
+            import json
+            with open(output_dir / "run_config.json", "w") as f:
+                json.dump({"script": "02_calibration_ml", "seed": seed, "fast": args.fast, "smoke": args.smoke}, f, indent=2)
+            logger.info("Saved run_config to %s", output_dir)
         print_summary()
         logger.info("Example completed successfully!")
 
@@ -729,6 +749,8 @@ if __name__ == "__main__":
     parser.add_argument("--no-plot", action="store_false", dest="plot")
     parser.add_argument("--fast", action="store_true", help="Use reduced samples and comparison count (~1-2 min)")
     parser.add_argument("--smoke", action="store_true", help="Minimal run for validation (~30-60s)")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
+    parser.add_argument("--output-dir", type=str, default=None, metavar="DIR", help="Save run config and metrics to DIR")
     
     args = parser.parse_args()
     main(args)

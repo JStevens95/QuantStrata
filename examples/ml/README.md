@@ -51,7 +51,14 @@ PYTHONPATH=. python examples/ml/01_hedging_environment.py
 
 # Run without plots
 PYTHONPATH=. python examples/ml/01_hedging_environment.py --no-plot
+
+# Reproducibility and audit trail (production)
+PYTHONPATH=. python examples/ml/01_hedging_environment.py --seed 42 --output-dir output/ml_hedging
+PYTHONPATH=. python examples/ml/02_rl_hedging_agent.py --seed 42 --output-dir output/ml_rl_agent
+PYTHONPATH=. python examples/ml/03_model_validation.py --seed 42 --output-dir output/model_validation
 ```
+
+Use `--seed` for reproducible runs and `--output-dir DIR` to save run config, metrics, and plots for audit.
 
 ## Production Context
 

@@ -35,14 +35,18 @@ Implementation Notes
 
 from __future__ import annotations
 
+import sys
 import numpy as np
 from dataclasses import dataclass
 
 from src.models.payoffs.base import BasePathPayoff1D, _as_float_array, _as_paths_array, _validate_option_type
 from src.models.payoffs.types import OptionType, BarrierStyle
 
+# slots=True requires Python 3.10+
+_DATACLASS_KW = {"frozen": True, "slots": True} if sys.version_info >= (3, 10) else {"frozen": True}
 
-@dataclass(frozen=True, slots=True)
+
+@dataclass(**_DATACLASS_KW)
 class DoubleBarrierPayoff(BasePathPayoff1D):
     """
     European double-barrier payoff (path-dependent) for FX under discrete monitoring.

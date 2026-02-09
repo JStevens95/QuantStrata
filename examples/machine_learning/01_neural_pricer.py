@@ -48,6 +48,12 @@ Why Results May Vary / Production Considerations
 - For exotics or smile-sensitive products, train on full vol surface inputs
   and use production vol/curve types throughout.
 
+Production checklist (hedge fund)
+---------------------------------
+- Use --seed for reproducibility; use --output-dir to save config and test metrics for audit.
+- In production use GridVolSurface and ZeroRateCurve from market data (no flat vol/curves).
+- Validate on held-out test set; document MAE/R² and inference latency.
+
 Prerequisites
 -------------
 - TensorFlow 2.x installed
@@ -335,9 +341,14 @@ def speed_comparison(
 # MAIN WORKFLOW
 # =============================================================================
 
-def run_neural_pricer() -> Tuple[TrainingResult, Dict[str, float], Dict[str, float], "tf.keras.Model", np.ndarray, np.ndarray, np.ndarray]:
+def run_neural_pricer(seed: int = 42) -> Tuple[TrainingResult, Dict[str, float], Dict[str, float], "tf.keras.Model", np.ndarray, np.ndarray, np.ndarray]:
     """
     Run the complete neural pricer workflow.
+    
+    Parameters
+    ----------
+    seed : int
+        Random seed for reproducibility (training and test data).
     
     Returns
     -------
@@ -407,7 +418,7 @@ def run_neural_pricer() -> Tuple[TrainingResult, Dict[str, float], Dict[str, flo
         loss="mae",
         metrics=["mse", "mae"],
         early_stopping=EarlyStoppingConfig(patience=10, min_delta=1e-6),
-        seed=42,
+        seed=seed,
         verbose=1,
     )
     
@@ -439,7 +450,7 @@ def run_neural_pricer() -> Tuple[TrainingResult, Dict[str, float], Dict[str, flo
     logger.info("=" * 70)
     
     # Generate spots for denormalization
-    rng = np.random.default_rng(44)
+    rng = np.random.default_rng(seed + 1)
     spots_test = rng.uniform(50.0, 150.0, config.n_test)
     
     eval_metrics = evaluate_pricer(model, X_test, y_test, spots_test)
@@ -623,12 +634,31 @@ def main(args: argparse.Namespace) -> None:
         logger.info("Example skipped successfully (exit 0).")
         return
 
+    seed = getattr(args, "seed", 42)
+    output_dir = getattr(args, "output_dir", None)
+    if output_dir is not None:
+        from pathlib import Path
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+    np.random.seed(seed)
+    if TF_AVAILABLE:
+        tf.random.set_seed(seed)
+
     try:
-        training_result, eval_metrics, speed_metrics, model, X_test, y_test, spots_test = run_neural_pricer()
+        training_result, eval_metrics, speed_metrics, model, X_test, y_test, spots_test = run_neural_pricer(seed=seed)
         visualize_results(
             training_result, eval_metrics, speed_metrics,
             model=model, X_test=X_test, y_test=y_test, spots_test=spots_test,
         )
+        if output_dir is not None:
+            import json
+            with open(output_dir / "run_config.json", "w") as f:
+                json.dump({"script": "01_neural_pricer", "seed": seed}, f, indent=2)
+            with open(output_dir / "eval_metrics.json", "w") as f:
+                json.dump({k: float(v) if isinstance(v, (np.floating, float)) else v for k, v in eval_metrics.items()}, f, indent=2)
+            with open(output_dir / "speed_metrics.json", "w") as f:
+                json.dump({k: float(v) if isinstance(v, (np.floating, float)) else v for k, v in speed_metrics.items()}, f, indent=2)
+            logger.info("Saved artifacts to %s", output_dir)
         print_summary()
         logger.info("Example completed successfully!")
 
@@ -641,6 +671,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Neural Pricer Example")
     parser.add_argument("--plot", action="store_true", default=True)
     parser.add_argument("--no-plot", action="store_false", dest="plot")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
+    parser.add_argument("--output-dir", type=str, default=None, metavar="DIR", help="Save run_config and metrics to DIR")
     
     args = parser.parse_args()
     main(args)

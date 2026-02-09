@@ -46,6 +46,12 @@ At a hedge fund:
 - Document convergence properties
 - Establish error tolerances for sign-off
 
+Production checklist (hedge fund)
+---------------------------------
+- Use --seed for reproducibility; use --output-dir to save validation_report.json for audit.
+- Document convergence and error tolerances; use for model sign-off.
+- Benchmark against analytical; include Greek validation in the report.
+
 Prerequisites
 -------------
 - Understanding of pricing methods (examples/pricing/)
@@ -67,13 +73,14 @@ Author: QuantStrata Team
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import math
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any, Optional
 
 import numpy as np
 
@@ -393,9 +400,14 @@ def _solve_tridiagonal(a: np.ndarray, b: np.ndarray, c: np.ndarray, d: np.ndarra
 # SECTION 1: Single Point Comparison
 # =============================================================================
 
-def run_single_comparison() -> Dict[str, Any]:
+def run_single_comparison(seed: int = 42) -> Dict[str, Any]:
     """
     Compare methods at a single point.
+    
+    Parameters
+    ----------
+    seed : int
+        Random seed for Monte Carlo (reproducibility).
     
     Returns
     -------
@@ -425,7 +437,7 @@ def run_single_comparison() -> Dict[str, Any]:
     bsm_gamma = bs_gamma(S, K, T, r, q, sigma)
     
     # Monte Carlo
-    mc_price_val, mc_stderr, mc_time = mc_price(S, K, T, r, q, sigma, n_paths=100_000)
+    mc_price_val, mc_stderr, mc_time = mc_price(S, K, T, r, q, sigma, n_paths=100_000, seed=seed)
     mc_error = mc_price_val - bsm_price
     mc_rel_error = abs(mc_error) / bsm_price
     
@@ -461,9 +473,16 @@ def run_single_comparison() -> Dict[str, Any]:
 # SECTION 2: Monte Carlo Convergence
 # =============================================================================
 
-def run_mc_convergence(bsm_price: float) -> Tuple[List[int], List[float], List[float]]:
+def run_mc_convergence(bsm_price: float, seed: int = 42) -> Tuple[List[int], List[float], List[float]]:
     """
     Analyze Monte Carlo convergence.
+    
+    Parameters
+    ----------
+    bsm_price : float
+        Analytical BSM price (benchmark).
+    seed : int
+        Random seed for MC (reproducibility).
     
     Returns
     -------
@@ -489,7 +508,7 @@ def run_mc_convergence(bsm_price: float) -> Tuple[List[int], List[float], List[f
     logger.info("-" * 60)
     
     for n_paths in path_counts:
-        price, stderr, _ = mc_price(S, K, T, r, q, sigma, n_paths)
+        price, stderr, _ = mc_price(S, K, T, r, q, sigma, n_paths, seed=seed)
         error = abs(price - bsm_price)
         errors.append(error)
         stderrs.append(stderr)
@@ -568,9 +587,14 @@ def run_fd_convergence(bsm_price: float) -> Tuple[List[int], List[float]]:
 # SECTION 4: Greek Validation
 # =============================================================================
 
-def run_greek_validation() -> Dict[str, Dict[str, float]]:
+def run_greek_validation(seed: int = 42) -> Dict[str, Dict[str, float]]:
     """
     Validate Greeks computed via bump-and-reprice.
+    
+    Parameters
+    ----------
+    seed : int
+        Random seed for MC (reproducibility).
     
     Returns
     -------
@@ -591,14 +615,14 @@ def run_greek_validation() -> Dict[str, Dict[str, float]]:
     
     # Bump-and-reprice for MC
     bump = 0.01  # 1%
-    mc_base, _, _ = mc_price(S, K, T, r, q, sigma, n_paths=100000, seed=42)
-    mc_up, _, _ = mc_price(S * (1 + bump), K, T, r, q, sigma, n_paths=100000, seed=42)
-    mc_down, _, _ = mc_price(S * (1 - bump), K, T, r, q, sigma, n_paths=100000, seed=42)
+    mc_base, _, _ = mc_price(S, K, T, r, q, sigma, n_paths=100000, seed=seed)
+    mc_up, _, _ = mc_price(S * (1 + bump), K, T, r, q, sigma, n_paths=100000, seed=seed)
+    mc_down, _, _ = mc_price(S * (1 - bump), K, T, r, q, sigma, n_paths=100000, seed=seed)
     
     mc_delta = (mc_up - mc_down) / (2 * S * bump)
     mc_gamma = (mc_up - 2 * mc_base + mc_down) / (S * bump) ** 2
     
-    mc_vol_up, _, _ = mc_price(S, K, T, r, q, sigma + 0.01, n_paths=100000, seed=42)
+    mc_vol_up, _, _ = mc_price(S, K, T, r, q, sigma + 0.01, n_paths=100000, seed=seed)
     mc_vega = (mc_vol_up - mc_base)  # Per 1% vol move
     
     # Bump-and-reprice for FD
@@ -646,6 +670,7 @@ def run_greek_validation() -> Dict[str, Dict[str, float]]:
 def visualize_results(
     mc_convergence: Tuple[List[int], List[float], List[float]],
     fd_convergence: Tuple[List[int], List[float]],
+    output_dir: Optional[Path] = None,
 ) -> None:
     """Create validation visualizations."""
     if not MATPLOTLIB_AVAILABLE or not ENABLE_PLOTTING:
@@ -764,6 +789,11 @@ def visualize_results(
                 f'${price:.4f}', ha='center', fontsize=9)
     
     plt.tight_layout()
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        fig.savefig(output_dir / "model_validation.png", dpi=150, bbox_inches="tight")
+        logger.info("Saved: %s", output_dir / "model_validation.png")
     plt.show(block=True)
     
     logger.info("Visualization complete")
@@ -825,31 +855,59 @@ def main(args: argparse.Namespace) -> None:
     Parameters
     ----------
     args : argparse.Namespace
-        Command-line arguments.
+        Command-line arguments (plot, seed, output_dir).
     """
     global ENABLE_PLOTTING
     ENABLE_PLOTTING = args.plot
+    seed = getattr(args, "seed", 42)
+    output_dir = getattr(args, "output_dir", None)
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
     
+    np.random.seed(seed)
     logger.info("=" * 70)
     logger.info("Model Validation Example")
     logger.info("=" * 70)
+    logger.info("Seed: %s", seed)
+    if output_dir:
+        logger.info("Output dir: %s", output_dir)
     
     try:
         # Section 1: Single point comparison
-        results = run_single_comparison()
+        results = run_single_comparison(seed=seed)
         bsm_price = results["bsm_price"]
         
         # Section 2: MC convergence
-        mc_convergence = run_mc_convergence(bsm_price)
+        mc_convergence = run_mc_convergence(bsm_price, seed=seed)
         
         # Section 3: FD convergence
         fd_convergence = run_fd_convergence(bsm_price)
         
         # Section 4: Greek validation
-        greek_results = run_greek_validation()
+        greek_results = run_greek_validation(seed=seed)
+        
+        # Validation report for audit (production)
+        validation_report = {
+            "seed": seed,
+            "single_point": {
+                "bsm_price": results["bsm_price"],
+                "mc_price": results["mc_price"],
+                "mc_stderr": results["mc_stderr"],
+                "fd_price": results["fd_price"],
+                "mc_error": results["mc_price"] - results["bsm_price"],
+                "fd_error": results["fd_price"] - results["bsm_price"],
+            },
+            "greeks": {k: {kk: float(vv) for kk, vv in v.items()} for k, v in greek_results.items()},
+        }
+        if output_dir is not None:
+            report_path = output_dir / "validation_report.json"
+            with open(report_path, "w") as f:
+                json.dump(validation_report, f, indent=2)
+            logger.info("Saved: %s", report_path)
         
         # Section 5: Visualization
-        visualize_results(mc_convergence, fd_convergence)
+        visualize_results(mc_convergence, fd_convergence, output_dir=output_dir)
         
         # Summary
         print_summary()
@@ -877,6 +935,14 @@ if __name__ == "__main__":
         action="store_false",
         dest="plot",
         help="Disable plotting",
+    )
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        metavar="DIR",
+        help="Save validation_report.json and plots to DIR (audit trail)",
     )
     
     args = parser.parse_args()

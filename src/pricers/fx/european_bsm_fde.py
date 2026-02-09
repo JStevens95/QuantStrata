@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import math
+import sys
 import numpy as np
 from dataclasses import dataclass
 from typing import Dict, Literal, Tuple
+
+# slots=True requires Python 3.10+
+_DATACLASS_KW = {"frozen": True, "slots": True} if sys.version_info >= (3, 10) else {"frozen": True}
 
 # Project imports: instruments + market snapshot
 from src.instruments.fx.options.vanilla import FxVanillaEuropeanOption
@@ -37,7 +41,7 @@ GreekName = Literal["delta", "gamma", "vega", "rho_domestic", "rho_foreign"]
 # Vanilla FD pricer (European FX vanilla) using payoff library
 # ======================================================================================
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class FxVanillaEuropeanOptionFdPricer:
     """
     Finite-difference (PDE) pricer for European FX vanilla options under Garman–Kohlhagen.
@@ -690,7 +694,7 @@ class FxVanillaEuropeanOptionFdPricer:
 # Digital FD pricer (European FX digitals) using payoff library
 # ======================================================================================
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class FxDigitalEuropeanOptionFdPricer:
     """
     Finite-difference (PDE) pricer for European FX digitals under GK.

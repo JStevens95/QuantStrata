@@ -9,10 +9,14 @@ Author: QuantStrata Team
 from __future__ import annotations
 
 import math
+import sys
 from dataclasses import dataclass
 from typing import Dict, Literal
 
 import numpy as np
+
+# slots=True requires Python 3.10+
+_DATACLASS_KW = {"frozen": True, "slots": True} if sys.version_info >= (3, 10) else {"frozen": True}
 
 from src.marketdata.core.market import Market
 from src.instruments.fx.options.digital import FxDigitalEuropeanOption
@@ -54,7 +58,7 @@ def _terminal_value(payoff: BasePayoff1D, spot: float) -> float:
     return float(payoff.terminal(np.asarray([float(spot)], dtype=np.float64))[0])
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class FxVanillaEuropeanOptionBsmPricer:
     """
     Adapter pricer: EuropeanFxVanillaOption -> BlackScholesMertonVanilla formulas (generic carry).
@@ -206,7 +210,7 @@ class FxVanillaEuropeanOptionBsmPricer:
 FxEuropeanVanillaBsmPricer = FxVanillaEuropeanOptionBsmPricer
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class FxDigitalEuropeanOptionBsmPricer:
     """
     Adapter pricer: EuropeanFxDigitalOption -> BSM digital formulas.

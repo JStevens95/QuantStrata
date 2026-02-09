@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 
 from src.marketdata.core.ids import MarketId
 from src.models.payoffs.types import OptionType
 
-@dataclass(frozen=True, slots=True)
+# slots=True requires Python 3.10+
+_DATACLASS_KW = {"frozen": True, "slots": True} if sys.version_info >= (3, 10) else {"frozen": True}
+
+
+@dataclass(**_DATACLASS_KW)
 class FxVanillaEuropeanOption:
     """
     European vanilla FX option (call/put): payoff = max(±(S_T - K), 0).
@@ -40,7 +45,7 @@ class FxVanillaEuropeanOption:
             raise ValueError("expiry must be >= 0.")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(**_DATACLASS_KW)
 class FxVanillaAmericanOption:
     """
     Placeholder for an American vanilla FX option.
