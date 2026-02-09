@@ -62,6 +62,10 @@ class Context:
         """Store a value in the shared run state."""
         self.state[str(key)] = value
 
+    def set(self, key: str, value: object) -> None:
+        """Alias for put (store a value in the shared run state)."""
+        self.state[str(key)] = value
+
     def get(self, key: str, default: Any = None) -> Any:
         """
         Get a value from state.
@@ -104,3 +108,7 @@ class Context:
             )
 
         return cast(T, value)
+
+
+# Alias for code that imports PipelineContext
+PipelineContext = Context

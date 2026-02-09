@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from src.orchestrator.core.context import PipelineContext
+from src.orchestrator.core.context import Context, PipelineContext
 from src.orchestrator.core.pipeline import Pipeline
 from src.orchestrator.core.step import Step
 
@@ -52,7 +52,7 @@ class CreateSearchSpaceStep(Step):
     
     name = "create_search_space"
     
-    def run(self, ctx: PipelineContext) -> None:
+    def run(self, ctx: PipelineContext) -> Context:
         from src.machine_learning.tuning import SearchSpace
         
         config = ctx.get("tuning_config")
@@ -82,7 +82,9 @@ class CreateSearchSpaceStep(Step):
                 space.add_bool(param_name)
         
         ctx.set("search_space", space)
-        self.logger.info(f"Created search space with {len(space)} parameters")
+        if ctx.logger:
+            ctx.logger.info("Created search space with %s parameters", len(space))
+        return ctx
 
 
 class SetupTrackingStep(Step):
@@ -90,7 +92,7 @@ class SetupTrackingStep(Step):
     
     name = "setup_tracking"
     
-    def run(self, ctx: PipelineContext) -> None:
+    def run(self, ctx: PipelineContext) -> Context:
         from src.machine_learning.core.tracking import create_tracker
         
         config = ctx.get("tuning_config")
@@ -102,7 +104,9 @@ class SetupTrackingStep(Step):
         )
         
         ctx.set("tracker", tracker)
-        self.logger.info(f"Setup {config.tracking_backend} tracking")
+        if ctx.logger:
+            ctx.logger.info("Setup %s tracking", config.tracking_backend)
+        return ctx
 
 
 class RunTuningStep(Step):
@@ -110,7 +114,7 @@ class RunTuningStep(Step):
     
     name = "run_tuning"
     
-    def run(self, ctx: PipelineContext) -> None:
+    def run(self, ctx: PipelineContext) -> Context:
         from src.machine_learning.tuning import run_optuna_tuning, MedianPruner
         
         config = ctx.get("tuning_config")
@@ -145,10 +149,12 @@ class RunTuningStep(Step):
         )
         
         ctx.set("tuning_result", result)
-        self.logger.info(
-            f"Tuning complete: best score = {result.best_score:.6f}, "
-            f"completed = {result.n_completed}, pruned = {result.n_pruned}"
-        )
+        if ctx.logger:
+            ctx.logger.info(
+                "Tuning complete: best score = %s, completed = %s, pruned = %s",
+                result.best_score, result.n_completed, result.n_pruned,
+            )
+        return ctx
 
 
 class SaveResultsStep(Step):
@@ -156,7 +162,7 @@ class SaveResultsStep(Step):
     
     name = "save_results"
     
-    def run(self, ctx: PipelineContext) -> None:
+    def run(self, ctx: PipelineContext) -> Context:
         config = ctx.get("tuning_config")
         result = ctx.get("tuning_result")
         
@@ -165,7 +171,9 @@ class SaveResultsStep(Step):
         
         result.save(output_dir / "tuning_result.json")
         
-        self.logger.info(f"Saved results to {output_dir}")
+        if ctx.logger:
+            ctx.logger.info("Saved results to %s", output_dir)
+        return ctx
 
 
 class RegisterBestModelStep(Step):
@@ -173,21 +181,23 @@ class RegisterBestModelStep(Step):
     
     name = "register_best_model"
     
-    def run(self, ctx: PipelineContext) -> None:
+    def run(self, ctx: PipelineContext) -> Context:
         from src.machine_learning.registry import ModelRegistry
         
         config = ctx.get("tuning_config")
         
         if not config.register_best:
-            self.logger.info("Skipping model registration")
-            return
+            if ctx.logger:
+                ctx.logger.info("Skipping model registration")
+            return ctx
         
         result = ctx.get("tuning_result")
-        best_model_path = ctx.get("best_model_path")
+        best_model_path = ctx.state.get("best_model_path")
         
         if best_model_path is None:
-            self.logger.warning("No best model path provided, skipping registration")
-            return
+            if ctx.logger:
+                ctx.logger.warning("No best model path provided, skipping registration")
+            return ctx
         
         registry = ModelRegistry(config.registry_path)
         
@@ -200,7 +210,9 @@ class RegisterBestModelStep(Step):
         )
         
         ctx.set("registered_version", version)
-        self.logger.info(f"Registered model {config.model_name} version {version.version}")
+        if ctx.logger:
+            ctx.logger.info("Registered model %s version %s", config.model_name, version.version)
+        return ctx
 
 
 def create_hyperparameter_tuning_pipeline(
@@ -225,18 +237,14 @@ def create_hyperparameter_tuning_pipeline(
     pipeline = Pipeline(
         name="hyperparameter_tuning",
         steps=[
-            CreateSearchSpaceStep(),
-            SetupTrackingStep(),
-            RunTuningStep(),
-            SaveResultsStep(),
-            RegisterBestModelStep(),
+            CreateSearchSpaceStep(name="create_search_space"),
+            SetupTrackingStep(name="setup_tracking"),
+            RunTuningStep(name="run_tuning"),
+            SaveResultsStep(name="save_results"),
+            RegisterBestModelStep(name="register_best_model"),
         ],
     )
-    
-    # Set initial context
-    pipeline.context.set("tuning_config", config)
-    pipeline.context.set("objective_fn", objective_fn)
-    
+    # Caller must put tuning_config and objective_fn in ctx.state before running.
     return pipeline
 
 

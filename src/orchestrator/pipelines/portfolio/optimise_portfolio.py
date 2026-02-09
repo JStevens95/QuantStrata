@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from src.orchestrator.core.context import PipelineContext
+from src.orchestrator.core.context import Context, PipelineContext
 from src.orchestrator.core.pipeline import Pipeline
 from src.orchestrator.core.step import Step
 
@@ -58,19 +58,25 @@ class LoadMarketDataStep(Step):
     
     name = "load_market_data"
     
-    def run(self, ctx: PipelineContext) -> None:
-        # Load returns data from context or file
+    def run(self, ctx: PipelineContext) -> Context:
+        # Load returns data from context or file (market_caps and expected_returns optional)
         returns = ctx.get("returns_data")
-        market_caps = ctx.get("market_caps")
-        expected_returns = ctx.get("expected_returns")
+        market_caps = ctx.state.get("market_caps")
+        expected_returns = ctx.state.get("expected_returns")
         
         if returns is None:
             raise ValueError("Returns data must be provided in context")
         
         ctx.set("returns", returns)
         ctx.set("n_assets", returns.shape[1])
+        if market_caps is not None:
+            ctx.set("market_caps", market_caps)
+        if expected_returns is not None:
+            ctx.set("expected_returns", expected_returns)
         
-        self.logger.info(f"Loaded returns data: {returns.shape}")
+        if ctx.logger:
+            ctx.logger.info("Loaded returns data: %s", returns.shape)
+        return ctx
 
 
 class EstimateCovarianceStep(Step):
@@ -86,24 +92,25 @@ class EstimateCovarianceStep(Step):
         
         if config.covariance_method == "sample":
             estimator = CovarianceEstimator()
-            cov = estimator.sample(returns, annualize=True)
+            cov = estimator.estimate(returns, annualize=True)
         
         elif config.covariance_method == "ewm":
             estimator = CovarianceEstimator()
-            cov = estimator.ewm(returns, halflife=config.ewm_halflife)
+            cov = estimator.estimate_ewm(returns, halflife=config.ewm_halflife)
         
         elif config.covariance_method == "shrinkage":
             estimator = ShrinkageEstimator(shrinkage_target=config.shrinkage_target)
             result = estimator.estimate(returns, annualize=True)
             cov = result.covariance
             ctx.set("shrinkage_intensity", result.shrinkage_intensity)
-            self.logger.info(f"Shrinkage intensity: {result.shrinkage_intensity:.2%}")
+            ctx.logger.info(f"Shrinkage intensity: {result.shrinkage_intensity:.2%}")
         
         else:
             raise ValueError(f"Unknown covariance method: {config.covariance_method}")
         
         ctx.set("covariance", cov)
-        self.logger.info(f"Estimated covariance matrix: {cov.shape}")
+        ctx.logger.info(f"Estimated covariance matrix: {cov.shape}")
+        return ctx
 
 
 class ComputeExpectedReturnsStep(Step):
@@ -117,8 +124,8 @@ class ComputeExpectedReturnsStep(Step):
         config = ctx.get("opt_config")
         returns = ctx.get("returns")
         cov = ctx.get("covariance")
-        market_caps = ctx.get("market_caps")
-        expected_returns = ctx.get("expected_returns")
+        market_caps = ctx.state.get("market_caps")
+        expected_returns = ctx.state.get("expected_returns")
         
         if config.method == "black_litterman":
             if market_caps is None:
@@ -140,19 +147,20 @@ class ComputeExpectedReturnsStep(Step):
                 expected_returns = result.posterior_returns
                 ctx.set("bl_result", result)
             else:
-                expected_returns = bl.equilibrium_returns
+                expected_returns = bl.equilibrium_returns()
             
             ctx.set("expected_returns", expected_returns)
-            self.logger.info("Computed Black-Litterman returns")
+            ctx.logger.info("Computed Black-Litterman returns")
         
         elif expected_returns is None:
             # Use historical mean returns
             expected_returns = np.mean(returns, axis=0) * 252
             ctx.set("expected_returns", expected_returns)
-            self.logger.info("Using historical mean returns")
+            ctx.logger.info("Using historical mean returns")
         
         else:
             ctx.set("expected_returns", expected_returns)
+        return ctx
 
 
 class OptimisePortfolioStep(Step):
@@ -172,10 +180,12 @@ class OptimisePortfolioStep(Step):
         expected_returns = ctx.get("expected_returns")
         
         if config.method in ["mean_variance", "black_litterman"]:
+            max_w = config.max_weight if config.max_weight is not None else 1.0
+            min_w = config.min_weight if config.min_weight is not None else (0.0 if config.long_only else -1.0)
             constraints = MVConstraints(
                 long_only=config.long_only,
-                max_weight=config.max_weight,
-                min_weight=config.min_weight,
+                max_weight=max_w,
+                min_weight=min_w,
             )
             
             optimizer = MeanVarianceOptimizer(risk_free_rate=config.risk_free_rate)
@@ -189,7 +199,7 @@ class OptimisePortfolioStep(Step):
             )
             
             ctx.set("opt_result", result)
-            self.logger.info(
+            ctx.logger.info(
                 f"Mean-variance optimisation: "
                 f"return={result.expected_return:.2%}, "
                 f"vol={result.volatility:.2%}, "
@@ -211,13 +221,14 @@ class OptimisePortfolioStep(Step):
             )
             
             ctx.set("opt_result", result)
-            self.logger.info(
+            ctx.logger.info(
                 f"Risk parity optimisation: "
                 f"vol={result.volatility:.2%}"
             )
         
         else:
             raise ValueError(f"Unknown method: {config.method}")
+        return ctx
 
 
 class ComputeEfficientFrontierStep(Step):
@@ -231,15 +242,19 @@ class ComputeEfficientFrontierStep(Step):
         config = ctx.get("opt_config")
         
         if config.method != "mean_variance":
-            self.logger.info("Skipping efficient frontier (not mean-variance)")
-            return
+            if ctx.logger:
+                ctx.logger.info("Skipping efficient frontier (not mean-variance)")
+            return ctx
         
         cov = ctx.get("covariance")
         expected_returns = ctx.get("expected_returns")
         
+        max_w = config.max_weight if config.max_weight is not None else 1.0
+        min_w = config.min_weight if config.min_weight is not None else (0.0 if config.long_only else -1.0)
         constraints = MVConstraints(
             long_only=config.long_only,
-            max_weight=config.max_weight,
+            max_weight=max_w,
+            min_weight=min_w,
         )
         
         optimizer = MeanVarianceOptimizer(risk_free_rate=config.risk_free_rate)
@@ -252,7 +267,8 @@ class ComputeEfficientFrontierStep(Step):
         )
         
         ctx.set("efficient_frontier", frontier)
-        self.logger.info(f"Computed efficient frontier with {len(frontier)} points")
+        ctx.logger.info(f"Computed efficient frontier with {len(frontier)} points")
+        return ctx
 
 
 class SaveResultsStep(Step):
@@ -285,7 +301,8 @@ class SaveResultsStep(Step):
         with open(output_dir / "portfolio.json", "w") as f:
             json.dump(output, f, indent=2)
         
-        self.logger.info(f"Saved results to {output_dir}")
+        ctx.logger.info(f"Saved results to {output_dir}")
+        return ctx
 
 
 def create_portfolio_optimisation_pipeline(
@@ -307,17 +324,17 @@ def create_portfolio_optimisation_pipeline(
     pipeline = Pipeline(
         name="portfolio_optimisation",
         steps=[
-            LoadMarketDataStep(),
-            EstimateCovarianceStep(),
-            ComputeExpectedReturnsStep(),
-            OptimisePortfolioStep(),
-            ComputeEfficientFrontierStep(),
-            SaveResultsStep(),
+            LoadMarketDataStep(name="load_market_data"),
+            EstimateCovarianceStep(name="estimate_covariance"),
+            ComputeExpectedReturnsStep(name="compute_expected_returns"),
+            OptimisePortfolioStep(name="optimise_portfolio"),
+            ComputeEfficientFrontierStep(name="compute_efficient_frontier"),
+            SaveResultsStep(name="save_results"),
         ],
     )
-    
-    pipeline.context.set("opt_config", config)
-    
+    # Caller must put config and data in ctx.state before running, e.g.:
+    #   ctx.state["opt_config"] = config
+    #   ctx.state["returns_data"] = returns
     return pipeline
 
 

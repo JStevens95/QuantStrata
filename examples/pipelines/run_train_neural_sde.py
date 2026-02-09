@@ -51,9 +51,9 @@ def main() -> None:
         },
     )
 
-    artifacts_root = Path(__file__).resolve().parents[1] / "artifacts" / "neural_sde_example"
-    artifacts_root.mkdir(parents=True, exist_ok=True)
-    store = ArtifactStore(artifacts_root=artifacts_root)
+    artifacts_root = Path(__file__).resolve().parents[1] / "artifacts"
+    (artifacts_root / "neural_sde_example").mkdir(parents=True, exist_ok=True)
+    store = ArtifactStore(workdir=artifacts_root, run_id="neural_sde_example")
     ctx = Context(
         run_id="neural_sde_example",
         cfg=config,

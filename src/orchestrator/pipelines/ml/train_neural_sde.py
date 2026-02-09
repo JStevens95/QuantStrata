@@ -76,16 +76,20 @@ class BuildModelStep(Step):
                 NeuralSDEDynamics,
                 NeuralDriftNetwork,
                 NeuralDiffusionNetwork,
-                EulerMaruyamaSolver,
             )
+            from src.models.neural_sde.dynamics import NeuralSDEConfig
             hidden = list(cfg.get("hidden_dims", [64, 64]))
             drift_net = NeuralDriftNetwork(hidden_dims=hidden)
             diffusion_net = NeuralDiffusionNetwork(hidden_dims=hidden)
-            solver = EulerMaruyamaSolver()
+            config = NeuralSDEConfig(
+                drift_hidden_dims=hidden,
+                diffusion_hidden_dims=hidden,
+                solver_type=cfg.get("solver_type", "euler"),
+            )
             model = NeuralSDEDynamics(
+                config=config,
                 drift_network=drift_net,
                 diffusion_network=diffusion_net,
-                solver=solver,
             )
             ctx.put("neural_sde_model", model)
             if ctx.logger:

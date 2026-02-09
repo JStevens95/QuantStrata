@@ -45,9 +45,9 @@ def main() -> None:
         },
     )
 
-    artifacts_root = Path(__file__).resolve().parents[1] / "artifacts" / "rl_backtest"
-    artifacts_root.mkdir(parents=True, exist_ok=True)
-    store = ArtifactStore(artifacts_root=artifacts_root)
+    artifacts_root = Path(__file__).resolve().parents[1] / "artifacts"
+    (artifacts_root / "rl_backtest").mkdir(parents=True, exist_ok=True)
+    store = ArtifactStore(workdir=artifacts_root, run_id="rl_backtest")
     ctx = Context(
         run_id="rl-backtest-example",
         cfg=config,

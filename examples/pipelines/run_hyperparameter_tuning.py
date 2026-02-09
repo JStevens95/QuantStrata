@@ -6,9 +6,16 @@ Demonstrates hyperparameter tuning with experiment tracking
 and model registry integration.
 """
 
+import logging
 import numpy as np
 from pathlib import Path
 
+from src.orchestrator.artifacts.store import ArtifactStore
+from src.orchestrator.config.loader import RunConfig
+from src.orchestrator.config.schemas import IOConfig
+from src.orchestrator.core.context import Context
+from src.orchestrator.core.errors import StepError
+from src.orchestrator.core.pipeline import PipelineRunner
 from src.orchestrator.pipelines.ml.hyperparameter_tuning import (
     HyperparameterTuningConfig,
     create_hyperparameter_tuning_pipeline,
@@ -88,11 +95,24 @@ def main():
     # Create objective
     objective_fn = create_dummy_objective()
     
-    # Create and run pipeline
+    # Create pipeline (no config/objective on pipeline; put in context)
     pipeline = create_hyperparameter_tuning_pipeline(
         config=config,
         objective_fn=objective_fn,
     )
+    
+    artifacts_root = Path(config.output_dir).resolve().parent
+    artifacts_root.mkdir(parents=True, exist_ok=True)
+    store = ArtifactStore(workdir=artifacts_root, run_id="tuning_demo")
+    cfg = RunConfig(
+        pipeline="hyperparameter_tuning",
+        io=IOConfig(workdir=str(artifacts_root)),
+        params={},
+    )
+    logger = logging.getLogger("hyperparameter_tuning")
+    ctx = Context(run_id="tuning_demo", cfg=cfg, logger=logger, artifact_store=store)
+    ctx.state["tuning_config"] = config
+    ctx.state["objective_fn"] = objective_fn
     
     print("\nRunning hyperparameter tuning...")
     print(f"  Search space: {list(config.search_space_config.keys())}")
@@ -100,14 +120,23 @@ def main():
     print()
     
     try:
-        pipeline.run()
+        PipelineRunner().run(pipeline, ctx)
     except ImportError as e:
-        print(f"Note: Optuna not available ({e})")
-        print("Install with: pip install optuna")
+        print(f"Note: Required dependency not available ({e})")
+        print("Install with: pip install optuna tensorflow")
         return
+    except StepError as e:
+        cause = e.__cause__
+        if isinstance(cause, ImportError) or (
+            cause and ("TensorFlow" in str(cause) or "optuna" in str(cause).lower())
+        ):
+            print(f"Note: ML dependencies not available ({cause})")
+            print("Install with: pip install optuna tensorflow")
+            return
+        raise
     
-    # Get results
-    result = pipeline.context.get("tuning_result")
+    # Get results from context
+    result = ctx.state.get("tuning_result")
     
     if result:
         print("\n" + "=" * 60)

@@ -380,6 +380,14 @@ class BuildRawSurfaceStep(Step):
             except ValueError:
                 continue
         
+        # GridVolSurface requires finite values: fill any remaining nans (sparse quotes)
+        if np.any(~np.isfinite(vol_grid)):
+            row_means = np.nanmean(vol_grid, axis=1, keepdims=True)
+            overall_mean = np.nanmean(vol_grid)
+            fill = np.where(np.isfinite(row_means), row_means, overall_mean)
+            np.putmask(vol_grid, ~np.isfinite(vol_grid), np.broadcast_to(fill, vol_grid.shape))
+            vol_grid = np.maximum(vol_grid, 1e-6)  # ensure strictly positive
+        
         # Create GridVolSurface
         vol_surface = GridVolSurface(
             expiries=np.array(expiries),
@@ -435,8 +443,8 @@ class ValidateArbitrageStep(Step):
         # Calendar arbitrage check
         for j in range(len(vol_surface.strikes)):
             for i in range(len(vol_surface.expiries) - 1):
-                vol_short = vol_surface.vols[i, j]
-                vol_long = vol_surface.vols[i + 1, j]
+                vol_short = vol_surface.implied_vols[i, j]
+                vol_long = vol_surface.implied_vols[i + 1, j]
                 
                 if np.isnan(vol_short) or np.isnan(vol_long):
                     continue
@@ -456,9 +464,9 @@ class ValidateArbitrageStep(Step):
         # Butterfly arbitrage check (smile convexity)
         for i in range(len(vol_surface.expiries)):
             for j in range(1, len(vol_surface.strikes) - 1):
-                vol_left = vol_surface.vols[i, j - 1]
-                vol_mid = vol_surface.vols[i, j]
-                vol_right = vol_surface.vols[i, j + 1]
+                vol_left = vol_surface.implied_vols[i, j - 1]
+                vol_mid = vol_surface.implied_vols[i, j]
+                vol_right = vol_surface.implied_vols[i, j + 1]
                 
                 if np.isnan(vol_left) or np.isnan(vol_mid) or np.isnan(vol_right):
                     continue
@@ -520,7 +528,7 @@ class InterpolateSurfaceStep(Step):
         
         # Fill NaN values with interpolation
         filled_vols = self._interpolate_grid(
-            vol_surface.vols.copy(),
+            vol_surface.implied_vols.copy(),
             vol_surface.expiries,
             vol_surface.strikes,
             strike_interp,
@@ -531,7 +539,7 @@ class InterpolateSurfaceStep(Step):
         interpolated_surface = GridVolSurface(
             expiries=vol_surface.expiries,
             strikes=vol_surface.strikes,
-            vols=filled_vols,
+            implied_vols=filled_vols,
             extrapolation="flat",
         )
         
@@ -539,7 +547,7 @@ class InterpolateSurfaceStep(Step):
         ctx.put(Keys.VOL_SURFACE, interpolated_surface)
         
         if ctx.logger:
-            nan_count_before = np.sum(np.isnan(vol_surface.vols))
+            nan_count_before = np.sum(np.isnan(vol_surface.implied_vols))
             nan_count_after = np.sum(np.isnan(filled_vols))
             ctx.logger.info(
                 "Interpolated surface: filled %d missing points (strike=%s, time=%s)",
@@ -633,7 +641,7 @@ class StoreSurfaceStep(Step):
             # Log sample vols
             mid_exp_idx = len(vol_surface.expiries) // 2
             mid_strike_idx = len(vol_surface.strikes) // 2
-            sample_vol = vol_surface.vols[mid_exp_idx, mid_strike_idx]
+            sample_vol = vol_surface.implied_vols[mid_exp_idx, mid_strike_idx]
             
             ctx.logger.info(
                 "Vol surface %s complete: sample vol at T=%.2f, K=%.2f is %.2f%%",
@@ -649,7 +657,7 @@ class StoreSurfaceStep(Step):
                 "underlying": underlying,
                 "expiries": list(vol_surface.expiries),
                 "strikes": list(vol_surface.strikes),
-                "vols": vol_surface.vols.tolist(),
+                "vols": vol_surface.implied_vols.tolist(),
             }
             
             import json

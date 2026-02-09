@@ -215,7 +215,7 @@ def main() -> None:
     
     heston_params = ctx.state.get(Keys.HESTON_PARAMS, {})
     calibration_errors = ctx.state.get(Keys.CALIBRATION_ERRORS, {})
-    feller_check = ctx.state.get(Keys.FELLER_CHECK, {})
+    feller_check = ctx.state.get(Keys.FELLER_CONDITION, {})
     
     print()
     

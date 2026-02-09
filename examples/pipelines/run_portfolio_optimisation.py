@@ -6,9 +6,14 @@ Demonstrates portfolio construction using mean-variance,
 risk parity, and Black-Litterman methods.
 """
 
+import logging
 import numpy as np
 from pathlib import Path
 
+from src.orchestrator.config.schemas import RunConfig, IOConfig
+from src.orchestrator.core.context import Context
+from src.orchestrator.core.pipeline import PipelineRunner
+from src.orchestrator.artifacts.store import ArtifactStore
 from src.orchestrator.pipelines.portfolio.optimise_portfolio import (
     PortfolioOptimisationConfig,
     create_portfolio_optimisation_pipeline,
@@ -64,12 +69,17 @@ def run_mean_variance_example():
     )
     
     pipeline = create_portfolio_optimisation_pipeline(config)
-    pipeline.context.set("returns_data", returns)
-    pipeline.context.set("expected_returns", expected_returns)
-    
-    pipeline.run()
-    
-    result = pipeline.context.get("opt_result")
+    artifacts_root = Path("./output").resolve()
+    artifacts_root.mkdir(parents=True, exist_ok=True)
+    store = ArtifactStore(workdir=artifacts_root, run_id="portfolio_mv")
+    cfg = RunConfig(pipeline="portfolio_optimisation", io=IOConfig(workdir=str(artifacts_root)), params={})
+    logger = logging.getLogger("portfolio_mv")
+    ctx = Context(run_id="portfolio_mv", cfg=cfg, logger=logger, artifact_store=store)
+    ctx.state["opt_config"] = config
+    ctx.state["returns_data"] = returns
+    ctx.state["expected_returns"] = expected_returns
+    PipelineRunner().run(pipeline, ctx)
+    result = ctx.state.get("opt_result")
     print(f"\nOptimal weights: {result.weights.round(3)}")
     print(f"Expected return: {result.expected_return:.2%}")
     print(f"Volatility: {result.volatility:.2%}")
@@ -92,11 +102,15 @@ def run_risk_parity_example():
     )
     
     pipeline = create_portfolio_optimisation_pipeline(config)
-    pipeline.context.set("returns_data", returns)
-    
-    pipeline.run()
-    
-    result = pipeline.context.get("opt_result")
+    artifacts_root = Path("./output").resolve()
+    store = ArtifactStore(workdir=artifacts_root, run_id="portfolio_rp")
+    cfg = RunConfig(pipeline="portfolio_optimisation", io=IOConfig(workdir=str(artifacts_root)), params={})
+    logger = logging.getLogger("portfolio_rp")
+    ctx = Context(run_id="portfolio_rp", cfg=cfg, logger=logger, artifact_store=store)
+    ctx.state["opt_config"] = config
+    ctx.state["returns_data"] = returns
+    PipelineRunner().run(pipeline, ctx)
+    result = ctx.state.get("opt_result")
     print(f"\nOptimal weights: {result.weights.round(3)}")
     print(f"Risk contributions: {result.risk_contributions.round(3)}")
     print(f"Portfolio volatility: {result.volatility:.2%}")
@@ -130,15 +144,19 @@ def run_black_litterman_example():
     )
     
     pipeline = create_portfolio_optimisation_pipeline(config)
-    pipeline.context.set("returns_data", returns)
-    pipeline.context.set("market_caps", market_caps)
+    artifacts_root = Path("./output").resolve()
+    store = ArtifactStore(workdir=artifacts_root, run_id="portfolio_bl")
+    cfg = RunConfig(pipeline="portfolio_optimisation", io=IOConfig(workdir=str(artifacts_root)), params={})
+    logger = logging.getLogger("portfolio_bl")
+    ctx = Context(run_id="portfolio_bl", cfg=cfg, logger=logger, artifact_store=store)
+    ctx.state["opt_config"] = config
+    ctx.state["returns_data"] = returns
+    ctx.state["market_caps"] = market_caps
+    PipelineRunner().run(pipeline, ctx)
+    result = ctx.state.get("opt_result")
+    bl_result = ctx.state.get("bl_result")
     
-    pipeline.run()
-    
-    result = pipeline.context.get("opt_result")
-    bl_result = pipeline.context.get("bl_result")
-    
-    print(f"\nPrior (equilibrium) returns: {bl_result.equilibrium_returns.round(3)}")
+    print(f"\nPrior (equilibrium) returns: {bl_result.prior_returns.round(3)}")
     print(f"Posterior returns: {bl_result.posterior_returns.round(3)}")
     print(f"\nOptimal weights: {result.weights.round(3)}")
     print(f"Expected return: {result.expected_return:.2%}")
