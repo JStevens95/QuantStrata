@@ -1,397 +1,57 @@
 """
 Comprehensive model evaluation utilities.
 
-This module provides professional-grade model evaluation including:
-    - Standard regression metrics (MSE, MAE, R², etc.)
-    - Domain-specific pricing metrics (MAPE, max error, percentiles)
-    - Visualization tools (prediction plots, residual analysis)
-    - Comparison against benchmarks
+This module provides:
+    - ``compute_metrics``:  Delegates to ``sklearn.metrics`` for standard regression
+      metrics and adds domain-specific pricing metrics (MAPE, percentile errors).
+    - ``Evaluator``:  Full evaluation pipeline with visualisations.
+    - ``evaluate_model``:  One-liner convenience function.
+
+Supported input formats:
+    - ``tf.data.Dataset`` (including dict-feature batches for GNN / graph models)
+    - ``(features, targets)`` tuples (ndarray or Dict[str, ndarray])
 
 Usage:
     evaluator = Evaluator(model)
-    
-    # Full evaluation
-    result = evaluator.evaluate(test_dataset)
+    result = evaluator.evaluate(test_ds)
     print(result.summary())
-    
-    # Visualizations
-    evaluator.plot_predictions(test_dataset)
-    evaluator.plot_residuals(test_dataset)
+
+    evaluator.plot_predictions(test_ds)
 """
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass, field
-from datetime import datetime
-from pathlib import Path
+import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import tensorflow as tf
+from sklearn.metrics import (
+    max_error as sklearn_max_error,
+    mean_absolute_error,
+    mean_absolute_percentage_error,
+    mean_squared_error,
+    r2_score,
+)
 
-from src.machine_learning.data.dataset import TFDataset, NormalizationStats
+from src.machine_learning.core.types import EvaluationResult
 
+logger = logging.getLogger(__name__)
 
-@dataclass
-class EvaluationResult:
-    """
-    Container for evaluation results.
-    
-    Attributes:
-        metrics: Dictionary of computed metrics
-        predictions: Model predictions array
-        targets: Ground truth targets
-        residuals: Prediction errors (targets - predictions)
-        dataset_info: Information about the evaluated dataset
-        timestamp: Evaluation timestamp
-    """
-    metrics: Dict[str, float]
-    predictions: Optional[np.ndarray] = None
-    targets: Optional[np.ndarray] = None
-    residuals: Optional[np.ndarray] = None
-    dataset_info: Dict[str, Any] = field(default_factory=dict)
-    timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
-    
-    def __repr__(self) -> str:
-        metrics_str = ", ".join(f"{k}={v:.4f}" for k, v in self.metrics.items())
-        return f"EvaluationResult({metrics_str})"
-    
-    def summary(self) -> str:
-        """Return formatted summary string."""
-        lines = [
-            "=" * 50,
-            "EVALUATION RESULTS",
-            "=" * 50,
-            f"Timestamp: {self.timestamp}",
-            f"Samples: {self.dataset_info.get('n_samples', 'N/A')}",
-            "",
-            "Metrics:",
-            "-" * 30,
-        ]
-        
-        for name, value in sorted(self.metrics.items()):
-            if "error" in name.lower() or "loss" in name.lower():
-                lines.append(f"  {name:20s}: {value:12.6f}")
-            elif "r2" in name.lower() or "score" in name.lower():
-                lines.append(f"  {name:20s}: {value:12.4f}")
-            else:
-                lines.append(f"  {name:20s}: {value:12.6f}")
-        
-        lines.append("=" * 50)
-        return "\n".join(lines)
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for serialization."""
-        return {
-            "metrics": self.metrics,
-            "dataset_info": self.dataset_info,
-            "timestamp": self.timestamp,
-        }
-    
-    def to_json(self, path: Union[str, Path]) -> None:
-        """Save to JSON file."""
-        with open(path, "w") as f:
-            json.dump(self.to_dict(), f, indent=2)
-    
-    @classmethod
-    def from_json(cls, path: Union[str, Path]) -> "EvaluationResult":
-        """Load from JSON file."""
-        with open(path, "r") as f:
-            d = json.load(f)
-        return cls(
-            metrics=d["metrics"],
-            dataset_info=d.get("dataset_info", {}),
-            timestamp=d.get("timestamp", ""),
-        )
+# Type alias — sklearn scaler (StandardScaler / MinMaxScaler) or any object
+# with an ``inverse_transform`` method.
+Scaler = Any
+
+# Accepted evaluation data formats
+EvalData = Union[
+    tf.data.Dataset,
+    Tuple[np.ndarray, np.ndarray],
+    Tuple[Dict[str, np.ndarray], np.ndarray],
+]
 
 
-class Evaluator:
-    """
-    Comprehensive model evaluator.
-    
-    Provides:
-        - Standard regression metrics
-        - Domain-specific metrics for pricing/calibration
-        - Visualization tools
-        - Benchmark comparison
-    
-    Attributes:
-        model: TensorFlow model to evaluate
-        target_scaler: Optional scaler for denormalizing predictions
-    
-    Example:
-        evaluator = Evaluator(model, target_scaler=dataset.target_stats)
-        result = evaluator.evaluate(test_dataset)
-        
-        print(result.summary())
-        evaluator.plot_predictions(test_dataset)
-    """
-    
-    def __init__(
-        self,
-        model: tf.keras.Model,
-        target_scaler: Optional[NormalizationStats] = None,
-    ):
-        """
-        Initialize evaluator.
-        
-        Args:
-            model: Keras model to evaluate
-            target_scaler: Normalization stats for denormalizing predictions
-        """
-        self.model = model
-        self.target_scaler = target_scaler
-    
-    def evaluate(
-        self,
-        data: Union[TFDataset, tf.data.Dataset, Tuple[np.ndarray, np.ndarray]],
-        metrics: Optional[List[str]] = None,
-        include_predictions: bool = True,
-        batch_size: int = 256,
-    ) -> EvaluationResult:
-        """
-        Evaluate model on dataset.
-        
-        Args:
-            data: Evaluation data
-            metrics: List of metrics to compute (default: standard regression metrics)
-            include_predictions: Whether to include predictions in result
-            batch_size: Batch size for prediction
-        
-        Returns:
-            EvaluationResult with computed metrics
-        """
-        # Extract features and targets
-        if isinstance(data, TFDataset):
-            features = data.features
-            targets = data.targets.flatten()
-            dataset_info = {"n_samples": len(data), **data.metadata}
-            target_scaler = self.target_scaler or data.target_stats
-        elif isinstance(data, tuple):
-            features, targets = data
-            targets = np.asarray(targets).flatten()
-            dataset_info = {"n_samples": len(features)}
-            target_scaler = self.target_scaler
-        else:
-            raise ValueError(f"Unsupported data type: {type(data)}")
-        
-        # Generate predictions
-        predictions = self.model.predict(features, batch_size=batch_size, verbose=0)
-        predictions = predictions.flatten()
-        
-        # Denormalize if scaler available
-        if target_scaler is not None:
-            predictions_orig = target_scaler.denormalize(predictions)
-            targets_orig = target_scaler.denormalize(targets)
-        else:
-            predictions_orig = predictions
-            targets_orig = targets
-        
-        # Compute metrics
-        if metrics is None:
-            metrics = ["mse", "mae", "rmse", "mape", "r2", "max_error", "p95_error"]
-        
-        computed_metrics = compute_metrics(
-            y_true=targets_orig,
-            y_pred=predictions_orig,
-            metrics=metrics,
-        )
-        
-        # Build result
-        residuals = targets_orig - predictions_orig if include_predictions else None
-        
-        return EvaluationResult(
-            metrics=computed_metrics,
-            predictions=predictions_orig if include_predictions else None,
-            targets=targets_orig if include_predictions else None,
-            residuals=residuals,
-            dataset_info=dataset_info,
-        )
-    
-    def plot_predictions(
-        self,
-        data: Union[TFDataset, Tuple[np.ndarray, np.ndarray]],
-        title: str = "Predicted vs Actual",
-        figsize: Tuple[int, int] = (10, 8),
-        sample_size: Optional[int] = None,
-    ) -> None:
-        """
-        Plot predictions vs actual values.
-        
-        Args:
-            data: Evaluation data
-            title: Plot title
-            figsize: Figure size
-            sample_size: Optional sample size for large datasets
-        """
-        import matplotlib.pyplot as plt
-        
-        result = self.evaluate(data, include_predictions=True)
-        
-        y_true = result.targets
-        y_pred = result.predictions
-        
-        # Subsample if needed
-        if sample_size and len(y_true) > sample_size:
-            idx = np.random.choice(len(y_true), sample_size, replace=False)
-            y_true = y_true[idx]
-            y_pred = y_pred[idx]
-        
-        fig, axes = plt.subplots(2, 2, figsize=figsize)
-        
-        # 1. Scatter plot: predicted vs actual
-        ax = axes[0, 0]
-        ax.scatter(y_true, y_pred, alpha=0.5, s=10)
-        
-        # Perfect prediction line
-        lims = [min(y_true.min(), y_pred.min()), max(y_true.max(), y_pred.max())]
-        ax.plot(lims, lims, 'r--', linewidth=2, label='Perfect')
-        
-        ax.set_xlabel('Actual')
-        ax.set_ylabel('Predicted')
-        ax.set_title(f'{title}\nR² = {result.metrics.get("r2", 0):.4f}')
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        
-        # 2. Residual distribution
-        ax = axes[0, 1]
-        residuals = y_true - y_pred
-        ax.hist(residuals, bins=50, edgecolor='black', alpha=0.7)
-        ax.axvline(0, color='red', linestyle='--', linewidth=2)
-        ax.set_xlabel('Residual (Actual - Predicted)')
-        ax.set_ylabel('Frequency')
-        ax.set_title(f'Residual Distribution\nMAE = {result.metrics.get("mae", 0):.4f}')
-        ax.grid(True, alpha=0.3)
-        
-        # 3. Residual vs predicted
-        ax = axes[1, 0]
-        ax.scatter(y_pred, residuals, alpha=0.5, s=10)
-        ax.axhline(0, color='red', linestyle='--', linewidth=2)
-        ax.set_xlabel('Predicted')
-        ax.set_ylabel('Residual')
-        ax.set_title('Residuals vs Predicted')
-        ax.grid(True, alpha=0.3)
-        
-        # 4. Q-Q plot
-        ax = axes[1, 1]
-        from scipy import stats
-        stats.probplot(residuals, dist="norm", plot=ax)
-        ax.set_title('Q-Q Plot (Normality Check)')
-        ax.grid(True, alpha=0.3)
-        
-        plt.tight_layout()
-        plt.show()
-    
-    def plot_error_analysis(
-        self,
-        data: Union[TFDataset, Tuple[np.ndarray, np.ndarray]],
-        feature_names: Optional[List[str]] = None,
-        figsize: Tuple[int, int] = (14, 10),
-    ) -> None:
-        """
-        Plot error analysis by feature.
-        
-        Shows how prediction error varies with each input feature.
-        
-        Args:
-            data: Evaluation data
-            feature_names: Optional feature names
-            figsize: Figure size
-        """
-        import matplotlib.pyplot as plt
-        
-        if isinstance(data, TFDataset):
-            features = data.features
-            feature_names = feature_names or data.feature_names
-        else:
-            features, _ = data
-        
-        if feature_names is None:
-            feature_names = [f"Feature {i}" for i in range(features.shape[1])]
-        
-        result = self.evaluate(data, include_predictions=True)
-        abs_errors = np.abs(result.residuals)
-        
-        n_features = min(len(feature_names), 6)  # Limit to 6 features
-        fig, axes = plt.subplots(2, 3, figsize=figsize)
-        axes = axes.flatten()
-        
-        for i, (ax, name) in enumerate(zip(axes, feature_names[:n_features])):
-            ax.scatter(features[:, i], abs_errors, alpha=0.5, s=10)
-            ax.set_xlabel(name)
-            ax.set_ylabel('Absolute Error')
-            ax.set_title(f'Error vs {name}')
-            ax.grid(True, alpha=0.3)
-        
-        plt.tight_layout()
-        plt.suptitle('Error Analysis by Feature', y=1.02)
-        plt.show()
-    
-    def compare_with_benchmark(
-        self,
-        data: Union[TFDataset, Tuple[np.ndarray, np.ndarray]],
-        benchmark_fn: Callable[[np.ndarray], np.ndarray],
-        benchmark_name: str = "Benchmark",
-    ) -> Dict[str, Dict[str, float]]:
-        """
-        Compare model with a benchmark (e.g., Black-Scholes).
-        
-        Args:
-            data: Evaluation data
-            benchmark_fn: Function that takes features and returns predictions
-            benchmark_name: Name for the benchmark
-        
-        Returns:
-            Dictionary with metrics for both model and benchmark
-        """
-        if isinstance(data, TFDataset):
-            features = data.features
-            targets = data.targets.flatten()
-        else:
-            features, targets = data
-            targets = np.asarray(targets).flatten()
-        
-        # Model predictions
-        model_preds = self.model.predict(features, verbose=0).flatten()
-        
-        # Benchmark predictions
-        benchmark_preds = benchmark_fn(features)
-        
-        # Denormalize if needed
-        if self.target_scaler:
-            model_preds = self.target_scaler.denormalize(model_preds)
-            targets = self.target_scaler.denormalize(targets)
-        
-        # Compute metrics for both
-        metrics = ["mse", "mae", "rmse", "mape", "r2"]
-        
-        return {
-            "model": compute_metrics(targets, model_preds, metrics),
-            benchmark_name: compute_metrics(targets, benchmark_preds, metrics),
-        }
-
-
-def evaluate_model(
-    model: tf.keras.Model,
-    data: Union[TFDataset, tf.data.Dataset, Tuple[np.ndarray, np.ndarray]],
-    metrics: Optional[List[str]] = None,
-    target_scaler: Optional[NormalizationStats] = None,
-) -> EvaluationResult:
-    """
-    Evaluate a model (convenience function).
-    
-    Args:
-        model: Keras model
-        data: Evaluation data
-        metrics: List of metrics to compute
-        target_scaler: Optional normalization stats for denormalizing
-    
-    Returns:
-        EvaluationResult
-    """
-    evaluator = Evaluator(model, target_scaler=target_scaler)
-    return evaluator.evaluate(data, metrics=metrics)
-
+# ---------------------------------------------------------------------------
+# Metrics (delegates to sklearn)
+# ---------------------------------------------------------------------------
 
 def compute_metrics(
     y_true: np.ndarray,
@@ -400,62 +60,417 @@ def compute_metrics(
 ) -> Dict[str, float]:
     """
     Compute evaluation metrics.
-    
+
+    Standard metrics delegate to ``sklearn.metrics``.  Domain-specific metrics
+    (percentile errors) are computed directly.
+
     Available metrics:
-        - mse: Mean Squared Error
-        - mae: Mean Absolute Error
-        - rmse: Root Mean Squared Error
-        - mape: Mean Absolute Percentage Error
-        - r2: R² (coefficient of determination)
-        - max_error: Maximum absolute error
-        - p95_error: 95th percentile error
-        - p99_error: 99th percentile error
-    
-    Args:
-        y_true: Ground truth values
-        y_pred: Predicted values
-        metrics: List of metric names
-    
-    Returns:
-        Dictionary of metric values
+        mse, mae, rmse, mape, r2, max_error, p95_error, p99_error, median_error
+
+    Parameters
+    ----------
+    y_true : np.ndarray
+        Ground truth values.
+    y_pred : np.ndarray
+        Predicted values.
+    metrics : list of str
+        Metric names to compute.
+
+    Returns
+    -------
+    dict
+        Metric name -> float value.
     """
     y_true = np.asarray(y_true).flatten()
     y_pred = np.asarray(y_pred).flatten()
-    
-    errors = y_true - y_pred
-    abs_errors = np.abs(errors)
-    
-    result = {}
-    
+    abs_errors = np.abs(y_true - y_pred)
+
+    result: Dict[str, float] = {}
+
     for metric in metrics:
-        metric = metric.lower()
-        
-        if metric == "mse":
-            result["mse"] = float(np.mean(errors ** 2))
-        elif metric == "mae":
-            result["mae"] = float(np.mean(abs_errors))
-        elif metric == "rmse":
-            result["rmse"] = float(np.sqrt(np.mean(errors ** 2)))
-        elif metric == "mape":
-            # Avoid division by zero
+        m = metric.lower()
+
+        if m == "mse":
+            result["mse"] = float(mean_squared_error(y_true, y_pred))
+        elif m == "mae":
+            result["mae"] = float(mean_absolute_error(y_true, y_pred))
+        elif m == "rmse":
+            result["rmse"] = float(mean_squared_error(y_true, y_pred, squared=False))
+        elif m == "mape":
+            # sklearn MAPE returns fraction (0-1+), we report as percentage
             mask = np.abs(y_true) > 1e-8
             if mask.any():
-                result["mape"] = float(np.mean(abs_errors[mask] / np.abs(y_true[mask])) * 100)
+                result["mape"] = float(
+                    mean_absolute_percentage_error(y_true[mask], y_pred[mask]) * 100
+                )
             else:
                 result["mape"] = 0.0
-        elif metric == "r2":
-            ss_res = np.sum(errors ** 2)
-            ss_tot = np.sum((y_true - np.mean(y_true)) ** 2)
-            result["r2"] = float(1 - ss_res / (ss_tot + 1e-8))
-        elif metric == "max_error":
+        elif m == "r2":
+            result["r2"] = float(r2_score(y_true, y_pred))
+        elif m == "max_error":
             result["max_error"] = float(np.max(abs_errors))
-        elif metric == "p95_error":
+        elif m == "p95_error":
             result["p95_error"] = float(np.percentile(abs_errors, 95))
-        elif metric == "p99_error":
+        elif m == "p99_error":
             result["p99_error"] = float(np.percentile(abs_errors, 99))
-        elif metric == "median_error":
+        elif m == "median_error":
             result["median_error"] = float(np.median(abs_errors))
         else:
             raise ValueError(f"Unknown metric: {metric}")
-    
+
     return result
+
+
+# ---------------------------------------------------------------------------
+# Evaluator
+# ---------------------------------------------------------------------------
+
+class Evaluator:
+    """
+    Comprehensive model evaluator.
+
+    Handles ndarray features (MLP pricers), dict features (GNN / graph models),
+    and pre-batched ``tf.data.Dataset`` pipelines.
+
+    Attributes
+    ----------
+    model : tf.keras.Model
+        Model to evaluate.
+    target_scaler : sklearn scaler, optional
+        Scaler for denormalising predictions (must have ``inverse_transform``).
+
+    Example
+    -------
+    >>> evaluator = Evaluator(model, target_scaler=scaler)
+    >>> result = evaluator.evaluate(test_ds)
+    >>> print(result.summary())
+    """
+
+    def __init__(
+        self,
+        model: tf.keras.Model,
+        target_scaler: Optional[Scaler] = None,
+    ):
+        self.model = model
+        self.target_scaler = target_scaler
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def evaluate(
+        self,
+        data: EvalData,
+        metrics: Optional[List[str]] = None,
+        include_predictions: bool = True,
+        batch_size: int = 256,
+    ) -> EvaluationResult:
+        """
+        Evaluate model on dataset.
+
+        Parameters
+        ----------
+        data : EvalData
+            Evaluation data in any supported format.
+        metrics : list of str, optional
+            Metric names (default: standard regression suite).
+        include_predictions : bool
+            Whether to include raw predictions/targets in the result.
+        batch_size : int
+            Batch size when ``data`` is an array tuple.
+
+        Returns
+        -------
+        EvaluationResult
+        """
+        predictions, targets, dataset_info = self._extract_predictions_and_targets(
+            data, batch_size,
+        )
+
+        # Denormalise if scaler is available
+        if self.target_scaler is not None and hasattr(self.target_scaler, "inverse_transform"):
+            predictions = self.target_scaler.inverse_transform(
+                predictions.reshape(-1, 1)
+            ).flatten()
+            targets = self.target_scaler.inverse_transform(
+                targets.reshape(-1, 1)
+            ).flatten()
+
+        if metrics is None:
+            metrics = ["mse", "mae", "rmse", "mape", "r2", "max_error", "p95_error"]
+
+        computed_metrics = compute_metrics(y_true=targets, y_pred=predictions, metrics=metrics)
+
+        residuals = targets - predictions if include_predictions else None
+
+        return EvaluationResult(
+            metrics=computed_metrics,
+            predictions=predictions if include_predictions else None,
+            targets=targets if include_predictions else None,
+            residuals=residuals,
+            dataset_info=dataset_info,
+        )
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _extract_predictions_and_targets(
+        self,
+        data: EvalData,
+        batch_size: int,
+    ) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
+        """Run inference and collect (predictions, targets, info) from any format."""
+
+        # ----- tf.data.Dataset ------------------------------------------------
+        if isinstance(data, tf.data.Dataset):
+            predictions, targets = self._predict_from_tf_dataset(data)
+            return predictions, targets, {"n_samples": len(predictions)}
+
+        # ----- (features, targets) tuple --------------------------------------
+        if isinstance(data, tuple) and len(data) == 2:
+            features, targets_raw = data
+            targets = np.asarray(targets_raw).flatten()
+
+            if isinstance(features, dict):
+                predictions = self._predict_dict_features(features)
+            else:
+                predictions = self.model.predict(
+                    features, batch_size=batch_size, verbose=0,
+                ).flatten()
+
+            return predictions, targets, {"n_samples": len(targets)}
+
+        raise ValueError(
+            f"Unsupported data type: {type(data)}. "
+            "Expected tf.data.Dataset or (features, targets) tuple."
+        )
+
+    def _predict_from_tf_dataset(
+        self,
+        dataset: tf.data.Dataset,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Iterate over batched tf.data.Dataset, run inference, collect results."""
+        all_preds: List[np.ndarray] = []
+        all_targets: List[np.ndarray] = []
+
+        for batch in dataset:
+            if isinstance(batch, (tuple, list)) and len(batch) == 2:
+                batch_features, batch_targets = batch
+            else:
+                raise ValueError(
+                    "tf.data.Dataset must yield (features, targets) tuples."
+                )
+
+            batch_preds = self.model(batch_features, training=False)
+            all_preds.append(tf.reshape(batch_preds, [-1]).numpy())
+            all_targets.append(tf.reshape(batch_targets, [-1]).numpy())
+
+        return np.concatenate(all_preds), np.concatenate(all_targets)
+
+    def _predict_dict_features(self, features: Dict[str, Any]) -> np.ndarray:
+        """Predict from dict features (GNN / graph models)."""
+        tensor_features = {
+            k: tf.convert_to_tensor(v) if not isinstance(v, tf.Tensor) else v
+            for k, v in features.items()
+        }
+        output = self.model(tensor_features, training=False)
+        return tf.reshape(output, [-1]).numpy()
+
+    # ------------------------------------------------------------------
+    # Visualisations
+    # ------------------------------------------------------------------
+
+    def plot_predictions(
+        self,
+        data: EvalData,
+        title: str = "Predicted vs Actual",
+        figsize: Tuple[int, int] = (10, 8),
+        sample_size: Optional[int] = None,
+    ) -> None:
+        """
+        Plot predictions vs actual values (scatter, residual distribution, Q-Q).
+
+        Parameters
+        ----------
+        data : EvalData
+            Evaluation data.
+        title : str
+            Plot title.
+        figsize : tuple
+            Figure size.
+        sample_size : int, optional
+            Sub-sample for large datasets.
+        """
+        import matplotlib.pyplot as plt
+
+        result = self.evaluate(data, include_predictions=True)
+        y_true = result.targets
+        y_pred = result.predictions
+
+        if sample_size and len(y_true) > sample_size:
+            idx = np.random.choice(len(y_true), sample_size, replace=False)
+            y_true = y_true[idx]
+            y_pred = y_pred[idx]
+
+        fig, axes = plt.subplots(2, 2, figsize=figsize)
+
+        # Scatter: predicted vs actual
+        ax = axes[0, 0]
+        ax.scatter(y_true, y_pred, alpha=0.5, s=10)
+        lims = [min(y_true.min(), y_pred.min()), max(y_true.max(), y_pred.max())]
+        ax.plot(lims, lims, "r--", linewidth=2, label="Perfect")
+        ax.set_xlabel("Actual")
+        ax.set_ylabel("Predicted")
+        ax.set_title(f'{title}\nR² = {result.metrics.get("r2", 0):.4f}')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+        # Residual distribution
+        ax = axes[0, 1]
+        residuals = y_true - y_pred
+        ax.hist(residuals, bins=50, edgecolor="black", alpha=0.7)
+        ax.axvline(0, color="red", linestyle="--", linewidth=2)
+        ax.set_xlabel("Residual (Actual - Predicted)")
+        ax.set_ylabel("Frequency")
+        ax.set_title(f'Residual Distribution\nMAE = {result.metrics.get("mae", 0):.4f}')
+        ax.grid(True, alpha=0.3)
+
+        # Residual vs predicted
+        ax = axes[1, 0]
+        ax.scatter(y_pred, residuals, alpha=0.5, s=10)
+        ax.axhline(0, color="red", linestyle="--", linewidth=2)
+        ax.set_xlabel("Predicted")
+        ax.set_ylabel("Residual")
+        ax.set_title("Residuals vs Predicted")
+        ax.grid(True, alpha=0.3)
+
+        # Q-Q plot
+        ax = axes[1, 1]
+        from scipy import stats
+        stats.probplot(residuals, dist="norm", plot=ax)
+        ax.set_title("Q-Q Plot (Normality Check)")
+        ax.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.show()
+
+    def plot_error_analysis(
+        self,
+        data: EvalData,
+        feature_names: Optional[List[str]] = None,
+        figsize: Tuple[int, int] = (14, 10),
+    ) -> None:
+        """
+        Plot error analysis by feature.
+
+        Parameters
+        ----------
+        data : EvalData
+            Evaluation data.
+        feature_names : list of str, optional
+            Feature column names.
+        figsize : tuple
+            Figure size.
+        """
+        import matplotlib.pyplot as plt
+
+        if isinstance(data, tuple) and len(data) == 2:
+            features, _ = data
+        else:
+            raise ValueError("plot_error_analysis requires (features, targets) tuple input.")
+
+        if isinstance(features, dict):
+            raise ValueError("plot_error_analysis does not support dict features.")
+
+        if feature_names is None:
+            feature_names = [f"Feature {i}" for i in range(features.shape[1])]
+
+        result = self.evaluate(data, include_predictions=True)
+        abs_errors = np.abs(result.residuals)
+
+        n_features = min(len(feature_names), 6)
+        fig, axes = plt.subplots(2, 3, figsize=figsize)
+        axes = axes.flatten()
+
+        for i, (ax, name) in enumerate(zip(axes, feature_names[:n_features])):
+            ax.scatter(features[:, i], abs_errors, alpha=0.5, s=10)
+            ax.set_xlabel(name)
+            ax.set_ylabel("Absolute Error")
+            ax.set_title(f"Error vs {name}")
+            ax.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.suptitle("Error Analysis by Feature", y=1.02)
+        plt.show()
+
+    def compare_with_benchmark(
+        self,
+        data: Tuple[np.ndarray, np.ndarray],
+        benchmark_fn: Callable[[np.ndarray], np.ndarray],
+        benchmark_name: str = "Benchmark",
+    ) -> Dict[str, Dict[str, float]]:
+        """
+        Compare model with a benchmark (e.g. Black-Scholes).
+
+        Parameters
+        ----------
+        data : tuple of (features, targets)
+            Evaluation data.
+        benchmark_fn : callable
+            ``features -> predictions``.
+        benchmark_name : str
+            Label for the benchmark.
+
+        Returns
+        -------
+        dict
+            ``{"model": {metrics}, benchmark_name: {metrics}}``.
+        """
+        features, targets = data
+        targets = np.asarray(targets).flatten()
+
+        model_preds = self.model.predict(features, verbose=0).flatten()
+        benchmark_preds = benchmark_fn(features)
+
+        if self.target_scaler is not None and hasattr(self.target_scaler, "inverse_transform"):
+            model_preds = self.target_scaler.inverse_transform(
+                model_preds.reshape(-1, 1)
+            ).flatten()
+            targets = self.target_scaler.inverse_transform(
+                targets.reshape(-1, 1)
+            ).flatten()
+
+        metric_names = ["mse", "mae", "rmse", "mape", "r2"]
+        return {
+            "model": compute_metrics(targets, model_preds, metric_names),
+            benchmark_name: compute_metrics(targets, benchmark_preds, metric_names),
+        }
+
+
+# ---------------------------------------------------------------------------
+# Convenience function
+# ---------------------------------------------------------------------------
+
+def evaluate_model(
+    model: tf.keras.Model,
+    data: EvalData,
+    metrics: Optional[List[str]] = None,
+    target_scaler: Optional[Scaler] = None,
+) -> EvaluationResult:
+    """
+    Evaluate a model (one-liner convenience).
+
+    Parameters
+    ----------
+    model : tf.keras.Model
+    data : EvalData
+    metrics : list of str, optional
+    target_scaler : sklearn scaler, optional
+
+    Returns
+    -------
+    EvaluationResult
+    """
+    evaluator = Evaluator(model, target_scaler=target_scaler)
+    return evaluator.evaluate(data, metrics=metrics)

@@ -1,10 +1,12 @@
 """
-Core ML components: base classes, configuration, and callbacks.
+Core ML components: base classes, configuration, result types, and tracking.
 
 This module provides the foundational components for the ML framework:
     - Base model classes (BaseModel, PricingModel, CalibrationModel, PortfolioModel)
     - Configuration dataclasses (TrainingConfig, OptimizerConfig, etc.)
-    - Custom Keras callbacks
+    - Result types (TrainingResult, EvaluationResult, CheckpointInfo, TuningResult)
+    - Experiment tracking (ExperimentTracker, MLflowTracker, etc.)
+    - Trainable protocol and KerasTrainableAdapter
 
 Usage:
     from src.machine_learning.core import (
@@ -13,46 +15,43 @@ Usage:
         TrainingConfig,
         OptimizerConfig,
         EarlyStoppingConfig,
+        TrainingResult,
+        EvaluationResult,
     )
 """
+# Base model hierarchy
 from src.machine_learning.core.base import (
     BaseModel,
     PricingModel,
     CalibrationModel,
     PortfolioModel,
 )
+
+# Configuration (canonical TrainingConfig lives here)
 from src.machine_learning.core.config import (
     TrainingConfig,
     OptimizerConfig,
     LRScheduleConfig,
     EarlyStoppingConfig,
     CheckpointConfig,
-    DataConfig,
     ModelConfig,
 )
-from src.machine_learning.core.callbacks import (
-    MetricsLogger,
-    PricingErrorCallback,
-    TrainingProgressCallback,
-    GradientMonitorCallback,
-    get_standard_callbacks,
-)
 
-# Result types (used by pipelines)
+# Result types (canonical definitions — single source of truth)
 from src.machine_learning.core.types import (
-    TrainingConfig as TypesTrainingConfig,
     TrainingResult,
     EvaluationResult,
     CheckpointInfo,
     TuningResult,
 )
-# Legacy aliases
-from src.machine_learning.core.types import (
-    TrainingResult as LegacyTrainingResult,
-    EvaluationResult as LegacyEvaluationResult,
+
+# Trainable protocol
+from src.machine_learning.core.protocols import (
+    Trainable,
+    KerasTrainableAdapter,
 )
 
-# Experiment tracking (no tensorflow dependency)
+# Experiment tracking (no TensorFlow dependency at import time)
 from src.machine_learning.core.tracking import (
     ExperimentTracker,
     RunInfo,
@@ -74,23 +73,15 @@ __all__ = [
     "LRScheduleConfig",
     "EarlyStoppingConfig",
     "CheckpointConfig",
-    "DataConfig",
     "ModelConfig",
-    # Callbacks
-    "MetricsLogger",
-    "PricingErrorCallback",
-    "TrainingProgressCallback",
-    "GradientMonitorCallback",
-    "get_standard_callbacks",
     # Result types
-    "TypesTrainingConfig",
     "TrainingResult",
     "EvaluationResult",
     "CheckpointInfo",
     "TuningResult",
-    # Legacy
-    "LegacyTrainingResult",
-    "LegacyEvaluationResult",
+    # Protocols
+    "Trainable",
+    "KerasTrainableAdapter",
     # Experiment tracking
     "ExperimentTracker",
     "RunInfo",

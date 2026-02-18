@@ -1,46 +1,64 @@
 import logging
 import tensorflow as tf
-from typing import Dict, Any, Union, Tuple
+from typing import Any, Dict, Tuple, Union
+
+from src.machine_learning.core.base import BaseModel
 from src.machine_learning.models.gnn_rnn_hybrid.layers import (
+    FusionLayer,
     GnnBlock,
     RnnBlock,
-    FusionLayer,
     TargetAttentionLayer,
     TargetPnlOutput,
 )
 
-# define logging at module level.
 logger = logging.getLogger(__name__)
 
+try:
+    from keras.saving import register_keras_serializable
+except ImportError:
+    register_keras_serializable = tf.keras.saving.register_keras_serializable
 
-class HybridGnnRnn(tf.keras.Model):
+_REGISTER_PACKAGE = "QuantStrata.machine_learning"
+
+
+@register_keras_serializable(package=_REGISTER_PACKAGE)
+class HybridGnnRnn(BaseModel):
     """
-    Hybrid GNN-RNN model for PnL simulation.
+    Hybrid GNN-RNN model for portfolio PnL simulation.
 
-    This model integrates the GNN for modelling trade structure & relationships with RNN for PnL temporal modelling,
-    enabling better generalisation oto new trades with different attributes and new scenarios.
+    Integrates GNN (trade structure & relationships) with RNN (temporal PnL
+    modelling), enabling generalisation to new trades and scenarios.
     """
 
-    def __init__(self, model_config: Dict[str, Any], **kwargs) -> None:
+    def __init__(
+        self,
+        model_config: Dict[str, Any],
+        name: str = "hybrid_gnn_rnn",
+        **kwargs: Any,
+    ) -> None:
         """
         Initialise the Hybrid GNN-RNN model.
 
-        :param model_config:  dictionary configuration containing model / sub-layer parameters.
+        Parameters
+        ----------
+        model_config : dict
+            Configuration containing model/sub-layer parameters (general, gnn_model,
+            rnn_model, fusion_model, attention_model, projection_model).
+        name : str, optional
+            Model name (default: "hybrid_gnn_rnn").
+        **kwargs
+            Passed to BaseModel (e.g. trainable).
         """
-        # init call to super class
-        super().__init__(**kwargs)
+        super().__init__(name=name, **kwargs)
+        self.update_metadata(model_type="portfolio")
 
-        # initiate required variables.
         self.model_config = model_config
-        self.kwargs = kwargs
-
-        # initiate derived variables.
-        self.general_config: Dict[str, Any] = model_config.get('general')
-        self.gnn_config: Dict[str, Any] = model_config.get('gnn_model')
-        self.rnn_config: Dict[str, Any] = model_config.get('rnn_model')
-        self.fusion_config: Dict[str, Any] = model_config.get('fusion_model')
-        self.attention_config: Dict[str, Any] = model_config.get('attention_model')
-        self.projection_config: Dict[str, Any] = model_config.get('projection_model')
+        self.general_config: Dict[str, Any] = model_config.get("general", {})
+        self.gnn_config: Dict[str, Any] = model_config.get("gnn_model", {})
+        self.rnn_config: Dict[str, Any] = model_config.get("rnn_model", {})
+        self.fusion_config: Dict[str, Any] = model_config.get("fusion_model", {})
+        self.attention_config: Dict[str, Any] = model_config.get("attention_model", {})
+        self.projection_config: Dict[str, Any] = model_config.get("projection_model", {})
 
         # initiate layers to build.
         self.gnn_block = GnnBlock(layer_config=self.gnn_config, name=f'{self.name}_gnn_block')
@@ -227,25 +245,15 @@ class HybridGnnRnn(tf.keras.Model):
         return tf.TensorShape([pnl_history[0], target_indices[0]])
 
     def get_config(self) -> Dict[str, Any]:
-        """
-        Get configuration for serializing the layer.
-        :return:
-        """
-        config = super(HybridGnnRnn, self).get_config()
-        config.update({
-            'model_config': self.model_config
-        })
+        """Return configuration for serialization (metadata from BaseModel + model_config)."""
+        config = super().get_config()
+        config["model_config"] = self.model_config
         return config
 
     @classmethod
     def from_config(cls, config: Dict[str, Any]) -> "HybridGnnRnn":
-        """
-        Instantiates the HybridGnnRnn from its config.
-
-        :param config:
-        :return:
-        """
-        return cls(**config)
+        """Instantiate HybridGnnRnn from config (delegates to BaseModel for metadata handling)."""
+        return super().from_config(config)
 
     @staticmethod
     def _validate_inputs(inputs: Dict[str, Union[tf.Tensor, tf.SparseTensor]]) -> None:

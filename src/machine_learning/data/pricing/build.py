@@ -1,30 +1,35 @@
 """
-Pricing model data builder: produces tf.data.Dataset(s) for models/pricing.
+Pricing model data builder.
 
-Contract: build_pricing_data() returns train_ds, val_ds, test_ds and optional
-normalisation stats so the training pipeline has a single, repeatable interface.
+Produces train / val / test ``tf.data.Dataset`` splits for pricing models.
+Normalisation uses ``sklearn.preprocessing.StandardScaler``; splitting uses
+``sklearn.model_selection.train_test_split``.
+
+Usage:
+    result = build_pricing_data(n_samples=10_000, seed=42)
+    trainer.fit(result.train_ds, result.val_ds)
 """
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
-import tensorflow as tf
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 
 from src.machine_learning.data.dataset import (
-    TFDataset,
-    NormalizationStats,
+    build_tf_dataset,
     create_pricing_dataset,
+    SyntheticData,
 )
-from src.machine_learning.data.types import MLDataset
 
 
 @dataclass
 class PricingDataResult:
     """
-    Result of build_pricing_data(): tf.data.Dataset splits and stats.
+    Result of ``build_pricing_data``.
 
     Attributes
     ----------
@@ -34,20 +39,26 @@ class PricingDataResult:
         Validation dataset (batched, no shuffle).
     test_ds : tf.data.Dataset
         Test dataset (batched, no shuffle).
-    feature_stats : NormalizationStats or None
-        Stats used to normalise features (for inference).
-    target_stats : NormalizationStats or None
-        Stats used to normalise targets (for denormalising predictions).
+    feature_scaler : StandardScaler
+        Fitted sklearn scaler for features (for inference denormalisation).
+    target_scaler : StandardScaler
+        Fitted sklearn scaler for targets (for prediction denormalisation).
+    feature_names : list of str
+        Feature column names.
+    target_names : list of str
+        Target column names.
     metadata : dict
-        Data build metadata (n_samples, splits, seed).
+        Build metadata (n_samples, splits, seed, etc.).
     """
 
-    train_ds: tf.data.Dataset
-    val_ds: tf.data.Dataset
-    test_ds: tf.data.Dataset
-    feature_stats: Optional[NormalizationStats] = None
-    target_stats: Optional[NormalizationStats] = None
-    metadata: dict = field(default_factory=dict)
+    train_ds: Any  # tf.data.Dataset
+    val_ds: Any    # tf.data.Dataset
+    test_ds: Any   # tf.data.Dataset
+    feature_scaler: StandardScaler = field(default_factory=StandardScaler)
+    target_scaler: StandardScaler = field(default_factory=StandardScaler)
+    feature_names: List[str] = field(default_factory=list)
+    target_names: List[str] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 def build_pricing_data(
@@ -60,10 +71,13 @@ def build_pricing_data(
     normalize: bool = True,
 ) -> PricingDataResult:
     """
-    Build pricing data and return train/val/test tf.data.Dataset(s).
+    Build pricing data and return train / val / test ``tf.data.Dataset`` splits.
 
-    Uses the generic TFDataset and create_pricing_dataset; split and
-    batching are applied so pipelines receive a consistent interface.
+    Steps:
+        1. Generate synthetic pricing data via ``create_pricing_dataset``.
+        2. Split with ``sklearn.model_selection.train_test_split``.
+        3. Normalise with ``sklearn.preprocessing.StandardScaler`` (fit on train only).
+        4. Wrap each split in a ``tf.data.Dataset`` via ``build_tf_dataset``.
 
     Parameters
     ----------
@@ -85,44 +99,51 @@ def build_pricing_data(
     Returns
     -------
     PricingDataResult
-        train_ds, val_ds, test_ds, feature_stats, target_stats, metadata.
+        ``train_ds``, ``val_ds``, ``test_ds``, fitted scalers, and metadata.
     """
     if abs(train_ratio + val_ratio + test_ratio - 1.0) > 1e-6:
         raise ValueError("train_ratio + val_ratio + test_ratio must equal 1.0")
 
-    dataset = create_pricing_dataset(n_samples=n_samples, seed=seed)
+    # 1. Generate synthetic data
+    data: SyntheticData = create_pricing_dataset(n_samples=n_samples, seed=seed)
+    features = data.features
+    targets = data.targets.reshape(-1, 1) if data.targets.ndim == 1 else data.targets
+
+    # 2. Split: train | temp → val | test
+    temp_size = val_ratio + test_ratio
+    X_train, X_tmp, y_train, y_tmp = train_test_split(
+        features, targets, test_size=temp_size, random_state=seed,
+    )
+    relative_test = test_ratio / temp_size
+    X_val, X_test, y_val, y_test = train_test_split(
+        X_tmp, y_tmp, test_size=relative_test, random_state=seed,
+    )
+
+    # 3. Normalise (fit on training data only)
+    feature_scaler = StandardScaler()
+    target_scaler = StandardScaler()
+
     if normalize:
-        dataset.normalize_features(method="zscore").normalize_targets(method="zscore")
+        X_train = feature_scaler.fit_transform(X_train)
+        X_val = feature_scaler.transform(X_val)
+        X_test = feature_scaler.transform(X_test)
+        y_train = target_scaler.fit_transform(y_train)
+        y_val = target_scaler.transform(y_val)
+        y_test = target_scaler.transform(y_test)
 
-    train_ds_split, val_ds_split, test_ds_split = dataset.split(
-        train=train_ratio,
-        val=val_ratio,
-        test=test_ratio,
-        seed=seed,
-    )
-
-    train_ds = train_ds_split.to_tf_dataset(
-        batch_size=batch_size,
-        shuffle=True,
-        prefetch=tf.data.AUTOTUNE,
-    )
-    val_ds = val_ds_split.to_tf_dataset(
-        batch_size=batch_size,
-        shuffle=False,
-        prefetch=tf.data.AUTOTUNE,
-    )
-    test_ds = test_ds_split.to_tf_dataset(
-        batch_size=batch_size,
-        shuffle=False,
-        prefetch=tf.data.AUTOTUNE,
-    )
+    # 4. Build tf.data.Dataset pipelines
+    train_ds = build_tf_dataset(X_train, y_train, batch_size=batch_size, shuffle=True)
+    val_ds = build_tf_dataset(X_val, y_val, batch_size=batch_size, shuffle=False)
+    test_ds = build_tf_dataset(X_test, y_test, batch_size=batch_size, shuffle=False)
 
     return PricingDataResult(
         train_ds=train_ds,
         val_ds=val_ds,
         test_ds=test_ds,
-        feature_stats=dataset.feature_stats,
-        target_stats=dataset.target_stats,
+        feature_scaler=feature_scaler,
+        target_scaler=target_scaler,
+        feature_names=data.feature_names,
+        target_names=data.target_names,
         metadata={
             "n_samples": n_samples,
             "train_ratio": train_ratio,
@@ -135,95 +156,41 @@ def build_pricing_data(
     )
 
 
-def build_pricing_dataset_from_mc(
+def build_pricing_dataset_from_fn(
     n_samples: int = 10_000,
-    paths_or_fn: Optional[Union[Tuple[np.ndarray, np.ndarray], Callable[..., np.ndarray]]] = None,
+    pricing_fn: Optional[Callable[..., np.ndarray]] = None,
     seed: Optional[int] = None,
     spot_range: Tuple[float, float] = (80.0, 120.0),
     strike_range: Tuple[float, float] = (80.0, 120.0),
     vol_range: Tuple[float, float] = (0.1, 0.5),
     rate_range: Tuple[float, float] = (0.01, 0.10),
     expiry_range: Tuple[float, float] = (0.1, 2.0),
-) -> MLDataset:
+) -> SyntheticData:
     """
-    Build pricing dataset from MC paths or a pricing callable (MC-style).
+    Build pricing dataset using a custom pricing callable.
 
-    If paths_or_fn is a callable, it should have signature (spot, strike, vol, rate, expiry, is_call) -> prices
-    (e.g. wrapping an MC pricer). If it is a tuple (features, prices), those arrays are used directly.
-    Otherwise uses create_pricing_dataset (synthetic Black-Scholes).
+    If ``pricing_fn`` is None, falls back to Black-Scholes via
+    ``create_pricing_dataset``.  This is a convenience wrapper for MC
+    or analytic pricers.
+
+    Parameters
+    ----------
+    n_samples : int
+        Number of samples to generate.
+    pricing_fn : callable, optional
+        ``(spot, strike, vol, rate, expiry, is_call) -> price``.
+    seed : int, optional
+        Random seed.
+    spot_range, strike_range, vol_range, rate_range, expiry_range : tuple
+        Uniform sampling ranges for each parameter.
 
     Returns
     -------
-    MLDataset
-        features, targets, feature_names, target_names.
+    SyntheticData
+        Raw features, targets, names, and metadata.  Apply sklearn scaler
+        and ``build_tf_dataset`` yourself.
     """
-    if paths_or_fn is None:
-        ds = create_pricing_dataset(
-            n_samples=n_samples,
-            seed=seed,
-            spot_range=spot_range,
-            strike_range=strike_range,
-            vol_range=vol_range,
-            rate_range=rate_range,
-            expiry_range=expiry_range,
-        )
-        return MLDataset(
-            features=ds.features,
-            targets=ds.targets,
-            feature_names=ds.feature_names,
-            target_names=ds.target_names,
-            metadata=getattr(ds, "metadata", {}),
-        )
-    if callable(paths_or_fn):
-        ds = create_pricing_dataset(
-            n_samples=n_samples,
-            seed=seed,
-            spot_range=spot_range,
-            strike_range=strike_range,
-            vol_range=vol_range,
-            rate_range=rate_range,
-            expiry_range=expiry_range,
-            pricing_fn=paths_or_fn,
-        )
-        return MLDataset(
-            features=ds.features,
-            targets=ds.targets,
-            feature_names=ds.feature_names,
-            target_names=ds.target_names,
-            metadata=getattr(ds, "metadata", {}),
-        )
-    features, prices = paths_or_fn
-    return MLDataset(
-        features=np.asarray(features),
-        targets=np.asarray(prices),
-        feature_names=["spot", "strike", "volatility", "rate", "time_to_expiry", "is_call"],
-        target_names=["price"],
-        metadata={"n_samples": len(features), "source": "mc_paths"},
-    )
-
-
-def build_pricing_dataset_from_analytic(
-    n_samples: int = 10_000,
-    pricer_fn: Optional[Callable[..., np.ndarray]] = None,
-    seed: Optional[int] = None,
-    spot_range: Tuple[float, float] = (80.0, 120.0),
-    strike_range: Tuple[float, float] = (80.0, 120.0),
-    vol_range: Tuple[float, float] = (0.1, 0.5),
-    rate_range: Tuple[float, float] = (0.01, 0.10),
-    expiry_range: Tuple[float, float] = (0.1, 2.0),
-) -> MLDataset:
-    """
-    Build pricing dataset using an analytic pricer.
-
-    pricer_fn(spot, strike, vol, rate, expiry, is_call) -> prices. If None, uses Black-Scholes
-    via create_pricing_dataset.
-
-    Returns
-    -------
-    MLDataset
-        features, targets, feature_names, target_names.
-    """
-    ds = create_pricing_dataset(
+    return create_pricing_dataset(
         n_samples=n_samples,
         seed=seed,
         spot_range=spot_range,
@@ -231,20 +198,12 @@ def build_pricing_dataset_from_analytic(
         vol_range=vol_range,
         rate_range=rate_range,
         expiry_range=expiry_range,
-        pricing_fn=pricer_fn,
-    )
-    return MLDataset(
-        features=ds.features,
-        targets=ds.targets,
-        feature_names=ds.feature_names,
-        target_names=ds.target_names,
-        metadata=getattr(ds, "metadata", {}),
+        pricing_fn=pricing_fn,
     )
 
 
 __all__ = [
     "PricingDataResult",
     "build_pricing_data",
-    "build_pricing_dataset_from_mc",
-    "build_pricing_dataset_from_analytic",
+    "build_pricing_dataset_from_fn",
 ]

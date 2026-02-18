@@ -1,226 +1,243 @@
 """
 Efficient model inference utilities.
 
-This module provides optimized prediction classes for:
-    - Single model inference
-    - Batch processing
-    - Streaming predictions
-    - GPU memory management
+This module provides:
+    - ``Predictor``: Single-model inference (ndarray and dict features),
+      MC Dropout uncertainty estimation, DataFrame prediction.
+    - ``BatchPredictor``: Multi-model ensemble prediction and comparison.
+    - ``create_serving_function``: TF Serving deployment helper.
+
+Scaler convention:
+    All scalers are sklearn objects (``StandardScaler``, ``MinMaxScaler``, etc.)
+    that implement ``.transform()`` and ``.inverse_transform()``.
 
 Usage:
-    predictor = Predictor(model)
-    
-    # Single batch prediction
+    predictor = Predictor(model, feature_scaler=scaler_X, target_scaler=scaler_y)
+
+    # Standard ndarray features
     prices = predictor.predict(features)
-    
-    # Large dataset prediction with automatic batching
-    prices = predictor.predict_large(large_features, batch_size=1024)
-    
-    # Prediction with automatic denormalization
-    predictor.set_scalers(feature_scaler, target_scaler)
-    prices = predictor.predict(raw_features, denormalize=True)
+
+    # Dict features (GNN model)
+    pnl = predictor.predict({"trade_features": tf, "adjacency_matrix": adj})
+
+    # Pre-batched tf.data.Dataset
+    pnl = predictor.predict_dataset(test_ds)
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, Union
+import logging
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import tensorflow as tf
 
-from src.machine_learning.data.dataset import NormalizationStats
+logger = logging.getLogger(__name__)
+
+# Type alias — sklearn scaler or any object with transform / inverse_transform
+Scaler = Any
+
+# Features can be arrays or dicts of arrays/tensors
+Features = Union[np.ndarray, Dict[str, Any]]
 
 
 class Predictor:
     """
     High-level predictor for TensorFlow models.
-    
-    Provides:
-        - Efficient batch prediction
-        - Automatic feature normalization
-        - Automatic prediction denormalization
-        - Memory-efficient large dataset processing
-    
-    Attributes:
-        model: TensorFlow model
-        feature_scaler: Optional feature normalization stats
-        target_scaler: Optional target normalization stats
-    
-    Example:
-        predictor = Predictor(model)
-        predictor.set_scalers(train_dataset.feature_stats, train_dataset.target_stats)
-        
-        # Predict with automatic normalization/denormalization
-        prices = predictor.predict(raw_features, normalize=True, denormalize=True)
+
+    Supports ndarray features (MLP models) and dict features (GNN / graph
+    models), with optional normalisation via sklearn scalers.
+
+    Attributes
+    ----------
+    model : tf.keras.Model
+        TensorFlow model for inference.
+    feature_scaler : sklearn scaler, optional
+        Applied to ndarray features before prediction.
+    target_scaler : sklearn scaler, optional
+        Applied to predictions for denormalisation.
     """
-    
+
     def __init__(
         self,
         model: tf.keras.Model,
-        feature_scaler: Optional[NormalizationStats] = None,
-        target_scaler: Optional[NormalizationStats] = None,
+        feature_scaler: Optional[Scaler] = None,
+        target_scaler: Optional[Scaler] = None,
     ):
-        """
-        Initialize predictor.
-        
-        Args:
-            model: TensorFlow/Keras model
-            feature_scaler: Feature normalization statistics
-            target_scaler: Target normalization statistics
-        """
         self.model = model
         self.feature_scaler = feature_scaler
         self.target_scaler = target_scaler
-    
+
     def set_scalers(
         self,
-        feature_scaler: Optional[NormalizationStats] = None,
-        target_scaler: Optional[NormalizationStats] = None,
+        feature_scaler: Optional[Scaler] = None,
+        target_scaler: Optional[Scaler] = None,
     ) -> "Predictor":
         """
-        Set normalization scalers.
-        
-        Args:
-            feature_scaler: Feature normalization stats
-            target_scaler: Target normalization stats
-        
-        Returns:
-            Self for chaining
+        Set normalisation scalers.
+
+        Returns
+        -------
+        Predictor
+            Self for method chaining.
         """
         if feature_scaler is not None:
             self.feature_scaler = feature_scaler
         if target_scaler is not None:
             self.target_scaler = target_scaler
         return self
-    
+
+    # ------------------------------------------------------------------
+    # Core prediction
+    # ------------------------------------------------------------------
+
     def predict(
         self,
-        features: np.ndarray,
+        features: Features,
         normalize: bool = True,
         denormalize: bool = True,
         batch_size: int = 256,
     ) -> np.ndarray:
         """
-        Generate predictions.
-        
-        Args:
-            features: Input features
-            normalize: Whether to normalize features (if scaler available)
-            denormalize: Whether to denormalize predictions (if scaler available)
-            batch_size: Batch size for prediction
-        
-        Returns:
-            Predictions array
+        Generate predictions from ndarray or dict features.
+
+        Dict features (GNN / graph models) bypass normalisation — those models
+        manage their own feature preprocessing.
+
+        Parameters
+        ----------
+        features : np.ndarray or dict
+            Input features.
+        normalize : bool
+            Normalise ndarray features before prediction (requires scaler).
+        denormalize : bool
+            Denormalise predictions (requires target scaler).
+        batch_size : int
+            Batch size for ndarray prediction.
+
+        Returns
+        -------
+        np.ndarray
+            Predictions (flattened to 1-D).
         """
-        features = np.asarray(features, dtype=np.float32)
-        
-        # Normalize features
-        if normalize and self.feature_scaler is not None:
-            features = self.feature_scaler.normalize(features)
-        
-        # Predict
-        predictions = self.model.predict(features, batch_size=batch_size, verbose=0)
-        predictions = predictions.flatten()
-        
-        # Denormalize predictions
+        if isinstance(features, dict):
+            predictions = self._predict_dict(features)
+        else:
+            features = np.asarray(features, dtype=np.float32)
+
+            if normalize and self.feature_scaler is not None:
+                features = self.feature_scaler.transform(features)
+
+            predictions = self.model.predict(
+                features, batch_size=batch_size, verbose=0,
+            ).flatten()
+
         if denormalize and self.target_scaler is not None:
-            predictions = self.target_scaler.denormalize(predictions)
-        
+            predictions = self.target_scaler.inverse_transform(
+                predictions.reshape(-1, 1)
+            ).flatten()
+
         return predictions
-    
-    def predict_large(
+
+    def predict_dataset(
         self,
-        features: np.ndarray,
-        batch_size: int = 1024,
-        normalize: bool = True,
+        dataset: tf.data.Dataset,
         denormalize: bool = True,
-        progress: bool = True,
     ) -> np.ndarray:
         """
-        Predict on large dataset with memory-efficient batching.
-        
-        Args:
-            features: Large feature array
-            batch_size: Batch size for prediction
-            normalize: Whether to normalize features
-            denormalize: Whether to denormalize predictions
-            progress: Whether to show progress
-        
-        Returns:
-            Predictions array
+        Generate predictions from a pre-batched ``tf.data.Dataset``.
+
+        Parameters
+        ----------
+        dataset : tf.data.Dataset
+            May yield ``(features, targets)`` tuples or feature-only batches.
+        denormalize : bool
+            Denormalise predictions using the target scaler.
+
+        Returns
+        -------
+        np.ndarray
+            Concatenated predictions (flattened).
         """
-        features = np.asarray(features, dtype=np.float32)
-        n_samples = len(features)
-        
-        # Normalize all features at once (more efficient)
-        if normalize and self.feature_scaler is not None:
-            features = self.feature_scaler.normalize(features)
-        
-        # Predict in batches
-        predictions = []
-        n_batches = (n_samples + batch_size - 1) // batch_size
-        
-        for i in range(n_batches):
-            start = i * batch_size
-            end = min(start + batch_size, n_samples)
-            
-            batch_preds = self.model.predict(features[start:end], verbose=0)
-            predictions.append(batch_preds.flatten())
-            
-            if progress and (i + 1) % 10 == 0:
-                print(f"  Batch {i+1}/{n_batches} ({end}/{n_samples} samples)")
-        
-        predictions = np.concatenate(predictions)
-        
-        # Denormalize
+        all_preds: List[np.ndarray] = []
+
+        for batch in dataset:
+            if isinstance(batch, (tuple, list)):
+                batch_features = batch[0]
+            else:
+                batch_features = batch
+
+            batch_preds = self.model(batch_features, training=False)
+            all_preds.append(tf.reshape(batch_preds, [-1]).numpy())
+
+        predictions = np.concatenate(all_preds)
+
         if denormalize and self.target_scaler is not None:
-            predictions = self.target_scaler.denormalize(predictions)
-        
+            predictions = self.target_scaler.inverse_transform(
+                predictions.reshape(-1, 1)
+            ).flatten()
+
         return predictions
-    
+
     def predict_with_uncertainty(
         self,
-        features: np.ndarray,
+        features: Features,
         n_samples: int = 100,
         normalize: bool = True,
         denormalize: bool = True,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Predict with uncertainty estimation using MC Dropout.
-        
-        Requires model to have dropout layers.
-        
-        Args:
-            features: Input features
-            n_samples: Number of forward passes for uncertainty estimation
-            normalize: Whether to normalize features
-            denormalize: Whether to denormalize predictions
-        
-        Returns:
-            Tuple of (mean predictions, std predictions)
+
+        Requires the model to have dropout layers.
+
+        Parameters
+        ----------
+        features : np.ndarray or dict
+            Input features.
+        n_samples : int
+            Number of stochastic forward passes.
+        normalize : bool
+            Normalise ndarray features.
+        denormalize : bool
+            Denormalise predictions.
+
+        Returns
+        -------
+        mean_pred : np.ndarray
+            Mean predictions.
+        std_pred : np.ndarray
+            Standard deviation of predictions (uncertainty).
         """
-        features = np.asarray(features, dtype=np.float32)
-        
-        if normalize and self.feature_scaler is not None:
-            features = self.feature_scaler.normalize(features)
-        
-        # Multiple forward passes with dropout enabled
+        if isinstance(features, dict):
+            prepared = {
+                k: tf.convert_to_tensor(v) if not isinstance(v, tf.Tensor) else v
+                for k, v in features.items()
+            }
+        else:
+            prepared = np.asarray(features, dtype=np.float32)
+            if normalize and self.feature_scaler is not None:
+                prepared = self.feature_scaler.transform(prepared)
+
+        # Multiple forward passes with dropout enabled (training=True)
         predictions_list = []
         for _ in range(n_samples):
-            preds = self.model(features, training=True)  # training=True enables dropout
-            predictions_list.append(preds.numpy().flatten())
-        
+            preds = self.model(prepared, training=True)
+            predictions_list.append(tf.reshape(preds, [-1]).numpy())
+
         predictions = np.array(predictions_list)
-        
         mean_pred = predictions.mean(axis=0)
         std_pred = predictions.std(axis=0)
-        
-        # Denormalize
+
         if denormalize and self.target_scaler is not None:
-            mean_pred = self.target_scaler.denormalize(mean_pred)
-            std_pred = std_pred * self.target_scaler.std  # Scale std appropriately
-        
+            mean_pred = self.target_scaler.inverse_transform(
+                mean_pred.reshape(-1, 1)
+            ).flatten()
+            # Scale std by the scaler's standard deviation
+            if hasattr(self.target_scaler, "scale_"):
+                std_pred = std_pred * self.target_scaler.scale_.flatten()[0]
+
         return mean_pred, std_pred
-    
+
     def predict_dataframe(
         self,
         df: "pd.DataFrame",
@@ -230,202 +247,227 @@ class Predictor:
         denormalize: bool = True,
     ) -> "pd.DataFrame":
         """
-        Predict and add results to DataFrame.
-        
-        Args:
-            df: Input DataFrame
-            feature_columns: Column names to use as features
-            output_column: Name for prediction column
-            normalize: Whether to normalize features
-            denormalize: Whether to denormalize predictions
-        
-        Returns:
-            DataFrame with predictions added
+        Predict and add results to a DataFrame.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Input DataFrame.
+        feature_columns : list of str
+            Column names to use as features.
+        output_column : str
+            Name for the prediction column.
+        normalize : bool
+            Normalise features.
+        denormalize : bool
+            Denormalise predictions.
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with predictions added.
         """
         import pandas as pd
-        
+
         features = df[feature_columns].values
         predictions = self.predict(features, normalize=normalize, denormalize=denormalize)
-        
+
         result = df.copy()
         result[output_column] = predictions
         return result
 
+    # ------------------------------------------------------------------
+    # Internal
+    # ------------------------------------------------------------------
+
+    def _predict_dict(self, features: Dict[str, Any]) -> np.ndarray:
+        """Run inference with dict features (GNN / graph models)."""
+        tensor_features = {
+            k: tf.convert_to_tensor(v) if not isinstance(v, tf.Tensor) else v
+            for k, v in features.items()
+        }
+        output = self.model(tensor_features, training=False)
+        return tf.reshape(output, [-1]).numpy()
+
 
 class BatchPredictor:
     """
-    Batch predictor for processing multiple models or configurations.
-    
-    Useful for:
-        - Ensemble predictions
-        - Model comparison
-        - A/B testing
-    
-    Example:
-        predictor = BatchPredictor()
-        predictor.add_model("model_v1", model1)
-        predictor.add_model("model_v2", model2)
-        
-        results = predictor.predict_all(features)
-        # Returns: {"model_v1": predictions1, "model_v2": predictions2}
+    Batch predictor for multiple models — ensemble predictions and comparison.
+
+    Example
+    -------
+    >>> bp = BatchPredictor()
+    >>> bp.add_model("v1", model1, target_scaler=scaler1)
+    >>> bp.add_model("v2", model2, target_scaler=scaler2)
+    >>> results = bp.predict_all(features)
+    >>> ensemble = bp.predict_ensemble(features, weights={"v1": 0.6, "v2": 0.4})
     """
-    
+
     def __init__(self):
-        """Initialize batch predictor."""
         self.models: Dict[str, Predictor] = {}
-    
+
     def add_model(
         self,
         name: str,
         model: Union[tf.keras.Model, Predictor],
-        feature_scaler: Optional[NormalizationStats] = None,
-        target_scaler: Optional[NormalizationStats] = None,
+        feature_scaler: Optional[Scaler] = None,
+        target_scaler: Optional[Scaler] = None,
     ) -> "BatchPredictor":
         """
-        Add a model to the batch.
-        
-        Args:
-            name: Model name/identifier
-            model: Keras model or Predictor
-            feature_scaler: Feature normalization stats
-            target_scaler: Target normalization stats
-        
-        Returns:
-            Self for chaining
+        Register a model.
+
+        Parameters
+        ----------
+        name : str
+            Model identifier.
+        model : tf.keras.Model or Predictor
+            Keras model or wrapped Predictor.
+        feature_scaler, target_scaler : sklearn scaler, optional
+
+        Returns
+        -------
+        BatchPredictor
+            Self for chaining.
         """
         if isinstance(model, Predictor):
             self.models[name] = model
         else:
             self.models[name] = Predictor(model, feature_scaler, target_scaler)
         return self
-    
+
     def predict_all(
         self,
-        features: np.ndarray,
+        features: Features,
         normalize: bool = True,
         denormalize: bool = True,
     ) -> Dict[str, np.ndarray]:
         """
-        Generate predictions from all models.
-        
-        Args:
-            features: Input features
-            normalize: Whether to normalize
-            denormalize: Whether to denormalize
-        
-        Returns:
-            Dict mapping model names to predictions
+        Generate predictions from all registered models.
+
+        Returns
+        -------
+        dict
+            Model name -> predictions array.
         """
         return {
             name: predictor.predict(features, normalize=normalize, denormalize=denormalize)
             for name, predictor in self.models.items()
         }
-    
+
     def predict_ensemble(
         self,
-        features: np.ndarray,
+        features: Features,
         weights: Optional[Dict[str, float]] = None,
         normalize: bool = True,
         denormalize: bool = True,
     ) -> np.ndarray:
         """
         Generate weighted ensemble predictions.
-        
-        Args:
-            features: Input features
-            weights: Optional model weights (default: equal weights)
-            normalize: Whether to normalize
-            denormalize: Whether to denormalize
-        
-        Returns:
-            Weighted average predictions
+
+        Parameters
+        ----------
+        features : Features
+        weights : dict, optional
+            Model weights (default: equal).
+
+        Returns
+        -------
+        np.ndarray
+            Weighted average predictions.
         """
         predictions = self.predict_all(features, normalize=normalize, denormalize=denormalize)
-        
+
         if weights is None:
             weights = {name: 1.0 / len(self.models) for name in self.models}
-        
-        # Weighted average
+
         ensemble = np.zeros_like(list(predictions.values())[0])
         for name, preds in predictions.items():
             ensemble += weights.get(name, 0) * preds
-        
+
         return ensemble
-    
+
     def compare(
         self,
-        features: np.ndarray,
+        features: Features,
         targets: np.ndarray,
         normalize: bool = True,
         denormalize: bool = True,
     ) -> Dict[str, Dict[str, float]]:
         """
         Compare all models on the same data.
-        
-        Args:
-            features: Input features
-            targets: Ground truth targets
-            normalize: Whether to normalize
-            denormalize: Whether to denormalize
-        
-        Returns:
-            Dict mapping model names to metric dicts
+
+        Returns
+        -------
+        dict
+            Model name -> metrics dict.
         """
         from src.machine_learning.evaluation.evaluator import compute_metrics
-        
+
         predictions = self.predict_all(features, normalize=normalize, denormalize=denormalize)
         targets = np.asarray(targets).flatten()
-        
-        metrics = ["mse", "mae", "rmse", "r2"]
-        
+
+        metric_names = ["mse", "mae", "rmse", "r2"]
         return {
-            name: compute_metrics(targets, preds, metrics)
+            name: compute_metrics(targets, preds, metric_names)
             for name, preds in predictions.items()
         }
 
 
+# ---------------------------------------------------------------------------
+# Serving
+# ---------------------------------------------------------------------------
+
 def create_serving_function(
     model: tf.keras.Model,
-    feature_scaler: Optional[NormalizationStats] = None,
-    target_scaler: Optional[NormalizationStats] = None,
-) -> tf.function:
+    feature_scaler: Optional[Scaler] = None,
+    target_scaler: Optional[Scaler] = None,
+) -> tf.types.experimental.ConcreteFunction:
     """
-    Create a TensorFlow serving function with preprocessing.
-    
+    Create a TensorFlow serving function with pre/post-processing baked in.
+
     Useful for TensorFlow Serving deployment.
-    
-    Args:
-        model: Keras model
-        feature_scaler: Feature normalization stats
-        target_scaler: Target normalization stats
-    
-    Returns:
-        tf.function for serving
+
+    Parameters
+    ----------
+    model : tf.keras.Model
+    feature_scaler : sklearn scaler, optional
+        Feature normalisation stats (mean/scale baked as TF constants).
+    target_scaler : sklearn scaler, optional
+        Target denormalisation stats (mean/scale baked as TF constants).
+
+    Returns
+    -------
+    tf.function
     """
-    # Convert scalers to TF constants
-    if feature_scaler is not None:
-        feat_mean = tf.constant(feature_scaler.mean, dtype=tf.float32)
-        feat_std = tf.constant(feature_scaler.std, dtype=tf.float32)
-    
-    if target_scaler is not None:
-        target_mean = tf.constant(target_scaler.mean, dtype=tf.float32)
-        target_std = tf.constant(target_scaler.std, dtype=tf.float32)
-    
+    # Bake scaler stats as TF constants for graph execution
+    if feature_scaler is not None and hasattr(feature_scaler, "mean_"):
+        feat_mean = tf.constant(feature_scaler.mean_, dtype=tf.float32)
+        feat_scale = tf.constant(feature_scaler.scale_, dtype=tf.float32)
+    else:
+        feat_mean = None
+        feat_scale = None
+
+    if target_scaler is not None and hasattr(target_scaler, "mean_"):
+        target_mean = tf.constant(target_scaler.mean_, dtype=tf.float32)
+        target_scale = tf.constant(target_scaler.scale_, dtype=tf.float32)
+    else:
+        target_mean = None
+        target_scale = None
+
     @tf.function(input_signature=[
         tf.TensorSpec(shape=[None, None], dtype=tf.float32, name="features")
     ])
     def serve(features):
-        # Normalize features
-        if feature_scaler is not None:
-            features = (features - feat_mean) / (feat_std + 1e-8)
-        
-        # Predict
+        # Normalise features
+        if feat_mean is not None:
+            features = (features - feat_mean) / (feat_scale + 1e-8)
+
         predictions = model(features, training=False)
-        
-        # Denormalize predictions
-        if target_scaler is not None:
-            predictions = predictions * target_std + target_mean
-        
+
+        # Denormalise predictions
+        if target_mean is not None:
+            predictions = predictions * target_scale + target_mean
+
         return {"predictions": predictions}
-    
+
     return serve

@@ -1,10 +1,22 @@
 """
-Data types for the QuantStrata ML framework.
+Canonical result and metadata types for the QuantStrata ML framework.
 
-- TrainingConfig: configuration for a training run
-- TrainingResult: output of a training run (history, metadata)
+All result dataclasses live here as the single source of truth.  Other
+modules (training, evaluation, pipelines) import from this file rather
+than defining their own copies.
+
+Exported types
+--------------
+- CheckpointInfo  : metadata about a saved checkpoint
+- TrainingResult  : output of a training run (history, metadata)
 - EvaluationResult: output of model evaluation
-- CheckpointInfo: metadata about a saved checkpoint
+- TuningResult    : output of hyperparameter tuning
+
+Note
+----
+``TrainingConfig`` is defined in ``core.config`` — *not* here — to keep
+framework-specific configuration (optimizer builders, LR schedules, etc.)
+separate from plain result containers.
 """
 
 from __future__ import annotations
@@ -13,67 +25,12 @@ import json
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 
-@dataclass
-class TrainingConfig:
-    """
-    Configuration for a training run.
-
-    Parameters
-    ----------
-    epochs : int
-        Number of training epochs.
-    learning_rate : float
-        Optimizer learning rate.
-    batch_size : int, optional
-        Batch size (if batching is handled by the pipeline).
-    checkpoint_dir : str, optional
-        Directory to save checkpoints. If None, no checkpointing.
-    checkpoint_frequency : int
-        Save checkpoint every N epochs (0 = only save best/last).
-    save_best_only : bool
-        If True, only save the best model (by validation loss).
-    early_stopping_patience : int
-        Stop if validation loss doesn't improve for N epochs (0 = disabled).
-    log_every : int
-        Log metrics every N epochs.
-    validation_split : float
-        Fraction of training data to use for validation (0 = no split).
-    loss_fn : callable, optional
-        Loss function (y_true, y_pred) -> scalar. If None, uses model default.
-    optimizer : str
-        Optimizer name (e.g. "adam", "sgd").
-    optimizer_kwargs : dict
-        Additional optimizer arguments.
-    metrics : list of str
-        Metric names to compute during training (e.g. ["mae", "mse"]).
-    verbose : int
-        Verbosity level (0 = silent, 1 = progress, 2 = detailed).
-    """
-
-    epochs: int = 100
-    learning_rate: float = 0.001
-    batch_size: int = 32
-    checkpoint_dir: Optional[str] = None
-    checkpoint_frequency: int = 0
-    save_best_only: bool = True
-    early_stopping_patience: int = 0
-    log_every: int = 1
-    validation_split: float = 0.0
-    loss_fn: Optional[Callable[[Any, Any], float]] = None
-    optimizer: str = "adam"
-    optimizer_kwargs: Dict[str, Any] = field(default_factory=dict)
-    metrics: List[str] = field(default_factory=list)
-    verbose: int = 1
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dict (excluding non-serialisable fields)."""
-        d = asdict(self)
-        d.pop("loss_fn", None)
-        return d
-
+# ---------------------------------------------------------------------------
+# CheckpointInfo
+# ---------------------------------------------------------------------------
 
 @dataclass
 class CheckpointInfo:
@@ -111,31 +68,45 @@ class CheckpointInfo:
         return cls(**d)
 
 
+# ---------------------------------------------------------------------------
+# TrainingResult  (merged from core/types + training/trainer definitions)
+# ---------------------------------------------------------------------------
+
 @dataclass
 class TrainingResult:
     """
-    Output of a training run.
+    Canonical output of a training run.
+
+    This dataclass is the **single** ``TrainingResult`` used across the
+    entire framework — both the Keras ``Trainer`` and the generic
+    ``TrainingLoop`` return instances of this class.
 
     Parameters
     ----------
     history : dict
-        Training history: {"loss": [...], "val_loss": [...], ...}.
+        Training history keyed by metric name, e.g.
+        ``{"loss": [...], "val_loss": [...], "mae": [...]}``.
     final_epoch : int
-        Last completed epoch (may be < config.epochs if early stopped).
+        Last completed epoch (may be < configured epochs if early-stopped).
     best_epoch : int
-        Epoch with best validation (or training) loss.
+        Epoch with the best validation (or training) loss.
     best_train_loss : float
         Best training loss achieved.
     best_val_loss : float, optional
-        Best validation loss achieved.
+        Best validation loss achieved (``None`` when no validation set).
     checkpoints : list of CheckpointInfo
-        List of saved checkpoints.
-    config : TrainingConfig
-        Configuration used for training.
+        Saved checkpoints produced during training.
+    config : dict, optional
+        Serialised training configuration (the ``to_dict()`` output of
+        whichever ``TrainingConfig`` was used).
     training_time_seconds : float
-        Total training time in seconds.
+        Wall-clock training time in seconds.
+    stopped_early : bool
+        ``True`` if training was terminated by early-stopping.
+    model_summary : dict, optional
+        Model architecture summary (name, param counts, layer list).
     metadata : dict
-        Additional metadata (e.g. model name, git hash).
+        Arbitrary metadata (model name, git hash, run tags, …).
     """
 
     history: Dict[str, List[float]] = field(default_factory=dict)
@@ -144,85 +115,176 @@ class TrainingResult:
     best_train_loss: float = float("inf")
     best_val_loss: Optional[float] = None
     checkpoints: List[CheckpointInfo] = field(default_factory=list)
-    config: Optional[TrainingConfig] = None
+    config: Optional[Dict[str, Any]] = None
     training_time_seconds: float = 0.0
+    stopped_early: bool = False
+    model_summary: Optional[Dict[str, Any]] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    # -- serialisation -------------------------------------------------------
+
     def to_dict(self) -> Dict[str, Any]:
+        """Convert to a JSON-serialisable dictionary."""
         d = asdict(self)
-        d["checkpoints"] = [c.to_dict() if isinstance(c, CheckpointInfo) else c for c in self.checkpoints]
-        if self.config is not None:
-            d["config"] = self.config.to_dict()
+        # Ensure CheckpointInfo objects are converted to dicts
+        d["checkpoints"] = [
+            c.to_dict() if isinstance(c, CheckpointInfo) else c
+            for c in self.checkpoints
+        ]
         return d
 
-    def to_json(self, path: str) -> None:
+    def to_json(self, path: Union[str, Path]) -> None:
         """Save to JSON file."""
         with open(path, "w") as f:
             json.dump(self.to_dict(), f, indent=2)
 
     @classmethod
-    def from_json(cls, path: str) -> "TrainingResult":
+    def from_json(cls, path: Union[str, Path]) -> "TrainingResult":
         """Load from JSON file."""
         with open(path) as f:
             d = json.load(f)
-        d["checkpoints"] = [CheckpointInfo.from_dict(c) for c in d.get("checkpoints", [])]
-        d["config"] = TrainingConfig(**d["config"]) if d.get("config") else None
+        d["checkpoints"] = [
+            CheckpointInfo.from_dict(c) for c in d.get("checkpoints", [])
+        ]
         return cls(**d)
 
+    # -- visualisation -------------------------------------------------------
+
+    def plot_history(
+        self,
+        metrics: Optional[List[str]] = None,
+        figsize: tuple = (12, 4),
+    ) -> None:
+        """
+        Plot training history curves.
+
+        Parameters
+        ----------
+        metrics : list of str, optional
+            Metric keys to plot (default: ``["loss"]`` plus ``val_loss`` if
+            present).
+        figsize : tuple
+            Matplotlib figure size.
+        """
+        import matplotlib.pyplot as plt
+
+        if metrics is None:
+            metrics = ["loss"]
+            if "val_loss" in self.history:
+                metrics.append("val_loss")
+
+        n_metrics = len(metrics)
+        fig, axes = plt.subplots(1, n_metrics, figsize=figsize)
+        if n_metrics == 1:
+            axes = [axes]
+
+        for ax, metric in zip(axes, metrics):
+            if metric in self.history:
+                epochs = range(1, len(self.history[metric]) + 1)
+                ax.plot(epochs, self.history[metric], label=metric)
+
+                # Plot validation counterpart if it exists
+                val_metric = (
+                    f"val_{metric}" if not metric.startswith("val_") else metric
+                )
+                if val_metric in self.history and val_metric != metric:
+                    ax.plot(epochs, self.history[val_metric], label=val_metric)
+
+                ax.axvline(
+                    self.best_epoch,
+                    color="green",
+                    linestyle="--",
+                    alpha=0.7,
+                    label=f"Best ({self.best_epoch})",
+                )
+                ax.set_xlabel("Epoch")
+                ax.set_ylabel(metric)
+                ax.set_title(metric.replace("_", " ").title())
+                ax.legend()
+                ax.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.show()
+
+
+# ---------------------------------------------------------------------------
+# EvaluationResult  (merged from core/types + evaluation/evaluator defs)
+# ---------------------------------------------------------------------------
 
 @dataclass
 class EvaluationResult:
     """
     Canonical output of model evaluation.
 
+    This is the **single** ``EvaluationResult`` used by both the Keras
+    ``Evaluator`` and the generic ``evaluate_model()`` pipeline function.
+
     Parameters
     ----------
-    loss : float
-        Evaluation loss.
     metrics : dict
-        Computed metrics (e.g. {"mae": 0.05, "mse": 0.01}).
+        Computed metrics, e.g. ``{"mae": 0.05, "mse": 0.01, "r2": 0.99}``.
+    loss : float, optional
+        Standalone evaluation loss (may be ``None`` when the loss is already
+        included in *metrics*).
     loss_curves : dict, optional
-        Training/validation loss curves (from TrainingResult.history).
+        Training/validation loss curves copied from ``TrainingResult.history``.
     pricing_error : float, optional
-        Pricing error vs. benchmark (e.g. analytic or MC pricer).
-    predictions : ndarray, optional
-        Model predictions (for residual analysis, serialisation excluded by default).
-    targets : ndarray, optional
+        Pricing error vs. a benchmark (analytic pricer, MC, …).
+    predictions : array-like, optional
+        Model predictions (excluded from serialisation by default).
+    targets : array-like, optional
         Ground-truth targets.
-    residuals : ndarray, optional
-        targets - predictions.
+    residuals : array-like, optional
+        ``targets − predictions``.
+    dataset_info : dict
+        Dataset metadata (``n_samples``, feature names, …).
     metadata : dict
-        Additional metadata (e.g. model name, dataset info).
+        Additional metadata (model name, run tags, …).
+    timestamp : str
+        ISO timestamp of the evaluation.
     """
 
-    loss: float
     metrics: Dict[str, float] = field(default_factory=dict)
+    loss: Optional[float] = None
     loss_curves: Optional[Dict[str, List[float]]] = None
     pricing_error: Optional[float] = None
     predictions: Optional[Any] = None
     targets: Optional[Any] = None
     residuals: Optional[Any] = None
+    dataset_info: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    timestamp: str = field(
+        default_factory=lambda: datetime.utcnow().isoformat()
+    )
+
+    def __repr__(self) -> str:
+        metrics_str = ", ".join(
+            f"{k}={v:.4f}" for k, v in self.metrics.items()
+        )
+        return f"EvaluationResult({metrics_str})"
+
+    # -- serialisation -------------------------------------------------------
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict (excludes large arrays for serialisation)."""
-        d = asdict(self).copy()
-        d.pop("predictions", None)
-        d.pop("targets", None)
-        d.pop("residuals", None)
+        d = asdict(self)
+        # Drop potentially large numpy arrays
+        for key in ("predictions", "targets", "residuals"):
+            d.pop(key, None)
         return d
 
     def summary(self) -> str:
-        """Formatted summary string for reporting."""
+        """Formatted summary string for logging / reporting."""
         lines = [
             "=" * 50,
             "EVALUATION RESULTS",
             "=" * 50,
-            f"Loss: {self.loss:.6f}",
-            "",
-            "Metrics:",
-            "-" * 30,
+            f"Timestamp : {self.timestamp}",
+            f"Samples   : {self.dataset_info.get('n_samples', 'N/A')}",
         ]
+        if self.loss is not None:
+            lines.append(f"Loss      : {self.loss:.6f}")
+        lines += ["", "Metrics:", "-" * 30]
         for name, value in sorted(self.metrics.items()):
             lines.append(f"  {name:20s}: {value:12.6f}")
         if self.pricing_error is not None:
@@ -230,13 +292,13 @@ class EvaluationResult:
         lines.append("=" * 50)
         return "\n".join(lines)
 
-    def to_json(self, path: str) -> None:
+    def to_json(self, path: Union[str, Path]) -> None:
         """Save to JSON file."""
         with open(path, "w") as f:
             json.dump(self.to_dict(), f, indent=2)
 
     @classmethod
-    def from_json(cls, path: str) -> "EvaluationResult":
+    def from_json(cls, path: Union[str, Path]) -> "EvaluationResult":
         """Load from JSON file."""
         with open(path) as f:
             return cls(**json.load(f))
@@ -283,7 +345,6 @@ class TuningResult:
 
 
 __all__ = [
-    "TrainingConfig",
     "TrainingResult",
     "EvaluationResult",
     "CheckpointInfo",

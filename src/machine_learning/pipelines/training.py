@@ -15,9 +15,9 @@ from typing import Any, Callable, Iterator, List, Optional, Tuple, Union
 
 import numpy as np
 
+from src.machine_learning.core.config import TrainingConfig
 from src.machine_learning.core.protocols import Trainable
 from src.machine_learning.core.types import (
-    TrainingConfig,
     TrainingResult,
     CheckpointInfo,
 )
@@ -62,12 +62,18 @@ class TrainingLoop:
     """
     Generic training loop for Trainable models.
 
-    Supports:
+    This loop works with any model conforming to the ``Trainable`` protocol
+    and uses the rich ``TrainingConfig`` from ``core.config``.  It reads
+    nested sub-configs (``early_stopping``, ``checkpoint``, etc.) to drive
+    early-stopping, checkpointing, and logging.
+
+    Supports
+    --------
     - Epoch-based training with configurable batch size
     - Validation split or separate validation data
     - Checkpointing (save best, periodic)
-    - Early stopping
-    - Logging
+    - Early stopping (via ``config.early_stopping``)
+    - Per-epoch logging
 
     Example
     -------
@@ -80,6 +86,8 @@ class TrainingLoop:
         model: Trainable,
         config: TrainingConfig,
         train_step_fn: Optional[Callable[[Any, Any], float]] = None,
+        loss_fn: Optional[Callable[[Any, Any], float]] = None,
+        log_every: int = 1,
     ) -> None:
         """
         Parameters
@@ -87,30 +95,60 @@ class TrainingLoop:
         model : Trainable
             Model conforming to the Trainable protocol.
         config : TrainingConfig
-            Training configuration.
+            Training configuration (from ``core.config``).
         train_step_fn : callable, optional
-            Custom training step function (inputs, targets) -> loss.
-            If None, uses model.compute_loss after model.forward.
+            Custom training step ``(inputs, targets) -> loss``.
+            If *None*, falls back to ``model.train_step`` or
+            ``model.forward`` + ``model.compute_loss``.
+        loss_fn : callable, optional
+            Standalone loss function ``(y_true, y_pred) -> float``.
+            Used when neither *train_step_fn* nor ``model.train_step``
+            are available.
+        log_every : int
+            Log metrics every N epochs (default 1).
         """
         self.model = model
         self.config = config
         self._train_step_fn = train_step_fn
+        self._loss_fn = loss_fn
+        self._log_every = log_every
+
         self._history: dict = {"loss": [], "val_loss": []}
         self._checkpoints: List[CheckpointInfo] = []
         self._best_val_loss = float("inf")
         self._best_epoch = 0
         self._epochs_without_improvement = 0
 
+    # -- helpers that read nested config safely -----------------------------
+
+    @property
+    def _early_stopping_patience(self) -> int:
+        """Return patience from nested early-stopping config, or 0."""
+        es = self.config.early_stopping
+        return es.patience if es is not None else 0
+
+    @property
+    def _checkpoint_dir(self) -> Optional[str]:
+        """Return checkpoint directory, or *None* if checkpointing is off."""
+        ck = self.config.checkpoint
+        return ck.checkpoint_dir if ck is not None else None
+
+    @property
+    def _save_best_only(self) -> bool:
+        ck = self.config.checkpoint
+        return ck.save_best_only if ck is not None else True
+
+    # -- training / validation steps ----------------------------------------
+
     def _train_step(self, features: np.ndarray, targets: np.ndarray) -> float:
         """Run a single training step and return loss."""
         if self._train_step_fn is not None:
             return self._train_step_fn(features, targets)
-        # Default: forward + compute_loss (no gradient update here; use adapter)
         if hasattr(self.model, "train_step"):
             return self.model.train_step(features, targets)
         y_pred = self.model.forward(features)
-        if self.config.loss_fn is not None:
-            return float(self.config.loss_fn(targets, y_pred))
+        if self._loss_fn is not None:
+            return float(self._loss_fn(targets, y_pred))
         return self.model.compute_loss(targets, y_pred)
 
     def _validate(
@@ -120,9 +158,11 @@ class TrainingLoop:
     ) -> float:
         """Compute validation loss."""
         y_pred = self.model.forward(val_features)
-        if self.config.loss_fn is not None:
-            return float(self.config.loss_fn(val_targets, y_pred))
+        if self._loss_fn is not None:
+            return float(self._loss_fn(val_targets, y_pred))
         return self.model.compute_loss(val_targets, y_pred)
+
+    # -- checkpointing ------------------------------------------------------
 
     def _save_checkpoint(
         self,
@@ -132,14 +172,15 @@ class TrainingLoop:
         is_best: bool,
     ) -> Optional[CheckpointInfo]:
         """Save checkpoint if configured."""
-        if self.config.checkpoint_dir is None:
+        ckpt_dir_str = self._checkpoint_dir
+        if ckpt_dir_str is None:
             return None
-        ckpt_dir = Path(self.config.checkpoint_dir)
+        ckpt_dir = Path(ckpt_dir_str)
         ckpt_dir.mkdir(parents=True, exist_ok=True)
         suffix = "best" if is_best else f"epoch_{epoch}"
         ckpt_path = ckpt_dir / f"checkpoint_{suffix}.json"
+
         params = self.model.get_parameters()
-        # Serialise numpy arrays
         serialisable_params = {}
         for k, v in params.items():
             if isinstance(v, np.ndarray):
@@ -150,6 +191,7 @@ class TrainingLoop:
                 serialisable_params[k] = v
         with open(ckpt_path, "w") as f:
             json.dump(serialisable_params, f)
+
         info = CheckpointInfo(
             path=str(ckpt_path),
             epoch=epoch,
@@ -159,8 +201,13 @@ class TrainingLoop:
         )
         self._checkpoints.append(info)
         if self.config.verbose >= 1:
-            logger.info(f"Checkpoint saved: {ckpt_path} (epoch {epoch}, is_best={is_best})")
+            logger.info(
+                "Checkpoint saved: %s (epoch %d, is_best=%s)",
+                ckpt_path, epoch, is_best,
+            )
         return info
+
+    # -- main loop ----------------------------------------------------------
 
     def run(
         self,
@@ -179,7 +226,7 @@ class TrainingLoop:
         targets : ndarray
             Training targets.
         val_features : ndarray, optional
-            Validation features (overrides validation_split).
+            Validation features (overrides ``config.validation_split``).
         val_targets : ndarray, optional
             Validation targets.
 
@@ -189,15 +236,17 @@ class TrainingLoop:
             Training history, checkpoints, and metadata.
         """
         start_time = time.time()
-        # Split data if no validation provided and split > 0
+
+        # Split data if no explicit validation set provided
         if val_features is None and self.config.validation_split > 0:
             features, targets, val_features, val_targets = _split_data(
                 features, targets, self.config.validation_split
             )
         has_validation = val_features is not None and val_targets is not None
+        early_stopped = False
 
         for epoch in range(1, self.config.epochs + 1):
-            # Training epoch
+            # -- training epoch --
             epoch_losses = []
             for batch_x, batch_y in _batch_iterator(
                 features, targets, self.config.batch_size
@@ -207,20 +256,20 @@ class TrainingLoop:
             train_loss = float(np.mean(epoch_losses))
             self._history["loss"].append(train_loss)
 
-            # Validation
+            # -- validation --
             val_loss = None
             if has_validation:
                 val_loss = self._validate(val_features, val_targets)
                 self._history["val_loss"].append(val_loss)
 
-            # Logging
-            if self.config.verbose >= 1 and epoch % self.config.log_every == 0:
+            # -- logging --
+            if self.config.verbose >= 1 and epoch % self._log_every == 0:
                 msg = f"Epoch {epoch}/{self.config.epochs} — loss: {train_loss:.5f}"
                 if val_loss is not None:
                     msg += f", val_loss: {val_loss:.5f}"
                 logger.info(msg)
 
-            # Checkpointing
+            # -- best-model tracking --
             compare_loss = val_loss if has_validation else train_loss
             is_best = compare_loss < self._best_val_loss
             if is_best:
@@ -230,36 +279,41 @@ class TrainingLoop:
             else:
                 self._epochs_without_improvement += 1
 
+            # -- checkpointing --
             should_save = False
-            if self.config.checkpoint_dir:
-                if self.config.save_best_only and is_best:
-                    should_save = True
-                elif self.config.checkpoint_frequency > 0 and epoch % self.config.checkpoint_frequency == 0:
+            if self._checkpoint_dir is not None:
+                if self._save_best_only and is_best:
                     should_save = True
             if should_save:
                 self._save_checkpoint(epoch, train_loss, val_loss, is_best)
 
-            # Early stopping
-            if (
-                self.config.early_stopping_patience > 0
-                and self._epochs_without_improvement >= self.config.early_stopping_patience
-            ):
+            # -- early stopping --
+            patience = self._early_stopping_patience
+            if patience > 0 and self._epochs_without_improvement >= patience:
                 if self.config.verbose >= 1:
-                    logger.info(f"Early stopping at epoch {epoch} (no improvement for {self.config.early_stopping_patience} epochs)")
+                    logger.info(
+                        "Early stopping at epoch %d (no improvement for %d epochs)",
+                        epoch, patience,
+                    )
+                early_stopped = True
                 break
 
         training_time = time.time() - start_time
-        result = TrainingResult(
+        return TrainingResult(
             history=self._history,
             final_epoch=epoch,
             best_epoch=self._best_epoch,
             best_train_loss=min(self._history["loss"]),
-            best_val_loss=min(self._history["val_loss"]) if self._history["val_loss"] else None,
+            best_val_loss=(
+                min(self._history["val_loss"])
+                if self._history["val_loss"]
+                else None
+            ),
             checkpoints=self._checkpoints,
-            config=self.config,
+            config=self.config.to_dict(),
             training_time_seconds=training_time,
+            stopped_early=early_stopped,
         )
-        return result
 
 
 def run_training(
@@ -270,11 +324,13 @@ def run_training(
     val_features: Optional[np.ndarray] = None,
     val_targets: Optional[np.ndarray] = None,
     train_step_fn: Optional[Callable[[Any, Any], float]] = None,
+    loss_fn: Optional[Callable[[Any, Any], float]] = None,
 ) -> TrainingResult:
     """
     Run training for a Trainable model.
 
-    This is the main entry point for the generic training pipeline.
+    This is the main entry point for the generic (framework-agnostic)
+    training pipeline.
 
     Parameters
     ----------
@@ -285,13 +341,15 @@ def run_training(
     targets : ndarray
         Training targets.
     config : TrainingConfig
-        Training configuration.
+        Training configuration (from ``core.config``).
     val_features : ndarray, optional
         Validation features.
     val_targets : ndarray, optional
         Validation targets.
     train_step_fn : callable, optional
         Custom training step function.
+    loss_fn : callable, optional
+        Loss function ``(y_true, y_pred) -> float``.
 
     Returns
     -------
@@ -300,13 +358,16 @@ def run_training(
 
     Example
     -------
-    >>> from src.machine_learning.core import TrainingConfig
-    >>> from src.machine_learning.pipeline import run_training
-    >>> config = TrainingConfig(epochs=50, learning_rate=0.001)
+    >>> from src.machine_learning.core.config import TrainingConfig
+    >>> config = TrainingConfig(epochs=50)
     >>> result = run_training(model, X_train, y_train, config)
     >>> print(result.best_train_loss)
     """
-    loop = TrainingLoop(model, config, train_step_fn=train_step_fn)
+    loop = TrainingLoop(
+        model, config,
+        train_step_fn=train_step_fn,
+        loss_fn=loss_fn,
+    )
     return loop.run(features, targets, val_features, val_targets)
 
 

@@ -23,7 +23,7 @@ from typing import Any, Callable, Dict, Optional, Type, Union
 import numpy as np
 
 from src.machine_learning.core.protocols import Trainable
-from src.machine_learning.core.types import TrainingConfig
+from src.machine_learning.core.config import TrainingConfig
 
 logger = logging.getLogger(__name__)
 

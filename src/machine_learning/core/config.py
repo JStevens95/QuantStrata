@@ -1,9 +1,14 @@
 """
-Configuration classes for TensorFlow-native ML training.
+Configuration dataclasses for ML training.
 
-This module provides dataclasses for configuring training, model architecture,
-and data processing. All configurations are serializable to JSON for
-reproducibility and experiment tracking.
+This module provides pure-Python dataclasses for configuring training,
+model architecture, and data processing.  All configurations are
+serialisable to JSON for reproducibility and experiment tracking.
+
+**TensorFlow is NOT required at import time.**  The ``build()`` methods
+on ``OptimizerConfig`` and ``LRScheduleConfig`` perform lazy TF imports
+so that these dataclasses can be loaded, serialised, and transmitted
+on environments without TensorFlow installed.
 
 Usage:
     config = TrainingConfig(
@@ -13,15 +18,15 @@ Usage:
         optimizer="adam",
         early_stopping=EarlyStoppingConfig(patience=10),
     )
-    
-    # Save config
+
+    # Save config (no TF dependency)
     config.to_json("config.json")
-    
-    # Load config
+
+    # Load config (no TF dependency)
     loaded = TrainingConfig.from_json("config.json")
 
-Note:
-    Requires TensorFlow. Install with: pip install tensorflow
+    # Build Keras objects (requires TF)
+    optimizer = loaded.optimizer.build()
 """
 from __future__ import annotations
 
@@ -29,14 +34,6 @@ import json
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
-
-try:
-    import tensorflow as tf
-except ImportError:
-    raise ImportError(
-        "TensorFlow is required for the ML config module. "
-        "Install with: pip install tensorflow"
-    )
 
 
 @dataclass
@@ -124,8 +121,17 @@ class OptimizerConfig:
     def from_dict(cls, d: Dict[str, Any]) -> "OptimizerConfig":
         return cls(**d)
     
-    def build(self) -> "tf.keras.optimizers.Optimizer":
-        """Build and return a Keras optimizer from this config."""
+    def build(self) -> Any:
+        """
+        Build and return a Keras optimizer from this configuration.
+
+        Requires TensorFlow to be installed.
+
+        Returns
+        -------
+        tf.keras.optimizers.Optimizer
+            Configured Keras optimizer instance.
+        """
         import tensorflow as tf
         
         kwargs = {}
@@ -191,10 +197,24 @@ class LRScheduleConfig:
     def from_dict(cls, d: Dict[str, Any]) -> "LRScheduleConfig":
         return cls(**d)
     
-    def build(self, total_steps: Optional[int] = None) -> "tf.keras.optimizers.schedules.LearningRateSchedule":
-        """Build and return a Keras learning rate schedule."""
+    def build(self, total_steps: Optional[int] = None) -> Any:
+        """
+        Build and return a Keras learning rate schedule.
+
+        Requires TensorFlow to be installed.
+
+        Parameters
+        ----------
+        total_steps : int, optional
+            Total training steps (required for cosine / warmup_cosine).
+
+        Returns
+        -------
+        float or tf.keras.optimizers.schedules.LearningRateSchedule
+            A constant float or a Keras LR schedule object.
+        """
         import tensorflow as tf
-        
+
         if self.schedule == "constant":
             return self.initial_lr
         elif self.schedule == "exponential":
@@ -214,7 +234,10 @@ class LRScheduleConfig:
         elif self.schedule == "warmup_cosine":
             if total_steps is None:
                 raise ValueError("total_steps required for warmup_cosine schedule")
-            # Custom warmup + cosine decay
+            # Lazy import — WarmupCosineSchedule lives in training/ to keep
+            # this module TF-free at import time.
+            from src.machine_learning.training.schedules import WarmupCosineSchedule
+
             return WarmupCosineSchedule(
                 initial_lr=self.initial_lr,
                 warmup_steps=self.warmup_steps,
@@ -223,47 +246,6 @@ class LRScheduleConfig:
             )
         else:
             raise ValueError(f"Unknown schedule: {self.schedule}")
-
-
-class WarmupCosineSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
-    """Learning rate schedule with linear warmup followed by cosine decay."""
-    
-    def __init__(
-        self,
-        initial_lr: float,
-        warmup_steps: int,
-        decay_steps: int,
-        min_lr: float = 1e-6,
-    ):
-        super().__init__()
-        self.initial_lr = initial_lr
-        self.warmup_steps = warmup_steps
-        self.decay_steps = decay_steps
-        self.min_lr = min_lr
-    
-    def __call__(self, step):
-        import tensorflow as tf
-        step = tf.cast(step, tf.float32)
-        warmup_steps = tf.cast(self.warmup_steps, tf.float32)
-        decay_steps = tf.cast(self.decay_steps, tf.float32)
-        
-        # Linear warmup
-        warmup_lr = self.initial_lr * (step / tf.maximum(warmup_steps, 1.0))
-        
-        # Cosine decay
-        progress = (step - warmup_steps) / tf.maximum(decay_steps, 1.0)
-        progress = tf.clip_by_value(progress, 0.0, 1.0)
-        cosine_lr = self.min_lr + 0.5 * (self.initial_lr - self.min_lr) * (1 + tf.cos(3.14159 * progress))
-        
-        return tf.where(step < warmup_steps, warmup_lr, cosine_lr)
-    
-    def get_config(self):
-        return {
-            "initial_lr": self.initial_lr,
-            "warmup_steps": self.warmup_steps,
-            "decay_steps": self.decay_steps,
-            "min_lr": self.min_lr,
-        }
 
 
 @dataclass
@@ -385,34 +367,6 @@ class TrainingConfig:
         """Load configuration from JSON file."""
         with open(path, "r") as f:
             return cls.from_dict(json.load(f))
-
-
-@dataclass
-class DataConfig:
-    """
-    Configuration for data loading and preprocessing.
-    
-    Attributes:
-        feature_columns: List of feature column names
-        target_column: Target column name
-        normalize_features: Whether to normalize features
-        normalize_targets: Whether to normalize targets
-        cache: Whether to cache dataset in memory
-        prefetch: Number of batches to prefetch
-    """
-    feature_columns: Optional[List[str]] = None
-    target_column: str = "price"
-    normalize_features: bool = True
-    normalize_targets: bool = True
-    cache: bool = True
-    prefetch: int = 2  # tf.data.AUTOTUNE equivalent
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
-    
-    @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "DataConfig":
-        return cls(**d)
 
 
 @dataclass 

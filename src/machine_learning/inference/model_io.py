@@ -6,7 +6,12 @@ This module provides comprehensive model serialization using:
     - Keras native format (.keras)
     - Weights-only format (for architecture reuse)
 
-Artifact Structure:
+Scaler convention:
+    Normalization is handled by sklearn scalers (``StandardScaler``,
+    ``MinMaxScaler``).  Scalers are persisted via ``joblib.dump`` /
+    ``joblib.load`` alongside the model artifacts.
+
+Artifact structure:
     model_dir/
     ├── saved_model/           # TensorFlow SavedModel
     │   ├── saved_model.pb
@@ -15,21 +20,21 @@ Artifact Structure:
     ├── model.keras            # Keras native format (optional)
     ├── config.json            # Training configuration
     ├── metadata.json          # Model metadata
-    ├── normalization.json     # Feature/target normalization stats
+    ├── feature_scaler.joblib  # sklearn feature scaler
+    ├── target_scaler.joblib   # sklearn target scaler
     └── training_history.json  # Training history (optional)
 
 Usage:
-    # Save model with all artifacts
     save_model(
         model=trained_model,
         path="models/my_pricer",
         config=training_config,
-        metadata={"version": "1.0", "description": "FX vanilla pricer"},
-        normalization_stats=dataset.feature_stats,
+        feature_scaler=scaler_X,
+        target_scaler=scaler_y,
     )
-    
-    # Load model
-    loaded = load_model("models/my_pricer")
+
+    artifact = load_model("models/my_pricer")
+    predictions = artifact.predict(features)
 """
 from __future__ import annotations
 
@@ -46,7 +51,8 @@ if TYPE_CHECKING:
 import numpy as np
 import tensorflow as tf
 
-from src.machine_learning.data.dataset import NormalizationStats
+# Scaler type — any sklearn scaler with transform / inverse_transform
+Scaler = Any
 
 
 def _ensure_custom_models_registered() -> None:
@@ -64,7 +70,6 @@ def _save_keras_model(model: tf.keras.Model, path: Path, include_optimizer: bool
     kwargs = {}
     if include_optimizer:
         kwargs["include_optimizer"] = True
-    # Keras 3: format is inferred from path (.keras or .h5); do not pass save_format
     model.save(str(path), **kwargs)
 
 
@@ -78,48 +83,82 @@ def _load_keras_model(path: Path, custom_objects: Optional[Dict], compile_model:
     )
 
 
+def _save_scaler(scaler: Any, path: Path) -> None:
+    """Save an sklearn scaler via joblib."""
+    import joblib
+    joblib.dump(scaler, str(path))
+
+
+def _load_scaler(path: Path) -> Any:
+    """Load an sklearn scaler via joblib."""
+    import joblib
+    return joblib.load(str(path))
+
+
 @dataclass
 class ModelArtifact:
     """
     Container for loaded model artifacts.
-    
-    Attributes:
-        model: Loaded TensorFlow model
-        config: Training configuration (if saved)
-        metadata: Model metadata
-        feature_stats: Feature normalization statistics
-        target_stats: Target normalization statistics
-        training_history: Training history (if saved)
+
+    Attributes
+    ----------
+    model : tf.keras.Model
+        Loaded TensorFlow model.
+    config : dict, optional
+        Training configuration.
+    metadata : dict, optional
+        Model metadata.
+    feature_scaler : sklearn scaler, optional
+        Fitted feature scaler (transform / inverse_transform).
+    target_scaler : sklearn scaler, optional
+        Fitted target scaler (for denormalising predictions).
+    training_history : dict, optional
+        Training history.
     """
+
     model: tf.keras.Model
     config: Optional[Dict[str, Any]] = None
     metadata: Optional[Dict[str, Any]] = None
-    feature_stats: Optional[NormalizationStats] = None
-    target_stats: Optional[NormalizationStats] = None
+    feature_scaler: Optional[Scaler] = None
+    target_scaler: Optional[Scaler] = None
     training_history: Optional[Dict[str, Any]] = None
-    
-    def predict(self, features: np.ndarray, denormalize: bool = True) -> np.ndarray:
+
+    def predict(
+        self,
+        features: np.ndarray,
+        normalize: bool = True,
+        denormalize: bool = True,
+        batch_size: int = 256,
+    ) -> np.ndarray:
         """
-        Generate predictions with optional denormalization.
-        
-        Args:
-            features: Input features (raw or normalized depending on feature_stats)
-            denormalize: Whether to denormalize predictions
-        
-        Returns:
-            Predictions (denormalized if requested and stats available)
+        Generate predictions with optional normalisation / denormalisation.
+
+        Parameters
+        ----------
+        features : np.ndarray
+            Raw input features.
+        normalize : bool
+            Whether to normalise features using the saved scaler.
+        denormalize : bool
+            Whether to denormalise predictions using the saved scaler.
+        batch_size : int
+            Batch size for prediction.
+
+        Returns
+        -------
+        np.ndarray
+            Predictions (denormalised if requested and scaler available).
         """
-        # Normalize features if stats available
-        if self.feature_stats is not None:
-            features = self.feature_stats.normalize(features)
-        
-        # Predict
-        predictions = self.model.predict(features, verbose=0).flatten()
-        
-        # Denormalize predictions if requested
-        if denormalize and self.target_stats is not None:
-            predictions = self.target_stats.denormalize(predictions)
-        
+        if normalize and self.feature_scaler is not None:
+            features = self.feature_scaler.transform(features)
+
+        predictions = self.model.predict(features, batch_size=batch_size, verbose=0).flatten()
+
+        if denormalize and self.target_scaler is not None:
+            predictions = self.target_scaler.inverse_transform(
+                predictions.reshape(-1, 1)
+            ).flatten()
+
         return predictions
 
 
@@ -128,62 +167,65 @@ def save_model(
     path: Union[str, Path],
     config: Optional["TrainingConfig"] = None,
     metadata: Optional[Dict[str, Any]] = None,
-    feature_stats: Optional[NormalizationStats] = None,
-    target_stats: Optional[NormalizationStats] = None,
+    feature_scaler: Optional[Scaler] = None,
+    target_scaler: Optional[Scaler] = None,
     training_history: Optional[Dict[str, Any]] = None,
     save_format: str = "keras",
     include_optimizer: bool = False,
 ) -> Path:
     """
     Save a trained model with all artifacts.
-    
+
     Creates a complete model artifact including:
         - Model weights and architecture
         - Training configuration
-        - Normalization statistics
+        - sklearn scalers (via joblib)
         - Metadata
-    
-    Args:
-        model: Trained Keras model
-        path: Directory to save artifacts
-        config: Training configuration
-        metadata: Additional metadata
-        feature_stats: Feature normalization statistics
-        target_stats: Target normalization statistics
-        training_history: Training history dict
-        save_format: 'keras' (default, .keras file, Keras 3 compatible) or 'tf' (SavedModel)
-        include_optimizer: Whether to save optimizer state (keras format only)
-    
-    Returns:
-        Path to saved model directory
-    
-    Note:
-        With Keras 3 / TensorFlow 2.16+, the default 'keras' format uses a .keras path
-        and avoids deprecated save_format. Use 'tf' for TensorFlow Serving.
+
+    Parameters
+    ----------
+    model : tf.keras.Model
+        Trained Keras model.
+    path : str or Path
+        Directory to save artifacts.
+    config : TrainingConfig, optional
+        Training configuration.
+    metadata : dict, optional
+        Additional metadata.
+    feature_scaler : sklearn scaler, optional
+        Fitted feature scaler.
+    target_scaler : sklearn scaler, optional
+        Fitted target scaler.
+    training_history : dict, optional
+        Training history dict.
+    save_format : str
+        ``'keras'`` (default, .keras file) or ``'tf'`` (SavedModel).
+    include_optimizer : bool
+        Whether to save optimizer state.
+
+    Returns
+    -------
+    Path
+        Path to saved model directory.
     """
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
-    
-    # 1. Save model (Keras 3 / TF 2.16+ compatible: no save_format, use path extension)
+
+    # 1. Save model
     if save_format == "tf":
-        # TensorFlow SavedModel format (e.g. for serving)
         model_dir = path / "saved_model"
         tf.saved_model.save(model, str(model_dir))
     else:
-        # Keras native format (.keras) — recommended, works with Keras 3
         model_path = path / "model.keras"
         _save_keras_model(model, model_path, include_optimizer)
-    
+
     # 2. Save configuration
     if config is not None:
         config_path = path / "config.json"
-        if hasattr(config, "to_dict"):
-            config_data = config.to_dict()
-        else:
-            config_data = config
+        config_data = config.to_dict() if hasattr(config, "to_dict") else config
         with open(config_path, "w") as f:
             json.dump(config_data, f, indent=2)
-    
+
     # 3. Save metadata
     metadata = metadata or {}
     metadata.update({
@@ -192,8 +234,7 @@ def save_model(
         "model_name": model.name,
         "save_format": save_format,
     })
-    
-    # Add model summary if available
+
     try:
         metadata["trainable_params"] = int(sum(
             tf.reduce_prod(w.shape) for w in model.trainable_weights
@@ -203,26 +244,21 @@ def save_model(
         ))
     except Exception:
         pass
-    
+
     with open(path / "metadata.json", "w") as f:
         json.dump(metadata, f, indent=2)
-    
-    # 4. Save normalization statistics
-    norm_data = {}
-    if feature_stats is not None:
-        norm_data["feature_stats"] = feature_stats.to_dict()
-    if target_stats is not None:
-        norm_data["target_stats"] = target_stats.to_dict()
-    
-    if norm_data:
-        with open(path / "normalization.json", "w") as f:
-            json.dump(norm_data, f, indent=2)
-    
+
+    # 4. Save sklearn scalers via joblib
+    if feature_scaler is not None:
+        _save_scaler(feature_scaler, path / "feature_scaler.joblib")
+    if target_scaler is not None:
+        _save_scaler(target_scaler, path / "target_scaler.joblib")
+
     # 5. Save training history
     if training_history is not None:
         with open(path / "training_history.json", "w") as f:
             json.dump(training_history, f, indent=2)
-    
+
     print(f"Model saved to: {path}")
     return path
 
@@ -234,72 +270,78 @@ def load_model(
 ) -> ModelArtifact:
     """
     Load a saved model with all artifacts.
-    
-    Args:
-        path: Path to model directory
-        custom_objects: Custom Keras objects (layers, losses, etc.)
-        compile_model: Whether to compile the loaded model
-    
-    Returns:
-        ModelArtifact with model and associated data
+
+    Parameters
+    ----------
+    path : str or Path
+        Path to model directory.
+    custom_objects : dict, optional
+        Custom Keras objects (layers, losses, etc.).
+    compile_model : bool
+        Whether to compile the loaded model.
+
+    Returns
+    -------
+    ModelArtifact
+        Model and associated data.
     """
     path = Path(path)
-    
+
     if not path.exists():
         raise FileNotFoundError(f"Model path not found: {path}")
-    
+
     # 1. Load model (.keras preferred for Keras 3 compatibility)
-    saved_model_path = path / "saved_model"
     keras_path = path / "model.keras"
-    
+    saved_model_path = path / "saved_model"
+
     if keras_path.exists():
         model = _load_keras_model(keras_path, custom_objects, compile_model)
     elif saved_model_path.exists():
         model = _load_keras_model(saved_model_path, custom_objects, compile_model)
     else:
         raise FileNotFoundError(f"No model found in {path}")
-    
+
     # 2. Load configuration
     config = None
     config_path = path / "config.json"
     if config_path.exists():
         with open(config_path, "r") as f:
             config = json.load(f)
-    
+
     # 3. Load metadata
     metadata = None
     metadata_path = path / "metadata.json"
     if metadata_path.exists():
         with open(metadata_path, "r") as f:
             metadata = json.load(f)
-    
-    # 4. Load normalization statistics
-    feature_stats = None
-    target_stats = None
-    norm_path = path / "normalization.json"
-    if norm_path.exists():
-        with open(norm_path, "r") as f:
-            norm_data = json.load(f)
-        if "feature_stats" in norm_data:
-            feature_stats = NormalizationStats.from_dict(norm_data["feature_stats"])
-        if "target_stats" in norm_data:
-            target_stats = NormalizationStats.from_dict(norm_data["target_stats"])
-    
+
+    # 4. Load sklearn scalers
+    feature_scaler = None
+    target_scaler = None
+
+    feat_scaler_path = path / "feature_scaler.joblib"
+    tgt_scaler_path = path / "target_scaler.joblib"
+
+    if feat_scaler_path.exists():
+        feature_scaler = _load_scaler(feat_scaler_path)
+    if tgt_scaler_path.exists():
+        target_scaler = _load_scaler(tgt_scaler_path)
+
     # 5. Load training history
     training_history = None
     history_path = path / "training_history.json"
     if history_path.exists():
         with open(history_path, "r") as f:
             training_history = json.load(f)
-    
+
     print(f"Model loaded from: {path}")
-    
+
     return ModelArtifact(
         model=model,
         config=config,
         metadata=metadata,
-        feature_stats=feature_stats,
-        target_stats=target_stats,
+        feature_scaler=feature_scaler,
+        target_scaler=target_scaler,
         training_history=training_history,
     )
 
@@ -311,54 +353,61 @@ def export_saved_model(
 ) -> Path:
     """
     Export model as TensorFlow SavedModel for serving.
-    
-    This creates a production-ready SavedModel with optional
-    custom signatures for TensorFlow Serving.
-    
-    Args:
-        model: Keras model to export
-        path: Export path
-        signatures: Optional custom serving signatures
-    
-    Returns:
-        Path to exported model
+
+    Parameters
+    ----------
+    model : tf.keras.Model
+        Keras model to export.
+    path : str or Path
+        Export path.
+    signatures : dict, optional
+        Custom serving signatures.
+
+    Returns
+    -------
+    Path
+        Path to exported model.
     """
     path = Path(path)
-    
+
     if signatures is None:
-        # Create default serving signature
         @tf.function(input_signature=[
             tf.TensorSpec(shape=[None, None], dtype=tf.float32, name="features")
         ])
         def serve(features):
             return {"predictions": model(features, training=False)}
-        
+
         signatures = {"serving_default": serve}
-    
+
     tf.saved_model.save(model, str(path), signatures=signatures)
     print(f"SavedModel exported to: {path}")
-    
+
     return path
 
 
 def list_model_artifacts(path: Union[str, Path]) -> Dict[str, bool]:
     """
     List available artifacts in a model directory.
-    
-    Args:
-        path: Model directory path
-    
-    Returns:
-        Dict mapping artifact names to existence status
+
+    Parameters
+    ----------
+    path : str or Path
+        Model directory path.
+
+    Returns
+    -------
+    dict
+        Artifact names -> existence status.
     """
     path = Path(path)
-    
+
     return {
         "saved_model": (path / "saved_model").exists(),
         "model.keras": (path / "model.keras").exists(),
         "config.json": (path / "config.json").exists(),
         "metadata.json": (path / "metadata.json").exists(),
-        "normalization.json": (path / "normalization.json").exists(),
+        "feature_scaler.joblib": (path / "feature_scaler.joblib").exists(),
+        "target_scaler.joblib": (path / "target_scaler.joblib").exists(),
         "training_history.json": (path / "training_history.json").exists(),
     }
 
@@ -369,21 +418,26 @@ def copy_model(
 ) -> Path:
     """
     Copy a model artifact directory.
-    
-    Args:
-        source: Source model path
-        destination: Destination path
-    
-    Returns:
-        Destination path
+
+    Parameters
+    ----------
+    source : str or Path
+        Source model path.
+    destination : str or Path
+        Destination path.
+
+    Returns
+    -------
+    Path
+        Destination path.
     """
     source = Path(source)
     destination = Path(destination)
-    
+
     if destination.exists():
         shutil.rmtree(destination)
-    
+
     shutil.copytree(source, destination)
     print(f"Model copied to: {destination}")
-    
+
     return destination
