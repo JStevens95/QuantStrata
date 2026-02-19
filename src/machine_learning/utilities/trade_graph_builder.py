@@ -1,8 +1,5 @@
-import logging
-import time
 import numpy as np
-import tensorflow as tf
-from typing import Dict, Tuple, Union, Optional
+from typing import Dict
 from sklearn.neighbors import NearestNeighbors
 from scipy.sparse import coo_matrix, diags, csr_matrix, bmat
 

@@ -13,9 +13,7 @@ on environments without TensorFlow installed.
 Usage:
     config = TrainingConfig(
         epochs=100,
-        batch_size=256,
-        learning_rate=1e-3,
-        optimizer="adam",
+        optimizer=OptimizerConfig(name="adam", learning_rate=1e-3),
         early_stopping=EarlyStoppingConfig(patience=10),
     )
 
@@ -252,45 +250,41 @@ class LRScheduleConfig:
 class TrainingConfig:
     """
     Master configuration for model training.
-    
+
     This is the main configuration class that encompasses all training
     settings. It can be serialized to JSON for experiment tracking and
     reproducibility.
-    
+
+    Data-pipeline settings (batch_size, shuffle, cache) live in
+    ``DataPipelineConfig`` (``data/config.py``), not here.
+
     Attributes:
         epochs: Maximum number of training epochs
-        batch_size: Training batch size
-        validation_split: Fraction of data to use for validation (if no val set provided)
-        shuffle: Whether to shuffle training data each epoch
         seed: Random seed for reproducibility
-        
+
         optimizer: Optimizer configuration
         lr_schedule: Learning rate schedule configuration
         early_stopping: Early stopping configuration (None to disable)
         checkpoint: Checkpoint configuration (None to disable)
-        
+
         loss: Loss function name ('mse', 'mae', 'huber')
         metrics: List of metrics to track
-        
+
         mixed_precision: Whether to use mixed precision (float16)
         xla_compile: Whether to use XLA compilation
-        
+
         verbose: Verbosity level (0=silent, 1=progress bar, 2=one line per epoch)
         log_dir: Directory for TensorBoard logs (None to disable)
-    
+
     Example:
         config = TrainingConfig(
             epochs=100,
-            batch_size=256,
             optimizer=OptimizerConfig(name="adam", learning_rate=1e-3),
             early_stopping=EarlyStoppingConfig(patience=10),
         )
     """
     # Basic training settings
     epochs: int = 100
-    batch_size: int = 32
-    validation_split: float = 0.1
-    shuffle: bool = True
     seed: Optional[int] = None
     
     # Optimizer and LR schedule
@@ -317,11 +311,8 @@ class TrainingConfig:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
-        d = {
+        return {
             "epochs": self.epochs,
-            "batch_size": self.batch_size,
-            "validation_split": self.validation_split,
-            "shuffle": self.shuffle,
             "seed": self.seed,
             "optimizer": self.optimizer.to_dict() if self.optimizer else None,
             "lr_schedule": self.lr_schedule.to_dict() if self.lr_schedule else None,
@@ -334,16 +325,12 @@ class TrainingConfig:
             "verbose": self.verbose,
             "log_dir": self.log_dir,
         }
-        return d
-    
+
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "TrainingConfig":
         """Create from dictionary."""
         return cls(
             epochs=d.get("epochs", 100),
-            batch_size=d.get("batch_size", 32),
-            validation_split=d.get("validation_split", 0.1),
-            shuffle=d.get("shuffle", True),
             seed=d.get("seed"),
             optimizer=OptimizerConfig.from_dict(d["optimizer"]) if d.get("optimizer") else OptimizerConfig(),
             lr_schedule=LRScheduleConfig.from_dict(d["lr_schedule"]) if d.get("lr_schedule") else None,
@@ -405,6 +392,68 @@ class ModelConfig:
     
     @classmethod
     def from_json(cls, path: Union[str, Path]) -> "ModelConfig":
+        """Load configuration from JSON file."""
+        with open(path, "r") as f:
+            return cls.from_dict(json.load(f))
+
+
+@dataclass
+class DataPipelineConfig:
+    """
+    Configuration for ``build_tf_dataset``.
+
+    Controls how arrays are assembled into a ``tf.data.Dataset``.
+    Separate from ``TrainingConfig`` because batching, shuffling, and
+    caching are data-pipeline concerns, not training concerns.
+
+    Attributes
+    ----------
+    batch_size : int
+        Mini-batch size.
+    shuffle : bool
+        Whether to shuffle before batching.
+    shuffle_buffer : int, optional
+        Shuffle buffer size.  ``None`` → ``min(n_samples, 50_000)``.
+    cache : bool
+        Cache dataset in memory after first pass.
+    drop_remainder : bool
+        Drop the final incomplete batch.
+    ensure_float32 : bool
+        Cast float arrays to ``float32`` for model compatibility.
+    """
+
+    batch_size: int = 32
+    shuffle: bool = True
+    shuffle_buffer: Optional[int] = None
+    cache: bool = True
+    drop_remainder: bool = False
+    ensure_float32: bool = True
+
+    def to_build_kwargs(self) -> Dict[str, Any]:
+        """Return kwargs suitable for ``build_tf_dataset(**cfg.to_build_kwargs())``."""
+        return {
+            "batch_size": self.batch_size,
+            "shuffle": self.shuffle,
+            "shuffle_buffer": self.shuffle_buffer,
+            "cache": self.cache,
+            "drop_remainder": self.drop_remainder,
+            "ensure_float32": self.ensure_float32,
+        }
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "DataPipelineConfig":
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+
+    def to_json(self, path: Union[str, Path]) -> None:
+        """Save configuration to JSON file."""
+        with open(path, "w") as f:
+            json.dump(self.to_dict(), f, indent=2)
+
+    @classmethod
+    def from_json(cls, path: Union[str, Path]) -> "DataPipelineConfig":
         """Load configuration from JSON file."""
         with open(path, "r") as f:
             return cls.from_dict(json.load(f))

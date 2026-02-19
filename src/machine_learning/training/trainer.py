@@ -172,7 +172,7 @@ class Trainer:
             self.compile()
 
         # Build callbacks from config + user-supplied
-        callbacks = get_standard_callbacks(self.config, val_data)
+        callbacks = get_standard_callbacks(self.config)
         callbacks.extend(self.custom_callbacks)
 
         # Train

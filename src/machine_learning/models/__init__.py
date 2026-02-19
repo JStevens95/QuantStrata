@@ -1,30 +1,21 @@
 """
 Machine Learning Models.
 
-This module provides TensorFlow-based ML models for:
-    - Option pricing
-    - Model calibration
-    - Portfolio risk prediction
-
-Available Models:
-    - MLPPricer: Multi-layer perceptron for option pricing
-    - AttentionPricer: Attention-based pricing model (planned)
-    - CalibrationNet: Neural network for model calibration
-    - HybridGnnRnn: Graph + RNN model for portfolio P&L prediction
+This module provides the HybridGnnRnn model for portfolio P&L prediction
+from elementary trade embeddings (structural GNN + temporal RNN).
 
 Usage:
-    from src.machine_learning.models import MLPPricer
-    
-    model = MLPPricer(hidden_units=[128, 64, 32])
-    model.compile(optimizer='adam', loss='mse')
-    model.fit(train_ds, validation_data=val_ds, epochs=100)
+    from src.machine_learning.models import HybridGnnRnn, default_hybrid_model_config
+
+    model_config = default_hybrid_model_config(gnn_units=32, rnn_units=32)
+    model = HybridGnnRnn(model_config=model_config)
 """
-from src.machine_learning.models.pricing.model import (
-    MLPPricer,
-    create_mlp_pricer,
+from src.machine_learning.models.gnn_rnn_hybrid import (
+    HybridGnnRnn,
+    default_hybrid_model_config,
 )
 
 __all__ = [
-    "MLPPricer",
-    "create_mlp_pricer",
+    "HybridGnnRnn",
+    "default_hybrid_model_config",
 ]

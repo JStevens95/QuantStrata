@@ -15,7 +15,7 @@ Keras built-in callbacks that are used directly (NOT reimplemented here):
     - ``verbose=1`` in ``model.fit()`` for progress bars / ETA
 
 Usage:
-    callbacks = get_standard_callbacks(config, val_data)
+    callbacks = get_standard_callbacks(config)
     model.fit(train_ds, callbacks=callbacks)
 """
 from __future__ import annotations
@@ -24,10 +24,13 @@ import json
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import numpy as np
 import tensorflow as tf
+
+if TYPE_CHECKING:
+    from src.machine_learning.core.config import TrainingConfig
 
 
 class MetricsLogger(tf.keras.callbacks.Callback):
@@ -183,10 +186,7 @@ class PricingErrorCallback(tf.keras.callbacks.Callback):
         )
 
 
-def get_standard_callbacks(
-    config: "TrainingConfig",
-    val_data: Optional[Any] = None,
-) -> List[tf.keras.callbacks.Callback]:
+def get_standard_callbacks(config: "TrainingConfig") -> List[tf.keras.callbacks.Callback]:
     """
     Build a standard callback list from ``TrainingConfig``.
 
@@ -197,15 +197,11 @@ def get_standard_callbacks(
     ----------
     config : TrainingConfig
         Training configuration.
-    val_data : optional
-        Validation data (unused, kept for API compatibility).
 
     Returns
     -------
     list of tf.keras.callbacks.Callback
     """
-    from src.machine_learning.core.config import TrainingConfig
-
     callbacks: List[tf.keras.callbacks.Callback] = []
 
     # Early stopping (Keras built-in)

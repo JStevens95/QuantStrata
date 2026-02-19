@@ -52,57 +52,190 @@ except ImportError:
 # Core helper: build tf.data.Dataset from arrays or dicts
 # ---------------------------------------------------------------------------
 
+
+def _build_static_tensors(
+    static_inputs: Dict[str, np.ndarray],
+    ensure_float32: bool,
+) -> Dict[str, "tf.Tensor"]:
+    """
+    Convert static NumPy arrays to TF constants for the map closure.
+
+    Static inputs (e.g. trade_features, adjacency_matrix) have no sample dimension
+    and are shared across all batches. Converting once to tf.constant avoids
+    repeated conversion inside the map and keeps them in the graph.
+    """
+    result = {}
+    for key, val in static_inputs.items():
+        arr = np.asarray(val)
+        # Cast to model-compatible dtypes (float32 for floats, int32 for indices)
+        if ensure_float32 and np.issubdtype(arr.dtype, np.floating):
+            arr = arr.astype(np.float32)
+        elif np.issubdtype(arr.dtype, np.integer):
+            arr = arr.astype(np.int32)
+        result[key] = tf.constant(arr)
+    return result
+
+
 def build_tf_dataset(
-    inputs: Union[np.ndarray, Dict[str, np.ndarray]],
+    variable_inputs: Union[np.ndarray, Dict[str, np.ndarray]],
     targets: np.ndarray,
+    static_inputs: Optional[Dict[str, np.ndarray]] = None,
+    variable_input_key: str = "features",
     batch_size: int = 32,
     shuffle: bool = True,
     shuffle_buffer: Optional[int] = None,
     cache: bool = True,
+    drop_remainder: bool = False,
+    ensure_float32: bool = True,
 ) -> "tf.data.Dataset":
     """
-    Wrap arrays (or a dict of arrays) into a batched, prefetched ``tf.data.Dataset``.
+    Build a batched, prefetched ``tf.data.Dataset`` for Keras training.
 
-    This is the single entry point for converting numpy data into a Keras-ready
-    training pipeline.  All batching, shuffling, caching, and prefetching
-    settings are applied here.
+    Supports two patterns:
+        1. **Simple** (pricing, calibration): only ``variable_inputs`` and
+           ``targets``. Each sample is a row; no static data.
+        2. **Static + variable** (GNN-RNN, graph models): ``variable_inputs``
+           are per-sample (batched); ``static_inputs`` are shared across all
+           samples and injected into every batch via a ``map``.
+
+    No explicit tensor conversion is needed — ``from_tensor_slices`` accepts
+    NumPy arrays and converts lazily. Static inputs are converted to tensors
+    once for the map closure.
 
     Parameters
     ----------
-    inputs : np.ndarray or Dict[str, np.ndarray]
-        Feature array of shape ``(n_samples, n_features)`` **or** a dictionary
-        mapping input names to arrays (for models that accept dict inputs,
-        e.g. GNN-RNN hybrid).
+    variable_inputs : np.ndarray or Dict[str, np.ndarray]
+        Per-sample data with first dimension ``n_samples``.  Passed to
+        ``from_tensor_slices``.  When combined with ``static_inputs``, use
+        a dict for clarity (e.g. ``{"elem_pnl_history": arr}``).
     targets : np.ndarray
-        Target array of shape ``(n_samples,)`` or ``(n_samples, n_outputs)``.
+        Target array, shape ``(n_samples,)`` or ``(n_samples, n_outputs)``.
+    static_inputs : dict, optional
+        Arrays with no sample dimension (e.g. trade_features, adjacency_matrix).
+        Injected into every batch via ``map``.  When None, only variable data.
+    variable_input_key : str
+        Key for ``variable_inputs`` when it is an ndarray and
+        ``static_inputs`` is not None.  Ignored when ``variable_inputs``
+        is a dict.
     batch_size : int
         Mini-batch size.
     shuffle : bool
-        Whether to shuffle the data each epoch.
+        Shuffle before batching.
     shuffle_buffer : int, optional
-        Buffer size for ``tf.data.Dataset.shuffle``.  Defaults to the number
-        of samples (full shuffle).
+        Shuffle buffer size.  Defaults to ``min(n_samples, 50_000)``.
     cache : bool
-        Whether to cache the dataset in memory after the first epoch.
+        Cache dataset in memory after first pass.
+    drop_remainder : bool
+        Drop final incomplete batch (useful for fixed-size training).
+    ensure_float32 : bool
+        Cast float inputs and targets to float32 for model compatibility.
 
     Returns
     -------
     tf.data.Dataset
-        Ready for ``model.fit()`` / ``model.evaluate()``.
+        Yields ``(inputs_dict, targets)`` or ``(inputs, targets)`` when no
+        static data.  Ready for ``model.fit()`` / ``model.evaluate()``.
+
+    Examples
+    --------
+    Simple (pricing):
+        train_ds = build_tf_dataset(X_train, y_train, batch_size=256)
+
+    GNN with static graph:
+        train_ds = build_tf_dataset(
+            variable_inputs={"elem_pnl_history": elem_pnl_train},
+            targets=target_pnl_train,
+            static_inputs={
+                "trade_features": trade_features,
+                "adjacency_matrix": adj,
+                "elementary_indices": elem_idx,
+                "target_indices": target_idx,
+            },
+            batch_size=32,
+        )
     """
     if tf is None:
         raise ImportError("TensorFlow is required. Install with: pip install tensorflow")
 
-    ds = tf.data.Dataset.from_tensor_slices((inputs, targets))
+    # -------------------------------------------------------------------------
+    # Pipeline overview (order matters):
+    #   validate → from_tensor_slices → [cache] → [shuffle] → batch → [map static] → prefetch
+    # -------------------------------------------------------------------------
 
+    # --- Step 1: Validate and prepare targets ---
+    # Targets must be 1D or 2D with first dim = n_samples. Cast to float32 if requested.
+    targets = np.asarray(targets)
+    n_samples = len(targets)
+
+    def _ensure_dtype(arr: np.ndarray) -> np.ndarray:
+        """Cast float arrays to float32 when requested (models typically expect float32)."""
+        arr = np.asarray(arr)
+        if ensure_float32 and np.issubdtype(arr.dtype, np.floating):
+            arr = arr.astype(np.float32)
+        return arr
+
+    targets = _ensure_dtype(targets)
+
+    # --- Step 2: Validate and prepare variable inputs ---
+    # Variable inputs change per sample (first dim = n_samples). Two formats:
+    #   - ndarray: Simple case (pricing, calibration). Shape (n_samples, n_features).
+    #   - dict: Multi-input models (e.g. GNN). Keys map to arrays with same n_samples.
+    if isinstance(variable_inputs, dict):
+        variable_inputs = {k: _ensure_dtype(v) for k, v in variable_inputs.items()}
+        for k, v in variable_inputs.items():
+            if len(v) != n_samples:
+                raise ValueError(
+                    f"variable_inputs['{k}'] first dim {len(v)} != targets {n_samples}"
+                )
+    else:
+        variable_inputs = _ensure_dtype(variable_inputs)
+        if len(variable_inputs) != n_samples:
+            raise ValueError(
+                f"variable_inputs first dim {len(variable_inputs)} != targets {n_samples}"
+            )
+
+    # --- Step 3: Create base dataset ---
+    # from_tensor_slices slices along the first dimension. TF accepts NumPy natively;
+    # no explicit tf.convert_to_tensor needed — conversion happens lazily when iterated.
+    ds = tf.data.Dataset.from_tensor_slices((variable_inputs, targets))
+
+    # --- Step 4: Cache (optional) ---
+    # Cache stores dataset in memory after first pass. Speeds up later epochs; disable for
+    # large datasets that won't fit in RAM.
     if cache:
         ds = ds.cache()
 
-    if shuffle:
-        buffer = shuffle_buffer or (len(targets) if hasattr(targets, "__len__") else 10_000)
-        ds = ds.shuffle(buffer_size=buffer)
+    # --- Step 5: Shuffle (optional) ---
+    # Shuffle before batching so each mini-batch sees varied samples. Buffer limits RAM;
+    # larger = better randomness, more memory. Default caps at 50k. Skip when empty.
+    if shuffle and n_samples > 0:
+        buffer = shuffle_buffer if shuffle_buffer is not None else min(n_samples, 50_000)
+        ds = ds.shuffle(buffer_size=max(1, buffer), reshuffle_each_iteration=True)
 
-    ds = ds.batch(batch_size)
+    # --- Step 6: Batch ---
+    # Group samples into mini-batches for efficient GPU transfer. drop_remainder=True
+    # drops the last incomplete batch (useful when the model expects fixed batch size).
+    ds = ds.batch(batch_size, drop_remainder=drop_remainder)
+
+    # --- Step 7: Inject static inputs (GNN / graph models only) ---
+    # Static inputs (e.g. trade_features, adjacency_matrix) have no sample dimension —
+    # they are the same for every sample. Convert once to tf.constant; the map adds them
+    # to every batch. Without this, the model would need static data separately. The map
+    # merges static + variable into a single inputs dict for model.call(inputs_dict).
+    if static_inputs:
+        static_tensors = _build_static_tensors(static_inputs, ensure_float32)
+
+        def merge_static(var_batch: Any, tgt_batch: tf.Tensor) -> Tuple[Dict[str, tf.Tensor], tf.Tensor]:
+            if isinstance(var_batch, dict):
+                merged = {**static_tensors, **var_batch}
+            else:
+                merged = {**static_tensors, variable_input_key: var_batch}
+            return merged, tgt_batch
+
+        ds = ds.map(merge_static, num_parallel_calls=tf.data.AUTOTUNE)
+
+    # --- 8. Prefetch ---
+    # Overlaps data loading with training; improves GPU utilisation.
     ds = ds.prefetch(tf.data.AUTOTUNE)
 
     return ds

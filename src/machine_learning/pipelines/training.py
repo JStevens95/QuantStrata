@@ -21,6 +21,7 @@ from src.machine_learning.core.types import (
     TrainingResult,
     CheckpointInfo,
 )
+from src.machine_learning.core.config import DataPipelineConfig
 
 logger = logging.getLogger(__name__)
 

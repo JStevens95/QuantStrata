@@ -35,6 +35,7 @@ from src.machine_learning.core.config import (
     EarlyStoppingConfig,
     CheckpointConfig,
     ModelConfig,
+    DataPipelineConfig,
 )
 
 # Result types (canonical definitions — single source of truth)
@@ -74,6 +75,7 @@ __all__ = [
     "EarlyStoppingConfig",
     "CheckpointConfig",
     "ModelConfig",
+    "DataPipelineConfig",
     # Result types
     "TrainingResult",
     "EvaluationResult",
