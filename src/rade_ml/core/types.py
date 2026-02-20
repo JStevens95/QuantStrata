@@ -181,10 +181,57 @@ class EvaluationResult:
 @dataclass
 class InferenceResult:
     """
-    Canonical output of inference run.
+    Canonical output of a model inference run.
 
-    TO BE IMPLEMENTED.
+    Captures raw predictions alongside provenance metadata (which model,
+    which checkpoint, which inputs) so that downstream consumers can trace
+    every prediction back to its source.
+
+    Fields:
+        predictions: model output array, shape depends on model (e.g. [n_scenarios, n_targets]).
+        trade_ids: identifiers for the target trades that were predicted.
+        scenario_count: number of scenarios evaluated.
+        model_path: filesystem path to the checkpoint used for inference.
+        model_version: semantic version or experiment tag of the model.
+        latency_seconds: wall-clock time for the forward pass (excludes data loading).
+        input_hash: optional deterministic hash of the input tensor(s) for reproducibility auditing.
+        metadata: arbitrary key-value bag for pipeline-specific information.
+        timestamp: ISO-8601 timestamp of when inference was executed.
     """
+
+    predictions: Any = None
+    trade_ids: Optional[List[str]] = None
+    scenario_count: int = 0
+    model_path: Optional[str] = None
+    model_version: Optional[str] = None
+    latency_seconds: float = 0.0
+    input_hash: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+
+    def __repr__(self) -> str:
+        n_trades = len(self.trade_ids) if self.trade_ids else 0
+        return (
+            f"InferenceResult(trades={n_trades}, scenarios={self.scenario_count}, "
+            f"latency={self.latency_seconds:.3f}s)"
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dict (excludes large prediction arrays for serialization)."""
+        d = asdict(self)
+        d.pop("predictions", None)
+        return d
+
+    def to_json(self, path: Union[str, Path]) -> None:
+        """Save metadata to JSON file (predictions excluded)."""
+        with open(path, "w") as f:
+            json.dump(self.to_dict(), f, indent=2)
+
+    @classmethod
+    def from_json(cls, path: Union[str, Path]) -> "InferenceResult":
+        """Load metadata from JSON file (predictions will be None)."""
+        with open(path, "r") as f:
+            return cls(**json.load(f))
 
 
 @dataclass
