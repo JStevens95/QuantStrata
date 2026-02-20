@@ -191,7 +191,7 @@ class FusionLayer(tf.keras.layers.Layer):
     @classmethod
     def from_config(cls, config: Dict[str, Any]) -> "FusionLayer":
         """
-        Instantiates the GnnBlock from its config.
+        Instantiates the FusionLayer from its config.
 
         :param config:
         :return:

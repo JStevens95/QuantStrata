@@ -1,4 +1,3 @@
-import math
 import logging
 import tensorflow as tf
 from typing import Dict, Any, Tuple, Union
@@ -19,7 +18,7 @@ class TargetAttentionLayer(tf.keras.layers.Layer):
 
     def __init__(self, layer_config: Dict[str, Any], **kwargs) -> None:
         """
-        Initialise the FusionLayer.
+        Initialise the TargetAttentionLayer.
 
         :param layer_config: dictionary containing general layer configuration & parameters.
         """

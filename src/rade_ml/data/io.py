@@ -16,6 +16,11 @@ class CacheLoader:
     A class that caches data in memory and loads from file if not already cached.
 
     Supports .pkl, .json, .csv & .parquet formats.
+
+    Note: ``cache`` is a **class-level** mutable dict shared across all call sites.
+    This is intentional singleton state so that data loaded once is reused everywhere
+    in the same process. Call ``cache.clear()`` between independent runs if isolation
+    is required.
     """
     cache: Dict[str, Any] = {}
 

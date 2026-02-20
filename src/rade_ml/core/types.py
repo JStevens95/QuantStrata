@@ -85,32 +85,29 @@ class TrainingResult:
         return cls(**d)
 
     def plot_history(self, metrics: Optional[List[str]] = None, figsize: tuple = (12, 4)) -> None:
-        """PLot training history and validation loss curves."""
+        """Plot training history and validation loss curves."""
         if metrics is None:
             metrics = ['loss']
-            if "val_loss" in metrics:
+            if "val_loss" in self.history:
                 metrics.append("val_loss")
 
-        # create history plot.
         n_metrics = len(metrics)
         fig, axs = plt.subplots(1, n_metrics, figsize=figsize)
         if n_metrics == 1:
             axs = [axs]
 
-        # looping through each metric subplot.
         for ax, metric in zip(axs, metrics):
             if metric in self.history:
                 epochs = range(1, len(self.history[metric]) + 1)
+                ax.plot(epochs, self.history[metric], label=metric)
 
-                # plot validation counterpart if it exists.
                 val_metric = (
                     f"val_{metric}" if not metric.startswith("val_") else metric
                 )
                 if val_metric in self.history and val_metric != metric:
-                    ax.plot(epochs, self.history[metric], label=metric)
+                    ax.plot(epochs, self.history[val_metric], label=val_metric)
 
-                # adding subplot formatting.
-                ax.avline(
+                ax.axvline(
                     self.best_epoch, color="green", linestyle="--", alpha=0.7, label=f"Best epoch ({self.best_epoch})"
                 )
                 ax.set_xlabel("Epoch")

@@ -488,8 +488,8 @@ class MixedGraphSage(tf.keras.layers.Layer):
             neigh_max = tf.math.unsorted_segment_max(gathered, rows, num_segments=num_trades)
             neigh_max = tf.where(tf.math.is_finite(neigh_max), neigh_max, tf.zeros_like(neigh_max))
 
-        # concatenate self, mean, sum, max
-        concat_feats = tf.concat([x, neigh_mean, neigh_max], axis=1)     # [n, 4f]
+        # concatenate self, mean, max
+        concat_feats = tf.concat([x, neigh_mean, neigh_max], axis=1)     # [n, 3f]
         out = self.fusion_dense(concat_feats)                                       # [n, gnn_units]
         return tf.keras.activations.get(self.activation)(out)
 

@@ -84,8 +84,11 @@ class Trainer:
     # ------------------------------------------------------------------
 
     def _setup_environment(self) -> None:
-        """Set up training environment (precision policy)."""
-        # enable mixed precision if configured.
+        """Set up training environment (seeds, precision policy)."""
+        if self.config.seed is not None:
+            tf.random.set_seed(self.config.seed)
+            np.random.seed(self.config.seed)
+
         if self.config.mixed_precision:
             policy = tf.keras.mixed_precision.Policy("mixed_float16")
             tf.keras.mixed_precision.set_global_policy(policy)
