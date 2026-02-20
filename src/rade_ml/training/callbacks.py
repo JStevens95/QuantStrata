@@ -3,13 +3,21 @@ Custom Keras callbacks for ML training.
 
 This module provides specialised callbacks that extend Keras built-ins:
     - MetricsLogger: JSON training log.
+    - get_standard_callbacks: Factory that reads TrainingConfig and returns
+      a list of standard Keras callbacks (EarlyStopping, ModelCheckpoint,
+      ReduceLROnPlateau, TensorBoard) plus MetricsLogger.
+
+Keras built-in callbacks that are used directly (NOT reimplemented here):
+    - tf.keras.callbacks.EarlyStopping
+    - tf.keras.callbacks.ModelCheckpoint
+    - tf.keras.callbacks.ReduceLROnPlateau
+    - tf.keras.callbacks.TensorBoard (histogram_freq=1 for gradient/weight monitoring)
 """
 from __future__ import annotations
 
 import json
 import time
 import logging
-from collections import defaultdict
 
 import tensorflow as tf
 
@@ -97,12 +105,15 @@ class MetricsLogger(tf.keras.callbacks.Callback):
         logger.info(f"Training log saved to {self.log_path}")
 
 
-def get_standard_callbacks(config: "TrainingConfig"):
+def get_standard_callbacks(config: TrainingConfig) -> List[tf.keras.callbacks.Callback]:
     """
-    Build a standard callbacks list from "TrainingConfig" object.
+    Build a standard callbacks list from TrainingConfig object.
+
+    Returns standard Keras callbacks (EarlyStopping, ModelCheckpoint,
+    ReduceLROnPlateau, TensorBoard) plus MetricsLogger.
 
     :param config: training config
-    :return:
+    :return: list of tf.keras.callbacks.Callback
     """
     # define callbacks output.
     callbacks: List[tf.keras.callbacks.Callback] = []
@@ -116,7 +127,7 @@ def get_standard_callbacks(config: "TrainingConfig"):
                 monitor=config.early_stopping.monitor,
                 mode=config.early_stopping.mode,
                 restore_best_weights=config.early_stopping.restore_best_weights,
-                verbose=config.verbose
+                verbose=1,
             )
         )
 
@@ -127,13 +138,13 @@ def get_standard_callbacks(config: "TrainingConfig"):
 
         callbacks.append(
             tf.keras.callbacks.ModelCheckpoint(
-                filepath=str(checkpoint_path / "model_{epoch:.03d}.keras"),
+                filepath=str(checkpoint_path / "model_{epoch:03d}.keras"),
                 save_freq=config.checkpoint.save_freq,
                 save_best_only=config.checkpoint.save_best_only,
                 monitor=config.checkpoint.monitor,
                 mode=config.checkpoint.mode,
                 save_weights_only=config.checkpoint.save_weights_only,
-                verbose=config.verbose,
+                verbose=1,
             )
         )
 
@@ -149,21 +160,20 @@ def get_standard_callbacks(config: "TrainingConfig"):
             )
         )
 
-    # tensorboard
+    # tensorboard (histogram_freq=1 replaces manual gradient monitoring).
     if config.log_dir is not None:
+        tb_dir = str(Path(config.log_dir) / "tensorboard")
         callbacks.append(
             tf.keras.callbacks.TensorBoard(
-                log_dir=str(config.log_dir / "tensorboard"),
+                log_dir=tb_dir,
                 histogram_freq=1,
                 write_graph=True,
                 update_freq="epoch",
             )
         )
 
-    # MetricLogger (JSON training log)
+    # MetricsLogger (JSON training log).
     if config.log_dir is not None:
-        callbacks.append(
-            MetricsLogger(
-                log_dir=config.log_dir
-            )
-        )
+        callbacks.append(MetricsLogger(log_dir=config.log_dir))
+
+    return callbacks

@@ -139,8 +139,8 @@ class OptimizerConfig:
     learning_rate: float = 1e-3
     weight_decay: float = 0.0
     momentum: float = 0.9
-    beta_1: float = 0.0
-    beta_2: float = 0.0
+    beta_1: float = 0.9
+    beta_2: float = 0.999
     clipnorm: Optional[float] = None
     clipvalue: Optional[float] = None
 
@@ -290,6 +290,7 @@ class TrainingConfig:
     """
     # basic training settings
     epochs: int = 100
+    seed: Optional[int] = 42
 
     # optimizer and learning rate schedule.
     optimizer: OptimizerConfig = field(default_factory=OptimizerConfig)
@@ -316,6 +317,7 @@ class TrainingConfig:
         """Convert to dictionary for serialization."""
         return {
             "epochs": self.epochs,
+            "seed": self.seed,
             "optimizer": self.optimizer.to_dict() if self.optimizer else None,
             "lr_schedule": self.lr_schedule.to_dict() if self.lr_schedule else None,
             "lr_reduction": self.lr_reduction.to_dict() if self.lr_reduction else None,

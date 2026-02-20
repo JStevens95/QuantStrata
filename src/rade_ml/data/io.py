@@ -5,7 +5,6 @@ import logging
 import pandas as pd
 from typing import Union, Any, Callable, Dict, List
 
-from sqlalchemy import except_
 from src.rade_ml.validation.exceptions import CacheLoaderError, FileLoadError, FileSaveError
 
 # define module logger file.

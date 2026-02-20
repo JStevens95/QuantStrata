@@ -30,6 +30,7 @@ from src.rade_ml.features.transforms.standardiser import get_transformer
 from src.rade_ml.features.transforms.dimensionality import run_dimensionality_reduction
 
 from src.rade_ml.data.io import CacheLoader
+from src.rade_ml.data.result import DataBuildResult
 from src.rade_ml.data.dataset import build_tf_dataset
 from src.rade_ml.data.hybrid_gnn_rnn.config import HybridGnnRnnDataConfig, AttributeEncoderConfig, GraphBuilderConfig
 
@@ -43,13 +44,9 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class HybridGnnRnnResult:
+class HybridGnnRnnResult(DataBuildResult):
     """Result of build_dataset() and tf.data.Dataset splits for Hybrid GNN-RNN model."""
-
-    train_ds: tf.data.Dataset
-    val_ds: Optional[tf.data.Dataset] = None
-    test_ds: Optional[tf.data.Dataset] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    pass
 
 
 def build_dataset():
