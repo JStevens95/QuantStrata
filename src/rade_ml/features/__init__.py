@@ -1,3 +1,3 @@
 """
-Feature engineering: transforms, standardisation, dimensionality reduction.
+Feature engineering: transforms, standardisation, and dimensionality reduction.
 """

@@ -1,11 +1,7 @@
 """
-Custom Keras layers for the Hybrid GNN-RNN model.
+Custom layers for the Hybrid GNN-RNN model.
 """
-from src.rade_ml.models.hybrid_gnn_rnn.layers.gnn_layers import (
-    GnnBlock,
-    GraphSage,
-    MixedGraphSage,
-)
+from src.rade_ml.models.hybrid_gnn_rnn.layers.gnn_layers import GnnBlock, GraphSage, MixedGraphSage
 from src.rade_ml.models.hybrid_gnn_rnn.layers.rnn_layers import RnnBlock
 from src.rade_ml.models.hybrid_gnn_rnn.layers.fusion_layer import FusionLayer
 from src.rade_ml.models.hybrid_gnn_rnn.layers.attention_layer import TargetAttentionLayer
