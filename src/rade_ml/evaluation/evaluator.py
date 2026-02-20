@@ -24,7 +24,7 @@ import logging
 import numpy as np
 import tensorflow as tf
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from src.rade_ml.core.types import EvaluationResult
 
@@ -55,7 +55,7 @@ class Evaluator:
         self,
         test_data: tf.data.Dataset,
         return_predictions: bool = True,
-        additional_metrics: Optional[Dict[str, callable]] = None,
+        additional_metrics: Optional[Dict[str, Callable]] = None,
     ) -> EvaluationResult:
         """
         Run full evaluation on test data.
@@ -135,8 +135,6 @@ class Evaluator:
         for batch in dataset:
             if isinstance(batch, (tuple, list)):
                 y_batch = batch[1]
-            elif isinstance(batch, dict):
-                raise ValueError("Dict-style datasets must include a 'y' key or use (x, y) tuples.")
             else:
                 raise ValueError("Dataset must yield (inputs, targets) tuples for evaluation.")
             all_targets.append(
