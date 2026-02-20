@@ -106,8 +106,9 @@ def plot_pnl_distribution(
     ).reset_index(drop=True)
 
     # create column to detail whether scenario is in training or validation or test.
-    sample_df["period"] = sample_df.map(
-        lambda idx: "training" if idx in metadata["train_indices"] else "validation"
+    train_set = set(metadata["train_indices"])
+    sample_df["period"] = sample_df.index.map(
+        lambda idx: "training" if idx in train_set else "validation"
     )
 
     # plot kernel density estimate distribution.

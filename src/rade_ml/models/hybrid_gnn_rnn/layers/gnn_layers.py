@@ -63,7 +63,7 @@ class GnnBlock(tf.keras.layers.Layer):
             layer_activation = None if is_last_layer else self.activation # no activation on last layer for residual.
 
             # update gnn configuration with activation parameter for sub layers.
-            layer_config = self.layer_config.copy()
+            layer_config = copy.deepcopy(self.layer_config)
             layer_config['parameters']['activation'] = None
 
             # create appropriate gnn sublayer.

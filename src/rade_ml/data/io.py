@@ -60,7 +60,7 @@ class CacheLoader:
 
     # ------ File Writers ------ #
     @classmethod
-    def _save_pickle(cls, file_path: str, data: Any) -> None:
+    def _save_pickle(cls, data: Any, file_path: str) -> None:
         """Saves data to pickle file."""
         try:
             with open(file_path, "wb") as f:
@@ -82,7 +82,7 @@ class CacheLoader:
             raise FileSaveError(f"Failed to write json file, {file_path}: {e}") from e
 
     @classmethod
-    def _save_csv(cls, file_path: str, data: Union[pd.DataFrame, List[Dict[str, Any]]]) -> None:
+    def _save_csv(cls, data: Union[pd.DataFrame, List[Dict[str, Any]]], file_path: str) -> None:
         """Saves data to csv file."""
         try:
             if isinstance(data, list):

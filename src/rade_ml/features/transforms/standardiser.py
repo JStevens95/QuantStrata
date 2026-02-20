@@ -18,7 +18,7 @@ def get_transformer(transform_type: str) -> Any:
     elif transform_type.lower() == "norm":
         return preprocessing.Normalizer()
     elif transform_type.lower() == "zscore":
-        return preprocessing.ZScoreNormalizer()
+        return preprocessing.StandardScaler()
     elif transform_type.lower() == "power":
         return preprocessing.PowerTransformer()
     elif transform_type.lower() == "robust":

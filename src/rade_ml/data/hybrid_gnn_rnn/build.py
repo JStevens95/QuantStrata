@@ -77,7 +77,7 @@ def dimension_reduction(pnl_df: pd.DataFrame, config: HybridGnnRnnDataConfig, se
     for und, prod in product(underlying, prod_type):
         # filter trades for underlying and product type.
         filt_pnl_df = pnl_df[
-            [k for k in pnl_df.columns.to_list() if k.split("|")[0] == und if k.split("|")[1] == prod_type]
+            [k for k in pnl_df.columns.to_list() if k.split("|")[0] == und if k.split("|")[1] == prod]
         ]
 
         # run dimensionality reduction
@@ -143,7 +143,7 @@ def prepare_input_data(job: Dict[str, Any], config: HybridGnnRnnDataConfig):
     )
 
     # ------ 2.1. update elementary trade attributes to reflect reduced population ------
-    elem_attribs = _update_trade_attribs(
+    elem_attribs = _update_trade_attributes(
         trade_attribs=scaled_data_dict["elementary_attribs"], selected_trades=scaled_data_dict["selected_trades"],
         save_path=None
     )
@@ -368,7 +368,7 @@ def _update_trade_attributes(
     # guard against accidental duplicates in the required selection.
     if len(set(selected_trades)) != len(selected_trades):
         # collect which IDs are duplicated to help the caller fix upstream issues.
-        dupes = [tid for tid in set(selected_trades) if selected_trades(tid) > 1]
+        dupes = [tid for tid in set(selected_trades) if selected_trades.count(tid) > 1]
         preview = ", ".join(dupes[:10])
         more = " ..." if len(dupes) > 10 else ""
         raise ValueError(f"Selected IDs unavailable in attributes: {preview}{more}")

@@ -95,7 +95,9 @@ class MetricsLogger(tf.keras.callbacks.Callback):
             "total_time_seconds": total_time,
             "best_epoch": self.best_epoch,
             "best_val_loss": self.best_val_loss,
-            "avg_epoch_time": sum(self.epoch_times) / len(self.epoch_times) if self.epoch_times else 0,
+            "avg_epoch_time": (
+                sum(self.epoch_times) / len(self.epoch_times) if self.epoch_times else 0
+            ),
             "history": self.history,
             "epoch_times": self.epoch_times,
         }
@@ -105,15 +107,12 @@ class MetricsLogger(tf.keras.callbacks.Callback):
         logger.info(f"Training log saved to {self.log_path}")
 
 
-def get_standard_callbacks(config: TrainingConfig) -> List[tf.keras.callbacks.Callback]:
+def get_standard_callbacks(config: "TrainingConfig") -> List[tf.keras.callbacks.Callback]:
     """
-    Build a standard callbacks list from TrainingConfig object.
-
-    Returns standard Keras callbacks (EarlyStopping, ModelCheckpoint,
-    ReduceLROnPlateau, TensorBoard) plus MetricsLogger.
+    Build a standard callbacks list from "TrainingConfig" object.
 
     :param config: training config
-    :return: list of tf.keras.callbacks.Callback
+    :return:
     """
     # define callbacks output.
     callbacks: List[tf.keras.callbacks.Callback] = []

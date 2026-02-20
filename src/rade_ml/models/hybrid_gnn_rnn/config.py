@@ -92,10 +92,8 @@ def default_model_config() -> Dict[str, Any]:
                 "residual_new_damp": 1.0
             },
             "parameters": {
-                "residual_units": 32,
-                "residual_activation": "gelu",
-                "residual_kernel_initializer": "glorot_uniform",
-                "residual_bias_initializer": "zeros",
+                "units": 32,
+                "activation": "gelu",
                 "kernel_initializer": "glorot_uniform",
                 "bias_initializer": "zeros",
             }

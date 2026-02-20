@@ -1,35 +1,37 @@
 """
-Base data build result type for rade ML framework.
+Base data result types for rade ML framework.
 
-All model-specific data builders should return a subclass of DataBuildResult so that the Trainer can accept any
-model's data result generically.
+Provides a generic DataBuildResult that every model-specific data builder should inherit from.
+This lets the Trainer and evaluation pipelines accept any model's data result without coupling
+to a specific model architecture.
 
 Usage:
     @dataclass
-    class MyModelResult(DataBuildResult):
-        extra_field: np.ndarray = None
+    class HybridGnnRnnResult(DataBuildResult):
+        # model-specific fields ...
+        graph_adjacency: Any = None
 """
 from __future__ import annotations
 
 import tensorflow as tf
 
 from dataclasses import dataclass, field
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 
 @dataclass
 class DataBuildResult:
     """
-    Base data result returned by any data builder.
+    Base data result returned by any model-specific data builder.
 
-    Provides the minimum contract that the Trainer expects:
-        - train_ds: training tf.data.Dataset
-        - val_ds: optional validation tf.data.Dataset
-        - test_ds: optional test tf.data.Dataset
-        - metadata: dictionary of provenance / diagnostic info
+    Every model-specific result (e.g. HybridGnnRnnResult) should inherit from this so
+    that the Trainer can accept any model's output generically.
     """
 
-    train_ds: tf.data.Dataset = None
+    # core tf.data.Dataset splits.
+    train_ds: Optional[tf.data.Dataset] = None
     val_ds: Optional[tf.data.Dataset] = None
     test_ds: Optional[tf.data.Dataset] = None
+
+    # metadata dictionary for tracking pipeline provenance.
     metadata: Dict[str, Any] = field(default_factory=dict)
