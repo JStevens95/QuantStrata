@@ -6,7 +6,7 @@ import pandas as pd
 from typing import Union, Any, Callable, Dict, List
 
 from sqlalchemy import except_
-from src.rade_ml.validation import CacheLoaderError, FileLoadError, FileSaveError
+from src.rade_ml.validation.exceptions import CacheLoaderError, FileLoadError, FileSaveError
 
 # define module logger file.
 logger = logging.getLogger(__name__)
@@ -193,7 +193,7 @@ class CacheLoader:
         logger.info(f"{key} updated in cache.")
 
     @classmethod
-    def load(cls, key: str, file_path: str) -> Any:
+    def load(cls, file_path: str) -> Any:
         """Load data from file path and return it."""
         extension = cls._get_extension(path=file_path)
         loader = cls._get_loader(extension=extension)

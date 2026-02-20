@@ -40,6 +40,7 @@ class DataPipelineConfig:
     transform_type: str = "standard"
 
     # input data validation / test split
+    seq_length: int = 1
     validation_split: float  = 0.1
     test_split: float = 0.05
 
@@ -57,6 +58,7 @@ class DataPipelineConfig:
         """Return kwargs for suitable for build_tf_dataset(**cfg.to_build_kwargs())."""
         return {
             "transform_type": self.transform_type,
+            "seq_length": self.seq_length,
             "validation_split": self.validation_split,
             "test_split": self.test_split,
             "batch_size": self.batch_size,
