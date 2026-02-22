@@ -86,7 +86,19 @@ class StrategyRollout(tf.keras.layers.Layer):
         cumulative_hedge_gain = tf.zeros([batch_size])
         cumulative_cost = tf.zeros([batch_size])
 
-        for t in tf.range(num_steps - 1):
+        # Use Python range when time dim is known (graph-mode compatible). tf.range fails in
+        # graph mode because AutoGraph cannot iterate over a symbolic tensor.
+        T = price_paths.shape[1]
+        if T is not None:
+            step_indices = range(int(T) - 1)
+        else:
+            raise ValueError(
+                "StrategyRollout requires a known time dimension (price_paths.shape[1]) for "
+                "graph-mode compatibility. Use a dataset with fixed num_steps, or ensure "
+                "batch() preserves the static shape (e.g. from arrays with shape [N, T, F])."
+            )
+
+        for t in step_indices:
             features_t = price_paths[:, t, :]
             encoded_t = self.encoder(features_t, training=training)
 

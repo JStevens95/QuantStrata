@@ -23,6 +23,8 @@ def validate_dict_keys(input_dict: Dict[str, Any], keys: List[str]) -> None:
     :param keys: keys required to be in dictionary
     :return:
     """
+    if input_dict is None:
+        raise MissingKeyFields("input_dict cannot be None")
     missing_keys = [k for k in keys if k not in input_dict]
     if missing_keys:
         raise MissingKeyFields(f"Missing keys from dictionary: {missing_keys}")

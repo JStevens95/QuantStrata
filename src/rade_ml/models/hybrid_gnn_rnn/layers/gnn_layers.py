@@ -3,10 +3,18 @@ import logging
 import tensorflow as tf
 from typing import Dict, Any, Tuple, Union
 
+try:
+    from keras.saving import register_keras_serializable
+except ImportError:
+    register_keras_serializable = tf.keras.saving.register_keras_serializable
+
+_REGISTER_PACKAGE = "Tranql.RadeMl"
+
 # define logging at module level.
 logger = logging.getLogger(__name__)
 
 
+@register_keras_serializable(package=_REGISTER_PACKAGE)
 class GnnBlock(tf.keras.layers.Layer):
     """
     Graph neural network block with residual connections and multiple GNN layers: [GraphSAGE, MixedGraphSAGE]
@@ -223,6 +231,7 @@ class GnnBlock(tf.keras.layers.Layer):
             setattr(self, k, v)
 
 
+@register_keras_serializable(package=_REGISTER_PACKAGE)
 class GraphSage(tf.keras.layers.Layer):
     """
     Inductive GraphSAGE layer with mean, sum or max aggregator.
@@ -248,6 +257,8 @@ class GraphSage(tf.keras.layers.Layer):
         self.use_bias: bool | None = None
         self.aggregation_op: str = 'mean'
         self._unpack_configuration(config=layer_config.get('general'))
+        # Sync aggregator_op from config (key may be 'aggregator_op')
+        self.aggregation_op = getattr(self, 'aggregator_op', self.aggregation_op)
 
         # unpack layer configuration --> parameters.
         self.units: int | None = None
@@ -385,6 +396,7 @@ class GraphSage(tf.keras.layers.Layer):
             setattr(self, k, v)
 
 
+@register_keras_serializable(package=_REGISTER_PACKAGE)
 class MixedGraphSage(tf.keras.layers.Layer):
     """
     Inductive mixed aggregation GraphSage layer; concatenates mean, sum or max neighbours features.

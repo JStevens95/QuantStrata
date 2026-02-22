@@ -25,7 +25,8 @@ class TestWarmupCosineSchedule:
     def test_min_lr_floor(self):
         sched = WarmupCosineSchedule(initial_lr=1e-3, warmup_steps=10, decay_steps=90, min_lr=1e-5)
         lr_final = float(sched(tf.constant(10000)))
-        assert lr_final >= 1e-5
+        # Allow small tolerance for float32 representation of 1e-5
+        assert lr_final >= 1e-5 - 1e-8
 
     def test_get_config_roundtrip(self):
         sched = WarmupCosineSchedule(initial_lr=2e-3, warmup_steps=50, decay_steps=450, min_lr=1e-6)

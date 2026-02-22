@@ -8,9 +8,17 @@ Demonstrates the full rade_ml workflow:
     4. Register the trained model
     5. Track the experiment
 
-Run:
-    python examples/rade_ml/deep_hedging/01_train_deep_hedging.py
+Run from project root:
+    PYTHONPATH=. python examples/rade_ml/deep_hedging/01_train_deep_hedging.py
 """
+from pathlib import Path
+import sys
+# Ensure project root is on path when run as script
+_script_dir = Path(__file__).resolve().parent
+_project_root = _script_dir.parents[2]  # examples/rade_ml/deep_hedging -> project root
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
+
 import logging
 import numpy as np
 
@@ -56,6 +64,7 @@ def main():
         ),
         batch_size=256,
         shuffle=True,
+        drop_remainder=True,  # required for graph mode (constant batch size per epoch)
     )
 
     model_config = default_model_config()

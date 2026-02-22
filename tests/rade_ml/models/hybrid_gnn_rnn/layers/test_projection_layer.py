@@ -113,10 +113,9 @@ class TestTargetPnlOutputKnnModes:
         assert out.shape == (BATCH, NUM_TARGETS)
 
     def test_invalid_knn_mode_raises(self, trade_features, attn_features, target_idx):
-        layer = TargetPnlOutput(
-            layer_config=_make_projection_config(knn_mode="invalid"),
-            name="proj_knn_bad"
-        )
+        cfg = _make_projection_config(knn_mode="invalid")
+        cfg["general"]["baseline_trade_count"] = 4  # n_new > 0 so _knn_weights is called
+        layer = TargetPnlOutput(layer_config=cfg, name="proj_knn_bad")
         with pytest.raises(ValueError, match="Unknown knn_mode"):
             layer((trade_features, attn_features, target_idx))
 

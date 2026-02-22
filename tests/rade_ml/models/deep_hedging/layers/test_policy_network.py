@@ -128,5 +128,8 @@ class TestPolicyConfig:
 
     def test_initial_state_shapes(self, policy):
         states = policy.get_initial_state(BATCH)
-        for s in states:
-            assert s.shape[0] == BATCH
+        for state in states:
+            # GRU returns [h], LSTM returns [h, c] - flatten for assertion
+            tensors = state if isinstance(state, (list, tuple)) else [state]
+            for t in tensors:
+                assert t.shape[0] == BATCH

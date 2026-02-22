@@ -4,9 +4,16 @@ Deep Hedging -- Evaluation and comparison to Black-Scholes delta hedging.
 Loads a trained model from the registry, evaluates it on test scenarios,
 and compares the hedging P&L distribution against a Black-Scholes delta hedge.
 
-Run:
+Run from project root:
     python examples/rade_ml/deep_hedging/02_evaluate_deep_hedging.py
 """
+from pathlib import Path
+import sys
+_script_dir = Path(__file__).resolve().parent
+_project_root = _script_dir.parents[2]
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
+
 import logging
 import numpy as np
 
@@ -65,6 +72,7 @@ def main():
         simulation=SimulationConfig(num_paths=50_000, num_steps=63, seed=42),
         batch_size=256,
         shuffle=False,
+        drop_remainder=True,  # required for graph mode (constant batch size)
     )
 
     # ------------------------------------------------------------------ #
@@ -76,7 +84,14 @@ def main():
     # 3. Load model from registry
     # ------------------------------------------------------------------ #
     registry = ModelRegistry("./artifacts/deep_hedging/registry")
-    model, entry = registry.load("deep_hedging")
+    try:
+        model, entry = registry.load("deep_hedging")
+    except KeyError as e:
+        logger.error(
+            "No model found with tag 'deep_hedging'. Run 01_train_deep_hedging.py first to train "
+            "and register a model."
+        )
+        raise SystemExit(1) from e
     model.compile(optimizer="adam", loss=CVaRLoss(alpha=0.95))
     logger.info(f"Loaded model version: {entry.version}")
 

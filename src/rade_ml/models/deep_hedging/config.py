@@ -31,7 +31,9 @@ def default_model_config() -> Dict[str, Any]:
             "rnn_type": "gru",
             "rnn_units": 128,
             "rnn_layers": 2,
-            "dropout_rate": 0.1,
+            # dropout_rate=0: GRUCell dropout causes InaccessibleTensorError when policy.step()
+            # is called in a loop inside tf.function. Use 0 for graph-mode compatibility.
+            "dropout_rate": 0.0,
             "output_activation": None,
             "kernel_initializer": "glorot_uniform",
             "recurrent_initializer": "orthogonal",

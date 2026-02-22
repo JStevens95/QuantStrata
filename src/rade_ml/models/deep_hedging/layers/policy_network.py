@@ -79,7 +79,7 @@ class HedgingPolicy(tf.keras.layers.Layer):
         """Return zero-initialised hidden states for all RNN cells."""
         states = []
         for cell in self.gru_cells:
-            states.append(cell.get_initial_state(batch_size=batch_size, dtype=tf.float32))
+            states.append(cell.get_initial_state(batch_size=batch_size))
         return states
 
     def step(
