@@ -97,7 +97,7 @@ class TestBuildDeepHedgingDataHeston:
         result = build_deep_hedging_data(config)
         assert isinstance(result, DataBuildResult)
         for batch_x, _ in result.train_ds.take(1):
-            assert batch_x["price_paths"].shape[2] == 5
+            assert batch_x["price_paths"].shape[2] == 4  # no BS delta for Heston
 
 
 class TestBuildDeepHedgingDataInvalidModel:

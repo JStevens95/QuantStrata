@@ -25,8 +25,6 @@ from pathlib import Path
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Optional, Union
 
-from src.rade_ml.training import WarmupCosineSchedule
-
 
 @dataclass
 class DataPipelineConfig:
@@ -242,6 +240,7 @@ class LrScheduleConfig:
         elif self.schedule.lower() == "warmup_cosine":
             if total_steps is None:
                 raise ValueError("total_steps must be specified for warmup_cosine schedule")
+            from src.rade_ml.training.schedules import WarmupCosineSchedule
             return WarmupCosineSchedule(
                 initial_lr=self.initial_lr,
                 warmup_steps=self.warmup_steps,

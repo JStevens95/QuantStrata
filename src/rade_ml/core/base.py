@@ -61,7 +61,7 @@ class BaseModel(tf.keras.Model):
 
     def update_metadata(self, **kwargs) -> None:
         """Update model metadata with additional key-value pairs."""
-        self._model_metadata.update(**kwargs)
+        self._model_metadata.update(kwargs)
 
     @abstractmethod
     def call(self, inputs: Any, training: bool = False) -> tf.Tensor:

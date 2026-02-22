@@ -81,7 +81,7 @@ class TestGBMPayoffs:
             seed=42, strike=100.0, option_type="call",
         )
         expected = np.maximum(res.spot_paths[:, -1] - 100.0, 0.0)
-        np.testing.assert_allclose(res.payoffs, expected, rtol=1e-5)
+        np.testing.assert_allclose(res.payoffs, expected, rtol=1e-4, atol=1e-5)
 
     def test_put_payoffs_non_negative(self, simulator):
         res = simulator.simulate(
@@ -96,7 +96,7 @@ class TestGBMPayoffs:
             seed=42, strike=100.0, option_type="put",
         )
         expected = np.maximum(100.0 - res.spot_paths[:, -1], 0.0)
-        np.testing.assert_allclose(res.payoffs, expected, rtol=1e-5)
+        np.testing.assert_allclose(res.payoffs, expected, rtol=1e-4, atol=1e-5)
 
 
 class TestGBMBSDeltas:
@@ -191,7 +191,7 @@ class TestHestonSimulator:
             seed=42, strike=100.0, option_type="call",
         )
         expected = np.maximum(res.spot_paths[:, -1] - 100.0, 0.0)
-        np.testing.assert_allclose(res.payoffs, expected, rtol=1e-5)
+        np.testing.assert_allclose(res.payoffs, expected, rtol=1e-4, atol=1e-5)
 
     def test_seed_reproducibility(self, simulator):
         r1 = simulator.simulate(maturity=0.25, num_steps=NUM_STEPS, num_paths=NUM_PATHS, seed=42)

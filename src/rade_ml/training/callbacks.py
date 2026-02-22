@@ -23,9 +23,10 @@ import tensorflow as tf
 
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TYPE_CHECKING
 
-from src.rade_ml.core.config import TrainingConfig
+if TYPE_CHECKING:
+    from src.rade_ml.core.config import TrainingConfig
 
 # define module level logging.
 logger = logging.getLogger(__name__)

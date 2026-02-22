@@ -50,7 +50,7 @@ class TestOptimizerConfig:
     def test_build_adam(self):
         cfg = OptimizerConfig(name="adam", learning_rate=1e-3)
         opt = cfg.build()
-        assert isinstance(opt, type(opt))
+        assert opt is not None
         assert float(opt.learning_rate) == pytest.approx(1e-3, rel=1e-5)
 
     def test_build_sgd(self):

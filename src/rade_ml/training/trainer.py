@@ -28,11 +28,13 @@ import logging
 import numpy as np
 import tensorflow as tf
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
-from src.rade_ml.core.config import TrainingConfig
 from src.rade_ml.core.types import TrainingResult
 from src.rade_ml.training.callbacks import get_standard_callbacks
+
+if TYPE_CHECKING:
+    from src.rade_ml.core.config import TrainingConfig
 
 # define module level logging.
 logger = logging.getLogger(__name__)
