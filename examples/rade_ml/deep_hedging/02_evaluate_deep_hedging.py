@@ -19,6 +19,7 @@ from src.rade_ml.data.deep_hedging.config import (
 from src.rade_ml.data.deep_hedging.build import build_deep_hedging_data
 from src.rade_ml.evaluation.evaluator import Evaluator
 from src.rade_ml.evaluation.metrics import rmse, mae
+from src.rade_ml.models.deep_hedging.layers.risk_measure import CVaRLoss
 from src.rade_ml.registry.store import ModelRegistry
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(name)s | %(message)s")
@@ -76,6 +77,7 @@ def main():
     # ------------------------------------------------------------------ #
     registry = ModelRegistry("./artifacts/deep_hedging/registry")
     model, entry = registry.load("deep_hedging")
+    model.compile(optimizer="adam", loss=CVaRLoss(alpha=0.95))
     logger.info(f"Loaded model version: {entry.version}")
 
     # ------------------------------------------------------------------ #
