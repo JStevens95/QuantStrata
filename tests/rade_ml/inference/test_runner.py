@@ -1,0 +1,87 @@
+"""Unit tests for rade_ml.inference.runner -- InferenceRunner."""
+import numpy as np
+import pytest
+import tensorflow as tf
+
+from src.rade_ml.core.types import InferenceResult
+from src.rade_ml.inference.runner import InferenceRunner
+
+
+def _make_model_and_save(tmp_path):
+    inp = tf.keras.Input(shape=(3,))
+    out = tf.keras.layers.Dense(1)(inp)
+    model = tf.keras.Model(inputs=inp, outputs=out)
+    model.compile(optimizer="adam", loss="mse")
+    model_path = str(tmp_path / "model.keras")
+    model.save(model_path)
+    return model, model_path
+
+
+class TestInferenceRunnerFromPath:
+    def test_from_path(self, tmp_path):
+        _, model_path = _make_model_and_save(tmp_path)
+        runner = InferenceRunner.from_path(model_path, model_version="test_v1")
+        assert runner.model is not None
+        assert runner.model_version == "test_v1"
+
+    def test_predict_returns_inference_result(self, tmp_path):
+        _, model_path = _make_model_and_save(tmp_path)
+        runner = InferenceRunner.from_path(model_path)
+        inputs = np.random.randn(10, 3).astype(np.float32)
+        result = runner.predict(inputs)
+        assert isinstance(result, InferenceResult)
+        assert result.scenario_count == 10
+        assert result.latency_seconds > 0
+
+
+class TestInferenceRunnerPredict:
+    def test_dict_inputs(self, tmp_path):
+        model, model_path = _make_model_and_save(tmp_path)
+        runner = InferenceRunner(model=model, model_path=model_path)
+        inputs = np.random.randn(5, 3).astype(np.float32)
+        result = runner.predict(inputs, trade_ids=["A", "B", "C", "D", "E"])
+        assert result.trade_ids == ["A", "B", "C", "D", "E"]
+
+    def test_input_hash_deterministic(self, tmp_path):
+        model, model_path = _make_model_and_save(tmp_path)
+        runner = InferenceRunner(model=model, model_path=model_path)
+        inputs = np.ones((3, 3), dtype=np.float32)
+        r1 = runner.predict(inputs, hash_inputs=True)
+        r2 = runner.predict(inputs, hash_inputs=True)
+        assert r1.input_hash == r2.input_hash
+
+    def test_hash_disabled(self, tmp_path):
+        model, model_path = _make_model_and_save(tmp_path)
+        runner = InferenceRunner(model=model, model_path=model_path)
+        result = runner.predict(np.ones((2, 3), dtype=np.float32), hash_inputs=False)
+        assert result.input_hash is None
+
+    def test_metadata_merged(self, tmp_path):
+        model, model_path = _make_model_and_save(tmp_path)
+        runner = InferenceRunner(
+            model=model, model_path=model_path, metadata={"source": "test"}
+        )
+        result = runner.predict(
+            np.ones((2, 3), dtype=np.float32),
+            metadata={"scenario": "base"}
+        )
+        assert result.metadata["source"] == "test"
+        assert result.metadata["scenario"] == "base"
+
+
+class TestInferenceRunnerHashInputs:
+    def test_hash_numpy(self, tmp_path):
+        h = InferenceRunner._hash_inputs(np.array([1.0, 2.0, 3.0]))
+        assert isinstance(h, str)
+        assert len(h) == 32  # MD5 hex digest
+
+    def test_hash_dict(self, tmp_path):
+        h = InferenceRunner._hash_inputs({
+            "a": np.array([1.0]),
+            "b": np.array([2.0]),
+        })
+        assert isinstance(h, str)
+
+    def test_hash_tensor(self, tmp_path):
+        h = InferenceRunner._hash_inputs(tf.constant([1.0, 2.0]))
+        assert isinstance(h, str)
