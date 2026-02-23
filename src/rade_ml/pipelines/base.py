@@ -129,7 +129,6 @@ class TrainPipeline(abc.ABC):
         TrainingResult
         """
         from src.rade_ml.training.trainer import Trainer
-        from src.rade_ml.core.config import TrainingConfig
         from src.rade_ml.registry.store import ModelRegistry
         from src.rade_ml.tracking.tracker import ExperimentTracker
 
@@ -143,7 +142,8 @@ class TrainPipeline(abc.ABC):
         logger.info("TrainPipeline: model built")
 
         training_config = self._resolve_training_config()
-        trainer = Trainer(model=model, config=training_config)
+        seed = self._resolve_seed()
+        trainer = Trainer(model=model, config=training_config, seed=seed)
 
         result = trainer.fit(
             train_data=data_result.train_ds,
@@ -180,6 +180,13 @@ class TrainPipeline(abc.ABC):
         if isinstance(tc, dict):
             return TrainingConfig(**tc)
         return tc
+
+    def _resolve_seed(self) -> int:
+        """Get seed from data config; default 42. Seed is a data-processing concern."""
+        dc = self.config.data_config
+        if dc is None:
+            return 42
+        return dc.get("seed", 42) if isinstance(dc, dict) else getattr(dc, "seed", 42)
 
 
 # ======================================================================
@@ -301,6 +308,11 @@ class InferencePipeline(abc.ABC):
         """
         ...
 
+    def get_result_cls(self) -> type:
+        """Return the InferenceResult subclass for this pipeline. Override for model-specific types."""
+        from src.rade_ml.core.types import InferenceResult
+        return InferenceResult
+
     def load_runner(self, config: PipelineConfig) -> Any:
         """
         Construct an InferenceRunner from the registry.
@@ -347,13 +359,19 @@ class InferencePipeline(abc.ABC):
 
         prepared = self.prepare_inputs(self.config)
         inputs = prepared["inputs"]
-        trade_ids = prepared.get("trade_ids")
+        sample_ids = prepared.get("sample_ids", prepared.get("trade_ids"))
         metadata = prepared.get("metadata")
 
-        result = runner.predict(inputs=inputs, trade_ids=trade_ids, metadata=metadata)
+        result_cls = self.get_result_cls()
+        result = runner.predict(
+            inputs=inputs,
+            sample_ids=sample_ids,
+            metadata=metadata,
+            result_cls=result_cls,
+        )
         logger.info(
             f"InferencePipeline: inference complete "
-            f"({result.scenario_count} scenarios, {result.latency_seconds:.3f}s)"
+            f"({result.n_samples} samples, {result.latency_seconds:.3f}s)"
         )
 
         self.post_infer(result, self.config)

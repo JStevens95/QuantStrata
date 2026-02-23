@@ -15,6 +15,7 @@ from src.rade_ml.pipelines.base import InferencePipeline
 from src.rade_ml.pipelines.config import PipelineConfig
 from src.rade_ml.data.deep_hedging.config import DeepHedgingDataConfig
 from src.rade_ml.data.deep_hedging.build import build_deep_hedging_data
+from src.rade_ml.core.types import DeepHedgingInferenceResult
 
 if TYPE_CHECKING:
     from src.rade_ml.core.types import InferenceResult
@@ -29,6 +30,9 @@ class DeepHedgingInferencePipeline(InferencePipeline):
     Implements prepare_inputs: simulates new market scenarios and returns
     model-ready tensors for the InferenceRunner.
     """
+
+    def get_result_cls(self) -> type:
+        return DeepHedgingInferenceResult
 
     def prepare_inputs(self, config: PipelineConfig) -> Dict[str, Any]:
         data_config = config.data_config

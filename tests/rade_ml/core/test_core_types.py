@@ -7,6 +7,7 @@ from src.rade_ml.core.types import (
     TrainingResult,
     EvaluationResult,
     InferenceResult,
+    DeepHedgingInferenceResult,
 )
 
 
@@ -66,15 +67,27 @@ class TestEvaluationResult:
 
 class TestInferenceResult:
     def test_repr(self):
-        r = InferenceResult(trade_ids=["A", "B"], scenario_count=100, latency_seconds=0.5)
+        r = InferenceResult(sample_ids=["A", "B"], n_samples=100, latency_seconds=0.5)
         s = repr(r)
-        assert "trades=2" in s
-        assert "scenarios=100" in s
+        assert "samples=100" in s
+        assert "ids=2" in s
 
     def test_json_roundtrip(self, tmp_path):
-        r = InferenceResult(scenario_count=50, model_version="v1")
+        r = InferenceResult(n_samples=50, model_version="v1")
         path = tmp_path / "inference.json"
         r.to_json(path)
         loaded = InferenceResult.from_json(path)
-        assert loaded.scenario_count == 50
+        assert loaded.n_samples == 50
         assert loaded.model_version == "v1"
+
+
+class TestDeepHedgingInferenceResult:
+    def test_inherits_base(self):
+        r = DeepHedgingInferenceResult(n_samples=100, sample_ids=["opt_1", "opt_2"])
+        assert r.scenario_count == 100
+        assert r.trade_ids == ["opt_1", "opt_2"]
+
+    def test_domain_aliases(self):
+        r = DeepHedgingInferenceResult(n_samples=50)
+        assert r.scenario_count == r.n_samples
+        assert r.trade_ids is None

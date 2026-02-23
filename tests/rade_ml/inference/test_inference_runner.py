@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 import tensorflow as tf
 
-from src.rade_ml.core.types import InferenceResult
+from src.rade_ml.core.types import InferenceResult, DeepHedgingInferenceResult
 from src.rade_ml.inference.runner import InferenceRunner
 
 
@@ -30,7 +30,7 @@ class TestInferenceRunnerFromPath:
         inputs = np.random.randn(10, 3).astype(np.float32)
         result = runner.predict(inputs)
         assert isinstance(result, InferenceResult)
-        assert result.scenario_count == 10
+        assert result.n_samples == 10
         assert result.latency_seconds > 0
 
 
@@ -39,8 +39,8 @@ class TestInferenceRunnerPredict:
         model, model_path = _make_model_and_save(tmp_path)
         runner = InferenceRunner(model=model, model_path=model_path)
         inputs = np.random.randn(5, 3).astype(np.float32)
-        result = runner.predict(inputs, trade_ids=["A", "B", "C", "D", "E"])
-        assert result.trade_ids == ["A", "B", "C", "D", "E"]
+        result = runner.predict(inputs, sample_ids=["A", "B", "C", "D", "E"])
+        assert result.sample_ids == ["A", "B", "C", "D", "E"]
 
     def test_input_hash_deterministic(self, tmp_path):
         model, model_path = _make_model_and_save(tmp_path)
@@ -55,6 +55,15 @@ class TestInferenceRunnerPredict:
         runner = InferenceRunner(model=model, model_path=model_path)
         result = runner.predict(np.ones((2, 3), dtype=np.float32), hash_inputs=False)
         assert result.input_hash is None
+
+    def test_result_cls(self, tmp_path):
+        _, model_path = _make_model_and_save(tmp_path)
+        runner = InferenceRunner.from_path(model_path)
+        inputs = np.random.randn(3, 3).astype(np.float32)
+        result = runner.predict(inputs, result_cls=DeepHedgingInferenceResult)
+        assert isinstance(result, DeepHedgingInferenceResult)
+        assert result.n_samples == 3
+        assert result.scenario_count == 3
 
     def test_metadata_merged(self, tmp_path):
         model, model_path = _make_model_and_save(tmp_path)

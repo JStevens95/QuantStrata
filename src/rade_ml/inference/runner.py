@@ -12,7 +12,7 @@ the runner generic and usable with any ``tf.keras.Model``.
 Usage::
 
     runner = InferenceRunner.from_registry(registry, "best")
-    result = runner.predict(inputs, trade_ids=target_ids)
+    result = runner.predict(inputs, sample_ids=target_ids)
 """
 from __future__ import annotations
 
@@ -134,9 +134,10 @@ class InferenceRunner:
     def predict(
         self,
         inputs: Any,
-        trade_ids: Optional[List[str]] = None,
+        sample_ids: Optional[List[str]] = None,
         metadata: Optional[Dict[str, Any]] = None,
         hash_inputs: bool = True,
+        result_cls: Optional[type] = None,
     ) -> InferenceResult:
         """
         Run the forward pass and return a provenance-enriched result.
@@ -145,16 +146,18 @@ class InferenceRunner:
         ----------
         inputs : Any
             Model inputs -- dict of tensors, numpy arrays, or tf.data.Dataset.
-        trade_ids : list of str, optional
-            Target trade identifiers for the predictions.
+        sample_ids : list of str, optional
+            Identifiers for each predicted entity.
         metadata : dict, optional
             Additional key-value pairs to attach to the result.
         hash_inputs : bool
             If True, compute a deterministic hash of the inputs for audit.
+        result_cls : type, optional
+            Subclass of InferenceResult to instantiate (e.g. DeepHedgingInferenceResult).
 
         Returns
         -------
-        InferenceResult
+        InferenceResult or subclass
         """
         input_hash = self._hash_inputs(inputs) if hash_inputs else None
 
@@ -163,19 +166,20 @@ class InferenceRunner:
         latency = time.perf_counter() - t0
 
         if isinstance(raw_predictions, np.ndarray):
-            scenario_count = raw_predictions.shape[0]
+            n_samples = raw_predictions.shape[0]
         elif isinstance(raw_predictions, dict):
             first = next(iter(raw_predictions.values()))
-            scenario_count = first.shape[0] if hasattr(first, "shape") else 0
+            n_samples = first.shape[0] if hasattr(first, "shape") else 0
         else:
-            scenario_count = 0
+            n_samples = 0
 
         merged_meta = {**self.metadata, **(metadata or {})}
 
-        result = InferenceResult(
+        cls = result_cls or InferenceResult
+        result = cls(
             predictions=raw_predictions,
-            trade_ids=trade_ids,
-            scenario_count=scenario_count,
+            n_samples=n_samples,
+            sample_ids=sample_ids,
             model_path=self.model_path,
             model_version=self.model_version,
             latency_seconds=latency,
@@ -184,7 +188,7 @@ class InferenceRunner:
         )
 
         logger.info(
-            f"Inference complete: {scenario_count} scenarios in {latency:.3f}s "
+            f"Inference complete: {n_samples} samples in {latency:.3f}s "
             f"(version={self.model_version})"
         )
         return result

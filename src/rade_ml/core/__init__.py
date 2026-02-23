@@ -15,6 +15,7 @@ from src.rade_ml.core.types import (
     TrainingResult,
     EvaluationResult,
     InferenceResult,
+    DeepHedgingInferenceResult,
     TuningResult,
     CheckpointInfo,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "TrainingResult",
     "EvaluationResult",
     "InferenceResult",
+    "DeepHedgingInferenceResult",
     "TuningResult",
     "CheckpointInfo",
 ]

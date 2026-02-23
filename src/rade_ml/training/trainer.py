@@ -64,6 +64,7 @@ class Trainer:
         self,
         model: tf.keras.Model,
         config: TrainingConfig,
+        seed: int = 42,
         custom_callbacks: Optional[List[tf.keras.callbacks.Callback]] = None,
     ):
         """
@@ -71,10 +72,13 @@ class Trainer:
 
         :param model: TensorFlow/Keras model to train.
         :param config: training configuration.
+        :param seed: random seed for reproducibility (default 42). When used from a
+            pipeline, this should match the data config seed.
         :param custom_callbacks: additional user-supplied callbacks.
         """
         self.model = model
         self.config = config
+        self.seed = seed
         self.custom_callbacks = custom_callbacks or []
         self._is_compiled = False
 
@@ -87,9 +91,8 @@ class Trainer:
 
     def _setup_environment(self) -> None:
         """Set up training environment (seeds, precision policy)."""
-        if self.config.seed is not None:
-            tf.random.set_seed(self.config.seed)
-            np.random.seed(self.config.seed)
+        tf.random.set_seed(self.seed)
+        np.random.seed(self.seed)
 
         if self.config.mixed_precision:
             policy = tf.keras.mixed_precision.Policy("mixed_float16")

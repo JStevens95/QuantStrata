@@ -289,7 +289,6 @@ class TrainingConfig:
     """
     # basic training settings
     epochs: int = 100
-    seed: Optional[int] = 42
 
     # optimizer and learning rate schedule.
     optimizer: OptimizerConfig = field(default_factory=OptimizerConfig)
@@ -316,7 +315,6 @@ class TrainingConfig:
         """Convert to dictionary for serialization."""
         return {
             "epochs": self.epochs,
-            "seed": self.seed,
             "optimizer": self.optimizer.to_dict() if self.optimizer else None,
             "lr_schedule": self.lr_schedule.to_dict() if self.lr_schedule else None,
             "lr_reduction": self.lr_reduction.to_dict() if self.lr_reduction else None,
@@ -334,13 +332,13 @@ class TrainingConfig:
     def from_dict(cls, d: Dict[str, Any]) -> "TrainingConfig":
         """Create from dictionary."""
         return cls(
-            epochs=d.get("epochs"),
+            epochs=d.get("epochs", 100),
             optimizer=OptimizerConfig.from_dict(d["optimizer"]) if d.get("optimizer") else OptimizerConfig(),
             lr_schedule=LrScheduleConfig.from_dict(d["lr_schedule"]) if d.get("lr_schedule") else None,
             lr_reduction=ReduceLrConfig.from_dict(d["lr_reduction"]) if d.get("lr_reduction") else None,
             early_stopping=EarlyStoppingConfig.from_dict(d["early_stopping"]) if d.get("early_stopping") else None,
             checkpoint=CheckpointConfig.from_dict(d["checkpoint"]) if d.get("checkpoint") else None,
-            loss=d.get("loss"),
+            loss=d.get("loss", "mae"),
             metrics=d.get("metrics"),
             mixed_precision=d.get("mixed_precision"),
             xla_compile=d.get("xla_compile"),
