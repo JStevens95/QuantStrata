@@ -46,15 +46,202 @@ logger = logging.getLogger(__name__)
 @dataclass
 class HybridGnnRnnResult(DataBuildResult):
     """Result of build_dataset() and tf.data.Dataset splits for Hybrid GNN-RNN model."""
-    pass
+
+    graph_builder: Optional[TradeGraphBuilder] = None
+    attribute_encoder: Optional[TradeAttributeEncoder] = None
+    encoded_trades: Optional[Dict[str, np.ndarray]] = None
+    graph_result: Optional[Dict[str, Any]] = None
+    elementary_ids: Optional[List[str]] = None
+    target_ids: Optional[List[str]] = None
+    elementary_idx: Optional[np.ndarray] = None
+    target_idx: Optional[np.ndarray] = None
 
 
-def build_dataset():
+def build_dataset(
+        config: HybridGnnRnnDataConfig,
+        job: Dict[str, Any],
+) -> HybridGnnRnnResult:
     """
+    End-to-end data build for the Hybrid GNN-RNN model.
 
-    :return:
+    Pipeline:
+      0. Load raw PnL and trade attributes from job paths.
+      1. Standardise PnL history (fit scaler on train, transform all).
+      2. Dimensionality reduction on elementary trades.
+      3. Encode trade attributes (one-hot, multi-label, numeric scaling).
+      4. Build trade graph (k-NN adjacency with RBF kernel).
+      5. Construct tf.data.Datasets for train / val / test splits.
+
+    :param config: HybridGnnRnnDataConfig with all pipeline settings.
+    :param job: dictionary containing file paths for PnL and attribute data.
+    :return: HybridGnnRnnResult with datasets, graph builder, and metadata.
     """
-    # --- 0.
+    # --- 0. Load raw data ---
+    data_dict = load_data(job=job)
+
+    elementary_pnl = data_dict["elementary_pnl"]
+    target_pnl = data_dict["target_pnl"]
+    elementary_attribs = data_dict["elementary_attribs"]
+    target_attribs = data_dict["target_attribs"]
+
+    # --- 1. Standardise PnL history and split into train / val / test ---
+    scaled = standardise_pnl_history(
+        elementary_pnl=elementary_pnl, target_pnl=target_pnl, config=config,
+    )
+    metadata = scaled["metadata"]
+
+    if config.plot_pnl_distribution:
+        plot_pnl_distribution(
+            elementary_pnl=scaled["elementary_pnl_df"],
+            target_pnl=scaled["target_pnl_df"],
+            metadata=metadata, save_path="",
+        )
+
+    # --- 2. Dimensionality reduction on elementary trades ---
+    trade_reduction = dimension_reduction(
+        pnl_df=scaled["elementary_pnl_df"], config=config, seed=config.seed,
+    )
+    selected_trades = trade_reduction["selected_trades"]
+
+    elem_attribs = _update_trade_attributes(
+        trade_attribs=elementary_attribs, selected_trades=selected_trades,
+    )
+    elem_pnl_df = _update_trade_pnl(
+        trade_pnl=scaled["elementary_pnl_df"], selected_trades=selected_trades,
+    )
+
+    # --- 3. Encode trade attributes ---
+    encoder, encoded_trades, num_elementary, num_target, elementary_idx, target_idx = (
+        encode_trade_attributes(
+            elementary_attribs=elem_attribs,
+            target_attribs=target_attribs,
+            config=config.attribute_encoder,
+        )
+    )
+
+    # --- 4. Build trade graph ---
+    graph_builder, graph_result = build_trade_graph(
+        encoded_trades=encoded_trades, config=config.graph_builder,
+    )
+
+    # --- 5. Build tf.data.Datasets ---
+    trade_features = graph_builder.features
+    adjacency = graph_result["adjacency_matrix"]
+
+    static_inputs = {
+        "trade_features": trade_features,
+        "adjacency_matrix": adjacency,
+        "elementary_indices": elementary_idx,
+        "target_indices": target_idx,
+    }
+
+    elem_pnl_arr = elem_pnl_df.to_numpy(dtype=np.float32) if hasattr(elem_pnl_df, "to_numpy") else np.asarray(elem_pnl_df, dtype=np.float32)
+    target_pnl_arr = scaled["target_pnl_df"].to_numpy(dtype=np.float32) if hasattr(scaled["target_pnl_df"], "to_numpy") else np.asarray(scaled["target_pnl_df"], dtype=np.float32)
+
+    train_ends = metadata["train_ends"]
+    val_ends = metadata["val_ends"]
+    test_ends = metadata["test_ends"]
+
+    def _make_ds(scenario_idx: np.ndarray) -> tf.data.Dataset:
+        var_inputs = {"pnl_history": elem_pnl_arr[scenario_idx]}
+        targets = target_pnl_arr[scenario_idx]
+        return build_tf_dataset(
+            variable_inputs=var_inputs, targets=targets,
+            config=config, static_inputs=static_inputs,
+        )
+
+    train_ds = _make_ds(train_ends) if len(train_ends) > 0 else None
+    val_ds = _make_ds(val_ends) if len(val_ends) > 0 else None
+    test_ds = _make_ds(test_ends) if len(test_ends) > 0 else None
+
+    logger.info(
+        f"Built datasets: train={len(train_ends)}, val={len(val_ends)}, "
+        f"test={len(test_ends)} scenarios | {num_elementary} elementary, "
+        f"{num_target} target trades"
+    )
+
+    return HybridGnnRnnResult(
+        train_ds=train_ds, val_ds=val_ds, test_ds=test_ds,
+        metadata=metadata,
+        graph_builder=graph_builder,
+        attribute_encoder=encoder,
+        encoded_trades=encoded_trades,
+        graph_result=graph_result,
+        elementary_ids=selected_trades,
+        target_ids=target_attribs.get("trade_id", []),
+        elementary_idx=elementary_idx,
+        target_idx=target_idx,
+    )
+
+
+def encode_trade_attributes(
+        elementary_attribs: Dict[str, List[Any]],
+        target_attribs: Dict[str, List[Any]],
+        config: AttributeEncoderConfig,
+) -> Tuple[TradeAttributeEncoder, Dict[str, np.ndarray], int, int, np.ndarray, np.ndarray]:
+    """
+    Encode combined elementary + target trade attributes.
+
+    Fits a TradeAttributeEncoder on the combined attribute set and returns
+    the encoder, encoded arrays, and index arrays for downstream use.
+
+    :param elementary_attribs: filtered elementary trade attributes.
+    :param target_attribs: target trade attributes.
+    :param config: attribute encoder configuration.
+    :return: (encoder, encoded_trades, num_elementary, num_target, elementary_idx, target_idx).
+    """
+    encoder = TradeAttributeEncoder(config=config)
+    combined = _combine_attributes(elementary_attribs, target_attribs)
+    encoded_trades = encoder.fit_transform(combined)
+
+    num_elementary = len(elementary_attribs.get("trade_id", []))
+    num_target = len(target_attribs.get("trade_id", []))
+    elementary_idx = np.arange(0, num_elementary, dtype=np.int32)
+    target_idx = np.arange(num_elementary, num_elementary + num_target, dtype=np.int32)
+
+    logger.info(
+        f"Encoded {num_elementary} elementary + {num_target} target trades "
+        f"({sum(v.shape[1] if v.ndim > 1 else 1 for v in encoded_trades.values())} features)"
+    )
+    return encoder, encoded_trades, num_elementary, num_target, elementary_idx, target_idx
+
+
+def build_trade_graph(
+        encoded_trades: Dict[str, np.ndarray],
+        config: GraphBuilderConfig,
+) -> Tuple[TradeGraphBuilder, Dict[str, Any]]:
+    """
+    Construct the k-NN trade relationship graph from encoded attributes.
+
+    :param encoded_trades: output of TradeAttributeEncoder.fit_transform().
+    :param config: graph builder configuration.
+    :return: (graph_builder instance, graph result dict with sparse adjacency).
+    """
+    graph_builder = TradeGraphBuilder(
+        distance_metric=config.distance_metric, k=config.k,
+        alpha_moneyness=config.alpha_moneyness, alpha_maturity=config.alpha_maturity,
+        alpha_delta=config.alpha_delta, alpha_vega=config.alpha_vega,
+        alpha_prod_type=config.alpha_prod_type, alpha_prod_subtype=config.alpha_prod_subtype,
+        alpha_underlying=config.alpha_underlying, alpha_underlying_rf=config.alpha_underlying_rf,
+        p_min_elementary=config.p_min_elementary, q_min_target=config.q_min_target,
+    )
+    graph_result = graph_builder.build_graph(
+        encoded_trades=encoded_trades, include_quota=config.include_quota,
+    )
+    return graph_builder, graph_result
+
+
+def _combine_attributes(
+        elementary_attribs: Dict[str, List[Any]],
+        target_attribs: Dict[str, List[Any]],
+) -> Dict[str, List[Any]]:
+    """Merge elementary and target trade attributes into a single dict (elementary first)."""
+    combined: Dict[str, List[Any]] = {}
+    for key in elementary_attribs:
+        elem_vals = list(elementary_attribs[key])
+        tgt_vals = list(target_attribs.get(key, []))
+        combined[key] = elem_vals + tgt_vals
+    return combined
 
 
 def dimension_reduction(pnl_df: pd.DataFrame, config: HybridGnnRnnDataConfig, seed: int = 42) -> Dict[str, Any]:
@@ -403,13 +590,26 @@ def _update_trade_attributes(
 
 
 def _update_trade_pnl(
-        trade_pnl: pd.DataFrame, selected_trades: List[str], save_path: Optional[Union[str, Path]] = None
+        trade_pnl: pd.DataFrame,
+        selected_trades: List[str],
+        save_path: Optional[Union[str, Path]] = None,
 ) -> pd.DataFrame:
     """
-    Update trade pnl time-series to reflect the trades which have been removed via dimensionality reduction.
+    Filter PnL DataFrame to the selected trades after dimensionality reduction.
 
-    :param trade_pnl: dataframe of trades pnl time-series
-    :param selected_trades: list of trade ids to keep
-    :param save_path: path to save updated trade attributes.
-    :return:
+    :param trade_pnl: PnL time-series [scenarios × trades].
+    :param selected_trades: trade ids to keep (defines output column order).
+    :param save_path: optional path to persist the filtered dataframe.
+    :return: filtered dataframe with columns ordered by selected_trades.
     """
+    missing = set(selected_trades) - set(trade_pnl.columns)
+    if missing:
+        raise ValueError(f"Trades missing from PnL columns: {sorted(missing)[:10]}")
+
+    filtered = trade_pnl.reindex(columns=selected_trades)
+
+    if save_path:
+        CacheLoader.save_data(data=filtered, file_path=save_path)
+
+    logger.info(f"Filtered PnL: {trade_pnl.shape[1]} → {filtered.shape[1]} trades")
+    return filtered

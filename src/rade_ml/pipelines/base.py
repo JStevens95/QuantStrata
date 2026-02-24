@@ -167,8 +167,41 @@ class TrainPipeline(abc.ABC):
         if run is not None:
             tracker.end_run(run)
 
+        if self.config.artifacts_dir and self.config.metadata.get("generate_training_report", True):
+            self._generate_training_report(result, model, data_result)
+
         logger.info("TrainPipeline: done")
         return result
+
+    def _generate_training_report(
+        self,
+        result: "TrainingResult",
+        model: "tf.keras.Model",
+        data_result: "DataBuildResult",
+    ) -> None:
+        """
+        Generate a professional training report when artifacts_dir is set.
+
+        Saves Markdown report and loss curve to artifacts_dir/training_reports/<run_name>_<timestamp>/.
+        Override to customise report content or location.
+        """
+        from datetime import datetime
+        from pathlib import Path
+        from src.rade_ml.reporting.training_report import generate_training_report
+
+        run_name = self.config.metadata.get("run_name", "train")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_dir = Path(self.config.artifacts_dir) / "training_reports" / f"{run_name}_{timestamp}"
+        generate_training_report(
+            result=result,
+            config=self.config,
+            save_dir=report_dir,
+            data_result=data_result,
+            model=model,
+            run_name=run_name,
+            include_loss_plot=True,
+            format="markdown",
+        )
 
     def _resolve_training_config(self) -> Any:
         """Resolve the training config from PipelineConfig."""
