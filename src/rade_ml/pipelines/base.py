@@ -187,7 +187,7 @@ class TrainPipeline(abc.ABC):
         """
         from datetime import datetime
         from pathlib import Path
-        from src.rade_ml.reporting.training_report import generate_training_report
+        from src.rade_ml.training.reports import generate_training_report
 
         run_name = self.config.metadata.get("run_name", "train")
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
