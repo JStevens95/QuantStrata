@@ -215,9 +215,17 @@ class FusionLayer(tf.keras.layers.Layer):
         scores = tf.matmul(q, k, transpose_b=True)
         scores /= tf.math.sqrt(tf.cast(self.head_units, tf.float32))
 
-        # 2) build mask from adjacency
-        adj_dense = tf.sparse.to_dense(adjacency) if isinstance(adjacency, tf.SparseTensor) else adjacency
-        mask = tf.reshape(adj_dense, [1, 1, num_trades, num_trades])  # [1,1,T,T]
+        # 2) build binary mask from adjacency structure.
+        #    When sparse, construct a binary SparseTensor (all-ones values) and
+        #    materialise only that — avoids creating the full float adjacency
+        #    just to threshold it into a boolean mask.
+        if isinstance(adjacency, tf.SparseTensor):
+            ones = tf.ones_like(adjacency.values)
+            binary_sp = tf.SparseTensor(adjacency.indices, ones, adjacency.dense_shape)
+            mask = tf.sparse.to_dense(binary_sp)
+        else:
+            mask = tf.cast(adjacency > 0, tf.float32)
+        mask = tf.reshape(mask, [1, 1, num_trades, num_trades])  # [1,1,T,T]
 
         # --- masked softmax ---
         very_neg = tf.cast(-1e9, scores.dtype)  # large negative sentinel

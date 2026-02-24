@@ -14,21 +14,28 @@ from typing import Any, Dict, List, Union, Tuple, Optional
 from src.rade_ml.core.config import DataPipelineConfig
 
 
-def _build_static_tensors(static_inputs: Dict[str, np.ndarray], ensure_float32: bool) -> Dict[str, "tf.Tensor"]:
+def _build_static_tensors(
+        static_inputs: Dict[str, Any], ensure_float32: bool,
+) -> Dict[str, Union["tf.Tensor", "tf.SparseTensor"]]:
     """
-    Convert static numpy array to tf.constants for the map closure.
+    Convert static inputs to TF tensors for the map closure.
 
     Static inputs have no sample dimension and are shared across all batches. Converting once to tf.constant avoids
     repeated conversion inside the map and keeps them in the graph.
 
-    :param static_inputs: arrays with no sample dimension. Injected to every both via map.
+    tf.SparseTensor and tf.Tensor values are passed through untouched — they
+    already live in the TF graph and should not be wrapped in tf.constant().
+
+    :param static_inputs: arrays (or TF tensors) with no sample dimension. Injected to every batch via map.
     :param ensure_float32: whether to convert static numpy array to float32 if possible.
     :return:
     """
-    results = {}
+    results: Dict[str, Any] = {}
     for key, value in static_inputs.items():
+        if isinstance(value, (tf.SparseTensor, tf.Tensor)):
+            results[key] = value
+            continue
         arr = np.asarray(value)
-        # cast t model compatible dtypes (float32 for floats, int32 for int)
         if ensure_float32 and np.issubdtype(arr.dtype, np.floating):
             arr = arr.astype(np.float32)
         elif ensure_float32 and np.issubdtype(arr.dtype, np.integer):
@@ -39,7 +46,7 @@ def _build_static_tensors(static_inputs: Dict[str, np.ndarray], ensure_float32: 
 
 def build_tf_dataset(
         variable_inputs: Union[np.ndarray, Dict[str, np.ndarray]], targets: np.ndarray, config: DataPipelineConfig,
-        static_inputs: Optional[Dict[str, np.ndarray]] = None,
+        static_inputs: Optional[Dict[str, Any]] = None,
 ) -> tf.data.Dataset:
     """
     Build a batched, refetched tf.data.Dataset for Keras training.

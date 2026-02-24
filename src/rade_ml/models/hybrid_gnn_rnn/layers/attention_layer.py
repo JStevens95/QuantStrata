@@ -116,9 +116,15 @@ class TargetAttentionLayer(tf.keras.layers.Layer):
         # extract inputs
         fused_features, adjacency, target_idx = inputs
 
-        # filter fused features to look at target fused features only.
+        # Build a dense binary mask from sparse structure, then gather the
+        # target sub-matrix. The sub-matrix is small (num_targets × num_targets)
+        # so the materialisation cost is negligible after gathering.
         if isinstance(adjacency, tf.SparseTensor):
-            adjacency = tf.sparse.to_dense(adjacency)
+            ones = tf.ones_like(adjacency.values)
+            binary_sp = tf.SparseTensor(adjacency.indices, ones, adjacency.dense_shape)
+            adjacency = tf.sparse.to_dense(binary_sp)
+        else:
+            adjacency = tf.cast(adjacency > 0, tf.float32)
         fused_features = tf.gather(fused_features, target_idx, axis=1)
         adjacency = tf.gather(tf.gather(adjacency, target_idx, axis=0), target_idx, axis=1)
 
@@ -204,9 +210,14 @@ class TargetAttentionLayer(tf.keras.layers.Layer):
         scores = tf.matmul(q, k, transpose_b=True)
         scores /= tf.math.sqrt(tf.cast(self.head_units, tf.float32))
 
-        # 2) build mask from adjacency
-        adj_dense = tf.sparse.to_dense(adjacency) if isinstance(adjacency, tf.SparseTensor) else adjacency
-        mask = tf.reshape(adj_dense, [1, 1, num_trades, num_trades])  # [1,1,T,T]
+        # 2) build mask from adjacency (already dense binary after call() preprocessing)
+        if isinstance(adjacency, tf.SparseTensor):
+            ones = tf.ones_like(adjacency.values)
+            binary_sp = tf.SparseTensor(adjacency.indices, ones, adjacency.dense_shape)
+            mask = tf.sparse.to_dense(binary_sp)
+        else:
+            mask = tf.cast(adjacency > 0, tf.float32)
+        mask = tf.reshape(mask, [1, 1, num_trades, num_trades])  # [1,1,T,T]
 
         # --- masked softmax ---
         very_neg = tf.cast(-1e9, scores.dtype)  # large negative sentinel
