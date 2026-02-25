@@ -132,7 +132,7 @@ def run_dimensionality_reduction(
     # run dimensionality reduction for specified type.
     if config.reduction_mode.lower() == 'basis_selection':
         # TODO: validate inputs are correct and available.
-        print('validation')
+        
 
         # run reduction.
         selected_trades = basis_selection_reduction(
@@ -169,7 +169,7 @@ def select_minimal_basis(pnl_df: pd.DataFrame, k: int, weight_tail: float = 1.0)
         x = x * weights[:, None]
 
     # 2. pivoted qr, economic mode with column pivoting.
-    _, pivots = qr(x, mode='economic', pivoting=True)
+    _, _, pivots = qr(x, mode='economic', pivoting=True)
 
     # 3. select first k pivoting column by their original names.
     selected: List[str] = [pnl_df.columns[i] for i in pivots]

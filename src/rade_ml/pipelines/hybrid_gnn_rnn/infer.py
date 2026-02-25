@@ -81,7 +81,7 @@ class HybridGnnRnnInferencePipeline(InferencePipeline):
             )
 
         trade_features = graph_builder.features if n_new == 0 else graph_builder._weighted_features(encoded_trades)
-        adjacency = graph_result["adjacency_matrix"]
+        adj_sp = graph_result["adjacency_matrix"]
 
         n_orig_elem = len(graph_builder.is_target_trade) - int(np.sum(graph_builder.is_target_trade))
         n_total = trade_features.shape[0]
@@ -90,7 +90,9 @@ class HybridGnnRnnInferencePipeline(InferencePipeline):
 
         inputs = {
             "trade_features": tf.constant(trade_features),
-            "adjacency_matrix": adjacency,
+            "adjacency_indices": tf.constant(adj_sp.indices),
+            "adjacency_values": tf.constant(adj_sp.values),
+            "adjacency_dense_shape": tf.constant(adj_sp.dense_shape, dtype=tf.int64),
             "pnl_history": tf.constant(pnl_history),
             "elementary_indices": tf.constant(elementary_idx),
             "target_indices": tf.constant(target_idx),

@@ -18,7 +18,10 @@ import tensorflow as tf
 from abc import abstractmethod
 from datetime import datetime
 from typing import Dict, Any
-from tensorflow.python.keras.utils.generic_utils import register_keras_serializable
+try:
+    from keras.saving import register_keras_serializable
+except ImportError:
+    register_keras_serializable = tf.keras.saving.register_keras_serializable
 
 #
 _REGISTER_PACKAGE = "Tranql.RadeMl"

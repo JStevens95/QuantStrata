@@ -7,18 +7,21 @@ val/train ratio, other metrics) for inclusion in training reports.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Optional, Tuple
 
 import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
 from src.rade_ml.core.types import TrainingResult
 
 
-def save_training_plots(result: TrainingResult, save_dir: Path) -> Path:
+def _create_training_figure(
+        result: TrainingResult,
+        figsize: Tuple[float, float] = (14, 10),
+) -> Optional[plt.Figure]:
     """
-    Save multi-panel training dynamics figure.
+    Build the multi-panel training dynamics figure.
 
     Panels:
       (a) Loss curves — train & val vs epoch with best-epoch marker.
@@ -27,17 +30,17 @@ def save_training_plots(result: TrainingResult, save_dir: Path) -> Path:
       (d) Other metrics — any additional history keys (e.g. mae, val_mae).
 
     :param result: TrainingResult with history dict.
-    :param save_dir: directory to save the PNG.
-    :return: path to the saved figure.
+    :param figsize: figure dimensions.
+    :return: matplotlib Figure or None if history is empty.
     """
     history = result.history or {}
     loss_vals = history.get("loss", [])
     if not history or not loss_vals:
-        return save_dir / "training_plots.png"
+        return None
 
     n_epochs = len(loss_vals)
     epochs = range(1, n_epochs + 1)
-    fig, axs = plt.subplots(2, 2, figsize=(14, 10))
+    fig, axs = plt.subplots(2, 2, figsize=figsize)
     ax_a, ax_b, ax_c, ax_d = axs[0, 0], axs[0, 1], axs[1, 0], axs[1, 1]
 
     train_loss = np.array(loss_vals)
@@ -113,7 +116,38 @@ def save_training_plots(result: TrainingResult, save_dir: Path) -> Path:
     ax_d.grid(True, alpha=0.3)
 
     plt.tight_layout()
+    return fig
+
+
+def save_training_plots(result: TrainingResult, save_dir: Path) -> Path:
+    """
+    Save multi-panel training dynamics figure to disk.
+
+    :param result: TrainingResult with history dict.
+    :param save_dir: directory to save the PNG.
+    :return: path to the saved figure.
+    """
     plot_path = save_dir / "training_plots.png"
-    fig.savefig(plot_path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
+
+    prev_backend = matplotlib.get_backend()
+    matplotlib.use("Agg")
+    try:
+        fig = _create_training_figure(result)
+        if fig is not None:
+            fig.savefig(plot_path, dpi=150, bbox_inches="tight")
+            plt.close(fig)
+    finally:
+        matplotlib.use(prev_backend)
+
     return plot_path
+
+
+def show_training_plots(result: TrainingResult) -> None:
+    """
+    Display multi-panel training dynamics figure on screen.
+
+    :param result: TrainingResult with history dict.
+    """
+    fig = _create_training_figure(result)
+    if fig is not None:
+        plt.show()

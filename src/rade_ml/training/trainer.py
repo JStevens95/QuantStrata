@@ -90,9 +90,9 @@ class Trainer:
     # ------------------------------------------------------------------
 
     def _setup_environment(self) -> None:
-        """Set up training environment (seeds, precision policy)."""
-        tf.random.set_seed(self.seed)
-        np.random.seed(self.seed)
+        """Set up training environment (seeds, precision policy, determinism)."""
+        tf.keras.utils.set_random_seed(self.seed)
+        tf.config.experimental.enable_op_determinism()
 
         if self.config.mixed_precision:
             policy = tf.keras.mixed_precision.Policy("mixed_float16")

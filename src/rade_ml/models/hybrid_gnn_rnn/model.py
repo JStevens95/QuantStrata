@@ -7,6 +7,11 @@ import logging
 import tensorflow as tf
 from typing import Dict, Any, Union, Tuple
 
+try:
+    from keras.saving import register_keras_serializable
+except ImportError:
+    register_keras_serializable = tf.keras.saving.register_keras_serializable
+
 from src.rade_ml.core.base import BaseModel
 
 # base validation checks.
@@ -22,7 +27,18 @@ from src.rade_ml.models.hybrid_gnn_rnn.layers.projection_layer import TargetPnlO
 # define module level logging.
 logger = logging.getLogger(__name__)
 
+# Input keys expected by call().  The adjacency is passed as three dense
+# component tensors (indices, values, dense_shape) so the tf.data pipeline
+# never needs to serialize a tf.SparseTensor.  The model reconstructs the
+# SparseTensor internally.
+_REQUIRED_KEYS = [
+    'trade_features', 'pnl_history',
+    'adjacency_indices', 'adjacency_values', 'adjacency_dense_shape',
+    'elementary_indices', 'target_indices',
+]
 
+
+@register_keras_serializable(package="Tranql.RadeMl")
 class HybridGnnRnn(BaseModel):
     """
     Hybrid GNN RNN model for portfolio P&L simulation.
@@ -68,60 +84,46 @@ class HybridGnnRnn(BaseModel):
         """
         Build the model graph.
 
-        :param input_shape: dictionary of input tensor shape.
-            - trade features: [num_trades, feature_dim]
-            - pnl history: [batch, num_elem_trades]
-            - adjacency matrix: [num_trades, num_trades]
-            - elementary indices: [num_elem_trades]
-            - target indices: [num_target_trades]
+        :param input_shape: dictionary of input tensor shapes.
         :return:
         """
         logger.info("Building Hybrid GNN-RNN model layers.")
-
-        # ensure required keys and shapes are present
-        validate_dict_keys(
-            input_dict=input_shape,
-            keys=['trade_features', 'pnl_history', 'adjacency_matrix', 'elementary_indices', 'target_indices'],
-        )
-
-        # update model build flag.
+        validate_dict_keys(input_dict=input_shape, keys=_REQUIRED_KEYS)
         logger.info("Hybrid GNN-RNN model built sucessfully.")
 
-    def call(self, inputs: Dict[str, Union[tf.Tensor, tf.SparseTensor]], training: bool = False) -> tf.Tensor:
+    def call(self, inputs: Dict[str, tf.Tensor], training: bool = False) -> tf.Tensor:
         """
         Forward pass of the hybrid GNN-RNN model graph.
 
-        This method orchestrates the entire computational flow through the model:
-            1. Feature extraction and validation.
-            2. GNN processing to capture trade relationships.
-            3. RNN processing to capture temporal pnl dependencies.
-            4. Feature fusion to combine structural and temporal embeddings.
-            5. Attention mechanism to focus on relevant target trades.
-            6. Final projection to generate PnL predictions.
+        The adjacency matrix is received as three dense component tensors
+        (adjacency_indices, adjacency_values, adjacency_dense_shape) and
+        reconstructed into a tf.SparseTensor here.  This avoids tf.data
+        serialization issues while preserving sparse memory efficiency.
 
         :param inputs: dictionary of inputs:
-            - trade features: [num_trades, feature_dim]
-            - pnl history: [batch, num_elem_trades]
-            - adjacency matrix: [num_trades, num_trades]
-            - elementary indices: [num_elem_trades]
-            - target indices: [num_target_trades]
+            - trade_features:         [num_trades, feature_dim]
+            - pnl_history:            [batch, seq_len, num_elem_trades]
+            - adjacency_indices:      [nnz, 2]   (int64)
+            - adjacency_values:       [nnz]      (float32)
+            - adjacency_dense_shape:  [2]         (int64)
+            - elementary_indices:     [num_elem_trades]
+            - target_indices:         [num_target_trades]
         :param training: whether in training mode.
-        :return:
+        :return: predicted target PnL [batch, n_targets].
         """
-        # validate input keys.
-        validate_dict_keys(
-            input_dict=inputs,
-            keys=['trade_features', 'pnl_history', 'adjacency_matrix', 'elementary_indices', 'target_indices'],
-        )
+        validate_dict_keys(input_dict=inputs, keys=_REQUIRED_KEYS)
 
-        # extract tensors from inputs
-        trade_Features = inputs.get("trade_features")
-        pnl_history = inputs.get("pnl_history")
-        adjacency = inputs.get("adjacency_matrix")
-        target_indices = inputs.get("target_indices")
+        trade_features = inputs["trade_features"]
+        pnl_history = inputs["pnl_history"]
+        target_indices = inputs["target_indices"]
 
-        # run hybrid model logic.
-        output = self.run_model(inputs=(trade_Features, pnl_history, adjacency, target_indices), training=training)
+        adjacency = tf.sparse.reorder(tf.SparseTensor(
+            indices=inputs["adjacency_indices"],
+            values=inputs["adjacency_values"],
+            dense_shape=inputs["adjacency_dense_shape"],
+        ))
+
+        output = self.run_model(inputs=(trade_features, pnl_history, adjacency, target_indices), training=training)
         return output
 
     def run_model(
@@ -136,15 +138,10 @@ class HybridGnnRnn(BaseModel):
             4. run target attention layer - using similarity weighting.
             5. run pnl output projection
 
-        :param inputs: tuple of inputs:
-            - trade features: [num_trades, feature_dim]
-            - pnl history: [batch, num_elem_trades]
-            - adjacency matrix: [num_trades, num_trades]
-            - target indices: [num_target_trades]
+        :param inputs: tuple of (trade_features, pnl_history, adjacency, target_indices).
         :param training: whether in training mode.
-        :return:
+        :return: predicted target PnL [batch, n_targets].
         """
-        # extract inputs
         trade_features, elementary_pnl, adjacency, target_indices = inputs
 
         # 1. apply GNN block --> [num_trades, gnn_dim]
@@ -185,5 +182,9 @@ class HybridGnnRnn(BaseModel):
 
     @classmethod
     def from_config(cls, config: Dict[str, Any], **kwargs) -> "HybridGnnRnn":
-        """Instantiate HybridGnnRnn from configuration (delegates to BaseModel for metadata handling)."""
-        return super().from_config(config, **kwargs)
+        """Instantiate HybridGnnRnn from serialized configuration."""
+        metadata = config.pop("metadata", {})
+        model_config = config.pop("model_config", {})
+        model = cls(config=model_config, **config, **kwargs)
+        model._model_metadata.update(metadata)
+        return model

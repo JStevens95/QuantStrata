@@ -2,10 +2,18 @@ import logging
 import tensorflow as tf
 from typing import Dict, Any, Tuple, Union
 
+try:
+    from keras.saving import register_keras_serializable
+except ImportError:
+    register_keras_serializable = tf.keras.saving.register_keras_serializable
+
+_REGISTER_PACKAGE = "Tranql.RadeMl"
+
 # define logging at module level.
 logger = logging.getLogger(__name__)
 
 
+@register_keras_serializable(package=_REGISTER_PACKAGE)
 class FusionLayer(tf.keras.layers.Layer):
     """
     Per-target fusion layer combining GNN and RNN streams using multi-head cross attention and gating mechanism.

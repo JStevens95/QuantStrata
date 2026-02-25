@@ -633,17 +633,25 @@ class TradeGraphBuilder:
         """
         Boolean mask: True = target trade.
 
-        ASSUMPTION: trade_type is one-hot encoded by sklearn's OneHotEncoder with
-        categories sorted alphabetically: ["ELEMENTARY", "TARGET"]. Therefore
-        TARGET occupies column index 1. If the encoder's category ordering changes,
-        this will silently break — consider passing the column index via config.
+        Expects trade_type to be one-hot encoded by sklearn's OneHotEncoder with
+        categories sorted alphabetically (e.g. ["elementary", "target"]).  The
+        "target" column is the last one after alphabetical sorting.
+
+        Gracefully returns all-False (no targets) when:
+          - trade_type key is missing from encoded_trades
+          - only one category exists (single-column one-hot → all same type)
         """
         n = len(encoded_trades["moneyness"])
         is_target = np.zeros(n, dtype=bool)
         if "trade_type" in encoded_trades:
             emb = encoded_trades["trade_type"]
-            if emb.shape[0] > 0:
-                is_target = emb[:, 1] == 1
+            if emb.ndim == 2 and emb.shape[1] >= 2 and emb.shape[0] > 0:
+                is_target = emb[:, -1] == 1
+            elif emb.ndim == 2 and emb.shape[1] == 1:
+                logger.warning(
+                    "trade_type has only 1 category — cannot distinguish "
+                    "elementary vs target. Treating all trades as elementary."
+                )
         logger.info(f"Identified {np.sum(is_target)} target / {n} total trades.")
         return is_target
 

@@ -122,30 +122,44 @@ def build_dataset(
     )
 
     # ---- 5. build tf compatible datasets. ----
-    # define static inputs
-    adj = graph_result["adjacency_matrix"]
+    # The adjacency is a tf.SparseTensor which cannot be captured in a
+    # tf.data.map() closure.  We decompose it into its three dense components
+    # (indices, values, dense_shape) and pass those as static inputs instead.
+    # The model reconstructs the SparseTensor in its call() method.
+    # Memory footprint: O(nnz) instead of O(n_trades^2).
+    adj_sp = graph_result["adjacency_matrix"]
     trade_feats = encoder_results["combined_features"]
     elem_idx = metadata["elementary_idx"]
     elem_pnl = elementary_pnl.to_numpy()
     tgt_idx = metadata["target_idx"]
     tgt_pnl = target_pnl.to_numpy()
 
+    static_inputs = {
+        "trade_features": trade_feats,
+        "adjacency_indices": adj_sp.indices.numpy(),
+        "adjacency_values": adj_sp.values.numpy(),
+        "adjacency_dense_shape": np.array(adj_sp.dense_shape, dtype=np.int64),
+        "elementary_indices": elem_idx,
+        "target_indices": tgt_idx,
+    }
     # training period
+    logger.info("Building train dataset...")
     train_ds = _make_ds(
-        config=config, trade_pnl=elem_pnl, target_pnl=tgt_pnl, adjacency=adj, trade_features=trade_feats,
-        period_starts=metadata["train_starts"], elementary_idx=elem_idx, target_idx=tgt_idx,
+        config=config, trade_pnl=elem_pnl, target_pnl=tgt_pnl,
+        period_starts=metadata["train_starts"], static_inputs=static_inputs,
     )
+    logger.info("Train dataset built.")
 
     # validation period (if available / specified)
     val_ds = _make_ds(
-        config=config, trade_pnl=elem_pnl, target_pnl=tgt_pnl, adjacency=adj, trade_features=trade_feats,
-        period_starts=metadata["val_starts"], elementary_idx=elem_idx, target_idx=tgt_idx,
+        config=config, trade_pnl=elem_pnl, target_pnl=tgt_pnl,
+        period_starts=metadata["val_starts"], static_inputs=static_inputs,
     ) if metadata["val_size"] > 0.0 else None
 
     # testing period (if available / specified)
     test_ds = _make_ds(
-        config=config, trade_pnl=elem_pnl, target_pnl=tgt_pnl, adjacency=adj, trade_features=trade_feats,
-        period_starts=metadata["test_starts"], elementary_idx=elem_idx, target_idx=tgt_idx,
+        config=config, trade_pnl=elem_pnl, target_pnl=tgt_pnl,
+        period_starts=metadata["test_starts"], static_inputs=static_inputs,
     ) if metadata["test_size"] > 0.0 else None
 
     return HybridGnnRnnResult(
@@ -605,39 +619,35 @@ def _combine_encoded_trades(
 
 def _make_ds(
         config: HybridGnnRnnDataConfig, trade_pnl: np.ndarray, target_pnl: np.ndarray, period_starts: np.ndarray,
-        adjacency: np.ndarray, trade_features: np.ndarray, elementary_idx: np.ndarray, target_idx: np.ndarray,
+        static_inputs: Optional[Dict[str, np.ndarray]] = None,
 ) -> tf.data.Dataset:
     """
-    Filter data inputs for period and build tensorflow compatible dataset using ``build_td_dataset``
+    Build a tf.data.Dataset for one period (train / val / test).
+
+    Variable inputs (pnl_history) are per-sample and batched.  Static inputs
+    (trade_features, adjacency components, indices) are shared across all
+    samples and injected into every batch via a map.
+
+    The adjacency matrix is passed as three dense numpy arrays (indices,
+    values, dense_shape) rather than a tf.SparseTensor — the model
+    reconstructs the SparseTensor in its call() method.
 
     :param config: HybridGnnRnnDataConfig configuration
-    :param trade_pnl: array of pnl time-series for trades [s, n_t]
+    :param trade_pnl: array of pnl time-series for elementary trades [s, n_e]
     :param target_pnl: array of pnl time-series for target trades [s, n_t]
     :param period_starts: start indices for specified period and sequence.
-    :param adjacency: adjacency matrix for all trades
-    :param trade_features: encoded attribute features for all trades
-    :param elementary_idx: idx for elementary trades
-    :param target_idx: idx for target trades
-    :return:
+    :param static_inputs: dict of static arrays injected into every batch.
+    :return: tf.data.Dataset yielding (input_dict, target_pnl) batches.
     """
-    # build pnl sequences.
     elem_seq, tgt_seq = _build_pnl_sequences(
         elementary_pnl=trade_pnl, target_pnl=target_pnl, period_starts=period_starts, sequence_length=config.seq_length,
     )
 
-    # build tf dataset.
-    # Keys must match HybridGnnRnn.call() expected input names.
     tf_dataset = build_tf_dataset(
-        variable_inputs={
-            "pnl_history": elem_seq,
-        },
-        targets=tgt_seq, config=config,
-        static_inputs={
-            "trade_features": trade_features,
-            "adjacency_matrix": adjacency,
-            "elementary_indices": elementary_idx,
-            "target_indices": target_idx,
-        }
+        variable_inputs={"pnl_history": elem_seq},
+        targets=tgt_seq,
+        config=config,
+        static_inputs=static_inputs,
     )
     return tf_dataset
 

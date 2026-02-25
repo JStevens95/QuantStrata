@@ -38,8 +38,6 @@ def _build_static_tensors(
         arr = np.asarray(value)
         if ensure_float32 and np.issubdtype(arr.dtype, np.floating):
             arr = arr.astype(np.float32)
-        elif ensure_float32 and np.issubdtype(arr.dtype, np.integer):
-            arr = arr.astype(np.int32)
         results[key] = tf.constant(arr)
     return results
 
@@ -74,7 +72,9 @@ def build_tf_dataset(
                 targets=targets_pnl,
                 static_inputs={
                     'trade_features': trade_features,
-                    'adjacency_matrix': adjacency_matrix,
+                    'adjacency_indices': adj_indices,
+                    'adjacency_values': adj_values,
+                    'adjacency_dense_shape': adj_dense_shape,
                     'elementary_indices': elementary_idx,
                     'target_indices': target_idx,
                 }
@@ -114,7 +114,11 @@ def build_tf_dataset(
 
     # 5. shuffle (optional): shuffle before batching.
     if config.shuffle:
-        ds = ds.shuffle(buffer_size=max(1, min(n_samples, 50000)), reshuffle_each_iteration=True)
+        ds = ds.shuffle(
+            buffer_size=max(1, min(n_samples, 50000)),
+            seed=config.seed,
+            reshuffle_each_iteration=True,
+        )
 
     # 6. batch: group samples into mini batches for efficient GPU transfer.
     ds = ds.batch(config.batch_size, drop_remainder=config.drop_remainder)
@@ -130,7 +134,7 @@ def build_tf_dataset(
                 merged = {**static_inputs, 'features': var_batch}
             return merged, tgt_batch
 
-        ds = ds.map(merge_statics, num_parallel_calls=tf.data.AUTOTUNE)
+        ds = ds.map(merge_statics)
 
     # 8. prefetch: overlaps data loading with training, improves GPU utilisation.
     ds = ds.prefetch(tf.data.AUTOTUNE)
