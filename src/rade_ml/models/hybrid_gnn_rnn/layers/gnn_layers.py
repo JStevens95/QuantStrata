@@ -54,7 +54,7 @@ class GnnBlock(tf.keras.layers.Layer):
         # initiate variables to build.
         self.gnn_layers: list = []
         self.norm_layers: list = []
-        self.input_projection: None = None
+        self.input_projection: tf.keras.layers.Dense | None = None
         self.dropout = tf.keras.layers.Dropout(rate=self.dropout_rate, name=f'{self.name}_dropout') if (
                 self.dropout_rate > 0.0) else None
 
