@@ -89,12 +89,15 @@ class TrainPipeline(abc.ABC):
         registry: Optional["ModelRegistry"] = None,
         tracker: Optional["ExperimentTracker"] = None,
         run: Optional["Run"] = None,
+        data_result: Optional["DataBuildResult"] = None,
     ) -> None:
         """
         Optional hook called after training completes.
 
         Default behaviour: register the model and log the run.  Override for
-        custom post-training logic (ensemble checkpointing, alerting, etc.).
+        custom post-training logic (ensemble checkpointing, alerting, plotting, etc.).
+        Use ``data_result`` when custom plotting or reports need model-specific data
+        (e.g. test set, graph structure, metadata).
         """
         if registry is not None:
             entry = registry.register(
@@ -162,7 +165,10 @@ class TrainPipeline(abc.ABC):
             tags=self.config.metadata.get("tags", []),
         ) if tracker else None
 
-        self.post_train(result, model, registry=registry, tracker=tracker, run=run)
+        self.post_train(
+            result, model, registry=registry, tracker=tracker, run=run,
+            data_result=data_result,
+        )
 
         if run is not None:
             tracker.end_run(run)
@@ -211,7 +217,7 @@ class TrainPipeline(abc.ABC):
         if tc is None:
             return TrainingConfig()
         if isinstance(tc, dict):
-            return TrainingConfig(**tc)
+            return TrainingConfig.from_dict(tc)
         return tc
 
     def _resolve_seed(self) -> int:

@@ -61,7 +61,7 @@ class HybridGnnRnnResult(DataBuildResult):
     encoder_results: Optional[Dict[str, Any]] = None
 
 
-def build_data(
+def build_dataset(
         job: Dict[str, Any], config: HybridGnnRnnDataConfig
 ) -> HybridGnnRnnResult:
     """
@@ -626,16 +626,17 @@ def _make_ds(
     )
 
     # build tf dataset.
+    # Keys must match HybridGnnRnn.call() expected input names.
     tf_dataset = build_tf_dataset(
         variable_inputs={
-            "elem_pnl_history": elem_seq,
+            "pnl_history": elem_seq,
         },
         targets=tgt_seq, config=config,
         static_inputs={
             "trade_features": trade_features,
             "adjacency_matrix": adjacency,
-            "elementary_idx": elementary_idx,
-            "target_idx": target_idx,
+            "elementary_indices": elementary_idx,
+            "target_indices": target_idx,
         }
     )
     return tf_dataset
