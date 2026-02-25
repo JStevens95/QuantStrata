@@ -166,6 +166,16 @@ flowchart TB
     TI --> PROJ
 
     PROJ --> OUT
+
+    style inputs fill:#1a1a2e,stroke:#16213e,color:#eee
+    style reconstruct fill:#16213e,stroke:#0f3460,color:#eee
+    style parallel fill:#0f3460,stroke:#533483,color:#eee
+    style gnn_stream fill:#533483,stroke:#e94560,color:#eee
+    style rnn_stream fill:#533483,stroke:#e94560,color:#eee
+    style fusion_block fill:#e94560,stroke:#f5a623,color:#fff
+    style attn_block fill:#f5a623,stroke:#f7dc6f,color:#1a1a2e
+    style proj_block fill:#27ae60,stroke:#2ecc71,color:#fff
+    style output fill:#2c3e50,stroke:#ecf0f1,color:#eee
 ```
 
 ### 4.2 Data Pipeline Workflow
@@ -204,6 +214,11 @@ flowchart LR
     DIM --> DS
     SP --> DS
     ENC --> DS
+
+    style raw fill:#1a1a2e,stroke:#16213e,color:#eee
+    style preprocess fill:#0f3460,stroke:#533483,color:#eee
+    style graph fill:#533483,stroke:#e94560,color:#eee
+    style dataset fill:#27ae60,stroke:#2ecc71,color:#fff
 ```
 
 ### 4.3 Tensor Dimensions Reference
