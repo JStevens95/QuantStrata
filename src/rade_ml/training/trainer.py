@@ -11,6 +11,7 @@ The Trainer accepts **only** tf.data.Dataset inputs -- callers are responsible f
 (use build_tf_dataset).
 
 Usage:
+    setup_training_environment(config, seed)  # call before model build (seeds, mixed precision)
     model = MyModel()
     config = TrainingConfig(epochs=100)
 
@@ -38,6 +39,24 @@ if TYPE_CHECKING:
 
 # define module level logging.
 logger = logging.getLogger(__name__)
+
+
+def setup_training_environment(config: "TrainingConfig", seed: int = 42) -> None:
+    """
+    Set up training environment: seeds, determinism, and mixed precision policy.
+
+    Call this **before** building the model so that mixed precision (if enabled)
+    applies to layer creation. The pipeline calls this at the start of run();
+    Trainer also calls it in _setup_environment for standalone use.
+
+    :param config: TrainingConfig with mixed_precision flag.
+    :param seed: random seed for reproducibility.
+    """
+    tf.keras.utils.set_random_seed(seed)
+    tf.config.experimental.enable_op_determinism()
+    if getattr(config, "mixed_precision", False):
+        policy = tf.keras.mixed_precision.Policy("mixed_float16")
+        tf.keras.mixed_precision.set_global_policy(policy)
 
 
 class Trainer:
@@ -73,7 +92,8 @@ class Trainer:
         :param model: TensorFlow/Keras model to train.
         :param config: training configuration.
         :param seed: random seed for reproducibility (default 42). When used from a
-            pipeline, this should match the data config seed.
+            pipeline, setup_training_environment is already called; when used standalone,
+            call setup_training_environment(config, seed) before building the model.
         :param custom_callbacks: additional user-supplied callbacks.
         """
         self.model = model
@@ -81,22 +101,6 @@ class Trainer:
         self.seed = seed
         self.custom_callbacks = custom_callbacks or []
         self._is_compiled = False
-
-        # set up training environment.
-        self._setup_environment()
-
-    # ------------------------------------------------------------------
-    # Environment setup
-    # ------------------------------------------------------------------
-
-    def _setup_environment(self) -> None:
-        """Set up training environment (seeds, precision policy, determinism)."""
-        tf.keras.utils.set_random_seed(self.seed)
-        tf.config.experimental.enable_op_determinism()
-
-        if self.config.mixed_precision:
-            policy = tf.keras.mixed_precision.Policy("mixed_float16")
-            tf.keras.mixed_precision.set_global_policy(policy)
 
     # ------------------------------------------------------------------
     # Compile

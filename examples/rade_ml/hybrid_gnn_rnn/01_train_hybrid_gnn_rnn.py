@@ -28,6 +28,8 @@ Pipeline stages
      encoding, graph construction, tf.data.Dataset creation.
   2. **Model instantiation** – HybridGnnRnn Keras model (uncompiled).
   3. **Training** – compile (optimizer, loss, metrics) and fit via Trainer.
+     Uses tf.distribute.Strategy when strategy="auto" (GPU if available).
+     Set mixed_precision=True and xla_compile=True for faster GPU training.
   4. **Training results** – loss history, best epoch, model summary.
   5. **Evaluation** – Evaluator with RMSE, MAE, R², MAPE and residual statistics.
   6. **Model registration** – persist model + metadata to ModelRegistry.
@@ -233,6 +235,7 @@ def make_synthetic_data(
 #     - epochs, loss, metrics.
 #     - OptimizerConfig: name + hyperparameters → builds a Keras optimizer.
 #     - EarlyStoppingConfig: patience, monitor, restore_best_weights.
+#     - GPU options: strategy, mixed_precision, xla_compile (see build_configs).
 #     - Optional: LrScheduleConfig, CheckpointConfig, ReduceLrConfig.
 # ======================================================================
 
@@ -340,6 +343,15 @@ def build_configs(workdir: Path, job: dict) -> "PipelineConfig":
             restore_best_weights=True,
         ),
 
+        # GPU / performance options (no accuracy impact):
+        #   strategy: "auto" uses GPU if available, else CPU. Also "mirrored" (multi-GPU),
+        #     "one_device_gpu", "one_device_cpu". None = default device placement.
+        strategy="auto",
+        #   mixed_precision: fp16 compute where supported (~1.5-2x speed, ~50% less memory).
+        mixed_precision=False,
+        #   xla_compile: JIT-compile the model for op fusion (~10-30% speedup).
+        xla_compile=False,
+
         verbose=True,
     )
 
@@ -366,7 +378,10 @@ def build_configs(workdir: Path, job: dict) -> "PipelineConfig":
     logger.info(f"  Training config: epochs={training_config.epochs}, "
                 f"loss={training_config.loss}, "
                 f"optimizer={training_config.optimizer.name} "
-                f"(lr={training_config.optimizer.learning_rate})")
+                f"(lr={training_config.optimizer.learning_rate}), "
+                f"strategy={training_config.strategy}, "
+                f"mixed_precision={training_config.mixed_precision}, "
+                f"xla_compile={training_config.xla_compile}")
 
     return config
 
@@ -384,9 +399,12 @@ def run_step_by_step(config: "PipelineConfig") -> None:
     """Execute each pipeline stage individually with detailed logging."""
     import tensorflow as tf
     from src.rade_ml.pipelines.hybrid_gnn_rnn.train import HybridGnnRnnTrainPipeline
-    from src.rade_ml.training.trainer import Trainer
+    from src.rade_ml.training.trainer import Trainer, setup_training_environment
 
     pipeline = HybridGnnRnnTrainPipeline(config)
+    training_config = pipeline._resolve_training_config()
+    seed = pipeline._resolve_seed()
+    setup_training_environment(training_config, seed)
 
     # ---- Stage 1: Build Data ----
     #
@@ -489,6 +507,7 @@ def run_step_by_step(config: "PipelineConfig") -> None:
 
     # ---- Stage 3: Trainer (Compile + Fit) ----
     #
+    # setup_training_environment was already called above (before build_model).
     # The Trainer handles:
     #   a) Compiling the model using TrainingConfig:
     #      - OptimizerConfig.build() → tf.keras.optimizers.Adam
@@ -502,8 +521,6 @@ def run_step_by_step(config: "PipelineConfig") -> None:
     print("STAGE 3: COMPILE + TRAIN")
     print("=" * 70)
 
-    training_config = pipeline._resolve_training_config()
-    seed = pipeline._resolve_seed()
     trainer = Trainer(model=model, config=training_config, seed=seed)
 
     print(f"\n  Training config:")

@@ -306,6 +306,7 @@ class TrainingConfig:
     # performance settings.
     mixed_precision: bool = False
     xla_compile: bool = False
+    strategy: Optional[str] = None  # "auto" | "mirrored" | "one_device_gpu" | "one_device_cpu"
 
     # logging
     verbose: bool = False
@@ -324,6 +325,7 @@ class TrainingConfig:
             "metrics": self.metrics,
             "mixed_precision": self.mixed_precision,
             "xla_compile": self.xla_compile,
+            "strategy": self.strategy,
             "log_dir": self.log_dir,
             "verbose": self.verbose,
         }
@@ -342,6 +344,7 @@ class TrainingConfig:
             metrics=d.get("metrics"),
             mixed_precision=d.get("mixed_precision"),
             xla_compile=d.get("xla_compile"),
+            strategy=d.get("strategy"),
             verbose=d.get("verbose"),
             log_dir=d.get("log_dir"),
         )

@@ -131,21 +131,29 @@ class TrainPipeline(abc.ABC):
         -------
         TrainingResult
         """
-        from src.rade_ml.training.trainer import Trainer
+        from src.rade_ml.training.trainer import Trainer, setup_training_environment
+        from src.rade_ml.training.strategy import get_training_strategy
         from src.rade_ml.registry.store import ModelRegistry
         from src.rade_ml.tracking.tracker import ExperimentTracker
 
         logger.info("TrainPipeline: starting")
         t0 = time.perf_counter()
 
+        training_config = self._resolve_training_config()
+        seed = self._resolve_seed()
+        setup_training_environment(training_config, seed)
+
         data_result = self.build_data(self.config)
         logger.info("TrainPipeline: data built")
 
-        model = self.build_model(self.config, data_result)
+        strategy = get_training_strategy(training_config)
+        if strategy is not None:
+            with strategy.scope():
+                model = self.build_model(self.config, data_result)
+        else:
+            model = self.build_model(self.config, data_result)
         logger.info("TrainPipeline: model built")
 
-        training_config = self._resolve_training_config()
-        seed = self._resolve_seed()
         trainer = Trainer(model=model, config=training_config, seed=seed)
 
         result = trainer.fit(
