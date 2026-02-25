@@ -195,7 +195,7 @@ flowchart LR
         ENC["TradeAttributeEncoder"]
     end
 
-    subgraph graph ["Graph Construction"]
+    subgraph graph_block ["Graph Construction"]
         KNN["k-NN Graph Builder"]
         SP["SparseTensor"]
     end
@@ -217,7 +217,7 @@ flowchart LR
 
     style raw fill:#1a1a2e,stroke:#16213e,color:#eee
     style preprocess fill:#0f3460,stroke:#533483,color:#eee
-    style graph fill:#533483,stroke:#e94560,color:#eee
+    style graph_block fill:#533483,stroke:#e94560,color:#eee
     style dataset fill:#27ae60,stroke:#2ecc71,color:#fff
 ```
 
