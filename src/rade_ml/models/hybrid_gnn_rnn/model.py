@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import logging
 import tensorflow as tf
-from typing import Dict, Any, Union, Tuple
+from typing import Dict, Any, Tuple, Union
 
 try:
     from keras.saving import register_keras_serializable
@@ -91,7 +91,9 @@ class HybridGnnRnn(BaseModel):
         validate_dict_keys(input_dict=input_shape, keys=_REQUIRED_KEYS)
         logger.info("Hybrid GNN-RNN model built sucessfully.")
 
-    def call(self, inputs: Dict[str, tf.Tensor], training: bool = False) -> tf.Tensor:
+    def call(
+            self, inputs: Dict[str, tf.Tensor], training: bool = False
+    ) -> tf.Tensor:
         """
         Forward pass of the hybrid GNN-RNN model graph.
 
@@ -113,34 +115,37 @@ class HybridGnnRnn(BaseModel):
         """
         validate_dict_keys(input_dict=inputs, keys=_REQUIRED_KEYS)
 
-        trade_features = inputs["trade_features"]
-        pnl_history = inputs["pnl_history"]
-        target_indices = inputs["target_indices"]
-
         adjacency = tf.sparse.reorder(tf.SparseTensor(
             indices=inputs["adjacency_indices"],
             values=inputs["adjacency_values"],
             dense_shape=inputs["adjacency_dense_shape"],
         ))
 
-        output = self.run_model(inputs=(trade_features, pnl_history, adjacency, target_indices), training=training)
-        return output
+        return self.run_model(
+            inputs=(
+                inputs["trade_features"],
+                inputs["pnl_history"],
+                adjacency,
+                inputs["target_indices"],
+            ),
+            training=training,
+        )
 
     def run_model(
             self, inputs: Tuple[tf.Tensor, tf.Tensor, Union[tf.Tensor, tf.SparseTensor], tf.Tensor],
             training: bool = False
     ) -> tf.Tensor:
         """
-        Running Hybrid GNN-RNN architecture.
-            1. run gnn block
-            2. run rnn block
-            3. run fusion layer - using cross attention and gating mechanism and similarity weighting.
-            4. run target attention layer - using similarity weighting.
-            5. run pnl output projection
+        Run the Hybrid GNN-RNN architecture:
+            1. GNN block
+            2. RNN block
+            3. Fusion layer (cross attention + gating)
+            4. Target attention layer
+            5. PnL projection
 
-        :param inputs: tuple of (trade_features, pnl_history, adjacency, target_indices).
+        :param inputs: (trade_features, pnl_history, adjacency, target_indices).
         :param training: whether in training mode.
-        :return: predicted target PnL [batch, n_targets].
+        :return: predictions [batch, n_targets].
         """
         trade_features, elementary_pnl, adjacency, target_indices = inputs
 
@@ -153,15 +158,20 @@ class HybridGnnRnn(BaseModel):
         rnn_features = self.rnn_block_ln(rnn_features)
 
         # 3. apply fusion layer; combined GNN & RNN embedding --> [batch, num_trades, fusion_dim]
-        fused_features = self.fusion_layer(inputs=(gnn_features, rnn_features, adjacency), training=training)
+        fused_features = self.fusion_layer(
+            inputs=(gnn_features, rnn_features, adjacency), training=training
+        )
         fused_features = self.fusion_ln(fused_features)
 
         # 4. apply target attention layer --> [batch, num_targets, attn_dim]
-        attended_features = self.attention_layer(inputs=(fused_features, adjacency, target_indices), training=training)
+        attended_features = self.attention_layer(
+            inputs=(fused_features, adjacency, target_indices), training=training
+        )
 
-        # 5. apply pnl output projection.
-        outputs = self.projection_layer(inputs=(trade_features, attended_features, target_indices), training=training)
-        return outputs
+        # 5. apply pnl output projection --> [batch, num_targets]
+        return self.projection_layer(
+            inputs=(trade_features, attended_features, target_indices), training=training
+        )
 
     @staticmethod
     def compute_output_shape(input_shape: Dict[str, tf.TensorShape]) -> tf.TensorShape:

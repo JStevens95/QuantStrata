@@ -126,28 +126,29 @@ class Evaluator:
         dataset: tf.data.Dataset,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Run model.predict for predictions; iterate dataset for targets.
+        Collect predictions and targets in a single pass over the dataset.
 
-        model.predict handles batching internally and is more memory-efficient
-        than manual per-batch inference.
+        IMPORTANT: Uses one iteration to guarantee targets and predictions align.
+        If the dataset has shuffle(reshuffle_each_iteration=True), separate
+        iterations would yield different orderings and corrupt R² / residual metrics.
         """
         all_targets: List[np.ndarray] = []
+        all_preds: List[np.ndarray] = []
         for batch in dataset:
             if isinstance(batch, (tuple, list)):
-                y_batch = batch[1]
+                x_batch, y_batch = batch[0], batch[1]
             else:
                 raise ValueError("Dataset must yield (inputs, targets) tuples for evaluation.")
-            all_targets.append(
-                y_batch.numpy() if isinstance(y_batch, tf.Tensor) else np.asarray(y_batch)
-            )
+
+            y_np = y_batch.numpy() if isinstance(y_batch, tf.Tensor) else np.asarray(y_batch)
+            all_targets.append(y_np)
+
+            pred = self.model(x_batch, training=False)
+            pred_np = pred.numpy() if isinstance(pred, tf.Tensor) else np.asarray(pred)
+            all_preds.append(pred_np)
 
         targets_arr = np.concatenate(all_targets, axis=0)
-        preds_arr = self.model.predict(dataset, verbose=0)
-
-        if isinstance(preds_arr, tf.Tensor):
-            preds_arr = preds_arr.numpy()
-        preds_arr = np.asarray(preds_arr)
-
+        preds_arr = np.concatenate(all_preds, axis=0)
         return preds_arr, targets_arr
 
     @staticmethod

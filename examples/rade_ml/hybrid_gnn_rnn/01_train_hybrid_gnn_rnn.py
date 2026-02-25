@@ -284,7 +284,7 @@ def build_configs(workdir: Path, job: dict) -> "PipelineConfig":
         dimensionality=DimensionalityConfig(
             reduction_mode="basis_selection",
             basis_selection=BasisSelectionConfig(
-                var_threshold=0.95,
+                var_threshold=0.999999,
                 method="pca",
                 max_components=10,
             ),

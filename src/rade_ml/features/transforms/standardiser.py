@@ -5,12 +5,15 @@ from __future__ import annotations
 
 from typing import Any
 from sklearn import preprocessing
+from sklearn.preprocessing import FunctionTransformer
 
 from src.rade_ml.validation.exceptions import UndefinedTransformerType
 
 
 def get_transformer(transform_type: str) -> Any:
     """Get standard transformer object."""
+    if transform_type.lower() == "none":
+        return FunctionTransformer(func=lambda x: x, inverse_func=lambda x: x)
     if transform_type.lower() == "standard":
         return preprocessing.StandardScaler()
     elif transform_type.lower() == "minmax":

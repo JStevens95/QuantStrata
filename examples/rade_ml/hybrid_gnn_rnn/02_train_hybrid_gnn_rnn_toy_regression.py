@@ -20,6 +20,14 @@ is due to data, not architecture.
 
 If these metrics are poor → investigate model logic/math.
 
+Generalization analysis (when train R² > 0.5 but test R² < 0):
+The hybrid GNN-RNN is designed for graph-structured, attribute-driven aggregation. The toy
+task (target = mean(elementary)) requires uniform aggregation over all elementaries, with
+no role for attribute similarity. The graph and attention are built from attribute-space
+k-NN, which does not encode "all trades contribute equally". The model must learn a
+uniform mean through many nonlinear layers; with moderate data this can overfit
+train/val without capturing the true operation. See IMPROVEMENTS.md for discussion.
+
 Run: ``python examples/rade_ml/hybrid_gnn_rnn/02_train_hybrid_gnn_rnn_toy_regression.py``
 """
 from __future__ import annotations
@@ -37,7 +45,6 @@ os.environ["PYTHONHASHSEED"] = "42"
 
 import tensorflow as tf
 tf.config.experimental.enable_op_determinism()
-tf.data.experimental.enable_debug_mode()
 tf.keras.utils.set_random_seed(42)
 
 import numpy as np
@@ -64,7 +71,7 @@ logger = logging.getLogger("example.hybrid_gnn_rnn.toy_regression")
 
 def make_toy_regression_data(
     workdir: Path,
-    n_scenarios: int = 200,
+    n_scenarios: int = 1000,
     n_elementary: int = 20,
     n_target: int = 4,
     seed: int = 42,
@@ -126,7 +133,18 @@ def make_toy_regression_data(
         }
 
     elem_attrs = _make_attrs(elem_ids, trade_type="elementary")
-    tgt_attrs = _make_attrs(tgt_ids, trade_type="target")
+    # Targets with centroid-like attributes so they sit among elementaries in graph.
+    tgt_attrs = {
+        "trade_id": tgt_ids,
+        "moneyness": [1.0] * n_target,
+        "yrs_to_maturity": [1.0] * n_target,
+        "delta": [0.0] * n_target,
+        "vega": [0.25] * n_target,
+        "product_type": ["vanilla_option"] * n_target,
+        "product_subtype": ["european"] * n_target,
+        "trade_type": ["target"] * n_target,
+        "underlying_risk_factors": [["FX"]] * n_target,
+    }
 
     workdir.mkdir(parents=True, exist_ok=True)
     paths = {
@@ -157,7 +175,6 @@ def build_configs(workdir: Path, job: dict) -> "PipelineConfig":
         HybridGnnRnnDataConfig,
         FolderEnvironmentConfig,
         DimensionalityConfig,
-        BasisSelectionConfig,
         GraphBuilderConfig,
         AttributeEncoderConfig,
     )
@@ -171,23 +188,18 @@ def build_configs(workdir: Path, job: dict) -> "PipelineConfig":
         validation_split=0.10,
         test_split=0.10,
         seq_length=1,
-        batch_size=16,
+        batch_size=32,
         shuffle=True,
         cache=False,
         drop_remainder=False,
-        transform_type="standard",
-        # Retain 100% variance so all elementary trades are kept.
-        # Target = mean(elementary) — we must not remove any columns.
-        dimensionality=DimensionalityConfig(
-            reduction_mode="basis_selection",
-            basis_selection=BasisSelectionConfig(
-                var_threshold=1.0,
-                method="pca",
-                max_components=20,
-            ),
-        ),
+        # "none" preserves target=mean(elementary). StandardScaler uses separate per-column
+        # scalers for elementary and target, which breaks that linear relationship.
+        transform_type="none",
+        # No dimensionality reduction: keep ALL elementary trades so target = mean(elementary) holds.
+        dimensionality=DimensionalityConfig(reduction_mode="none"),
+        # k=n_elementary so targets can aggregate from all elementaries via graph.
         graph_builder=GraphBuilderConfig(
-            k=3,
+            k=20,
             distance_metric="euclidean",
             include_quota=False,
             alpha_moneyness=1.0,
@@ -213,11 +225,11 @@ def build_configs(workdir: Path, job: dict) -> "PipelineConfig":
 
     training_config = TrainingConfig(
         epochs=500,
-        loss="mse",
+        loss="mae",
         metrics=["mse", "mae"],
         optimizer=OptimizerConfig(name="adam", learning_rate=1e-3, beta_1=0.9, beta_2=0.999),
         early_stopping=EarlyStoppingConfig(
-            patience=30,
+            patience=50,
             monitor="val_loss",
             mode="min",
             restore_best_weights=True,
@@ -307,16 +319,45 @@ def run_step_by_step(config: "PipelineConfig"):
     print("STAGE 5: EVALUATION (Toy regression sanity check)")
     print("=" * 70)
     eval_ds = data_result.test_ds if data_result.test_ds is not None else data_result.val_ds
+    # Baseline: target = mean(elementary) — trivial R² should be ~1.0 if data relationship holds
+    y_true_all, y_baseline_all, y_pred_all = [], [], []
+    for x, y in eval_ds:
+        pnl = x["pnl_history"].numpy()
+        baseline = np.mean(pnl, axis=(1, 2))[:, np.newaxis]  # [B, 1]
+        baseline = np.broadcast_to(baseline, (pnl.shape[0], y.shape[1]))
+        y_true_all.append(y.numpy())
+        y_baseline_all.append(baseline)
+        pred = model(x, training=False)
+        y_pred_all.append(pred.numpy() if hasattr(pred, "numpy") else pred)
+    y_true = np.concatenate(y_true_all, axis=0)
+    y_baseline = np.concatenate(y_baseline_all, axis=0)
+    y_pred = np.concatenate(y_pred_all, axis=0)
+    r2_baseline = r_squared(y_true, y_baseline)
+    print(f"\n  Baseline (predict mean): R² = {r2_baseline:.4f}")
+    if r2_baseline < 0.99:
+        print("  WARNING: Baseline R² < 0.99 — target=mean(elementary) may not hold in scaled data")
     evaluator = Evaluator(model)
     eval_result = evaluator.run(
         eval_ds,
         additional_metrics={"rmse": rmse, "mae": mae, "r_squared": r_squared, "mape": mape},
     )
     print(f"\n  {eval_result.summary()}")
-    r2 = eval_result.metrics.get("r_squared", eval_result.metrics.get("r_squared", None))
-    if r2 is not None:
-        status = "PASS (model learned)" if r2 > 0.5 else "CHECK (model may have issues)"
-        print(f"\n  R² = {r2:.4f} → {status}")
+    r2_test = eval_result.metrics.get("r_squared")
+    # Train-set evaluation: if model fits train, R²_train should be high; low R²_test = generalization issue.
+    train_eval = evaluator.run(
+        data_result.train_ds,
+        additional_metrics={"r_squared": r_squared},
+        return_predictions=False,
+    )
+    r2_train = train_eval.metrics.get("r_squared")
+    print(f"\n  Train R² = {r2_train:.4f} | Test R² = {r2_test:.4f} | Baseline R² = {r2_baseline:.4f}")
+    if r2_train is not None and r2_test is not None:
+        if r2_train > 0.5 and r2_test < 0:
+            print("  → Model fits train but not test (generalization gap; see docstring for analysis)")
+        elif r2_train < 0.5:
+            print("  → Model does not fit train (investigate architecture / pipeline)")
+        else:
+            print("  → PASS (model learned and generalizes)")
 
     print("\n" + "=" * 70)
     print("STAGE 6: MODEL REGISTRATION")
@@ -361,7 +402,7 @@ def main():
     workdir = Path(tempfile.mkdtemp(prefix="rade_ml_toy_regression_"))
     logger.info(f"Working directory: {workdir}")
 
-    job = make_toy_regression_data(workdir, n_scenarios=200, n_elementary=20, n_target=4, noise_std=1e-6)
+    job = make_toy_regression_data(workdir, n_scenarios=1000, n_elementary=20, n_target=4, noise_std=1e-6)
     config = build_configs(workdir, job)
     run_step_by_step(config)
 

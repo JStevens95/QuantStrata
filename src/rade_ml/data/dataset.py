@@ -45,6 +45,7 @@ def _build_static_tensors(
 def build_tf_dataset(
         variable_inputs: Union[np.ndarray, Dict[str, np.ndarray]], targets: np.ndarray, config: DataPipelineConfig,
         static_inputs: Optional[Dict[str, Any]] = None,
+        shuffle: Optional[bool] = None,
 ) -> tf.data.Dataset:
     """
     Build a batched, refetched tf.data.Dataset for Keras training.
@@ -113,7 +114,9 @@ def build_tf_dataset(
         ds = ds.cache()
 
     # 5. shuffle (optional): shuffle before batching.
-    if config.shuffle:
+    # Use shuffle override when provided (e.g. False for val/test to get deterministic eval).
+    do_shuffle = shuffle if shuffle is not None else config.shuffle
+    if do_shuffle:
         ds = ds.shuffle(
             buffer_size=max(1, min(n_samples, 50000)),
             seed=config.seed,

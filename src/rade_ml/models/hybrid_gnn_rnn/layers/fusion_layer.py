@@ -114,8 +114,9 @@ class FusionLayer(tf.keras.layers.Layer):
         super().build(input_shape)
 
     def call(
-            self, inputs: Tuple[tf.Tensor, tf.Tensor, Union[tf.Tensor, tf.SparseTensor]], training: bool = False
-    ) -> tf.Tensor:
+            self, inputs: Tuple[tf.Tensor, tf.Tensor, Union[tf.Tensor, tf.SparseTensor]], training: bool = False,
+            return_attention: bool = False
+    ) -> Union[tf.Tensor, Tuple[tf.Tensor, Dict[str, tf.Tensor]]]:
         """
         Forward pass of FusionLayer.
 
@@ -124,7 +125,8 @@ class FusionLayer(tf.keras.layers.Layer):
             - rnn embedding: embedding output from RnnBlock [batch, rnn_units]
             - adjacency matrix: [num_trades, num_trades]
         :param training: whether in training mode.
-        :return:
+        :param return_attention: if True, return (output, dict) with fusion_attention and fusion_gate.
+        :return: output tensor, or (output, explanations) when return_attention=True.
         """
         # extract inputs
         gnn_features, rnn_features, adjacency = inputs
@@ -150,15 +152,21 @@ class FusionLayer(tf.keras.layers.Layer):
         query_h, key_h, value_h = (self._split_heads(x) for x in (query, key, value))
 
         # 5. apply core attention layer calculation (calculates scores, adj mask, weights & context).
-        context = self._core_calc(
-            q=query_h, k=key_h, v=value_h, adjacency=adjacency, num_trades=num_trades, training=training
+        core_out = self._core_calc(
+            q=query_h, k=key_h, v=value_h, adjacency=adjacency, num_trades=num_trades, training=training,
+            return_attention=return_attention
         )
+        if return_attention:
+            context, attn_weights, attn_extra = core_out
+        else:
+            context = core_out
 
         # 6. combine individual heads.
         fusion = self._combine_heads(context)
         fusion = self.out_dense(fusion)
 
         # 7. apply gating / concat logic for mixing.
+        gate = None
         if (self.fusion_mode or "").lower() == "gate":
             gate_logit = self.gate_dense(tf.concat([fusion, rnn_emb], axis=-1))
             gate = tf.sigmoid(gate_logit)
@@ -169,7 +177,14 @@ class FusionLayer(tf.keras.layers.Layer):
             output = fusion + rnn_emb
         else:
             raise ValueError(f"Fusion mode {self.fusion_mode} not recognised..")
-        return self.layer_norm(output)
+        output = self.layer_norm(output)
+
+        if return_attention:
+            expl = {"fusion_attention": attn_weights, **attn_extra}
+            if gate is not None:
+                expl["fusion_gate"] = gate
+            return output, expl
+        return output
 
     def compute_output_shape(
             self, input_shape: Tuple[tf.TensorShape, tf.TensorShape, tf.TensorShape]
@@ -209,8 +224,9 @@ class FusionLayer(tf.keras.layers.Layer):
 
     def _core_calc(
             self, q: tf.Tensor, k: tf.Tensor, v: tf.Tensor,
-            adjacency: Union[tf.Tensor, tf.SparseTensor], num_trades, training: bool = False
-    ) -> tf.Tensor:
+            adjacency: Union[tf.Tensor, tf.SparseTensor], num_trades, training: bool = False,
+            return_attention: bool = False
+    ) -> Union[tf.Tensor, Tuple[tf.Tensor, tf.Tensor, Dict[str, tf.Tensor]]]:
         """
         Core fusion calculation — dispatches to O(T*k) sparse neighborhood
         attention when the adjacency is a SparseTensor, or O(T^2) dense
@@ -222,16 +238,18 @@ class FusionLayer(tf.keras.layers.Layer):
         :param adjacency: adjacency matrix (sparse or dense) [T, T]
         :param num_trades: scalar — number of trades T
         :param training: whether in training mode
-        :return: context tensor [B, h, T, d_h]
+        :param return_attention: if True, return (context, weights, extra_dict).
+        :return: context tensor [B, h, T, d_h], or (context, weights, extra) when return_attention.
         """
         if isinstance(adjacency, tf.SparseTensor):
-            return self._sparse_nbr_attention(q, k, v, adjacency, num_trades, training)
-        return self._dense_attention(q, k, v, adjacency, num_trades, training)
+            return self._sparse_nbr_attention(q, k, v, adjacency, num_trades, training, return_attention)
+        return self._dense_attention(q, k, v, adjacency, num_trades, training, return_attention)
 
     def _dense_attention(
             self, q: tf.Tensor, k: tf.Tensor, v: tf.Tensor,
-            adjacency: tf.Tensor, num_trades, training: bool = False
-    ) -> tf.Tensor:
+            adjacency: tf.Tensor, num_trades, training: bool = False,
+            return_attention: bool = False
+    ) -> Union[tf.Tensor, Tuple[tf.Tensor, tf.Tensor, Dict[str, tf.Tensor]]]:
         """Fallback O(T^2) attention for dense adjacency matrices."""
         scores = tf.matmul(q, k, transpose_b=True)
         scores /= tf.math.sqrt(tf.cast(self.head_units, scores.dtype))
@@ -244,12 +262,16 @@ class FusionLayer(tf.keras.layers.Layer):
         weights = tf.nn.softmax(scores, axis=-1)
         weights = self.attn_dropout(weights, training=training)
 
-        return tf.matmul(weights, v)
+        context = tf.matmul(weights, v)
+        if return_attention:
+            return context, weights, {}
+        return context
 
     def _sparse_nbr_attention(
             self, q: tf.Tensor, k_proj: tf.Tensor, v: tf.Tensor,
-            adjacency: tf.SparseTensor, num_trades, training: bool = False
-    ) -> tf.Tensor:
+            adjacency: tf.SparseTensor, num_trades, training: bool = False,
+            return_attention: bool = False
+    ) -> Union[tf.Tensor, Tuple[tf.Tensor, tf.Tensor, Dict[str, tf.Tensor]]]:
         """
         O(T * k) sparse neighborhood attention using the adjacency structure.
 
@@ -263,6 +285,7 @@ class FusionLayer(tf.keras.layers.Layer):
         :param adjacency: sparse adjacency [T, T] (reordered row-major)
         :param num_trades: scalar T
         :param training: whether in training mode
+        :param return_attention: if True, return (context, weights, {neighbor_indices: nbr_idx}).
         :return: context [B, h, T, d_h]
         """
         rows = adjacency.indices[:, 0]   # int64
@@ -303,6 +326,8 @@ class FusionLayer(tf.keras.layers.Layer):
 
         # Weighted context: [B, h, T, d_h]
         context = tf.reduce_sum(tf.expand_dims(weights, -1) * v_nbr, axis=3)
+        if return_attention:
+            return context, weights, {"fusion_neighbor_indices": nbr_idx}
         return context
 
     def _combine_heads(self, x: tf.Tensor) -> tf.Tensor:

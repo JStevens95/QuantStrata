@@ -23,9 +23,14 @@
 
 ---
 
-## 1. Sparse Target Attention
+## 1. Sparse Target Attention ✅ *Implemented*
 
-### 1.1 Problem
+> **Status**: Implemented. `TargetAttentionLayer` uses `_sparse_target_attention()` when
+> adjacency is a `tf.SparseTensor` (the typical case). `_extract_target_submatrix()`
+> returns the sparse submatrix directly; `_core_calc()` dispatches to the O(n_tgt·k)
+> sparse path. Fallback to dense O(n_tgt²) remains for dense adjacency inputs.
+
+### 1.1 Problem (historical)
 
 `TargetAttentionLayer._core_calc()` computes full dense self-attention over all
 target trades.  After `_extract_target_submatrix()` slices the `[n_tgt, n_tgt]`
@@ -568,21 +573,32 @@ These improvements are not independent — they reinforce each other:
 
 ## 8. Implementation Priority
 
+### Implemented
+
+- **Sparse Target Attention** (§1): Implemented in `attention_layer.py`. `_extract_target_submatrix()`
+  returns `tf.SparseTensor`; `_core_calc()` routes to `_sparse_target_attention()` for O(n_tgt·k)
+  complexity. Scalability for 5k+ targets is enabled.
+- **Attention weight extraction (layers)**: `FusionLayer` and `TargetAttentionLayer` both support
+  `return_attention=True` for fusion/target weights. Model-level wiring is pending (low priority).
+
+### Priority table
+
 Recommended order balancing impact, effort, and dependencies:
 
 | Priority | Improvement | Impact | Effort | Dependencies |
 |---|---|---|---|---|
-| 1 | Sparse Target Attention | Unlocks 5k+ targets | Low | Pattern exists in FusionLayer |
+| 1 | ~~Sparse Target Attention~~ | Unlocks 5k+ targets | ✅ Done | — |
 | 2 | FiLM Conditioning | Major accuracy gain for mixed portfolios | Medium | Needs type embedding split in data |
 | 3 | Quantile / Distributional Output | Directly useful for risk | Medium | New loss class needed |
 | 4 | Position-Aware Encoding | Better temporal learning | Low-Medium | Calendar mode needs date metadata |
 | 5 | Multi-Task Learning Heads | Better representations + regularisation | Medium | Optional Greeks labels |
 | 6 | Learnable Graph Structure | Advanced; highest ceiling | High | Needs careful annealing + STE |
+| *Low* | Wire attention weights at model level | Explainability for regulatory review | Low | Layers support `return_attention` |
 
 **Suggested implementation phases**:
 
-- **Phase 1** (scalability): Items 1 + 4 — unblock large portfolios and improve
-  temporal learning with minimal architecture change.
+- **Phase 1** (scalability): Item 1 ✅ done; item 4 — improve temporal learning
+  with position-aware encoding and minimal architecture change.
 - **Phase 2** (accuracy): Items 2 + 3 — add type conditioning and distributional
   output for better predictions and risk metrics.
 - **Phase 3** (advanced): Items 5 + 6 — multi-task regularisation and learned

@@ -151,15 +151,16 @@ def build_dataset(
     logger.info("Train dataset built.")
 
     # validation period (if available / specified)
+    # Shuffle=False for val/test so evaluation order is deterministic (avoids target/pred misalignment).
     val_ds = _make_ds(
         config=config, trade_pnl=elem_pnl, target_pnl=tgt_pnl,
-        period_starts=metadata["val_starts"], static_inputs=static_inputs,
+        period_starts=metadata["val_starts"], static_inputs=static_inputs, shuffle=False,
     ) if metadata["val_size"] > 0.0 else None
 
     # testing period (if available / specified)
     test_ds = _make_ds(
         config=config, trade_pnl=elem_pnl, target_pnl=tgt_pnl,
-        period_starts=metadata["test_starts"], static_inputs=static_inputs,
+        period_starts=metadata["test_starts"], static_inputs=static_inputs, shuffle=False,
     ) if metadata["test_size"] > 0.0 else None
 
     return HybridGnnRnnResult(
@@ -286,22 +287,25 @@ def dimension_reduction(pnl_df: pd.DataFrame, config: HybridGnnRnnDataConfig, se
     # define list of selected trades.
     selected_trades = list()
 
-    # extract underlying and product type.
-    underlying = sorted(list(set(x.split('|')[0] for x in pnl_df.columns.to_list())))
-    prod_type = sorted(list(set(x.split('|')[1] for x in pnl_df.columns.to_list())))
+    if config.dimensionality.reduction_mode.lower() == "none":
+        selected_trades = list(pnl_df.columns)
+    else:
+        # extract underlying and product type.
+        underlying = sorted(list(set(x.split('|')[0] for x in pnl_df.columns.to_list())))
+        prod_type = sorted(list(set(x.split('|')[1] for x in pnl_df.columns.to_list())))
 
-    # loop through each underlying + product combination in trade universe.
-    for und, prod in product(underlying, prod_type):
-        # filter trades for underlying and product type.
-        filt_pnl_df = pnl_df[
-            [k for k in pnl_df.columns.to_list() if k.split("|")[0] == und if k.split("|")[1] == prod]
-        ]
+        # loop through each underlying + product combination in trade universe.
+        for und, prod in product(underlying, prod_type):
+            # filter trades for underlying and product type.
+            filt_pnl_df = pnl_df[
+                [k for k in pnl_df.columns.to_list() if k.split("|")[0] == und and k.split("|")[1] == prod]
+            ]
 
-        # run dimensionality reduction
-        selected_trades += run_dimensionality_reduction(
-            pnl_df=filt_pnl_df, config=config.dimensionality, seed=seed, save_path=None,
-            file_prefix=f"{und.upper()}_{prod.upper()}"
-        )
+            # run dimensionality reduction
+            selected_trades += run_dimensionality_reduction(
+                pnl_df=filt_pnl_df, config=config.dimensionality, seed=seed, save_path=None,
+                file_prefix=f"{und.upper()}_{prod.upper()}"
+            )
     # extract set of trades removed.
     removed_trades = list(set(
         [c for c in pnl_df.columns.to_list() if c not in selected_trades]
@@ -620,6 +624,7 @@ def _combine_encoded_trades(
 def _make_ds(
         config: HybridGnnRnnDataConfig, trade_pnl: np.ndarray, target_pnl: np.ndarray, period_starts: np.ndarray,
         static_inputs: Optional[Dict[str, np.ndarray]] = None,
+        shuffle: Optional[bool] = None,
 ) -> tf.data.Dataset:
     """
     Build a tf.data.Dataset for one period (train / val / test).
@@ -648,6 +653,7 @@ def _make_ds(
         targets=tgt_seq,
         config=config,
         static_inputs=static_inputs,
+        shuffle=shuffle,
     )
     return tf_dataset
 

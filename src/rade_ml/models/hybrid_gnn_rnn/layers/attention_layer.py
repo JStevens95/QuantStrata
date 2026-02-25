@@ -111,8 +111,9 @@ class TargetAttentionLayer(tf.keras.layers.Layer):
         super().build(input_shape)
 
     def call(
-            self, inputs: Tuple[tf.Tensor, Union[tf.Tensor, tf.SparseTensor], tf.Tensor], training: bool = False
-    ) -> tf.Tensor:
+            self, inputs: Tuple[tf.Tensor, Union[tf.Tensor, tf.SparseTensor], tf.Tensor], training: bool = False,
+            return_attention: bool = False
+    ) -> Union[tf.Tensor, Tuple[tf.Tensor, Dict[str, tf.Tensor]]]:
         """
         Forward pass for target attention layer.
         :param inputs: tuple of inputs:
@@ -120,7 +121,8 @@ class TargetAttentionLayer(tf.keras.layers.Layer):
             - adjacency: adjacency matrix [num_trades, num_trades]
             - target indices: indices of target trades in adjacency
         :param training: whether in training mode.
-        :return:
+        :param return_attention: if True, return (output, {target_attention: weights, ...}).
+        :return: output tensor, or (output, explanations) when return_attention=True.
         """
         # extract inputs
         fused_features, adjacency, target_idx = inputs
@@ -149,9 +151,14 @@ class TargetAttentionLayer(tf.keras.layers.Layer):
         query_h, key_h, value_h = (self._split_heads(x) for x in (query, key, value))
 
         # 3. apply core attention layer calculation. (calculates scores, adj mask, weights and context).
-        context = self._core_calc(
-            q=query_h, k=key_h, v=value_h, adjacency=adjacency, num_trades=num_trades, training=training
+        core_out = self._core_calc(
+            q=query_h, k=key_h, v=value_h, adjacency=adjacency, num_trades=num_trades, training=training,
+            return_attention=return_attention
         )
+        if return_attention:
+            context, attn_weights, attn_extra = core_out
+        else:
+            context = core_out
 
         # 4. combine heads
         attn_out = self._combine_heads(context)         # [b, t, d_attn]
@@ -162,7 +169,12 @@ class TargetAttentionLayer(tf.keras.layers.Layer):
         ffn = self.ffn_dense_1(attn_out)                # [b, t, d_attn]
         ffn = self.ffn_dropout(ffn, training=training)
         ffn = self.ffn_dense_2(ffn)                     # [b, t, d_attn]
-        return self.ffn_norm(attn_out + ffn)            # [b, t, d_attn]
+        output = self.ffn_norm(attn_out + ffn)          # [b, t, d_attn]
+
+        if return_attention:
+            expl = {"target_attention": attn_weights, **attn_extra}
+            return output, expl
+        return output
 
     def compute_output_shape(
             self, input_shape: Tuple[tf.TensorShape, tf.TensorShape, tf.TensorShape]
@@ -258,8 +270,9 @@ class TargetAttentionLayer(tf.keras.layers.Layer):
 
     def _core_calc(
             self, q: tf.Tensor, k: tf.Tensor, v: tf.Tensor,
-            adjacency: Union[tf.Tensor, tf.SparseTensor], num_trades, training: bool = False
-    ) -> tf.Tensor:
+            adjacency: Union[tf.Tensor, tf.SparseTensor], num_trades, training: bool = False,
+            return_attention: bool = False
+    ) -> Union[tf.Tensor, Tuple[tf.Tensor, tf.Tensor, Dict[str, tf.Tensor]]]:
         """
         Core attention — dispatches to O(n_tgt * k) sparse neighborhood
         attention when the target submatrix is a SparseTensor, or O(n_tgt^2)
@@ -271,16 +284,18 @@ class TargetAttentionLayer(tf.keras.layers.Layer):
         :param adjacency: target submatrix (sparse or dense) [n_tgt, n_tgt]
         :param num_trades: scalar n_tgt
         :param training: whether in training mode
+        :param return_attention: if True, return (context, weights, extra_dict).
         :return: context tensor [B, h, n_tgt, d_h]
         """
         if isinstance(adjacency, tf.SparseTensor):
-            return self._sparse_target_attention(q, k, v, adjacency, num_trades, training)
-        return self._dense_target_attention(q, k, v, adjacency, num_trades, training)
+            return self._sparse_target_attention(q, k, v, adjacency, num_trades, training, return_attention)
+        return self._dense_target_attention(q, k, v, adjacency, num_trades, training, return_attention)
 
     def _dense_target_attention(
             self, q: tf.Tensor, k: tf.Tensor, v: tf.Tensor,
-            adjacency: tf.Tensor, num_trades, training: bool = False
-    ) -> tf.Tensor:
+            adjacency: tf.Tensor, num_trades, training: bool = False,
+            return_attention: bool = False
+    ) -> Union[tf.Tensor, Tuple[tf.Tensor, tf.Tensor, Dict[str, tf.Tensor]]]:
         """Fallback O(n_tgt^2) attention for dense adjacency submatrices."""
         scores = tf.matmul(q, k, transpose_b=True)
         scores /= tf.math.sqrt(tf.cast(self.head_units, scores.dtype))
@@ -294,12 +309,15 @@ class TargetAttentionLayer(tf.keras.layers.Layer):
         weights = self.attn_dropout(weights, training=training)
 
         context = tf.matmul(weights, v)
+        if return_attention:
+            return context, weights, {}
         return context
 
     def _sparse_target_attention(
             self, q: tf.Tensor, k_proj: tf.Tensor, v: tf.Tensor,
-            adjacency: tf.SparseTensor, num_trades, training: bool = False
-    ) -> tf.Tensor:
+            adjacency: tf.SparseTensor, num_trades, training: bool = False,
+            return_attention: bool = False
+    ) -> Union[tf.Tensor, Tuple[tf.Tensor, tf.Tensor, Dict[str, tf.Tensor]]]:
         """
         O(n_tgt * k) sparse neighborhood attention over target trades.
 
@@ -354,6 +372,8 @@ class TargetAttentionLayer(tf.keras.layers.Layer):
 
         # Weighted context: [B, h, n_tgt, d_h]
         context = tf.reduce_sum(tf.expand_dims(weights, -1) * v_nbr, axis=3)
+        if return_attention:
+            return context, weights, {"target_neighbor_indices": nbr_idx}
         return context
 
     def _combine_heads(self, x: tf.Tensor) -> tf.Tensor:
