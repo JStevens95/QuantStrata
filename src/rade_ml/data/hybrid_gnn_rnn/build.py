@@ -154,13 +154,13 @@ def build_dataset(
     # Shuffle=False for val/test so evaluation order is deterministic (avoids target/pred misalignment).
     val_ds = _make_ds(
         config=config, trade_pnl=elem_pnl, target_pnl=tgt_pnl,
-        period_starts=metadata["val_starts"], static_inputs=static_inputs, shuffle=False,
+        period_starts=metadata["val_starts"], static_inputs=static_inputs
     ) if metadata["val_size"] > 0.0 else None
 
     # testing period (if available / specified)
     test_ds = _make_ds(
         config=config, trade_pnl=elem_pnl, target_pnl=tgt_pnl,
-        period_starts=metadata["test_starts"], static_inputs=static_inputs, shuffle=False,
+        period_starts=metadata["test_starts"], static_inputs=static_inputs
     ) if metadata["test_size"] > 0.0 else None
 
     return HybridGnnRnnResult(
@@ -623,8 +623,7 @@ def _combine_encoded_trades(
 
 def _make_ds(
         config: HybridGnnRnnDataConfig, trade_pnl: np.ndarray, target_pnl: np.ndarray, period_starts: np.ndarray,
-        static_inputs: Optional[Dict[str, np.ndarray]] = None,
-        shuffle: Optional[bool] = None,
+        static_inputs: Optional[Dict[str, np.ndarray]] = None
 ) -> tf.data.Dataset:
     """
     Build a tf.data.Dataset for one period (train / val / test).
@@ -653,7 +652,6 @@ def _make_ds(
         targets=tgt_seq,
         config=config,
         static_inputs=static_inputs,
-        shuffle=shuffle,
     )
     return tf_dataset
 

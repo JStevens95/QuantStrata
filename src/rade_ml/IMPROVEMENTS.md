@@ -603,3 +603,38 @@ Recommended order balancing impact, effort, and dependencies:
   output for better predictions and risk metrics.
 - **Phase 3** (advanced): Items 5 + 6 — multi-task regularisation and learned
   graph structure for maximum model quality.
+
+---
+
+## 9. Toy Regression & Model Validation
+
+### 9.1 Uniform-mean toy (example 02)
+
+The toy `target = mean(elementary_pnl)` tests whether the model can learn a trivial
+aggregation. **This toy is a poor fit for the architecture**:
+
+- The model's graph and attention are built from **attribute similarity** (k-NN in
+  moneyness, delta, vega, etc.). They do not encode "all trades contribute equally".
+- To output mean(pnl), the model must learn uniform aggregation through many nonlinear
+  layers (RNN → fusion → target attention → projection). The inductive bias works against it.
+- **Result**: Train R² and Test R² both negative (~-0.30). The model does not fit
+  even the training set. This indicates an architectural mismatch, not a bug.
+
+### 9.2 Graph-aligned toy (example 03)
+
+**`03_train_hybrid_gnn_rnn_graph_aligned_toy.py`** generates data where:
+- `target_pnl[i] = sum over j in graph_neighbors(i) of (w_ij * elementary_pnl[j])`
+- Uses the **same** k-NN graph the model uses. The relationship aligns with the
+  model's design: targets aggregate from neighbors in attribute space.
+
+This is closer to real exotics: target PnL depends on hedging-basket PnL via
+attribute-similarity relationships (delta-hedging, vega exposure, etc.).
+
+**Run** `python examples/rade_ml/hybrid_gnn_rnn/03_train_hybrid_gnn_rnn_graph_aligned_toy.py`
+to verify the model can learn when the data matches its inductive bias.
+
+### 9.3 Config fix: `use_baseline_norm`
+
+The projection layer expected `use_baseline_norm` in config but the default used
+`use_baseline_weight_norm`. Fixed in `config.py` so baseline weight normalisation
+is applied correctly.

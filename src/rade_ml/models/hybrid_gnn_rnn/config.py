@@ -82,7 +82,7 @@ def default_model_config() -> Dict[str, Any]:
             "general": {
                 "dropout_rate": 0.1,
                 "baseline_new_mode": "output_mix",
-                "use_baseline_weight_norm": True,
+                "use_baseline_norm": True,
                 "use_attn_scale_new": False,
                 "use_attn_bias_new": False,
                 "knn_k": 5,
