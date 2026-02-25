@@ -70,13 +70,13 @@ def build_tf_dataset(
 
         GNN-RNN ds:
             train_ds = build_tf_dataset(
-                variable_inputs={'elem_pnl_history': elem_pnl_history},
+                variable_inputs={'pnl_history': pnl_history},
                 targets=targets_pnl,
                 static_inputs={
                     'trade_features': trade_features,
                     'adjacency_matrix': adjacency_matrix,
-                    'elementary_idx': elementary_idx,
-                    target_idx: target_idx,
+                    'elementary_indices': elementary_idx,
+                    'target_indices': target_idx,
                 }
             )
     """
