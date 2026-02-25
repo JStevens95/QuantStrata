@@ -111,71 +111,61 @@ When a new instrument is onboarded, extend the trade graph with its attribute-de
 ```mermaid
 flowchart TB
     subgraph inputs ["Model Inputs"]
-        TF["trade_features<br/>[T, p]"]
-        PH["pnl_history<br/>[B, S, T_e]"]
-        ADJ["adjacency (sparse)<br/>[T, T]  nnz = T·k"]
-        TI["target_indices<br/>[n_tgt]"]
-        EI["elementary_indices<br/>[T_e]"]
+        TF["trade_features  -  T x p"]
+        PH["pnl_history  -  B x S x T_e"]
+        ADJ["adjacency sparse  -  T x T"]
+        TI["target_indices  -  n_tgt"]
+        EI["elementary_indices  -  T_e"]
     end
 
     subgraph reconstruct ["SparseTensor Reconstruction"]
-        RECON["tf.SparseTensor(indices, values, dense_shape)<br/>→ tf.sparse.reorder()"]
+        RECON["SparseTensor + reorder"]
     end
 
     subgraph parallel ["Parallel Encoding Streams"]
         direction LR
-        subgraph gnn_stream ["GNN Stream  (structural)"]
-            GNN["GnnBlock<br/>L × (GraphSAGE / MixedGraphSAGE)<br/>+ residual + LayerNorm"]
+        subgraph gnn_stream ["GNN Stream"]
+            GNN["GnnBlock<br/>GraphSAGE / MixedGraphSAGE<br/>residual + LayerNorm"]
         end
-        subgraph rnn_stream ["RNN Stream  (temporal)"]
-            RNN["RnnBlock<br/>L × (LSTM / BiLSTM / GRU)<br/>Sequential stack"]
+        subgraph rnn_stream ["RNN Stream"]
+            RNN["RnnBlock<br/>LSTM / BiLSTM / GRU<br/>Sequential stack"]
         end
     end
 
     subgraph fusion_block ["Fusion"]
-        FUSE["FusionLayer<br/>Sparse Neighborhood Cross-Attention<br/>+ Sigmoid Gating<br/>+ LayerNorm"]
+        FUSE["FusionLayer<br/>Sparse Neighborhood Attention<br/>Sigmoid Gating + LayerNorm"]
     end
 
     subgraph attn_block ["Target Refinement"]
-        ATTN["TargetAttentionLayer<br/>Sparse Submatrix Extraction<br/>+ Multi-Head Self-Attention<br/>+ FFN + LayerNorm"]
+        ATTN["TargetAttentionLayer<br/>Submatrix Extraction<br/>Multi-Head Self-Attention<br/>FFN + LayerNorm"]
     end
 
     subgraph proj_block ["Projection"]
-        PROJ["TargetPnlOutput<br/>Baseline (weight-normalised kernels)<br/>+ Residual MLP<br/>+ kNN Output-Space Transfer"]
+        PROJ["TargetPnlOutput<br/>Baseline kernels + Residual MLP<br/>kNN Output-Space Transfer"]
     end
 
     subgraph output ["Output"]
-        OUT["Predicted Target P&L<br/>[B, n_tgt]"]
+        OUT["Predicted Target PnL  -  B x n_tgt"]
     end
 
     ADJ --> RECON
-    RECON -->|"SparseTensor [T,T]"| GNN
+    RECON --> GNN
     TF --> GNN
     PH --> RNN
 
-    GNN -->|"[T, d_g]"| FUSE
-    RNN -->|"[B, d_r]"| FUSE
-    RECON -->|"SparseTensor [T,T]"| FUSE
+    GNN -->|"T x d_g"| FUSE
+    RNN -->|"B x d_r"| FUSE
+    RECON --> FUSE
 
-    FUSE -->|"[B, T, d_f]"| ATTN
+    FUSE -->|"B x T x d_f"| ATTN
     TI --> ATTN
-    RECON -->|"SparseTensor [T,T]"| ATTN
+    RECON --> ATTN
 
-    ATTN -->|"[B, n_tgt, d_a]"| PROJ
+    ATTN -->|"B x n_tgt x d_a"| PROJ
     TF --> PROJ
     TI --> PROJ
 
     PROJ --> OUT
-
-    style inputs fill:#1a1a2e,stroke:#16213e,color:#eee
-    style reconstruct fill:#16213e,stroke:#0f3460,color:#eee
-    style parallel fill:#0f3460,stroke:#533483,color:#eee
-    style gnn_stream fill:#533483,stroke:#e94560,color:#eee
-    style rnn_stream fill:#533483,stroke:#e94560,color:#eee
-    style fusion_block fill:#e94560,stroke:#f5a623,color:#fff
-    style attn_block fill:#f5a623,stroke:#f7dc6f,color:#1a1a2e
-    style proj_block fill:#27ae60,stroke:#2ecc71,color:#fff
-    style output fill:#2c3e50,stroke:#ecf0f1,color:#eee
 ```
 
 ### 4.2 Data Pipeline Workflow
@@ -183,25 +173,25 @@ flowchart TB
 ```mermaid
 flowchart LR
     subgraph raw ["Raw Data"]
-        EP["Elementary P&L<br/>(S × T_e)"]
-        TP["Target P&L<br/>(S × n_tgt)"]
+        EP["Elementary PnL"]
+        TP["Target PnL"]
         EA["Elementary Attrs"]
         TA["Target Attrs"]
     end
 
     subgraph preprocess ["Preprocessing"]
-        STD["StandardScaler<br/>(z-score per trade)"]
-        DIM["Dimensionality Reduction<br/>SVD + Pivoted QR<br/>basis selection"]
-        ENC["TradeAttributeEncoder<br/>numeric · categorical · TTM decay"]
+        STD["StandardScaler"]
+        DIM["Dimensionality Reduction"]
+        ENC["TradeAttributeEncoder"]
     end
 
     subgraph graph ["Graph Construction"]
-        KNN["k-NN Graph Builder<br/>Euclidean distance on<br/>encoded attributes"]
-        SP["tf.SparseTensor<br/>row-normalised weights"]
+        KNN["k-NN Graph Builder"]
+        SP["SparseTensor"]
     end
 
-    subgraph dataset ["tf.data.Dataset"]
-        DS["Dataset Assembly<br/>variable: pnl_history [B,S,T_e]<br/>static: trade_features, adj components,<br/>elementary_idx, target_idx"]
+    subgraph dataset ["Dataset Assembly"]
+        DS["tf.data.Dataset"]
     end
 
     EP --> STD
@@ -214,11 +204,6 @@ flowchart LR
     DIM --> DS
     SP --> DS
     ENC --> DS
-
-    style raw fill:#1a1a2e,stroke:#16213e,color:#eee
-    style preprocess fill:#0f3460,stroke:#533483,color:#eee
-    style graph fill:#533483,stroke:#e94560,color:#eee
-    style dataset fill:#27ae60,stroke:#2ecc71,color:#fff
 ```
 
 ### 4.3 Tensor Dimensions Reference
@@ -321,17 +306,17 @@ The GnnBlock stacks $L$ GNN sub-layers with inter-layer regularisation:
 
 ```mermaid
 flowchart TB
-    IN["Input features  X ∈ ℝ^(T × p)"] --> PROJ["W_proj · X  (if use_residual)"]
+    IN["Input X  -  T x p"] --> PROJ["W_proj x X  if use_residual"]
     IN --> GNN1["GNN Sub-Layer 1"]
     GNN1 --> LN1["LayerNorm"]
-    LN1 --> ACT1["Activation  σ(·)"]
-    ACT1 --> DROP1["Dropout(rate)"]
+    LN1 --> ACT1["Activation"]
+    ACT1 --> DROP1["Dropout"]
     DROP1 --> GNN2["GNN Sub-Layer 2"]
     GNN2 --> LN2["LayerNorm"]
-    LN2 --> ADD["⊕  Residual Add"]
+    LN2 --> ADD["Residual Add"]
     PROJ --> ADD
-    ADD --> ACTF["Activation  σ(·)"]
-    ACTF --> OUT["H^(L) ∈ ℝ^(T × d_g)"]
+    ADD --> ACTF["Final Activation"]
+    ACTF --> OUT["H_L  -  T x d_g"]
 ```
 
 Formally, for a block with $L$ sub-layers indexed $l = 0, \ldots, L-1$:
