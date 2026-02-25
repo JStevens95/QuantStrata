@@ -85,7 +85,7 @@ def build_data(
 
     # ---- 1. standardisation of pnl history ----
     scaled_data_dict = standardise_pnl_history(
-        elementary_pnl=data_dict["elementary_pnl_df"], target_pnl=data_dict["target_pnl_df"], config=config,
+        elementary_pnl=data_dict["elementary_pnl"], target_pnl=data_dict["target_pnl"], config=config,
     )
 
     # ---- 2. apply dimensionality reduction to elementary trades. ----
@@ -100,7 +100,7 @@ def build_data(
     elementary_pnl = _update_trade_pnl(
         trade_pnl=scaled_data_dict["elementary_pnl_scaled"], selected_trades=trade_reduction["selected_trades"],
     )
-    target_attributes, target_pnl = data_dict["target_attributes"], scaled_data_dict["target_pnl_scaled"]
+    target_attributes, target_pnl = data_dict["target_attribs"], scaled_data_dict["target_pnl_scaled"]
 
     # ------ 2.2. validate input data ------
     _validate_input_data(elementary_attributes, elementary_pnl.to_numpy(), target_attributes, target_pnl.to_numpy())
@@ -123,7 +123,7 @@ def build_data(
 
     # ---- 5. build tf compatible datasets. ----
     # define static inputs
-    adj = graph_result["adjacency"]
+    adj = graph_result["adjacency_matrix"]
     trade_feats = encoder_results["combined_features"]
     elem_idx = metadata["elementary_idx"]
     elem_pnl = elementary_pnl.to_numpy()
@@ -389,7 +389,7 @@ def standardise_pnl_history(
     target_transformer = get_transformer(transform_type=config.transform_type)
 
     # ---- 2. fit transformer on training data only - implementing epsilon threshold for scaling ----
-    training_idx = pnl_periods["train_ends"]
+    training_idx = pnl_periods["train_indices"]
     elementary_transformer.fit(elementary_pnl_arr[training_idx, :])
     target_transformer.fit(target_pnl_arr[training_idx, :])
 
@@ -407,7 +407,7 @@ def standardise_pnl_history(
         "train_scenarios": [elementary_pnl.index[i] for i in pnl_periods["train_indices"].tolist()],
         "train_end_scenarios": [elementary_pnl.index[i] for i in pnl_periods["train_ends"].tolist()],
         "val_scenarios": [elementary_pnl.index[i] for i in pnl_periods["val_indices"].tolist()],
-        "val_ends_scenarios": [elementary_pnl.index[i] for i in pnl_periods["val_ends"].tolist()],
+        "val_end_scenarios": [elementary_pnl.index[i] for i in pnl_periods["val_ends"].tolist()],
         "test_scenarios": [elementary_pnl.index[i] for i in pnl_periods["test_indices"].tolist()],
         "test_end_scenarios": [elementary_pnl.index[i] for i in pnl_periods["test_ends"].tolist()],
         "elementary_pnl_transformer": elementary_transformer,
@@ -441,6 +441,9 @@ def split_pnl_periods(
     :param seed: random state seed for reproducibility.
     :return:
     """
+    val_split = val_split if val_split is not None else 0.0
+    test_split = test_split if test_split is not None else 0.0
+
     # ------ 0.1. input validation ------
     if not isinstance(elementary_pnl, pd.DataFrame) or not isinstance(target_pnl, pd.DataFrame):
         raise TypeError("Elementary & Target PnL must be pandas dataframes.")
@@ -450,7 +453,7 @@ def split_pnl_periods(
         raise ValueError("Elementary & Target pnl must have the same scenario index.")
     if seq_length < 1:
         raise ValueError("Sequence length must be greater than 0.")
-    if not (0.0 <= val_split < 1.0) or not (0.0 <= test_split < 1.0) or (val_split + test_split < 1.0):
+    if not (0.0 <= val_split < 1.0) or not (0.0 <= test_split < 1.0) or (val_split + test_split >= 1.0):
         raise ValueError("Validation and Test splits must be in the range [0.0, 1.0] and not be greater than 1.0.")
 
     # ------ 0.2. basic sizes / index arrays ------
@@ -467,11 +470,11 @@ def split_pnl_periods(
     # ---- 2. allocate training / validation indices ----
     train_idx, val_idx = train_test_split(train_val_idx, test_size=val_split, shuffle=shuffle, random_state=seed)
     logger.info(
-        f"[train_split: {1 - val_split - test_split}] Allocated {len(train_idx)} scenarios for testing: {train_idx[0]}"
+        f"[train_split: {1 - val_split - test_split}] Allocated {len(train_idx)} scenarios for training: {train_idx[0]}"
         f"...{train_idx[-1]}"
     )
     logger.info(
-        f"[val_split: {val_split}] Allocated {len(val_idx)} scenarios for testing: {val_idx[0]}...{val_idx[-1]}"
+        f"[val_split: {val_split}] Allocated {len(val_idx)} scenarios for validation: {val_idx[0]}...{val_idx[-1]}"
     )
 
     # ---- 3. adjust indices for sequential length ----
@@ -548,7 +551,7 @@ def _build_pnl_sequences(
     elementary_arr = np.asarray(elementary_pnl, dtype=np.float32)
     target_arr = np.asarray(target_pnl, dtype=np.float32)
     if elementary_arr.ndim != 2 or target_arr.ndim != 2:
-        raise ValueError("Elementary & Targe pnl arrays must be 2-dimensional.")
+        raise ValueError("Elementary & Target pnl arrays must be 2-dimensional.")
 
     # ---- build windows ----
     # trivial case sequence length = 1
@@ -658,12 +661,12 @@ def _update_trade_attributes(
     # total number of trades currently present.
     total_trades: int = len(current_trade_ids)
 
-    # --- Build mapping from trade id --> row index is the current attributes ---
+    # --- Build mapping from trade id --> row index in the current attributes ---
 
-    # create dictionary mapping each trade_id to its current row position.
-    id_to_position: Dict[str, int] = {tid: i for i, tid in enumerate(selected_trades)}
+    # create dictionary mapping each trade_id to its row index in the source attributes.
+    id_to_position: Dict[str, int] = {tid: i for i, tid in enumerate(current_trade_ids)}
 
-    # validate that every selected IR actually exists in the source attributes
+    # validate that every selected trade actually exists in the source attributes
     missing_ids = [tid for tid in selected_trades if tid not in id_to_position]
     if missing_ids:
         preview = ", ".join(missing_ids[:10])
@@ -700,8 +703,6 @@ def _update_trade_attributes(
         out[k] = [v[i] for i in keep_idx]
 
     out[id_key] = list(selected_trades)
-    if out[id_key] != list(selected_trades):
-        raise AssertionError("Post-filter trade_id order mismatch")
     return out
 
 
@@ -727,7 +728,7 @@ def _update_trade_pnl(
 
 def _validate_input_data(
         elementary_trades: Any, elementary_pnl: Any, target_trades: Any, target_pnl: Any
-) -> bool:
+) -> None:
     """
     Validate input data for processing.
 
@@ -740,23 +741,22 @@ def _validate_input_data(
     # check that all inputs are provided.
     if any(elem is None for elem in [elementary_trades, elementary_pnl, target_trades, target_pnl]):
         logger.error("All inputs (elementary_trades, elementary_pnl, target_trades, target_pnl) must be provided.")
-        return False
+        raise ValueError("All inputs (elementary_trades, elementary_pnl, target_trades, target_pnl) must be provided.")
 
     # check that elementary trades and target trades are dictionary of lists.
     if not isinstance(elementary_trades, dict) or not all(isinstance(elementary_trades[t], list ) for t in elementary_trades):
         logger.error("elementary_trades must be a dictionary of lists.")
-        return False
+        raise TypeError("elementary_trades must be a dictionary of lists.")
     if not isinstance(target_trades, dict) or not all(isinstance(target_trades[t], list) for t in target_trades):
         logger.error("target_trades must be a dictionary of lists.")
-        return False
+        raise TypeError("target_trades must be a dictionary of lists.")
 
     # check that elementary pnl and target pnl are numpy arrays.
     if not isinstance(elementary_pnl, np.ndarray) or not isinstance(target_pnl, np.ndarray):
         logger.error("elementary_pnl & target_pnl must be a numpy array.")
-        return False
+        raise TypeError("elementary_pnl & target_pnl must be a numpy array.")
 
     # check that pnl arrays have appropriate dimensions.
     if elementary_pnl.size == 0 or target_pnl.size == 0:
         logger.error("elementary_pnl and target_pnl must have the same size.")
-        return False
-    return True
+        raise ValueError("elementary_pnl and target_pnl must have the same size.")
