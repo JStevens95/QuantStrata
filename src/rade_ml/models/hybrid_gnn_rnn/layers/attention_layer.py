@@ -40,6 +40,7 @@ class TargetAttentionLayer(tf.keras.layers.Layer):
         # unpack layer configuration --> general.
         self.dropout_rate: float = 0.0
         self.num_heads: int = 1
+        self.k_nbrs: int = 50
         self._unpack_configuration(config=layer_config.get('general'))
 
         # unpack layer configuration --> parameters.
@@ -201,23 +202,26 @@ class TargetAttentionLayer(tf.keras.layers.Layer):
     @staticmethod
     def _extract_target_submatrix(
             adjacency: Union[tf.Tensor, tf.SparseTensor], target_idx: tf.Tensor
-    ) -> tf.Tensor:
+    ) -> Union[tf.Tensor, tf.SparseTensor]:
         """
-        Extract a small [n_tgt, n_tgt] dense binary adjacency submatrix.
+        Extract a small [n_tgt, n_tgt] adjacency submatrix.
 
         When ``adjacency`` is a SparseTensor (typical case), this avoids
         materializing the full [T, T] dense matrix.  Instead it:
           1. Builds a lookup table mapping global trade id -> local target id.
           2. Gathers the local ids for every sparse edge's row and column.
           3. Keeps only edges where **both** endpoints are target trades.
-          4. Constructs a tiny [n_tgt, n_tgt] SparseTensor and converts it to
-             dense.
+          4. Constructs a row-major [n_tgt, n_tgt] SparseTensor.
 
-        Cost: O(nnz) scan + O(n_tgt^2) dense — trivial vs. O(T^2).
+        The SparseTensor is returned directly so that downstream attention
+        can use the O(n_tgt * k) sparse path instead of O(n_tgt^2) dense.
+
+        Cost: O(nnz) scan — trivial vs. O(T^2).
 
         :param adjacency: full trade adjacency, sparse or dense [T, T].
         :param target_idx: 1-D int tensor of global target trade indices.
-        :return: dense binary float32 tensor [n_tgt, n_tgt].
+        :return: SparseTensor [n_tgt, n_tgt] if input is sparse, else dense
+                 binary float32 tensor [n_tgt, n_tgt].
         """
         if isinstance(adjacency, tf.SparseTensor):
             n_tgt = tf.shape(target_idx)[0]
@@ -245,45 +249,111 @@ class TargetAttentionLayer(tf.keras.layers.Layer):
             )
             sub_values = tf.ones([tf.shape(sub_indices)[0]], dtype=tf.float32)
             sub_shape = tf.cast([n_tgt, n_tgt], tf.int64)
-            sub_sp = tf.sparse.reorder(
+            return tf.sparse.reorder(
                 tf.SparseTensor(sub_indices, sub_values, sub_shape)
             )
-            return tf.sparse.to_dense(sub_sp)
         else:
             adjacency = tf.cast(adjacency > 0, tf.float32)
             return tf.gather(tf.gather(adjacency, target_idx, axis=0), target_idx, axis=1)
 
     def _core_calc(
-            self, q: tf.Tensor, k: tf.Tensor, v: tf.Tensor, adjacency: tf.Tensor, num_trades, training: bool = False
+            self, q: tf.Tensor, k: tf.Tensor, v: tf.Tensor,
+            adjacency: Union[tf.Tensor, tf.SparseTensor], num_trades, training: bool = False
     ) -> tf.Tensor:
         """
-        Core fusion calculation.
-        :param q:
-        :param k:
-        :param v:
-        :param adjacency:
-        :param num_trades:
-        :param training:
-        :return:
+        Core attention — dispatches to O(n_tgt * k) sparse neighborhood
+        attention when the target submatrix is a SparseTensor, or O(n_tgt^2)
+        dense attention otherwise.
+
+        :param q: query tensor  [B, h, n_tgt, d_h]
+        :param k: key tensor    [B, h, n_tgt, d_h]
+        :param v: value tensor  [B, h, n_tgt, d_h]
+        :param adjacency: target submatrix (sparse or dense) [n_tgt, n_tgt]
+        :param num_trades: scalar n_tgt
+        :param training: whether in training mode
+        :return: context tensor [B, h, n_tgt, d_h]
         """
-        # 1) scaled dot-product
+        if isinstance(adjacency, tf.SparseTensor):
+            return self._sparse_target_attention(q, k, v, adjacency, num_trades, training)
+        return self._dense_target_attention(q, k, v, adjacency, num_trades, training)
+
+    def _dense_target_attention(
+            self, q: tf.Tensor, k: tf.Tensor, v: tf.Tensor,
+            adjacency: tf.Tensor, num_trades, training: bool = False
+    ) -> tf.Tensor:
+        """Fallback O(n_tgt^2) attention for dense adjacency submatrices."""
         scores = tf.matmul(q, k, transpose_b=True)
         scores /= tf.math.sqrt(tf.cast(self.head_units, scores.dtype))
 
-        # 2) build mask from adjacency (already dense binary after _extract_target_submatrix)
         mask = tf.cast(adjacency > 0, scores.dtype)
-        mask = tf.reshape(mask, [1, 1, num_trades, num_trades])  # [1,1,T,T]
+        mask = tf.reshape(mask, [1, 1, num_trades, num_trades])
 
-        # --- masked softmax ---
         very_neg = tf.cast(-1e9, scores.dtype)
         scores_masked = tf.where(mask > 0, scores, very_neg)
         weights = tf.nn.softmax(scores_masked, axis=-1)
-
-        # optional dropout
         weights = self.attn_dropout(weights, training=training)
 
-        # 3) context
         context = tf.matmul(weights, v)
+        return context
+
+    def _sparse_target_attention(
+            self, q: tf.Tensor, k_proj: tf.Tensor, v: tf.Tensor,
+            adjacency: tf.SparseTensor, num_trades, training: bool = False
+    ) -> tf.Tensor:
+        """
+        O(n_tgt * k) sparse neighborhood attention over target trades.
+
+        Instead of materializing a [n_tgt, n_tgt] score matrix, each target
+        trade only attends to its k neighbors from the target adjacency
+        subgraph.  Memory goes from O(B * h * n_tgt^2) to O(B * h * n_tgt * k).
+
+        :param q: query  [B, h, n_tgt, d_h]
+        :param k_proj: key    [B, h, n_tgt, d_h]
+        :param v: value  [B, h, n_tgt, d_h]
+        :param adjacency: sparse target submatrix [n_tgt, n_tgt] (row-major)
+        :param num_trades: scalar n_tgt
+        :param training: whether in training mode
+        :return: context [B, h, n_tgt, d_h]
+        """
+        rows = adjacency.indices[:, 0]
+        cols = adjacency.indices[:, 1]
+        num_trades_i64 = tf.cast(num_trades, tf.int64)
+
+        # Per-row neighbor counts — uniform for a k-NN graph, but handles
+        # variable-degree gracefully.
+        row_counts = tf.math.unsorted_segment_sum(
+            tf.ones_like(rows, dtype=tf.int32), tf.cast(rows, tf.int32), num_trades
+        )
+        k = tf.reduce_max(row_counts)
+
+        # Build padded [n_tgt, k] neighbor index array from the sparse
+        # structure.  from_value_rowids requires sorted (non-decreasing)
+        # row ids — guaranteed because the SparseTensor was reordered to
+        # row-major by _extract_target_submatrix.
+        nbr_ragged = tf.RaggedTensor.from_value_rowids(cols, rows, nrows=num_trades_i64)
+        nbr_idx = tf.cast(nbr_ragged.to_tensor(default_value=tf.constant(0, cols.dtype)), tf.int32)
+        nbr_mask = tf.sequence_mask(row_counts, maxlen=k, dtype=q.dtype)
+
+        # Gather neighbor keys and values along the n_tgt axis.
+        # tf.gather(params=[B,h,n_tgt,d_h], indices=[n_tgt,k], axis=2) -> [B,h,n_tgt,k,d_h]
+        k_nbr = tf.gather(k_proj, nbr_idx, axis=2)
+        v_nbr = tf.gather(v, nbr_idx, axis=2)
+
+        # Scores: dot(query, neighbor_key) -> [B, h, n_tgt, k]
+        q_exp = tf.expand_dims(q, axis=3)                              # [B, h, n_tgt, 1, d_h]
+        scores = tf.reduce_sum(q_exp * k_nbr, axis=-1)                 # [B, h, n_tgt, k]
+        scores /= tf.math.sqrt(tf.cast(self.head_units, scores.dtype))
+
+        # Mask padded neighbor positions with -1e9 so softmax drives them to ~0.
+        mask_bcast = tf.reshape(nbr_mask, [1, 1, num_trades, k])       # [1, 1, n_tgt, k]
+        very_neg = tf.cast(-1e9, scores.dtype)
+        scores = tf.where(mask_bcast > 0, scores, very_neg)
+
+        weights = tf.nn.softmax(scores, axis=-1)
+        weights = self.attn_dropout(weights, training=training)
+
+        # Weighted context: [B, h, n_tgt, d_h]
+        context = tf.reduce_sum(tf.expand_dims(weights, -1) * v_nbr, axis=3)
         return context
 
     def _combine_heads(self, x: tf.Tensor) -> tf.Tensor:

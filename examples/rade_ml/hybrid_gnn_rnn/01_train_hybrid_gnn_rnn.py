@@ -250,7 +250,7 @@ def build_configs(workdir: Path, job: dict) -> "PipelineConfig":
         GraphBuilderConfig,
         AttributeEncoderConfig,
     )
-    from src.rade_ml.core.config import TrainingConfig, OptimizerConfig, EarlyStoppingConfig
+    from src.rade_ml.core.config import TrainingConfig, OptimizerConfig, EarlyStoppingConfig, ReduceLrConfig
 
     artifacts_dir = workdir / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -337,10 +337,19 @@ def build_configs(workdir: Path, job: dict) -> "PipelineConfig":
         ),
 
         early_stopping=EarlyStoppingConfig(
-            patience=25,
+            patience=30,
             monitor="val_loss",
             mode="min",
             restore_best_weights=True,
+        ),
+
+        lr_reduction=ReduceLrConfig(
+            monitor="val_loss",
+            mode="min",
+            initial_lr=1e-3,
+            patience=10,
+            factor=0.8,
+            min_lr=1e-6,
         ),
 
         # GPU / performance options (no accuracy impact):
