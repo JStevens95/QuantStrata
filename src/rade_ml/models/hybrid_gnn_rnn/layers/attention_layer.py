@@ -124,17 +124,14 @@ class TargetAttentionLayer(tf.keras.layers.Layer):
         # extract inputs
         fused_features, adjacency, target_idx = inputs
 
-        # Build a dense binary mask from sparse structure, then gather the
-        # target sub-matrix. The sub-matrix is small (num_targets × num_targets)
-        # so the materialisation cost is negligible after gathering.
-        if isinstance(adjacency, tf.SparseTensor):
-            ones = tf.ones_like(adjacency.values)
-            binary_sp = tf.SparseTensor(adjacency.indices, ones, adjacency.dense_shape)
-            adjacency = tf.sparse.to_dense(binary_sp)
-        else:
-            adjacency = tf.cast(adjacency > 0, tf.float32)
+        # Slice fused features to target trades only.
         fused_features = tf.gather(fused_features, target_idx, axis=1)
-        adjacency = tf.gather(tf.gather(adjacency, target_idx, axis=0), target_idx, axis=1)
+
+        # Extract small [n_tgt, n_tgt] binary adjacency submatrix without
+        # materializing the full [T, T] dense matrix.  We filter the sparse
+        # indices to keep only entries where both row AND column are targets,
+        # then remap to local [0..n_tgt-1] coordinates.
+        adjacency = self._extract_target_submatrix(adjacency, target_idx)
 
         # extract dimensions.
         _, num_trades = tf.shape(fused_features)[0], tf.shape(fused_features)[1]
@@ -201,6 +198,61 @@ class TargetAttentionLayer(tf.keras.layers.Layer):
         """
         return cls(**config)
 
+    @staticmethod
+    def _extract_target_submatrix(
+            adjacency: Union[tf.Tensor, tf.SparseTensor], target_idx: tf.Tensor
+    ) -> tf.Tensor:
+        """
+        Extract a small [n_tgt, n_tgt] dense binary adjacency submatrix.
+
+        When ``adjacency`` is a SparseTensor (typical case), this avoids
+        materializing the full [T, T] dense matrix.  Instead it:
+          1. Builds a lookup table mapping global trade id -> local target id.
+          2. Gathers the local ids for every sparse edge's row and column.
+          3. Keeps only edges where **both** endpoints are target trades.
+          4. Constructs a tiny [n_tgt, n_tgt] SparseTensor and converts it to
+             dense.
+
+        Cost: O(nnz) scan + O(n_tgt^2) dense — trivial vs. O(T^2).
+
+        :param adjacency: full trade adjacency, sparse or dense [T, T].
+        :param target_idx: 1-D int tensor of global target trade indices.
+        :return: dense binary float32 tensor [n_tgt, n_tgt].
+        """
+        if isinstance(adjacency, tf.SparseTensor):
+            n_tgt = tf.shape(target_idx)[0]
+            T = adjacency.dense_shape[0]
+
+            # Build a lookup: global_id -> local_id (or -1 if not a target).
+            lookup = tf.fill([T], tf.cast(-1, target_idx.dtype))
+            local_ids = tf.range(n_tgt, dtype=target_idx.dtype)
+            lookup = tf.tensor_scatter_nd_update(
+                lookup, tf.expand_dims(target_idx, 1), local_ids
+            )
+
+            rows = adjacency.indices[:, 0]
+            cols = adjacency.indices[:, 1]
+            local_rows = tf.gather(lookup, rows)
+            local_cols = tf.gather(lookup, cols)
+
+            # Keep edges where both endpoints are targets (local id >= 0).
+            keep = (local_rows >= 0) & (local_cols >= 0)
+            local_rows = tf.boolean_mask(local_rows, keep)
+            local_cols = tf.boolean_mask(local_cols, keep)
+
+            sub_indices = tf.stack(
+                [tf.cast(local_rows, tf.int64), tf.cast(local_cols, tf.int64)], axis=1
+            )
+            sub_values = tf.ones([tf.shape(sub_indices)[0]], dtype=tf.float32)
+            sub_shape = tf.cast([n_tgt, n_tgt], tf.int64)
+            sub_sp = tf.sparse.reorder(
+                tf.SparseTensor(sub_indices, sub_values, sub_shape)
+            )
+            return tf.sparse.to_dense(sub_sp)
+        else:
+            adjacency = tf.cast(adjacency > 0, tf.float32)
+            return tf.gather(tf.gather(adjacency, target_idx, axis=0), target_idx, axis=1)
+
     def _core_calc(
             self, q: tf.Tensor, k: tf.Tensor, v: tf.Tensor, adjacency: tf.Tensor, num_trades, training: bool = False
     ) -> tf.Tensor:
@@ -218,23 +270,14 @@ class TargetAttentionLayer(tf.keras.layers.Layer):
         scores = tf.matmul(q, k, transpose_b=True)
         scores /= tf.math.sqrt(tf.cast(self.head_units, tf.float32))
 
-        # 2) build mask from adjacency (already dense binary after call() preprocessing)
-        if isinstance(adjacency, tf.SparseTensor):
-            ones = tf.ones_like(adjacency.values)
-            binary_sp = tf.SparseTensor(adjacency.indices, ones, adjacency.dense_shape)
-            mask = tf.sparse.to_dense(binary_sp)
-        else:
-            mask = tf.cast(adjacency > 0, tf.float32)
+        # 2) build mask from adjacency (already dense binary after _extract_target_submatrix)
+        mask = tf.cast(adjacency > 0, tf.float32)
         mask = tf.reshape(mask, [1, 1, num_trades, num_trades])  # [1,1,T,T]
 
         # --- masked softmax ---
-        very_neg = tf.cast(-1e9, scores.dtype)  # large negative sentinel
-        scores_masked = tf.where(mask > 0, scores, very_neg)  # keep scores only where allowed
-
-        # Keep masked entries strictly zero and handle zero-degree rows safely
+        very_neg = tf.cast(-1e9, scores.dtype)
+        scores_masked = tf.where(mask > 0, scores, very_neg)
         weights = tf.nn.softmax(scores_masked, axis=-1)
-        weights = weights * tf.cast(mask, weights.dtype)
-        weights = weights / (tf.reduce_sum(weights, axis=-1, keepdims=True) + 1e-9)
 
         # optional dropout
         weights = self.attn_dropout(weights, training=training)

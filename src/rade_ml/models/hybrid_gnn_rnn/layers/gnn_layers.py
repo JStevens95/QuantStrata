@@ -41,7 +41,7 @@ class GnnBlock(tf.keras.layers.Layer):
         self.dropout_rate: float = 0.0
         self.use_bias: bool | None = None
         self.use_residual: bool | None = None
-        self.layer_norm: bool = False
+        self.batch_norm: bool = False
         self._unpack_configuration(config=layer_config.get('general'))
 
         # unpack layer configuration --> parameters.
@@ -66,10 +66,6 @@ class GnnBlock(tf.keras.layers.Layer):
         """
         # create gnn layers.
         for i in range(self.layers):
-            # determine if this is the last layer for activation purposes.
-            is_last_layer = i == self.layers - 1
-            layer_activation = None if is_last_layer else self.activation # no activation on last layer for residual.
-
             # update gnn configuration with activation parameter for sub layers.
             layer_config = copy.deepcopy(self.layer_config)
             layer_config['parameters']['activation'] = None
@@ -89,7 +85,7 @@ class GnnBlock(tf.keras.layers.Layer):
             self.gnn_layers.append(layer)
 
             # create batch normalisation layer, if needed.
-            if self.layer_norm:
+            if self.batch_norm:
                 name = f'{self.name}_ln_{i}'
                 layer = tf.keras.layers.LayerNormalization(axis=-1, epsilon=1e-5, name=name)
 
@@ -154,7 +150,7 @@ class GnnBlock(tf.keras.layers.Layer):
             x = gnn_layer((x, adjacency), training=training)
 
             # apply batch normalisation, if needed.
-            if self.layer_norm and i < len(self.norm_layers):
+            if self.batch_norm and i < len(self.norm_layers):
                 x = self.norm_layers[i](x, training=training)
 
             # apply dropout, if needed.

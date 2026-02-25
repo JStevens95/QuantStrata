@@ -39,6 +39,7 @@ class FusionLayer(tf.keras.layers.Layer):
         self.dropout_rate: float = 0.0
         self.fusion_mode: str | None = None
         self.num_heads: int = 1
+        self.k_nbrs: int = 50
         self._unpack_configuration(config=layer_config.get('general'))
 
         # unpack layer configuration --> parameters.
@@ -207,48 +208,101 @@ class FusionLayer(tf.keras.layers.Layer):
         return cls(**config)
 
     def _core_calc(
-            self, q: tf.Tensor, k: tf.Tensor, v: tf.Tensor, adjacency: tf.Tensor, num_trades, training: bool = False
+            self, q: tf.Tensor, k: tf.Tensor, v: tf.Tensor,
+            adjacency: Union[tf.Tensor, tf.SparseTensor], num_trades, training: bool = False
     ) -> tf.Tensor:
         """
-        Core fusion calculation.
-        :param q:
-        :param k:
-        :param v:
-        :param adjacency:
-        :param num_trades:
-        :param training:
-        :return:
+        Core fusion calculation — dispatches to O(T*k) sparse neighborhood
+        attention when the adjacency is a SparseTensor, or O(T^2) dense
+        attention otherwise.
+
+        :param q: query tensor  [B, h, T, d_h]
+        :param k: key tensor    [B, h, T, d_h]
+        :param v: value tensor  [B, h, T, d_h]
+        :param adjacency: adjacency matrix (sparse or dense) [T, T]
+        :param num_trades: scalar — number of trades T
+        :param training: whether in training mode
+        :return: context tensor [B, h, T, d_h]
         """
-        # 1) scaled dot-product
+        if isinstance(adjacency, tf.SparseTensor):
+            return self._sparse_nbr_attention(q, k, v, adjacency, num_trades, training)
+        return self._dense_attention(q, k, v, adjacency, num_trades, training)
+
+    def _dense_attention(
+            self, q: tf.Tensor, k: tf.Tensor, v: tf.Tensor,
+            adjacency: tf.Tensor, num_trades, training: bool = False
+    ) -> tf.Tensor:
+        """Fallback O(T^2) attention for dense adjacency matrices."""
         scores = tf.matmul(q, k, transpose_b=True)
         scores /= tf.math.sqrt(tf.cast(self.head_units, tf.float32))
 
-        # 2) build binary mask from adjacency structure.
-        #    When sparse, construct a binary SparseTensor (all-ones values) and
-        #    materialise only that — avoids creating the full float adjacency
-        #    just to threshold it into a boolean mask.
-        if isinstance(adjacency, tf.SparseTensor):
-            ones = tf.ones_like(adjacency.values)
-            binary_sp = tf.SparseTensor(adjacency.indices, ones, adjacency.dense_shape)
-            mask = tf.sparse.to_dense(binary_sp)
-        else:
-            mask = tf.cast(adjacency > 0, tf.float32)
-        mask = tf.reshape(mask, [1, 1, num_trades, num_trades])  # [1,1,T,T]
+        mask = tf.cast(adjacency > 0, tf.float32)
+        mask = tf.reshape(mask, [1, 1, num_trades, num_trades])
 
-        # --- masked softmax ---
-        very_neg = tf.cast(-1e9, scores.dtype)  # large negative sentinel
-        scores_masked = tf.where(mask > 0, scores, very_neg)  # keep scores only where allowed
-
-        # Keep masked entries strictly zero and handle zero-degree rows safely
-        weights = tf.nn.softmax(scores_masked, axis=-1)
-        weights = weights * tf.cast(mask, weights.dtype)
-        weights = weights / (tf.reduce_sum(weights, axis=-1, keepdims=True) + 1e-9)
-
-        # optional dropout
+        very_neg = tf.cast(-1e9, scores.dtype)
+        scores = tf.where(mask > 0, scores, very_neg)
+        weights = tf.nn.softmax(scores, axis=-1)
         weights = self.attn_dropout(weights, training=training)
 
-        # 3) context
-        context = tf.matmul(weights, v)
+        return tf.matmul(weights, v)
+
+    def _sparse_nbr_attention(
+            self, q: tf.Tensor, k_proj: tf.Tensor, v: tf.Tensor,
+            adjacency: tf.SparseTensor, num_trades, training: bool = False
+    ) -> tf.Tensor:
+        """
+        O(T * k) sparse neighborhood attention using the adjacency structure.
+
+        Instead of materializing a [T, T] score matrix, each trade only
+        attends to its k neighbors from the k-NN adjacency graph.  Memory
+        goes from O(B * h * T^2) to O(B * h * T * k).
+
+        :param q: query  [B, h, T, d_h]
+        :param k_proj: key    [B, h, T, d_h]
+        :param v: value  [B, h, T, d_h]
+        :param adjacency: sparse adjacency [T, T] (reordered row-major)
+        :param num_trades: scalar T
+        :param training: whether in training mode
+        :return: context [B, h, T, d_h]
+        """
+        rows = adjacency.indices[:, 0]   # int64
+        cols = adjacency.indices[:, 1]   # int64
+        num_trades_i64 = tf.cast(num_trades, tf.int64)
+
+        # Per-row neighbor counts — uniform (k) for a k-NN graph, but
+        # handles variable-degree gracefully.
+        row_counts = tf.math.unsorted_segment_sum(
+            tf.ones_like(rows, dtype=tf.int32), tf.cast(rows, tf.int32), num_trades
+        )
+        k = tf.reduce_max(row_counts)
+
+        # Build padded [T, k] neighbor index array from the sparse structure.
+        # from_value_rowids requires sorted (non-decreasing) row ids — guaranteed
+        # because the SparseTensor was reordered to row-major.
+        nbr_ragged = tf.RaggedTensor.from_value_rowids(cols, rows, nrows=num_trades_i64)
+        nbr_idx = tf.cast(nbr_ragged.to_tensor(default_value=tf.constant(0, cols.dtype)), tf.int32)
+        nbr_mask = tf.sequence_mask(row_counts, maxlen=k, dtype=tf.float32)
+
+        # Gather neighbor keys and values along the T axis.
+        # tf.gather(params=[B,h,T,d_h], indices=[T,k], axis=2) -> [B,h,T,k,d_h]
+        k_nbr = tf.gather(k_proj, nbr_idx, axis=2)
+        v_nbr = tf.gather(v, nbr_idx, axis=2)
+
+        # Scores: dot(query, neighbor_key) -> [B, h, T, k]
+        q_exp = tf.expand_dims(q, axis=3)                          # [B, h, T, 1, d_h]
+        scores = tf.reduce_sum(q_exp * k_nbr, axis=-1)             # [B, h, T, k]
+        scores /= tf.math.sqrt(tf.cast(self.head_units, tf.float32))
+
+        # Mask padded neighbor positions with -1e9 so softmax drives them to ~0.
+        mask_bcast = tf.reshape(nbr_mask, [1, 1, num_trades, k])   # [1, 1, T, k]
+        very_neg = tf.cast(-1e9, scores.dtype)
+        scores = tf.where(mask_bcast > 0, scores, very_neg)
+
+        weights = tf.nn.softmax(scores, axis=-1)
+        weights = self.attn_dropout(weights, training=training)
+
+        # Weighted context: [B, h, T, d_h]
+        context = tf.reduce_sum(tf.expand_dims(weights, -1) * v_nbr, axis=3)
         return context
 
     def _combine_heads(self, x: tf.Tensor) -> tf.Tensor:

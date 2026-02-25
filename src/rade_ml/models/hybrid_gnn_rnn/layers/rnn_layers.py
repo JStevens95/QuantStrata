@@ -171,7 +171,8 @@ class RnnBlock(tf.keras.layers.Layer):
 
         # input pnl timeseries tensor into rnn layers.
         x = self.rnn_block(pnl_history, training=training)
-        tf.debugging.check_numerics(x, f"NaN or Inf in x, layer: {self.rnn_block.name}")
+        if training:
+            tf.debugging.check_numerics(x, f"NaN or Inf in x, layer: {self.rnn_block.name}")
 
         # expected output shape: [batch, rnn_units]
         return x
