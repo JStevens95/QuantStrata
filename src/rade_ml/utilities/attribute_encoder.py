@@ -1,3 +1,8 @@
+"""
+
+"""
+from __future__ import annotations
+
 import logging
 import warnings
 import numpy as np
@@ -148,7 +153,7 @@ class TradeAttributeEncoder:
         for key in self.mlb_encoders:
             self.output_features_names.append(key)
 
-    def transform(self, trade_attrs: Dict[str, List[Any]]) -> Dict[str, List[Any]]:
+    def transform(self, trade_attrs: Dict[str, List[Any]]) -> Dict[str, np.ndarray]:
         """
         Transform trade attrs into static feature matrix using fitted encoders.
 
@@ -158,7 +163,7 @@ class TradeAttributeEncoder:
         # 0. check encoder has been fitted and define encoded output.
         if self.num_scaler is None or not self.cat_encoders:
             raise RuntimeError("TradeAttributeEncoder not fitted. Call fit() first...")
-        output = {}
+        output: Dict[str, np.ndarray] = {}
 
         # 1. compute decay features
         self._compute_decays(trade_attrs)

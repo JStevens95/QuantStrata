@@ -8,6 +8,7 @@ import logging
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import networkx as nx
 
@@ -212,21 +213,39 @@ def plot_trade_graph(
 def _plot_adjacency_heatmap(
         ax: plt.Axes, adj: np.ndarray, is_target: np.ndarray, n_elem: int, n_tgt: int,
 ) -> None:
-    """Panel (a): adjacency heatmap with partition markers."""
+    """
+    Panel (a): adjacency heatmap with elementary/target labelling.
+
+    Reorders the matrix so elementary trades come first, then target, then adds
+    a colour strip above and partition lines to label the four blocks.
+    """
+    # Reorder so elementary (0..n_elem-1) then target (n_elem..n-1)
+    order = np.concatenate([np.where(~is_target)[0], np.where(is_target)[0]])
+    adj_plot = adj[np.ix_(order, order)]
+
+    # Main heatmap (edge weights)
     cmap = sns.color_palette("YlOrRd", as_cmap=True)
     cmap.set_bad(color=_BG_COLOUR)
-
-    masked = np.ma.masked_where(adj == 0, adj)
+    masked = np.ma.masked_where(adj_plot == 0, adj_plot)
     im = ax.imshow(masked, cmap=cmap, aspect="auto", interpolation="nearest")
     plt.colorbar(im, ax=ax, shrink=0.8, label="Edge weight")
+
+    # Colour strip above heatmap (axes coords): blue=elementary, red=target
+    n = adj.shape[0]
+    strip = np.array([[0 if i < n_elem else 1 for i in range(n)]], dtype=float)
+    strip_cmap = mcolors.ListedColormap([_ELEM_COLOUR, _TARGET_COLOUR])
+    strip_ax = ax.inset_axes([0, 0.94, 1, 0.06])
+    strip_ax.imshow(strip, aspect="auto", cmap=strip_cmap, interpolation="nearest")
+    strip_ax.set_xticks([])
+    strip_ax.set_yticks([])
 
     if n_elem > 0 and n_tgt > 0:
         ax.axhline(y=n_elem - 0.5, color="white", linewidth=1.5, linestyle="--")
         ax.axvline(x=n_elem - 0.5, color="white", linewidth=1.5, linestyle="--")
 
     ax.set_title("(a)  Adjacency Matrix", fontsize=13, fontweight="bold", pad=10)
-    ax.set_xlabel("Trade index")
-    ax.set_ylabel("Trade index")
+    ax.set_xlabel("Trade index (elementary | target)")
+    ax.set_ylabel("Trade index (elementary | target)")
 
     legend = [
         Patch(facecolor=_ELEM_COLOUR, label=f"Elementary ({n_elem})"),
