@@ -268,10 +268,10 @@ class TargetAttentionLayer(tf.keras.layers.Layer):
         """
         # 1) scaled dot-product
         scores = tf.matmul(q, k, transpose_b=True)
-        scores /= tf.math.sqrt(tf.cast(self.head_units, tf.float32))
+        scores /= tf.math.sqrt(tf.cast(self.head_units, scores.dtype))
 
         # 2) build mask from adjacency (already dense binary after _extract_target_submatrix)
-        mask = tf.cast(adjacency > 0, tf.float32)
+        mask = tf.cast(adjacency > 0, scores.dtype)
         mask = tf.reshape(mask, [1, 1, num_trades, num_trades])  # [1,1,T,T]
 
         # --- masked softmax ---

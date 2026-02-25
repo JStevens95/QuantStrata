@@ -234,9 +234,9 @@ class FusionLayer(tf.keras.layers.Layer):
     ) -> tf.Tensor:
         """Fallback O(T^2) attention for dense adjacency matrices."""
         scores = tf.matmul(q, k, transpose_b=True)
-        scores /= tf.math.sqrt(tf.cast(self.head_units, tf.float32))
+        scores /= tf.math.sqrt(tf.cast(self.head_units, scores.dtype))
 
-        mask = tf.cast(adjacency > 0, tf.float32)
+        mask = tf.cast(adjacency > 0, scores.dtype)
         mask = tf.reshape(mask, [1, 1, num_trades, num_trades])
 
         very_neg = tf.cast(-1e9, scores.dtype)
@@ -281,7 +281,7 @@ class FusionLayer(tf.keras.layers.Layer):
         # because the SparseTensor was reordered to row-major.
         nbr_ragged = tf.RaggedTensor.from_value_rowids(cols, rows, nrows=num_trades_i64)
         nbr_idx = tf.cast(nbr_ragged.to_tensor(default_value=tf.constant(0, cols.dtype)), tf.int32)
-        nbr_mask = tf.sequence_mask(row_counts, maxlen=k, dtype=tf.float32)
+        nbr_mask = tf.sequence_mask(row_counts, maxlen=k, dtype=q.dtype)
 
         # Gather neighbor keys and values along the T axis.
         # tf.gather(params=[B,h,T,d_h], indices=[T,k], axis=2) -> [B,h,T,k,d_h]
@@ -291,7 +291,7 @@ class FusionLayer(tf.keras.layers.Layer):
         # Scores: dot(query, neighbor_key) -> [B, h, T, k]
         q_exp = tf.expand_dims(q, axis=3)                          # [B, h, T, 1, d_h]
         scores = tf.reduce_sum(q_exp * k_nbr, axis=-1)             # [B, h, T, k]
-        scores /= tf.math.sqrt(tf.cast(self.head_units, tf.float32))
+        scores /= tf.math.sqrt(tf.cast(self.head_units, scores.dtype))
 
         # Mask padded neighbor positions with -1e9 so softmax drives them to ~0.
         mask_bcast = tf.reshape(nbr_mask, [1, 1, num_trades, k])   # [1, 1, T, k]

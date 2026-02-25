@@ -348,9 +348,9 @@ def build_configs(workdir: Path, job: dict) -> "PipelineConfig":
         #     "one_device_gpu", "one_device_cpu". None = default device placement.
         strategy="auto",
         #   mixed_precision: fp16 compute where supported (~1.5-2x speed, ~50% less memory).
-        mixed_precision=False,
+        mixed_precision=True,
         #   xla_compile: JIT-compile the model for op fusion (~10-30% speedup).
-        xla_compile=False,
+        xla_compile=True,
 
         verbose=True,
     )
