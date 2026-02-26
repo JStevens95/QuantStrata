@@ -66,6 +66,8 @@ HybridGnnRnn aims to:
 
 ### 2.3 Design Principles
 
+> **Architecture design doc**: See [ARCHITECTURE.md](ARCHITECTURE.md) for front-office ML standards: linear primitives, activation placement, ResNet residual convention.
+
 | Principle | Implementation |
 |---|---|
 | **Inductive** | GNN uses sampling-based aggregation (GraphSAGE [1]), not spectral filters tied to a fixed graph |
@@ -221,7 +223,242 @@ flowchart LR
     style dataset fill:#27ae60,stroke:#2ecc71,color:#fff
 ```
 
-### 4.3 Tensor Dimensions Reference
+### 4.3 GnnBlock Architecture Visualisation
+
+Below are detailed Mermaid diagrams of the GnnBlock and its GraphSAGE sublayer. **For interactive exploration** (zoom, pan, export PNG/SVG), copy the diagram code into [Mermaid Live Editor](https://mermaid.live).
+
+#### GnnBlock Flow (2-layer example)
+
+```mermaid
+flowchart TB
+    subgraph input ["Input"]
+        X["X  T × p<br/>Trade features"]
+        A["A  T × T<br/>Sparse adjacency"]
+    end
+
+    subgraph residual ["Residual branch (if use_residual)"]
+        WPROJ["W_proj · X<br/>Dense projection"]
+    end
+
+    subgraph layer1 ["GNN Sub-Layer 1 (linear)"]
+        G1["GraphSAGE / MixedGraphSAGE<br/>Z⁽⁰⁾ = W_self·h + W_neigh·AGG(h)"]
+    end
+
+    subgraph inter ["Inter-layer regularisation"]
+        LN1["LayerNorm"]
+        ACT1["σ Activation"]
+        DROP1["Dropout"]
+    end
+
+    subgraph layer2 ["GNN Sub-Layer 2 (linear)"]
+        G2["GraphSAGE / MixedGraphSAGE<br/>Z⁽¹⁾ = W_self·H⁽¹⁾ + W_neigh·AGG(H⁽¹⁾)"]
+    end
+
+    subgraph output ["Output"]
+        ADD["Z⁽¹⁾ + W_proj·X<br/>Residual add"]
+        ACTF["σ Final activation"]
+        H["H_L  T × d_g"]
+    end
+
+    X --> WPROJ
+    X --> G1
+    A --> G1
+    G1 --> LN1 --> ACT1 --> DROP1
+    DROP1 --> G2
+    A --> G2
+    G2 --> ADD
+    WPROJ --> ADD
+    ADD --> ACTF --> H
+
+    style input fill:#1a1a2e,stroke:#16213e,color:#eee
+    style residual fill:#16213e,stroke:#0f3460,color:#eee
+    style layer1 fill:#533483,stroke:#e94560,color:#eee
+    style inter fill:#0f3460,stroke:#533483,color:#eee
+    style layer2 fill:#533483,stroke:#e94560,color:#eee
+    style output fill:#27ae60,stroke:#2ecc71,color:#fff
+```
+
+#### GraphSAGE Sub-Layer Internals (what happens inside each GNN sublayer)
+
+```mermaid
+flowchart LR
+    subgraph inputs ["Inputs"]
+        H["h  T × d_in<br/>Node features"]
+        ADJ["A  T × T<br/>Row-norm adjacency"]
+    end
+
+    subgraph agg ["Aggregation"]
+        AGG["AGG = A · h<br/>Mean / Max over neighbors"]
+    end
+
+    subgraph transform ["Linear transforms"]
+        WSELF["W_self · h"]
+        WNEIGH["W_neigh · AGG"]
+    end
+
+    subgraph combine ["Combine"]
+        ADD["h_self + h_neigh"]
+        Z["Z  T × d_out<br/>Linear output"]
+    end
+
+    H --> WSELF
+    H --> ADJ
+    ADJ --> AGG
+    AGG --> WNEIGH
+    WSELF --> ADD
+    WNEIGH --> ADD
+    ADD --> Z
+
+    style inputs fill:#1a1a2e,stroke:#16213e,color:#eee
+    style agg fill:#0f3460,stroke:#533483,color:#eee
+    style transform fill:#533483,stroke:#e94560,color:#eee
+    style combine fill:#27ae60,stroke:#2ecc71,color:#fff
+```
+
+> **Note**: The block applies σ (activation) between sublayers and after the residual add. Sublayers themselves are linear (see [ARCHITECTURE.md](ARCHITECTURE.md)).
+
+#### Trade Graph Schema (conceptual)
+
+```mermaid
+flowchart LR
+    T1["Vanilla 1"]
+    T2["Vanilla 2"]
+    T3["Exotic"]
+    T4["Hedge"]
+
+    T1 --- T2
+    T2 --- T3
+    T3 --- T4
+    T1 --- T4
+
+    style T1 fill:#533483,stroke:#e94560,color:#eee
+    style T2 fill:#533483,stroke:#e94560,color:#eee
+    style T3 fill:#533483,stroke:#e94560,color:#eee
+    style T4 fill:#533483,stroke:#e94560,color:#eee
+```
+
+---
+
+### 4.4 RnnBlock Architecture Visualisation
+
+**For interactive exploration** (zoom, pan, export), copy the diagram code into [Mermaid Live Editor](https://mermaid.live).
+
+#### RnnBlock Flow (2-layer LSTM example)
+
+```mermaid
+flowchart TB
+    subgraph input ["Input"]
+        P["P  B × S × T_e<br/>P&L history"]
+    end
+
+    subgraph layer1 ["LSTM Layer 1"]
+        LSTM1["LSTM<br/>activation=tanh<br/>recurrent_activation=sigmoid"]
+        DROP1["Dropout"]
+    end
+
+    subgraph layer2 ["LSTM Layer 2"]
+        LSTM2["LSTM<br/>return_sequences=False<br/>Final hidden state only"]
+    end
+
+    subgraph output ["Output"]
+        R["r  B × d_r<br/>Temporal embedding"]
+    end
+
+    P --> LSTM1
+    LSTM1 -->|"B × S × d_r"| DROP1
+    DROP1 --> LSTM2
+    LSTM2 --> R
+
+    style input fill:#1a1a2e,stroke:#16213e,color:#eee
+    style layer1 fill:#533483,stroke:#e94560,color:#eee
+    style layer2 fill:#533483,stroke:#e94560,color:#eee
+    style output fill:#27ae60,stroke:#2ecc71,color:#fff
+```
+
+#### LSTM Cell Internals (activations at each gate)
+
+```mermaid
+flowchart TB
+    subgraph inputs ["Inputs at step t"]
+        XT["x_t  T_e"]
+        HM1["h_{t-1}  d_r"]
+        CM1["c_{t-1}  d_r"]
+    end
+
+    subgraph gates ["Gates  σ = sigmoid"]
+        F["Forget gate<br/>f_t = σ(W_f x + U_f h)"]
+        I["Input gate<br/>i_t = σ(W_i x + U_i h)"]
+        OT["Output gate<br/>o_t = σ(W_o x + U_o h)"]
+    end
+
+    subgraph candidate ["Candidate cell  tanh"]
+        CTILDE["c̃_t = tanh(W_c x + U_c h)"]
+    end
+
+    subgraph cell_update ["Cell state"]
+        CUPDATE["c_t = f_t ⊙ c_{t-1} + i_t ⊙ c̃_t"]
+    end
+
+    subgraph hidden ["Hidden state"]
+        HT["h_t = o_t ⊙ tanh(c_t)"]
+    end
+
+    XT --> F
+    XT --> I
+    XT --> OT
+    XT --> CTILDE
+    HM1 --> F
+    HM1 --> I
+    HM1 --> OT
+    HM1 --> CTILDE
+    F --> CUPDATE
+    I --> CUPDATE
+    CM1 --> CUPDATE
+    CTILDE --> CUPDATE
+    CUPDATE --> HT
+    OT --> HT
+
+    style inputs fill:#1a1a2e,stroke:#16213e,color:#eee
+    style gates fill:#0f3460,stroke:#533483,color:#eee
+    style candidate fill:#533483,stroke:#e94560,color:#eee
+    style cell_update fill:#e94560,stroke:#f5a623,color:#fff
+    style hidden fill:#27ae60,stroke:#2ecc71,color:#fff
+```
+
+#### BiLSTM Structure
+
+```mermaid
+flowchart LR
+    subgraph input ["Input sequence"]
+        P["P  B × S × T_e"]
+    end
+
+    subgraph forward ["Forward LSTM"]
+        LSTM_F["LSTM → h_f"]
+    end
+
+    subgraph backward ["Backward LSTM"]
+        LSTM_B["LSTM ← h_b"]
+    end
+
+    subgraph concat ["Concatenate"]
+        CONCAT["r = h_f ∥ h_b<br/>B × 2d_r"]
+    end
+
+    P --> LSTM_F
+    P --> LSTM_B
+    LSTM_F --> CONCAT
+    LSTM_B --> CONCAT
+
+    style input fill:#1a1a2e,stroke:#16213e,color:#eee
+    style forward fill:#533483,stroke:#e94560,color:#eee
+    style backward fill:#533483,stroke:#e94560,color:#eee
+    style concat fill:#27ae60,stroke:#2ecc71,color:#fff
+```
+
+> **Note**: LSTM/GRU cells have activations built in (sigmoid for gates, tanh for cell/hidden). Unlike GnnBlock, there is no separate block-level activation—the RNN cell is a self-contained unit (see [ARCHITECTURE.md](ARCHITECTURE.md)).
+
+### 4.5 Tensor Dimensions Reference
 
 | Symbol | Meaning | Typical Range |
 |---|---|---|

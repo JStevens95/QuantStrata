@@ -62,11 +62,15 @@ class GnnBlock(tf.keras.layers.Layer):
         """
         Build dynamic GNN layers.
 
-        :return:
+        Design (industry standard: PyG, DGL, Spektral):
+        - GNN sublayers are LINEAR (no activation). GraphSage/MixedGraphSage implement
+          message passing + aggregation + linear transform only.
+        - Block applies ALL activation: between layers (with dropout) and after residual.
+        - Residual: H = σ(Z^(L-1) + W_proj·X) where Z is linear. Matches ResNet convention.
+
+        We deepcopy config and set activation=None so sublayers act as linear primitives.
         """
-        # create gnn layers.
         for i in range(self.layers):
-            # update gnn configuration with activation parameter for sub layers.
             layer_config = copy.deepcopy(self.layer_config)
             layer_config['parameters']['activation'] = None
 
@@ -153,7 +157,7 @@ class GnnBlock(tf.keras.layers.Layer):
             if self.batch_norm and i < len(self.norm_layers):
                 x = self.norm_layers[i](x, training=training)
 
-            # apply dropout, if needed.
+            # apply activation and dropout between layers (sublayers are linear).
             if i < self.layers - 1:
                 x = self._activation(x)
                 if hasattr(self, 'dropout') and self.dropout is not None:
