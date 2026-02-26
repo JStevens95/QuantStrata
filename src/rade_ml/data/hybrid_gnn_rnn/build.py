@@ -122,25 +122,16 @@ def build_dataset(
     )
 
     # ---- 5. build tf compatible datasets. ----
-    # The adjacency is a tf.SparseTensor which cannot be captured in a
-    # tf.data.map() closure.  We decompose it into its three dense components
-    # (indices, values, dense_shape) and pass those as static inputs instead.
-    # The model reconstructs the SparseTensor in its call() method.
-    # Memory footprint: O(nnz) instead of O(n_trades^2).
+    # define static data
     adj_sp = graph_result["adjacency_matrix"]
-    trade_feats = encoder_results["combined_features"]
-    elem_idx = metadata["elementary_idx"]
     elem_pnl = elementary_pnl.to_numpy()
-    tgt_idx = metadata["target_idx"]
     tgt_pnl = target_pnl.to_numpy()
 
     static_inputs = {
-        "trade_features": trade_feats,
-        "adjacency_indices": adj_sp.indices.numpy(),
-        "adjacency_values": adj_sp.values.numpy(),
+        "trade_features": encoder_results["combined_features"],
+        "adjacency_indices": adj_sp.indices.numpy(), "adjacency_values": adj_sp.values.numpy(),
         "adjacency_dense_shape": np.array(adj_sp.dense_shape, dtype=np.int64),
-        "elementary_indices": elem_idx,
-        "target_indices": tgt_idx,
+        "elementary_indices": metadata["elementary_idx"], "target_indices": metadata["target_idx"],
     }
     # training period
     logger.info("Building train dataset...")
