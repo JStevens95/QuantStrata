@@ -1,3 +1,9 @@
+"""
+Fusion layer combining GNN and RNN streams via multi-head cross-attention.
+
+Uses sparse neighborhood attention (O(T*k)) when adjacency is a SparseTensor,
+so each trade only attends to its k-NN neighbors. Supports gate or add fusion modes.
+"""
 import logging
 import tensorflow as tf
 from typing import Dict, Any, Tuple, Union
@@ -9,51 +15,40 @@ except ImportError:
 
 _REGISTER_PACKAGE = "Tranql.RadeMl"
 
-# define logging at module level.
 logger = logging.getLogger(__name__)
 
 
 @register_keras_serializable(package=_REGISTER_PACKAGE)
 class FusionLayer(tf.keras.layers.Layer):
     """
-    Per-target fusion layer combining GNN and RNN streams using multi-head cross attention and gating mechanism.
+    Cross-attention fusion: GNN (structural) + RNN (temporal) -> fused features [B, T, d_f].
 
-    This gate controls the flow of information from the GNN to the RNN, preserving the knowledge in the
-    pre-trained LSTM while enhancing it with trade relationship information.
+    Query = W_q_rnn(RNN) + W_q_gnn(GNN); Key, Value = GNN. Attention is masked by adjacency
+    (sparse O(T*k) or dense O(T^2)). Output is gated with RNN: gate*fusion + (1-gate)*rnn.
     """
 
     def __init__(self, layer_config: Dict[str, Any], **kwargs) -> None:
-        """
-        Initialise the FusionLayer.
-
-        :param layer_config: dictionary containing general layer configuration & parameters.
-        """
-        # init call to super class
         super().__init__(**kwargs)
 
-        # initiate required variables.
         self.layer_config: Dict[str, Any] = layer_config
         self.kwargs = kwargs
 
-        # unpack layer configuration --> general.
         self.dropout_rate: float = 0.0
-        self.fusion_mode: str | None = None
+        self.fusion_mode: str | None = None  # 'gate' or 'add'
         self.num_heads: int = 1
         self.k_nbrs: int = 50
         self._unpack_configuration(config=layer_config.get('general'))
 
-        # unpack layer configuration --> parameters.
         self.units: int | None = None
         self.activation: str | None = None
         self.kernel_initializer: str | None = None
         self.bias_initializer: str | None = None
         self._unpack_configuration(config=layer_config.get('parameters'))
 
-        # assert units and number of heads aligns
-        assert self.units % self.num_heads == 0, "Fusion units must be divisible by the number of heads.."
+        assert self.units % self.num_heads == 0, "Fusion units must be divisible by num_heads."
         self.head_units = self.units // self.num_heads
 
-        # initiate variables to build - gnn & rnn projection.
+        # Project GNN and RNN embeddings to common dim for attention.
         self.rnn_proj = tf.keras.layers.Dense(
             units=self.units, activation=None, kernel_initializer=self.kernel_initializer,
             bias_initializer=self.bias_initializer, name=f'{self.name}_rnn_projection'
@@ -63,7 +58,7 @@ class FusionLayer(tf.keras.layers.Layer):
             bias_initializer=self.bias_initializer, name=f'{self.name}_gnn_projection'
         )
 
-        # initiate variables to build - cross attention.
+        # Q,K,V projections for cross-attention. Query combines RNN + GNN; K,V from GNN.
         self.q_dense_rnn = tf.keras.layers.Dense(
             units=self.units, activation=None, kernel_initializer=self.kernel_initializer, use_bias=False,
             name=f'{self.name}_query_projection_rnn'
@@ -82,14 +77,13 @@ class FusionLayer(tf.keras.layers.Layer):
         )
         self.out_dense = tf.keras.layers.Dense(
             units=self.units, activation=None, kernel_initializer=self.kernel_initializer,
-            bias_initializer=self.bias_initializer, use_bias=False,  name=f'{self.name}_output_projection'
+            bias_initializer=self.bias_initializer, use_bias=False, name=f'{self.name}_output_projection'
         )
 
-        # initiate variables to build - dropout and layer norm.
         self.layer_norm = tf.keras.layers.LayerNormalization(name=f'{self.name}_layer_normalisation')
         self.attn_dropout = tf.keras.layers.Dropout(rate=self.dropout_rate, name=f'{self.name}_attn_dropout')
 
-        # initiate variables to build - gating mechanism.
+        # Gating: gate*fusion + (1-gate)*rnn. Only when fusion_mode='gate'.
         if (self.fusion_mode or "").lower() == 'gate':
             self.gate_dense = tf.keras.layers.Dense(
                 units=1, activation=None, kernel_initializer=self.kernel_initializer,
@@ -98,19 +92,8 @@ class FusionLayer(tf.keras.layers.Layer):
             self.gate_dropout = tf.keras.layers.Dropout(rate=self.dropout_rate, name=f'{self.name}_gate_dropout')
 
     def build(self, input_shape: Tuple[tf.TensorShape, tf.TensorShape, tf.TensorShape]) -> None:
-        """
-        Build the fusion layer.
-
-        :param input_shape: tuple of input shapes.
-            - gnn embedding: embedding output from GnnBlock [num_trades, gnn_units]
-            - rnn embedding: embedding output from RnnBlock [batch, rnn_units]
-            adjacency matrix: [num_trades, num_trades]
-        :return:
-        """
-        # extract input shapes.
+        """Input: (gnn [T, d_g], rnn [B, d_r], adjacency [T, T])."""
         _, _, _ = input_shape
-
-        # update layer build flag.
         super().build(input_shape)
 
     def call(
@@ -118,40 +101,28 @@ class FusionLayer(tf.keras.layers.Layer):
             return_attention: bool = False
     ) -> Union[tf.Tensor, Tuple[tf.Tensor, Dict[str, tf.Tensor]]]:
         """
-        Forward pass of FusionLayer.
+        Forward: (gnn, rnn, adj) -> fused [B, T, d_f].
 
-        :param inputs: tuple of inputs.
-            - gnn embedding: embedding output from GnnBlock [num_trades, gnn_units]
-            - rnn embedding: embedding output from RnnBlock [batch, rnn_units]
-            - adjacency matrix: [num_trades, num_trades]
-        :param training: whether in training mode.
-        :param return_attention: if True, return (output, dict) with fusion_attention and fusion_gate.
-        :return: output tensor, or (output, explanations) when return_attention=True.
+        Broadcasts GNN/RNN to [B, T, *], computes Q=RNN+GNN, K=V=GNN, attends with
+        adjacency mask, then gates or adds with RNN.
         """
-        # extract inputs
         gnn_features, rnn_features, adjacency = inputs
-
-        # extract dimensions from inputs.
         num_trades, gnn_dim = tf.shape(gnn_features)[0], tf.shape(gnn_features)[1]
         batch, rnn_dim = tf.shape(rnn_features)[0], tf.shape(rnn_features)[1]
 
-        # 1. broadcast gnn features --> [batch, num_trades, gnn_dim]
+        # Broadcast to [B, T, d]: GNN is shared across batch; RNN is shared across trades.
         gnn_bcst = tf.broadcast_to(tf.expand_dims(gnn_features, axis=0), [batch, num_trades, gnn_dim])
         gnn_emb = self.gnn_proj(gnn_bcst)
-
-        # 2, broadcast rnn features --> [batch, num_trades, rnn_dim]
         rnn_bcst = tf.broadcast_to(tf.expand_dims(rnn_features, axis=1), [batch, num_trades, rnn_dim])
         rnn_emb = self.rnn_proj(rnn_bcst)
 
-        # 3. project to query, key and values.
-        query = self.q_dense_rnn(rnn_emb) + self.q_dense_gnn(gnn_emb)     # [batch, num_trades, d_f]
-        key = self.k_dense(gnn_emb)                                       # [batch, num_trades, d_f]
-        value = self.v_dense(gnn_emb)                                     # [batch, num_trades, d_f]
+        # Q from both streams; K, V from GNN.
+        query = self.q_dense_rnn(rnn_emb) + self.q_dense_gnn(gnn_emb)
+        key = self.k_dense(gnn_emb)
+        value = self.v_dense(gnn_emb)
 
-        # 4. split heads, compute scores.
+        # Multi-head: split -> attention (sparse or dense) -> combine.
         query_h, key_h, value_h = (self._split_heads(x) for x in (query, key, value))
-
-        # 5. apply core attention layer calculation (calculates scores, adj mask, weights & context).
         core_out = self._core_calc(
             q=query_h, k=key_h, v=value_h, adjacency=adjacency, num_trades=num_trades, training=training,
             return_attention=return_attention
@@ -160,12 +131,10 @@ class FusionLayer(tf.keras.layers.Layer):
             context, attn_weights, attn_extra = core_out
         else:
             context = core_out
-
-        # 6. combine individual heads.
         fusion = self._combine_heads(context)
         fusion = self.out_dense(fusion)
 
-        # 7. apply gating / concat logic for mixing.
+        # Mix fusion with RNN: gate mode = learned blend; add mode = sum.
         gate = None
         if (self.fusion_mode or "").lower() == "gate":
             gate_logit = self.gate_dense(tf.concat([fusion, rnn_emb], axis=-1))
@@ -189,23 +158,11 @@ class FusionLayer(tf.keras.layers.Layer):
     def compute_output_shape(
             self, input_shape: Tuple[tf.TensorShape, tf.TensorShape, tf.TensorShape]
     ) -> tf.TensorShape:
-        """
-        Compute output shape of the layer.
-
-        :param input_shape: tuple of input shapes:
-            - trade features [num_trades, features]
-            - adjacency matrix [num_trades, num_trades]
-        :return:
-        """
+        """Output shape: [rnn_batch, num_trades, units]."""
         gnn_features, rnn_features, _ = input_shape
         return tf.TensorShape([rnn_features[0], gnn_features[0], self.units])
 
     def get_config(self) -> Dict[str, Any]:
-        """
-        Get configuration for serializing the layer.
-
-        :return:
-        """
         config = super(FusionLayer, self).get_config()
         config.update({
             'layer_config': self.layer_config
@@ -214,12 +171,7 @@ class FusionLayer(tf.keras.layers.Layer):
 
     @classmethod
     def from_config(cls, config: Dict[str, Any]) -> "FusionLayer":
-        """
-        Instantiates the FusionLayer from its config.
-
-        :param config:
-        :return:
-        """
+        """Instantiate from serialized config."""
         return cls(**config)
 
     def _core_calc(
@@ -250,18 +202,17 @@ class FusionLayer(tf.keras.layers.Layer):
             adjacency: tf.Tensor, num_trades, training: bool = False,
             return_attention: bool = False
     ) -> Union[tf.Tensor, Tuple[tf.Tensor, tf.Tensor, Dict[str, tf.Tensor]]]:
-        """Fallback O(T^2) attention for dense adjacency matrices."""
+        """Standard O(T^2) attention: softmax(masked QK^T/√d) @ V."""
         scores = tf.matmul(q, k, transpose_b=True)
         scores /= tf.math.sqrt(tf.cast(self.head_units, scores.dtype))
 
         mask = tf.cast(adjacency > 0, scores.dtype)
         mask = tf.reshape(mask, [1, 1, num_trades, num_trades])
-
         very_neg = tf.cast(-1e9, scores.dtype)
         scores = tf.where(mask > 0, scores, very_neg)
+
         weights = tf.nn.softmax(scores, axis=-1)
         weights = self.attn_dropout(weights, training=training)
-
         context = tf.matmul(weights, v)
         if return_attention:
             return context, weights, {}
@@ -331,33 +282,18 @@ class FusionLayer(tf.keras.layers.Layer):
         return context
 
     def _combine_heads(self, x: tf.Tensor) -> tf.Tensor:
-        """
-        Inverse of _split_heads()
-        :param x:
-        :return:
-        """
+        """Merge heads: [B, h, T, d_h] -> [B, T, units]."""
         x = tf.transpose(x, perm=[0, 2, 1, 3])
-        b = tf.shape(x)[0]
-        t = tf.shape(x)[1]
+        b, t = tf.shape(x)[0], tf.shape(x)[1]
         return tf.reshape(x, [b, t, self.units])
 
     def _split_heads(self, x: tf.Tensor) -> tf.Tensor:
-        """
-        Split last fim into (num_heads, head_dim) and transpose to [b, h, t, d_h]
-        :param x:
-        :return:
-        """
+        """Split last dim into heads: [B, T, units] -> [B, h, T, d_h]."""
         b, t = tf.shape(x)[0], tf.shape(x)[1]
         x = tf.reshape(x, [b, t, self.num_heads, self.head_units])
         return tf.transpose(x, perm=[0, 2, 1, 3])
 
-    def _unpack_configuration(
-            self, config: Dict[str, Any]
-    ) -> None:
-        """
-        Unpack configuration elements into separate variables.
-        :param config: dictionary configuration.
-        :return:
-        """
+    def _unpack_configuration(self, config: Dict[str, Any]) -> None:
+        """Set instance attributes from config dict."""
         for k, v in config.items():
             setattr(self, k, v)
