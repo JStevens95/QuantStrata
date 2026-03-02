@@ -152,6 +152,32 @@ class Evaluator:
         return preds_arr, targets_arr
 
     @staticmethod
+    def _inverse_transform(
+        scaler: Any,
+        predictions: np.ndarray,
+        targets: np.ndarray,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Apply inverse_transform to predictions and targets.
+
+        Expects scaler.inverse_transform(X) with X shape (n_samples, n_features).
+        Handles squeezed/expanded shapes for compatibility.
+        """
+        if not hasattr(scaler, "inverse_transform"):
+            raise TypeError("target_scaler must have inverse_transform method")
+        preds = np.asarray(predictions, dtype=np.float64)
+        tgts = np.asarray(targets, dtype=np.float64)
+        original_shape_pred = preds.shape
+        original_shape_tgt = tgts.shape
+        preds_2d = preds.reshape(-1, preds.shape[-1]) if preds.ndim > 2 else preds
+        tgts_2d = tgts.reshape(-1, tgts.shape[-1]) if tgts.ndim > 2 else tgts
+        preds_inv = scaler.inverse_transform(preds_2d)
+        tgts_inv = scaler.inverse_transform(tgts_2d)
+        preds_inv = preds_inv.reshape(original_shape_pred)
+        tgts_inv = tgts_inv.reshape(original_shape_tgt)
+        return preds_inv.astype(np.float32), tgts_inv.astype(np.float32)
+
+    @staticmethod
     def _aggregate_stats(residuals: np.ndarray) -> Dict[str, float]:
         """Compute summary statistics on residuals."""
         abs_res = np.abs(residuals)
