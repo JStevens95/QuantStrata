@@ -136,7 +136,9 @@ _GRID_COLOUR = "#E2E8F0"
 
 
 def plot_trade_graph(
-        adjacency: np.ndarray,
+        adjacency_indices: np.ndarray,
+        adjacency_values: np.ndarray,
+        adjacency_dense_shape: Union[np.ndarray, tuple, list],
         is_target: np.ndarray,
         trade_ids: Optional[List[str]] = None,
         features: Optional[np.ndarray] = None,
@@ -144,37 +146,55 @@ def plot_trade_graph(
         save_path: Optional[Union[str, Path]] = None,
         figsize: tuple = (22, 16),
         max_edges_drawn: int = 2000,
+        max_nodes_heatmap: int = 5000,
 ) -> plt.Figure:
     """
     Professional four-panel visualisation of the trade relationship graph.
 
+    Uses sparse adjacency components (indices, values, dense_shape). Dense
+    conversion is done only for the heatmap panel; other panels work directly
+    from the edge list to avoid memory blow-up on large graphs.
+
     Panels:
       (a) Adjacency heatmap — row-normalised edge weights with elementary /
-          target partition lines.
+          target partition lines (skipped if n > max_nodes_heatmap).
       (b) Network layout — spring-directed graph with nodes coloured by trade
           type and edges scaled by weight.
       (c) Degree & weight distribution — connectivity and total edge weight
-          histograms.
-      (d) Feature space projection — 2-D PCA of the weighted features used to
-          build the graph, with k-NN edges overlaid.
+          histograms (computed from sparse edges).
+      (d) Feature space projection — 2-D PCA with k-NN edges overlaid.
 
-    :param adjacency: dense adjacency matrix [n, n] (row-normalised weights).
+    :param adjacency_indices: [nnz, 2] int array of (row, col) for each edge.
+    :param adjacency_values: [nnz] float array of edge weights.
+    :param adjacency_dense_shape: [2] shape (n, n) of the adjacency matrix.
     :param is_target: boolean array [n], True = target trade.
-    :param trade_ids: optional list of trade identifiers for hover / labels.
-    :param features: optional weighted feature matrix [n, d] for PCA projection.
+    :param trade_ids: optional list of trade identifiers.
+    :param features: optional feature matrix [n, d] for PCA projection.
     :param title: suptitle for the figure.
     :param save_path: if provided, saves the figure to this path.
     :param figsize: overall figure size.
-    :param max_edges_drawn: cap on edges rendered in the network panel to keep
-        the plot readable for large graphs.
+    :param max_edges_drawn: cap on edges rendered in network/feature panels.
+    :param max_nodes_heatmap: skip heatmap if n exceeds this (avoids O(n^2) memory).
     :return: matplotlib Figure.
     """
-    n = adjacency.shape[0]
+    indices = np.asarray(adjacency_indices, dtype=np.intp)
+    values = np.asarray(adjacency_values, dtype=np.float64)
+    dense_shape = np.asarray(adjacency_dense_shape, dtype=np.intp)
+    n = int(dense_shape[0])
     is_target = np.asarray(is_target, dtype=bool)
+    if len(is_target) != n:
+        raise ValueError(f"is_target length {len(is_target)} != n={n} from adjacency_dense_shape")
     n_elem = int(np.sum(~is_target))
     n_tgt = int(np.sum(is_target))
 
     node_colours = np.where(is_target, _TARGET_COLOUR, _ELEM_COLOUR)
+
+    # Dense adjacency only for heatmap (skip if too large).
+    adj_dense = None
+    if n <= max_nodes_heatmap:
+        adj_dense = np.zeros((n, n), dtype=np.float32)
+        rows, cols = indices[:, 0], indices[:, 1]
+        adj_dense[rows, cols] = values.astype(np.float32)
 
     fig = plt.figure(figsize=figsize, facecolor="white", constrained_layout=True)
     fig.suptitle(title, fontsize=18, fontweight="bold", y=1.01)
@@ -186,17 +206,17 @@ def plot_trade_graph(
     ax_feat = fig.add_subplot(gs[1, 1])
 
     # --- (a) Adjacency heatmap ---
-    _plot_adjacency_heatmap(ax_heat, adjacency, is_target, n_elem, n_tgt)
+    _plot_adjacency_heatmap(ax_heat, adj_dense, is_target, n_elem, n_tgt, n)
 
     # --- (b) Network layout ---
-    G = _build_networkx_graph(adjacency, is_target, trade_ids)
+    G = _build_networkx_graph_from_edges(indices, values, n, is_target, trade_ids)
     _plot_network(ax_net, G, node_colours, n, max_edges_drawn)
 
     # --- (c) Degree & weight distributions ---
-    _plot_degree_distribution(ax_deg, adjacency, is_target)
+    _plot_degree_distribution_from_edges(ax_deg, indices, values, n, is_target)
 
     # --- (d) Feature space PCA projection ---
-    _plot_feature_projection(ax_feat, adjacency, is_target, features, node_colours, max_edges_drawn)
+    _plot_feature_projection_from_edges(ax_feat, indices, values, is_target, features, node_colours, max_edges_drawn)
 
     if save_path:
         Path(save_path).parent.mkdir(parents=True, exist_ok=True)
@@ -211,14 +231,28 @@ def plot_trade_graph(
 # ------------------------------------------------------------------
 
 def _plot_adjacency_heatmap(
-        ax: plt.Axes, adj: np.ndarray, is_target: np.ndarray, n_elem: int, n_tgt: int,
+        ax: plt.Axes,
+        adj: Optional[np.ndarray],
+        is_target: np.ndarray,
+        n_elem: int,
+        n_tgt: int,
+        n: int,
 ) -> None:
     """
     Panel (a): adjacency heatmap with elementary/target labelling.
 
-    Reorders the matrix so elementary trades come first, then target, then adds
-    a colour strip above and partition lines to label the four blocks.
+    Reorders the matrix so elementary trades come first, then target. If adj
+    is None (skipped for large graphs), shows a placeholder message.
     """
+    if adj is None:
+        ax.set_facecolor(_BG_COLOUR)
+        ax.text(0.5, 0.5, "Heatmap skipped (n > max_nodes_heatmap)", ha="center", va="center", fontsize=12)
+        ax.set_title("(a)  Adjacency Matrix", fontsize=13, fontweight="bold", pad=10)
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.axis("off")
+        return
+
     # Reorder so elementary (0..n_elem-1) then target (n_elem..n-1)
     order = np.concatenate([np.where(~is_target)[0], np.where(is_target)[0]])
     adj_plot = adj[np.ix_(order, order)]
@@ -231,7 +265,6 @@ def _plot_adjacency_heatmap(
     plt.colorbar(im, ax=ax, shrink=0.8, label="Edge weight")
 
     # Colour strip above heatmap (axes coords): blue=elementary, red=target
-    n = adj.shape[0]
     strip = np.array([[0 if i < n_elem else 1 for i in range(n)]], dtype=float)
     strip_cmap = mcolors.ListedColormap([_ELEM_COLOUR, _TARGET_COLOUR])
     strip_ax = ax.inset_axes([0, 0.94, 1, 0.06])
@@ -254,21 +287,24 @@ def _plot_adjacency_heatmap(
     ax.legend(handles=legend, loc="upper right", fontsize=9, framealpha=0.9)
 
 
-def _build_networkx_graph(
-        adj: np.ndarray, is_target: np.ndarray, trade_ids: Optional[List[str]],
+def _build_networkx_graph_from_edges(
+        indices: np.ndarray,
+        values: np.ndarray,
+        n: int,
+        is_target: np.ndarray,
+        trade_ids: Optional[List[str]],
 ) -> nx.DiGraph:
-    """Build a networkx DiGraph from the dense adjacency."""
+    """Build a networkx DiGraph from sparse edge list (indices, values)."""
     G = nx.DiGraph()
-    n = adj.shape[0]
     labels = trade_ids if trade_ids and len(trade_ids) == n else [str(i) for i in range(n)]
 
     for i in range(n):
         G.add_node(i, label=labels[i], is_target=bool(is_target[i]))
 
-    rows, cols = np.nonzero(adj)
-    for r, c in zip(rows, cols):
+    rows, cols = indices[:, 0], indices[:, 1]
+    for r, c, w in zip(rows, cols, values):
         if r != c:
-            G.add_edge(int(r), int(c), weight=float(adj[r, c]))
+            G.add_edge(int(r), int(c), weight=float(w))
     return G
 
 
@@ -323,19 +359,25 @@ def _plot_network(
     ax.legend(handles=legend, loc="upper right", fontsize=9, framealpha=0.9)
 
 
-def _plot_degree_distribution(
-        ax: plt.Axes, adj: np.ndarray, is_target: np.ndarray,
+def _plot_degree_distribution_from_edges(
+        ax: plt.Axes, indices: np.ndarray, values: np.ndarray, n: int, is_target: np.ndarray,
 ) -> None:
-    """Panel (c): degree and total edge-weight histograms."""
-    binary = (adj > 0).astype(float)
-    np.fill_diagonal(binary, 0)
-    degrees = binary.sum(axis=1).astype(int)
-    weight_sums = adj.sum(axis=1) - np.diag(adj)
+    """Panel (c): degree and total edge-weight histograms, computed from sparse edges."""
+    rows, cols = indices[:, 0], indices[:, 1]
+    # Exclude self-loops for degree
+    non_self = rows != cols
+    rows_ns, cols_ns = rows[non_self], cols[non_self]
+    vals_ns = values[non_self]
+
+    degrees = np.bincount(rows_ns, minlength=n)
+    weight_sums = np.zeros(n, dtype=np.float64)
+    np.add.at(weight_sums, rows_ns, vals_ns)
 
     elem_mask = ~is_target
     tgt_mask = is_target
 
-    bins_deg = np.arange(0, degrees.max() + 2) - 0.5
+    max_deg = int(degrees.max()) if len(degrees) > 0 else 0
+    bins_deg = np.arange(0, max_deg + 2) - 0.5
     ax.hist(degrees[elem_mask], bins=bins_deg, alpha=0.7, color=_ELEM_COLOUR, label="Elementary", edgecolor="white")
     ax.hist(degrees[tgt_mask], bins=bins_deg, alpha=0.7, color=_TARGET_COLOUR, label="Target", edgecolor="white")
 
@@ -359,11 +401,16 @@ def _plot_degree_distribution(
     ax2.tick_params(axis="y", labelcolor="#64748B", labelsize=8)
 
 
-def _plot_feature_projection(
-        ax: plt.Axes, adj: np.ndarray, is_target: np.ndarray,
-        features: Optional[np.ndarray], node_colours: np.ndarray, max_edges: int,
+def _plot_feature_projection_from_edges(
+        ax: plt.Axes,
+        indices: np.ndarray,
+        values: np.ndarray,
+        is_target: np.ndarray,
+        features: Optional[np.ndarray],
+        node_colours: np.ndarray,
+        max_edges: int,
 ) -> None:
-    """Panel (d): 2-D PCA of trade features with k-NN edges overlaid."""
+    """Panel (d): 2-D PCA of trade features with k-NN edges overlaid (from sparse edges)."""
     ax.set_facecolor(_BG_COLOUR)
 
     if features is None or features.shape[0] == 0:
@@ -374,10 +421,10 @@ def _plot_feature_projection(
     from sklearn.decomposition import PCA
     proj = PCA(n_components=2, random_state=42).fit_transform(features)
 
-    rows, cols = np.nonzero(adj)
+    rows, cols = indices[:, 0], indices[:, 1]
     self_mask = rows != cols
     rows, cols = rows[self_mask], cols[self_mask]
-    weights = adj[rows, cols]
+    weights = values[self_mask]
 
     if len(rows) > max_edges:
         threshold = np.percentile(weights, 100 * (1 - max_edges / len(weights)))

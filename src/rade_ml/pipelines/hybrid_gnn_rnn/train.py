@@ -62,7 +62,8 @@ class HybridGnnRnnTrainPipeline(TrainPipeline):
             logger.warning("Cannot plot trade graph: missing graph_builder on result.")
             return
 
-        n = result.graph_builder.adjacency_dense.shape[0]
+        builder = result.graph_builder
+        n = builder.sparse_shape[0]
         is_target = np.zeros(n, dtype=bool)
         if result.target_idx is not None:
             is_target[result.target_idx] = True
@@ -78,16 +79,16 @@ class HybridGnnRnnTrainPipeline(TrainPipeline):
                     all_ids[i] = tid
             trade_ids = all_ids
 
-        features = result.graph_builder.features
-
         save_dir = Path(config.folders.root_folder) / "plots"
         save_path = save_dir / "trade_graph.png"
 
         plot_trade_graph(
-            adjacency=result.graph_builder.adjacency_dense,
+            adjacency_indices=builder.sparse_indices,
+            adjacency_values=builder.sparse_values,
+            adjacency_dense_shape=np.array(builder.sparse_shape, dtype=np.int64),
             is_target=is_target,
             trade_ids=trade_ids,
-            features=features,
+            features=builder.features,
             title="Trade Relationship Graph — Training",
             save_path=save_path,
         )
@@ -99,9 +100,16 @@ class HybridGnnRnnTrainPipeline(TrainPipeline):
         data_result: "DataBuildResult",
     ) -> "tf.keras.Model":
         from src.rade_ml.models.hybrid_gnn_rnn.model import HybridGnnRnn
-        from src.rade_ml.models.hybrid_gnn_rnn.config import default_model_config
+        from src.rade_ml.models.hybrid_gnn_rnn.config import (
+            HybridGnnRnnModelConfig,
+            default_model_config,
+        )
 
-        model_config = config.model_config or default_model_config()
+        raw = config.model_config or default_model_config()
+        if hasattr(raw, "to_dict"):
+            model_config = raw.to_dict()
+        else:
+            model_config = HybridGnnRnnModelConfig.from_dict(raw).to_dict()
         model = HybridGnnRnn(config=model_config)
         logger.info("Hybrid GNN-RNN model built (compile deferred to Trainer via TrainingConfig)")
         return model

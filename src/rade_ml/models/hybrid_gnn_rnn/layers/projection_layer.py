@@ -57,43 +57,62 @@ class TargetPnlOutput(tf.keras.layers.Layer):
         self._unpack_configuration(config=layer_config.get('parameters'))
 
         self.softplus_inv = float(np.log(np.expm1(1.0)))
-        self._residual_fc_1: tf.keras.layers.Dense | None = None
-        self._residual_fc_2: tf.keras.layers.Dense | None = None
-        self._baseline_kernels: tf.Variable | None = None
-        self._baseline_biases: tf.Variable | None = None
-        self._attn_scale_dense: tf.keras.layers.Dense | None = None
-        self._attn_bias_dense: tf.keras.layers.Dense | None = None
-        self._baseline_gain: tf.Variable | None = None
 
-
-    def build(self, input_shape: Tuple[tf.TensorShape, tf.TensorShape, tf.TensorShape]) -> None:
-        """Input: (trade_features [T,p], attn_features [B,n,a], target_idx [n])."""
-        trade_features, attn_features, tgt_idx = input_shape
-
-        attn_dim = attn_features[-1]
-
-        # Resolve baseline_trade_count (train-target count).
-        cfg_n0 = self.baseline_trade_count  # possibly provided via config
-        if cfg_n0 is None:
-            if attn_features[1] is None:
-                raise ValueError(
-                    "TargetPnlOutput: 'baseline_trade_count' must be provided in config "
-                    "when num_targets is dynamic at build time."
-                )
-            self.baseline_trade_count = int(attn_features[1])
-        else:
-            self.baseline_trade_count = int(cfg_n0)
-
-        # Residual MLP: concat(attn, attrs) -> hidden -> scalar per target.
+        # Sublayers created here (Dense/Dropout build lazily on first call).
         self._residual_fc_1 = tf.keras.layers.Dense(
             units=self.units, activation=self.activation, kernel_initializer=self.kernel_initializer,
             bias_initializer=self.bias_initializer, name=f'{self.name}_residual_fc_1'
         )
-        self._residual_fc_2 = tf.keras.layers.Dense(
-            units=1, activation=None,             name=f'{self.name}_residual_fc_2'
+        self._residual_dropout = tf.keras.layers.Dropout(
+            rate=self.dropout_rate, name=f'{self.name}_residual_dropout'
         )
+        self._residual_fc_2 = tf.keras.layers.Dense(
+            units=1, activation=None, name=f'{self.name}_residual_fc_2'
+        )
+        if self.use_attn_scale:
+            self._attn_scale_dense = tf.keras.layers.Dense(
+                units=1, activation=None, kernel_initializer='glorot_uniform', bias_initializer='zeros',
+                name=f'{self.name}_attn_scale_dense'
+            )
+        if self.use_attn_bias:
+            self._attn_bias_dense = tf.keras.layers.Dense(
+                units=1, activation=None, kernel_initializer='glorot_uniform', bias_initializer='zeros',
+                name=f'{self.name}_attn_bias_dense'
+            )
 
-        # Per-train-target kernels and biases (fixed at calibration).
+        # Weights that depend on input shapes — created in build().
+        self._baseline_kernels: tf.Variable | None = None
+        self._baseline_biases: tf.Variable | None = None
+        self._baseline_gain: tf.Variable | None = None
+
+    def build(self, input_shape: Tuple[tf.TensorShape, tf.TensorShape, tf.TensorShape]) -> None:
+        """Build shape-dependent weights: baseline kernels, biases, and optional gain."""
+        trade_features, attn_features, tgt_idx = input_shape
+        attn_dim = attn_features[-1]
+
+        # Resolve baseline_trade_count: prefer config, then infer from shape.
+        # This is the number of TRAIN targets that get dedicated kernels.
+        # Must be concrete at build time because tf.Variable sizes are fixed.
+        cfg_n0 = self.baseline_trade_count
+        if cfg_n0 is not None:
+            self.baseline_trade_count = int(cfg_n0)
+        elif attn_features[1] is not None:
+            self.baseline_trade_count = int(attn_features[1])
+        elif tgt_idx[0] is not None:
+            self.baseline_trade_count = int(tgt_idx[0])
+        else:
+            raise ValueError(
+                "TargetPnlOutput: cannot determine baseline_trade_count. Either "
+                "provide it in config['general']['baseline_trade_count'] or ensure "
+                "num_targets is static at build time. The data pipeline should set "
+                "this after dimensionality reduction / linear dependence analysis."
+            )
+
+        # Persist to layer_config so serialization round-trips correctly.
+        if 'general' in self.layer_config:
+            self.layer_config['general']['baseline_trade_count'] = self.baseline_trade_count
+
+        # Per-train-target kernels and biases.
         self._baseline_kernels = self.add_weight(
             shape=(self.baseline_trade_count, attn_dim), initializer='glorot_uniform', trainable=True,
             name=f'{self.name}_baseline_kernels'
@@ -108,18 +127,6 @@ class TargetPnlOutput(tf.keras.layers.Layer):
             self._baseline_gain = self.add_weight(
                 shape=(self.baseline_trade_count, ), initializer=tf.keras.initializers.Constant(self.softplus_inv),
                 trainable=True, name=f'{self.name}_baseline_gain'
-            )
-
-        # Optional new-target-only: attn-conditioned scale and bias.
-        if self.use_attn_scale:
-            self._attn_scale_dense = tf.keras.layers.Dense(
-                units=1, activation=None, kernel_initializer='glorot_uniform', bias_initializer='zeros',
-                name=f'{self.name}_attn_scale_dense'
-            )
-        if self.use_attn_bias:
-            self._attn_bias_dense = tf.keras.layers.Dense(
-                units=1, activation=None, kernel_initializer='glorot_uniform', bias_initializer='zeros',
-                name=f'{self.name}_attn_bias_dense'
             )
 
         super().build(input_shape)
@@ -142,6 +149,7 @@ class TargetPnlOutput(tf.keras.layers.Layer):
         attrs_batched = tf.tile(tf.expand_dims(target_attrs, axis=0), [batch, 1, 1])    # [batch, n_targets, p]
         resid_input = tf.concat([attn_features, attrs_batched], axis=-1)
         residual_fc = self._residual_fc_1(resid_input)
+        residual_fc = self._residual_dropout(residual_fc, training=training)
         residual = tf.squeeze(self._residual_fc_2(residual_fc), axis=-1)
 
         # Baseline for first n0 train targets: kernel @ attn + bias (or unit-norm + gain).
@@ -154,9 +162,8 @@ class TargetPnlOutput(tf.keras.layers.Layer):
             base_train = (tf.einsum("bna, na->bn", attn_train, self._baseline_kernels[:n0, :])
                           + self._baseline_biases[None, :n0])
 
-        # New-target slices: attn, residual, attrs.
+        # New-target slices: residual, attrs.
         n_new = num_targets - n0
-        attn_new = attn_features[:, n0:, :]
         resid_train = residual[:, :n0]
         resid_new = residual[:, n0:]
         attrs_train = target_attrs[:n0, :]
@@ -204,33 +211,43 @@ class TargetPnlOutput(tf.keras.layers.Layer):
     def _apply_attention_conditioning(
             self, logits_bn: tf.Tensor, attention_feats: tf.Tensor, n_train_targets: tf.Tensor
     ) -> tf.Tensor:
-        """Scale and/or bias for new targets only; train targets unchanged."""
+        """
+        Optional post-hoc modulation for new targets only.
+
+        Train targets (indices < n_train_targets) pass through with scale=1,
+        bias=0. New targets (indices >= n_train_targets) receive learned
+        attention-conditioned scale and/or bias:
+            out_new = softplus(w_s @ attn) * logit + w_b @ attn
+        This lets the model adjust the amplitude and offset of kNN-transferred
+        predictions without disturbing calibrated train-target outputs.
+        """
         if not (self.use_attn_scale or self.use_attn_bias):
             return logits_bn
 
         batch = tf.shape(attention_feats)[0]
         num_trades = tf.shape(attention_feats)[1]
-
         out = logits_bn
 
-        # Mask: train targets (left) vs new targets (right).
+        # Binary masks: left = train targets (unchanged), right = new targets (modulated).
+        # cols is [1, n] so the comparison broadcasts across the batch.
         cols = tf.range(num_trades)[None, :]
         left_mask = tf.cast(cols < n_train_targets, out.dtype)
         right_mask = 1.0 - left_mask
         left_mask = tf.tile(left_mask, [batch, 1])
         right_mask = tf.tile(right_mask, [batch, 1])
 
+        # Scale path: softplus ensures strictly positive scale.
+        # Train targets get scale=1 (identity); new targets get learned scale.
         if self.use_attn_scale:
-        if self.use_attn_scale:
-            raw_scale = self._attn_scale_dense(attention_feats)
-            scale = tf.nn.softplus(tf.squeeze(raw_scale, axis=-1))
+            raw_scale = self._attn_scale_dense(attention_feats)       # [B, n, 1]
+            scale = tf.nn.softplus(tf.squeeze(raw_scale, axis=-1))    # [B, n]
             scale_full = left_mask * 1.0 + right_mask * scale
             out = out * scale_full
 
+        # Bias path: train targets get zero bias; new targets get learned bias.
         if self.use_attn_bias:
-        if self.use_attn_bias:
-            raw_bias = self._attn_bias_dense(attention_feats)
-            bias = tf.squeeze(raw_bias, axis=-1)
+            raw_bias = self._attn_bias_dense(attention_feats)         # [B, n, 1]
+            bias = tf.squeeze(raw_bias, axis=-1)                      # [B, n]
             bias_full = right_mask * bias
             out = out + bias_full
         return out

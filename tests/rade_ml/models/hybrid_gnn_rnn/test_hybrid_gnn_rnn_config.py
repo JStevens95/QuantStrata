@@ -1,7 +1,64 @@
 """Unit tests for rade_ml.models.hybrid_gnn_rnn.config."""
+import json
+import tempfile
+from pathlib import Path
+
 import pytest
 
-from src.rade_ml.models.hybrid_gnn_rnn.config import default_model_config
+from src.rade_ml.models.hybrid_gnn_rnn.config import (
+    HybridGnnRnnModelConfig,
+    default_model_config,
+)
+
+
+class TestHybridGnnRnnModelConfig:
+    """Tests for dataclass-based model config."""
+
+    def test_from_dict_returns_dataclass(self):
+        cfg = HybridGnnRnnModelConfig.from_dict({})
+        assert isinstance(cfg, HybridGnnRnnModelConfig)
+
+    def test_from_dict_partial_override(self):
+        d = {"gnn_layer": {"parameters": {"units": 256}}}
+        cfg = HybridGnnRnnModelConfig.from_dict(d)
+        assert cfg.gnn_layer.parameters.units == 256
+        assert cfg.rnn_layer.parameters.units == 128  # default
+
+    def test_to_dict_matches_layer_expectation(self):
+        cfg = HybridGnnRnnModelConfig()
+        d = cfg.to_dict()
+        assert "general" in d
+        assert "gnn_layer" in d and "general" in d["gnn_layer"] and "parameters" in d["gnn_layer"]
+        assert d["gnn_layer"]["parameters"]["units"] == 128
+
+    def test_roundtrip_dict(self):
+        cfg = HybridGnnRnnModelConfig()
+        cfg.gnn_layer.parameters.units = 64
+        d = cfg.to_dict()
+        restored = HybridGnnRnnModelConfig.from_dict(d)
+        assert restored.gnn_layer.parameters.units == 64
+
+    def test_from_json(self):
+        d = default_model_config()
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            json.dump(d, f, indent=2)
+            path = f.name
+        try:
+            cfg = HybridGnnRnnModelConfig.from_json(path)
+            assert cfg.gnn_layer.parameters.units == 128
+        finally:
+            Path(path).unlink(missing_ok=True)
+
+    def test_to_json(self):
+        cfg = HybridGnnRnnModelConfig()
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            path = f.name
+        try:
+            cfg.to_json(path)
+            loaded = HybridGnnRnnModelConfig.from_json(path)
+            assert loaded.to_dict() == cfg.to_dict()
+        finally:
+            Path(path).unlink(missing_ok=True)
 
 
 class TestDefaultModelConfig:
