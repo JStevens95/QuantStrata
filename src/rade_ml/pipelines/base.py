@@ -1,11 +1,12 @@
 """
 Abstract base classes for end-to-end ML pipelines.
 
-Three pipeline archetypes are defined:
+Four pipeline archetypes are defined:
 
-* **TrainPipeline** -- build data -> build model -> train -> (optionally) register & track
-* **EvalPipeline**  -- load model -> build data -> evaluate -> report
-* **InferencePipeline** -- load model -> prepare inputs -> predict -> post-process
+* **TrainPipeline**      -- build data -> build model -> train -> (optionally) register & track
+* **EvalPipeline**       -- load model -> build data -> evaluate -> report
+* **InferencePipeline**  -- load model -> prepare inputs -> predict -> post-process
+* **TunePipeline**       -- build data -> define search space -> run Optuna trials -> save results
 
 Each archetype implements a ``run()`` method that orchestrates the steps in
 order and delegates model-specific logic to abstract hooks that subclasses
@@ -63,6 +64,7 @@ class TrainPipeline(abc.ABC):
 
     def __init__(self, config: PipelineConfig) -> None:
         self.config = config
+        self._registered_entry: Optional[Any] = None
 
     # ------------------------------------------------------------------
     # Abstract hooks (model-specific)
@@ -98,7 +100,11 @@ class TrainPipeline(abc.ABC):
         custom post-training logic (ensemble checkpointing, alerting, plotting, etc.).
         Use ``data_result`` when custom plotting or reports need model-specific data
         (e.g. test set, graph structure, metadata).
+
+        After registration, ``self._registered_entry`` holds the RegistryEntry
+        so subclasses can save additional artifacts alongside the model.
         """
+        self._registered_entry = None
         if registry is not None:
             entry = registry.register(
                 model=model,
@@ -106,6 +112,7 @@ class TrainPipeline(abc.ABC):
                 tags=self.config.metadata.get("tags", []),
                 description=self.config.metadata.get("description", ""),
             )
+            self._registered_entry = entry
             if run is not None:
                 run.set_model_version(entry.version)
 
@@ -196,16 +203,19 @@ class TrainPipeline(abc.ABC):
         """
         Generate a professional training report when artifacts_dir is set.
 
-        Saves Markdown report and loss curve to artifacts_dir/training_reports/<run_name>_<timestamp>/.
-        Override to customise report content or location.
+        When a model was registered, saves to artifacts_dir/training/{version}/.
+        Otherwise falls back to artifacts_dir/training/{run_name}_{timestamp}/.
         """
         from datetime import datetime
         from pathlib import Path
         from src.rade_ml.training.reports import generate_training_report
 
         run_name = self.config.metadata.get("run_name", "train")
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_dir = Path(self.config.artifacts_dir) / "training_reports" / f"{run_name}_{timestamp}"
+        if self._registered_entry is not None:
+            subdir = self._registered_entry.version
+        else:
+            subdir = f"{run_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        report_dir = Path(self.config.artifacts_dir) / "training" / subdir
         generate_training_report(
             result=result,
             config=self.config,
@@ -254,6 +264,7 @@ class EvalPipeline(abc.ABC):
 
     def __init__(self, config: PipelineConfig) -> None:
         self.config = config
+        self._loaded_entry: Optional[Any] = None
 
     # ------------------------------------------------------------------
     # Abstract hooks
@@ -279,9 +290,23 @@ class EvalPipeline(abc.ABC):
         self,
         eval_result: "EvaluationResult",
         config: PipelineConfig,
+        data_result: Optional["DataBuildResult"] = None,
     ) -> None:
-        """Optional hook for custom post-evaluation actions (report generation, etc.)."""
+        """
+        Optional hook for custom post-evaluation actions.
+
+        The loaded model's RegistryEntry is available via ``self._loaded_entry``.
+        """
         pass
+
+    def get_target_scaler(self, data_result: "DataBuildResult") -> Optional[Any]:
+        """
+        Return scaler for inverse-transforming predictions/targets to original units.
+
+        Override in model-specific pipelines when targets were scaled during data build.
+        Default returns None (no inverse transform; metrics stay in scaled space).
+        """
+        return None
 
     # ------------------------------------------------------------------
     # Orchestration
@@ -307,16 +332,21 @@ class EvalPipeline(abc.ABC):
         logger.info("EvalPipeline: starting")
 
         model, entry = self.load_model(self.config)
+        self._loaded_entry = entry
         logger.info(f"EvalPipeline: loaded model version '{entry.version}'")
 
         data_result = self.build_data(self.config)
         logger.info("EvalPipeline: data built")
 
+        target_scaler = self.get_target_scaler(data_result)
         evaluator = Evaluator(model=model)
-        eval_result = evaluator.run(data_result.test_ds)
+        eval_result = evaluator.run(
+            data_result.test_ds,
+            target_scaler=target_scaler,
+        )
         logger.info("EvalPipeline: evaluation complete")
 
-        self.post_eval(eval_result, self.config)
+        self.post_eval(eval_result, self.config, data_result=data_result)
 
         logger.info("EvalPipeline: done")
         return eval_result
@@ -425,3 +455,217 @@ class InferencePipeline(abc.ABC):
 
         logger.info("InferencePipeline: done")
         return result
+
+
+# ======================================================================
+# Tune Pipeline
+# ======================================================================
+
+class TunePipeline(abc.ABC):
+    """
+    Abstract hyperparameter tuning pipeline.
+
+    Builds the data once, then runs the Optuna-backed ``Tuner`` with a
+    model-specific search space.  Each trial builds a fresh model from
+    sampled hyperparameters, trains it, and returns the validation metric.
+
+    Subclasses must implement:
+
+    * ``build_data``      -- same as TrainPipeline
+    * ``search_space``    -- sample hyperparameters from an ``optuna.Trial``
+    * ``build_trial_model`` -- construct a model from the sampled params
+
+    Parameters
+    ----------
+    config : PipelineConfig
+    tuner_kwargs : dict, optional
+        Forwarded to ``Tuner`` (n_trials, direction, pruner, seed, etc.).
+    """
+
+    def __init__(
+        self,
+        config: PipelineConfig,
+        tuner_kwargs: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        self.config = config
+        self.tuner_kwargs = tuner_kwargs or {}
+
+    # ------------------------------------------------------------------
+    # Abstract hooks
+    # ------------------------------------------------------------------
+
+    @abc.abstractmethod
+    def build_data(self, config: PipelineConfig) -> "DataBuildResult":
+        """Build train/val datasets (shared across all trials)."""
+        ...
+
+    @abc.abstractmethod
+    def search_space(self, trial: Any) -> Dict[str, Any]:
+        """
+        Define the hyperparameter search space for a single trial.
+
+        Parameters
+        ----------
+        trial : optuna.Trial
+
+        Returns
+        -------
+        dict
+            Sampled hyperparameters (will be passed to ``build_trial_model``).
+        """
+        ...
+
+    @abc.abstractmethod
+    def build_trial_model(
+        self,
+        params: Dict[str, Any],
+        data_result: "DataBuildResult",
+    ) -> "tf.keras.Model":
+        """Construct a compiled model from the sampled hyperparameters."""
+        ...
+
+    def post_tune(
+        self,
+        result: Any,
+        config: PipelineConfig,
+        data_result: Optional["DataBuildResult"] = None,
+    ) -> None:
+        """Optional hook called after tuning completes (save plots, register best, etc.)."""
+        pass
+
+    # ------------------------------------------------------------------
+    # Orchestration
+    # ------------------------------------------------------------------
+
+    def run(self) -> Any:
+        """
+        Execute the full tuning pipeline.
+
+        Steps
+        -----
+        1. ``build_data``  (once, shared across trials)
+        2. Create ``Tuner``
+        3. For each trial:
+           a. ``search_space`` → sampled params
+           b. ``build_trial_model`` → compiled model
+           c. ``Trainer.fit`` → val loss
+        4. ``post_tune``
+        5. Save tuning results to artifacts
+
+        Returns
+        -------
+        TuningResult (from ``src.rade_ml.tuning.tuner``)
+        """
+        from src.rade_ml.tuning.tuner import Tuner
+        from src.rade_ml.training.trainer import Trainer, setup_training_environment
+
+        logger.info("TunePipeline: starting")
+        t0 = time.perf_counter()
+
+        training_config = self._resolve_training_config()
+        seed = self._resolve_seed()
+        setup_training_environment(training_config, seed)
+
+        data_result = self.build_data(self.config)
+        logger.info("TunePipeline: data built (shared across trials)")
+
+        def objective(trial: Any) -> float:
+            params = self.search_space(trial)
+            model = self.build_trial_model(params, data_result)
+
+            trial_training_config = self._resolve_trial_training_config(
+                training_config, params, trial,
+            )
+            trainer = Trainer(model=model, config=trial_training_config, seed=seed)
+            result = trainer.fit(
+                train_data=data_result.train_ds,
+                val_data=data_result.val_ds,
+            )
+            return result.best_val_loss if result.best_val_loss is not None else float("inf")
+
+        tuner_kw = {"seed": seed, **self.tuner_kwargs}
+        tuner = Tuner(**tuner_kw)
+        tuning_result = tuner.run(objective)
+
+        logger.info(
+            f"TunePipeline: complete in {time.perf_counter() - t0:.1f}s | "
+            f"best={tuning_result.best_value:.6f} (trial {tuning_result.best_trial_number})"
+        )
+
+        if self.config.artifacts_dir:
+            self._save_tuning_artifacts(tuning_result, tuner)
+
+        self.post_tune(tuning_result, self.config, data_result=data_result)
+
+        logger.info("TunePipeline: done")
+        return tuning_result
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _resolve_training_config(self) -> Any:
+        from src.rade_ml.core.config import TrainingConfig
+
+        tc = self.config.training_config
+        if tc is None:
+            return TrainingConfig()
+        if isinstance(tc, dict):
+            return TrainingConfig.from_dict(tc)
+        return tc
+
+    def _resolve_seed(self) -> int:
+        dc = self.config.data_config
+        if dc is None:
+            return 42
+        return dc.get("seed", 42) if isinstance(dc, dict) else getattr(dc, "seed", 42)
+
+    def _resolve_trial_training_config(
+        self,
+        base_config: Any,
+        params: Dict[str, Any],
+        trial: Any,
+    ) -> Any:
+        """
+        Merge trial-sampled training params (lr, batch_size, etc.) into the
+        base TrainingConfig.  Override for custom merging logic.
+        """
+        from dataclasses import replace
+
+        overrides = {}
+        if "learning_rate" in params:
+            overrides["learning_rate"] = params["learning_rate"]
+        if "batch_size" in params:
+            overrides["batch_size"] = params["batch_size"]
+        if "epochs" in params:
+            overrides["epochs"] = params["epochs"]
+
+        return replace(base_config, **overrides) if overrides else base_config
+
+    def _save_tuning_artifacts(self, result: Any, tuner: Any) -> None:
+        """Save tuning results and plots to artifacts_dir/tuning/{study_name}/."""
+        from pathlib import Path
+        from src.rade_ml.tuning.plots import plot_optimization_history
+
+        study_name = result.study_name or "tune"
+        tune_dir = Path(self.config.artifacts_dir) / "tuning" / study_name
+        tune_dir.mkdir(parents=True, exist_ok=True)
+
+        result.to_json(tune_dir / "tuning_result.json")
+
+        try:
+            import matplotlib.pyplot as plt
+            fig, ax = plt.subplots(figsize=(10, 5))
+            plot_optimization_history(result, ax=ax)
+            fig.savefig(tune_dir / "optimization_history.png", dpi=150, bbox_inches="tight")
+            plt.close(fig)
+
+            from src.rade_ml.tuning.plots import plot_param_importances
+            fig, ax = plt.subplots(figsize=(8, 5))
+            plot_param_importances(tuner.study, ax=ax)
+            fig.savefig(tune_dir / "param_importances.png", dpi=150, bbox_inches="tight")
+            plt.close(fig)
+        except Exception as exc:
+            logger.warning(f"Could not generate tuning plots: {exc}")
+
+        logger.info(f"Tuning artifacts saved to {tune_dir}")

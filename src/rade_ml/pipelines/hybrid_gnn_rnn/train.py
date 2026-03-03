@@ -6,12 +6,13 @@ TrainPipeline orchestration (data -> model -> Trainer.fit -> register -> track).
 """
 from __future__ import annotations
 
+import json
 import logging
 
 import numpy as np
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import Any, TYPE_CHECKING, Optional
 
 from src.rade_ml.pipelines.base import TrainPipeline
 from src.rade_ml.pipelines.config import PipelineConfig
@@ -124,18 +125,116 @@ class HybridGnnRnnTrainPipeline(TrainPipeline):
         data_result: Optional["DataBuildResult"] = None,
     ) -> None:
         """
-        Register model, log run, then run custom post-training plotting and reports.
-        The base run() will still call _generate_training_report after this.
+        Register model, log run, save inference artifacts alongside the model,
+        then run custom post-training plotting.
         """
-        # 1. Default: register model and log to tracker.
         super().post_train(
             result, model, registry=registry, tracker=tracker, run=run,
             data_result=data_result,
         )
 
-        # 2. Custom: model-specific post-training plots/reports (using trained model + data).
+        if self._registered_entry is not None and data_result is not None:
+            self._save_inference_artifacts(self._registered_entry, data_result)
+
         if self.config.artifacts_dir and data_result is not None:
             self._post_train_plots(result, model, data_result)
+
+    def _save_inference_artifacts(
+        self,
+        entry: Any,
+        data_result: "DataBuildResult",
+    ) -> None:
+        """
+        Save artifacts needed for cold-start inference alongside the registered model.
+
+        Persists: graph builder, encoder, scalers, data config, and trade universe
+        into the registry version directory so a single registry.load() provides
+        the path to everything needed for inference and UI analytics.
+        """
+        import joblib
+        from src.rade_ml.data.hybrid_gnn_rnn.build import HybridGnnRnnResult
+
+        if not isinstance(data_result, HybridGnnRnnResult):
+            logger.warning("Cannot save inference artifacts: data_result is not HybridGnnRnnResult")
+            return
+
+        version_dir = Path(entry.model_dir)
+
+        if data_result.builder is not None:
+            data_result.builder.save(version_dir / "graph_builder.pkl")
+            logger.info(f"Saved graph_builder.pkl to {version_dir}")
+
+        if data_result.encoder is not None:
+            joblib.dump(data_result.encoder, version_dir / "encoder.pkl")
+            logger.info(f"Saved encoder.pkl to {version_dir}")
+
+        target_scaler = data_result.metadata.get("target_pnl_transformer")
+        if target_scaler is not None:
+            joblib.dump(target_scaler, version_dir / "target_scaler.pkl")
+
+        elementary_scaler = data_result.metadata.get("elementary_pnl_transformer")
+        if elementary_scaler is not None:
+            joblib.dump(elementary_scaler, version_dir / "elementary_scaler.pkl")
+
+        data_config = self.config.data_config
+        if data_config is not None:
+            if hasattr(data_config, "to_json"):
+                data_config.to_json(version_dir / "data_config.json")
+            elif isinstance(data_config, dict):
+                with open(version_dir / "data_config.json", "w") as f:
+                    json.dump(data_config, f, indent=2)
+
+        universe = {
+            "elementary_ids": data_result.metadata.get("elementary_ids", []),
+            "target_ids": data_result.metadata.get("target_ids", []),
+            "elementary_idx": [int(x) for x in data_result.metadata.get("elementary_idx", [])],
+            "target_idx": [int(x) for x in data_result.metadata.get("target_idx", [])],
+            "selected_trades": data_result.metadata.get("selected_trades", []),
+            "removed_trades": data_result.metadata.get("removed_trades", []),
+        }
+        with open(version_dir / "trade_universe.json", "w") as f:
+            json.dump(universe, f, indent=2)
+
+        if data_result.target_pnl is not None:
+            data_result.target_pnl.to_parquet(version_dir / "target_pnl.parquet")
+        if data_result.elementary_pnl is not None:
+            data_result.elementary_pnl.to_parquet(version_dir / "elementary_pnl.parquet")
+
+        if data_result.target_attributes is not None:
+            with open(version_dir / "target_attributes.json", "w") as f:
+                json.dump(data_result.target_attributes, f, indent=2)
+        if data_result.elementary_attributes is not None:
+            with open(version_dir / "elementary_attributes.json", "w") as f:
+                json.dump(data_result.elementary_attributes, f, indent=2)
+
+        self._save_datasets(version_dir, data_result)
+
+        logger.info(f"Inference artifacts saved to {version_dir}")
+
+    def _save_datasets(
+        self,
+        version_dir: Path,
+        data_result: "DataBuildResult",
+    ) -> None:
+        """
+        Persist tf.data.Datasets to the registry version directory.
+
+        Uses tf.data.Dataset.save() so the eval pipeline can load them
+        directly without re-running the full data build. Each split is
+        saved to its own subdirectory under datasets/.
+        """
+        import tensorflow as tf
+
+        ds_dir = version_dir / "datasets"
+        ds_dir.mkdir(exist_ok=True)
+
+        for name, ds in [("train", data_result.train_ds),
+                         ("val", data_result.val_ds),
+                         ("test", data_result.test_ds)]:
+            if ds is not None:
+                save_path = str(ds_dir / name)
+                tf.data.Dataset.save(ds, save_path)
+                logger.info(f"Saved {name} dataset to {save_path}")
 
     def _post_train_plots(
         self,
@@ -144,7 +243,4 @@ class HybridGnnRnnTrainPipeline(TrainPipeline):
         data_result: "DataBuildResult",
     ) -> None:
         """Run GNN-RNN-specific plots after training (e.g. prediction scatter, attention)."""
-        # Example: add custom plots that need the trained model.
-        # The standard training report (loss curve, config) is generated by the base
-        # run() via _generate_training_report after post_train.
         pass
