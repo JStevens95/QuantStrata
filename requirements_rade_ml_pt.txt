@@ -1,0 +1,31 @@
+# rade_ml_pt Requirements
+# =======================
+# Python 3.12+ required
+# PyTorch-based ML framework for quantitative finance
+#
+# Compatible with work env: numpy==2.2.0, pandas==2.2.2,
+# matplotlib==3.10.3, seaborn==0.13.2, pytest==8.3.5
+
+# ---- Core: PyTorch ----
+torch >= 2.4.0                  # minimum for Python 3.12 + torch.compile support
+
+# ---- Numerical / Data ----
+numpy >= 2.0.0                  # work env has 2.2.0
+pandas >= 2.2.0                 # work env has 2.2.2
+scipy >= 1.12.0
+
+# ---- Machine Learning Utilities ----
+scikit-learn >= 1.4.0           # preprocessing, train_test_split, PCA (1.4+ for numpy 2.x)
+joblib >= 1.3.0                 # artifact serialization (scalers, encoders)
+optuna >= 4.0.0                 # hyperparameter tuning
+
+# ---- Visualization ----
+matplotlib >= 3.8.0             # work env has 3.10.3
+seaborn >= 0.13.0               # work env has 0.13.2
+networkx >= 3.2                 # trade graph visualization
+
+# ---- Training Monitoring ----
+tensorboard >= 2.14.0           # SummaryWriter for training callbacks
+
+# ---- Testing ----
+pytest >= 8.0.0                 # work env has 8.3.5
