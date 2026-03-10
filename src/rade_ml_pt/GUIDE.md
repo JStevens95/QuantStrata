@@ -86,7 +86,7 @@ The `core/` package provides the base classes and configuration dataclasses that
 
 #### core/base.py -- BaseModel
 
-Abstract base class for all models. Inherits `torch.nn.Module` and adds metadata tracking, consistent serialisation via `state_dict`, and architecture summary.
+Abstract base class for all models. Inherits `torch.nn.Module` and adds metadata tracking, configuration-based serialisation (`get_config()` / `from_config()` / `save_config()`), and architecture summary via `summary_dict()`.
 
 ```python
 from rade_ml_pt.core.base import BaseModel
@@ -113,7 +113,7 @@ All configuration is expressed as pure Python dataclasses with JSON serialisatio
 | Dataclass | Purpose |
 |---|---|
 | `DataPipelineConfig` | Batch size, shuffle, cache, split ratios, transform type, seed |
-| `TrainingConfig` | Epochs, optimizer, LR schedule, early stopping, checkpointing, loss, verbose |
+| `TrainingConfig` | Epochs, optimizer, LR schedule, early stopping, checkpointing, loss, verbose, mixed_precision, compile_model, strategy |
 | `OptimizerConfig` | Optimizer name + hyperparameters, with `.build(params)` to produce PyTorch optimizer |
 | `LrScheduleConfig` | Schedule type + parameters, with `.build(optimizer)` to produce PyTorch LR scheduler |
 | `EarlyStoppingConfig` | Patience, monitor, min_delta |
@@ -142,9 +142,9 @@ Canonical output containers used across the framework.
 
 | Type | Produced by | Key fields |
 |---|---|---|
-| `TrainingResult` | `Trainer.fit()` | history, best_epoch, best_val_loss, training_time, config |
-| `EvaluationResult` | `Evaluator.run()` | metrics, predictions, targets, residuals |
-| `InferenceResult` | `InferenceRunner.predict()` | predictions, trade_ids, latency, model_version, input_hash |
+| `TrainingResult` | `Trainer.fit()` | history, final_epoch, best_epoch, best_train_loss, best_val_loss, training_time_seconds, stopped_early, config, checkpoints, model_summary |
+| `EvaluationResult` | `Evaluator.run()` | metrics, loss, predictions, targets, residuals, dataset_info |
+| `InferenceResult` | `InferenceRunner.predict()` | predictions, n_samples, sample_ids, latency_seconds, model_version, input_hash |
 | `CheckpointInfo` | Checkpoint callback | path, epoch, train_loss, val_loss, is_best |
 
 All result types support `.to_json()` / `.from_json()` for persistence and audit.
@@ -423,7 +423,7 @@ runner = InferenceRunner.from_path("checkpoints/model.pt")
 # Run inference
 result = runner.predict(
     inputs=new_data_dict,
-    trade_ids=target_trade_ids,
+    sample_ids=target_trade_ids,
 )
 
 print(result.latency_seconds)   # forward pass timing
@@ -439,7 +439,7 @@ The runner uses `model.eval()` and `torch.no_grad()`, hashes inputs for reproduc
 
 #### registry/store.py -- ModelRegistry
 
-Local filesystem registry storing model `state_dict` pickles alongside structured metadata.
+Local filesystem registry storing full pickled models via `torch.save(model)` alongside structured metadata.
 
 ```python
 from rade_ml_pt.registry import ModelRegistry
@@ -1097,7 +1097,7 @@ entry = registry.register(model, result, tags=["v1"])
 
 # 6. Inference (later, possibly different process)
 runner = InferenceRunner.from_registry(registry, "v1")
-pred_result = runner.predict(new_inputs, trade_ids=["trade_001"])
+pred_result = runner.predict(new_inputs, sample_ids=["trade_001"])
 ```
 
 ---
@@ -1108,7 +1108,7 @@ The framework provides end-to-end reproducibility:
 
 | Concern | How it's handled |
 |---|---|
-| **Random seeds** | `TrainingConfig.seed` sets `torch.manual_seed()`, `np.random.seed()`, and `torch.cuda.manual_seed_all()` in `setup_training_environment()`. Optional `torch.use_deterministic_algorithms(True)` and `cudnn.benchmark = False` for bitwise reproducibility. |
+| **Random seeds** | `setup_training_environment(seed=...)` sets `torch.manual_seed()`, `np.random.seed()`, and `torch.cuda.manual_seed_all()`. Seed is sourced from `DataPipelineConfig.seed` (default 42) and forwarded to `Trainer(seed=...)`. Optional `torch.use_deterministic_algorithms(True)` for bitwise reproducibility. |
 | **Config tracking** | All configs are JSON-serialisable; `TrainingResult.config` stores the exact config used |
 | **Model versioning** | `ModelRegistry` stores `torch.save(model)` + metadata with unique version IDs |
 | **Experiment logging** | `ExperimentTracker` logs config, metrics, model version per run |
@@ -1158,9 +1158,11 @@ Custom exceptions in `validation/exceptions.py`:
 | `MissingKeyFields` | Required dict keys missing from input data |
 | `UndefinedModelArchitecture` | Unknown model type requested |
 | `UndefinedLayerType` | Unknown layer type in config |
+| `UndefinedVariableType` | Unknown variable type |
 | `UndefinedTransformerType` | Unknown scaler/transformer name |
 | `UndefinedReductionType` | Unknown dimensionality reduction method |
 | `UndefinedComputationMethod` | Unknown SVD/PCA method |
+| `HybridModelNotAvailable` | Hybrid model not available or not loaded |
 | `CacheLoaderError` | Base exception for file I/O failures |
 | `UnsupportedFileTypeError` | File extension not supported (.pkl, .json, .csv, .parquet) |
 | `FileLoadError` | File reading or parsing failure |
