@@ -179,14 +179,17 @@ class TargetPnlOutput(nn.Module):
         if isinstance(self._baseline_kernels, nn.UninitializedParameter):
             self._baseline_kernels.materialize((n0, d))
             nn.init.xavier_uniform_(self._baseline_kernels)
+            self._baseline_kernels.requires_grad_(True)
         if isinstance(self._baseline_biases, nn.UninitializedParameter):
             self._baseline_biases.materialize((n0,))
             nn.init.zeros_(self._baseline_biases)
+            self._baseline_biases.requires_grad_(True)
         if self._baseline_gain is not None and isinstance(
             self._baseline_gain, nn.UninitializedParameter
         ):
             self._baseline_gain.materialize((n0,))
             nn.init.constant_(self._baseline_gain, self.softplus_inv)
+            self._baseline_gain.requires_grad_(True)
 
     # ------------------------------------------------------------------
     # Forward pass
@@ -304,7 +307,7 @@ class TargetPnlOutput(nn.Module):
         # scaled by gain, plus per-target bias.
         base_train = (
             g[None, :] * torch.sum(attn_train * k_unit[None, :, :], dim=-1)
-            + self._baseline_biases[None, :n0]
+            + self._baseline_biases[:n0].unsqueeze(0)
         )  # [B, n0]
         return base_train
 

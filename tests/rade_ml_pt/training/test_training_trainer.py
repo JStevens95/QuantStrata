@@ -1,10 +1,9 @@
 import numpy as np
-import pytest
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from src.rade_ml_pt.core.config import DataPipelineConfig, TrainingConfig
+from src.rade_ml_pt.core.config import TrainingConfig
 from src.rade_ml_pt.core.types import TrainingResult
 from src.rade_ml_pt.training.trainer import Trainer
 

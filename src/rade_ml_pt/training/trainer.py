@@ -152,6 +152,8 @@ class Trainer:
             cb.on_train_begin()
 
         for epoch in range(self.config.epochs):
+            epoch_start = time.time()
+
             for cb in callbacks:
                 cb.on_epoch_begin(epoch)
 
@@ -188,6 +190,12 @@ class Trainer:
             # Accumulate history
             for key, value in logs.items():
                 history.setdefault(key, []).append(value)
+
+            # Built-in epoch progress (mirrors Keras verbose=1 behaviour)
+            if self.config.verbose:
+                epoch_t = time.time() - epoch_start
+                parts = "  ".join(f"{k}={v:.6f}" for k, v in logs.items())
+                print(f"Epoch {epoch + 1}/{self.config.epochs}  {parts}  [{epoch_t:.1f}s]")
 
             for cb in callbacks:
                 cb.on_epoch_end(epoch, logs)

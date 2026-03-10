@@ -221,7 +221,7 @@ class ReduceLROnPlateau(Callback):
             mode=self.mode,
             factor=self.factor,
             patience=self.patience,
-            min_lrs=[self.min_lr],
+            min_lr=self.min_lr,
         )
 
     def on_epoch_end(self, epoch: int, logs: Optional[Dict[str, Any]] = None) -> None:

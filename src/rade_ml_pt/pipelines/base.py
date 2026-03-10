@@ -165,7 +165,7 @@ class TrainPipeline(abc.ABC):
 
         result = trainer.fit(
             train_data=data_result.train_ds,
-            val_data=data_result.val_ds,
+            val_data=data_result.val_ds
         )
         logger.info(f"TrainPipeline: training complete ({time.perf_counter() - t0:.1f}s)")
 
