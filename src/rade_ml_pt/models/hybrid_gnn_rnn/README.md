@@ -867,7 +867,75 @@ The gate operates **per-element** across the $d_f$ dimensions, allowing fine-gra
 
 Refines the fused representations of target trades by allowing them to attend to each other, capturing inter-target dependencies. This is critical for correlated target positions: e.g., a butterfly spread's long and short legs should produce jointly consistent P&L predictions, and two target trades on the same underlying with different strikes should exhibit correlated behaviour.
 
-#### 6.4.2 Sparse Submatrix Extraction
+#### 6.4.2 Block Architecture
+
+```mermaid
+flowchart TB
+    subgraph attn_inputs ["Inputs"]
+        F_in["F  B x T x d_f\nFused features"]
+        A_attn["A  T x T\nSparse adjacency"]
+        TGT["target_idx  n_tgt"]
+    end
+
+    subgraph sub_extract ["Submatrix Extraction"]
+        LOOKUP["Build global-to-local lookup\nFilter edges: both endpoints in targets"]
+        M_tgt["M_tgt  n_tgt x n_tgt\nBinary target adjacency mask"]
+    end
+
+    subgraph gather ["Target Gather + Project"]
+        GATHER["F_tgt = F : target_idx :\nB x n_tgt x d_f"]
+        PROJ_attn["input_proj nn.LazyLinear\nB x n_tgt x d_a"]
+    end
+
+    subgraph mha_block ["Multi-Head Self-Attention"]
+        QKV["Q K V = LazyLinear F_hat\nSplit into h heads  d_h = d_a / h"]
+        SCORES["S = Q K^T / sqrt d_h\nMask with M_tgt: -1e9 for non-edges"]
+        SOFTMAX["softmax dim=-1\nweighted sum over V"]
+        W_O_attn["Head concat + W_O projection"]
+    end
+
+    subgraph res1 ["Residual + LayerNorm 1"]
+        ADD1["F_hat + MHA output"]
+        LN1_attn["nn.LayerNorm d_a"]
+    end
+
+    subgraph ffn_block ["Position-wise FFN"]
+        FF1["nn.Linear d_a -> 4*d_a\nActivation + Dropout"]
+        FF2["nn.Linear 4*d_a -> d_a"]
+    end
+
+    subgraph res2 ["Residual + LayerNorm 2"]
+        ADD2["Z + FFN Z"]
+        LN2_attn["nn.LayerNorm d_a"]
+    end
+
+    subgraph attn_out ["Output"]
+        O_out["O  B x n_tgt x d_a"]
+    end
+
+    A_attn --> LOOKUP
+    TGT --> LOOKUP
+    LOOKUP --> M_tgt
+    F_in --> GATHER
+    TGT --> GATHER
+    GATHER --> PROJ_attn
+    PROJ_attn --> QKV
+    M_tgt --> SCORES
+    QKV --> SCORES
+    SCORES --> SOFTMAX
+    SOFTMAX --> W_O_attn
+    W_O_attn --> ADD1
+    PROJ_attn --> ADD1
+    ADD1 --> LN1_attn
+    LN1_attn --> FF1
+    FF1 --> FF2
+    FF2 --> ADD2
+    LN1_attn --> ADD2
+    ADD2 --> LN2_attn
+    LN2_attn --> O_out
+```
+
+#### 6.4.3 Sparse Submatrix Extraction
 
 The full adjacency is $[T, T]$ sparse, but the target attention only needs the $[n_\text{tgt}, n_\text{tgt}]$ submatrix. Rather than materialising the dense $T \times T$ matrix (which would cost $\mathcal{O}(T^2)$ memory), the `_extract_sparse_submatrix` method performs an $\mathcal{O}(\text{nnz})$ scan:
 
@@ -883,7 +951,7 @@ $$\mathbf{M}_{\text{tgt}} \in \{0, 1\}^{n_\text{tgt} \times n_\text{tgt}}$$
 
 Cost: $\mathcal{O}(\text{nnz}) + \mathcal{O}(n_\text{tgt}^2)$, which is trivial compared to $\mathcal{O}(T^2)$.
 
-#### 6.4.3 Transformer Block (Pre-Norm Architecture)
+#### 6.4.4 Transformer Block (Pre-Norm Architecture)
 
 The layer follows a standard Transformer encoder block [9] with pre-norm residual connections:
 
@@ -933,7 +1001,7 @@ $$\mathbf{O} = \text{LayerNorm}\!\left(\mathbf{Z} + \text{FFN}(\mathbf{Z})\right
 
 **Parameter count**: $d_f \cdot d_a$ (input projection) + $4 \cdot d_a^2$ (Q, K, V, O attention projections, bias-free) + $4 \cdot d_a \cdot 4d_a + 4d_a + d_a \cdot 4d_a + d_a$ (FFN) + $4 \cdot d_a$ (two LayerNorms) $\approx 12 \cdot d_a^2 + d_f \cdot d_a$.
 
-#### 6.4.4 Design Rationale
+#### 6.4.5 Design Rationale
 
 - **Self-attention (not cross-attention)**: Unlike the fusion layer where streams have different roles, target trades are peers that should jointly inform each other's representations. Self-attention is the natural mechanism for this.
 - **Adjacency masking**: Even among targets, attention should respect structural relationships. Two target trades on unrelated underlyings should not attend to each other — the adjacency mask prevents this information leakage.
@@ -955,7 +1023,72 @@ Projects the attended feature representation to a scalar P&L prediction per targ
 
 The PyTorch implementation uses `nn.UninitializedParameter` for the per-target kernels, biases, and gains, deferring allocation until the first `forward()` call reveals the number of trained targets and the attention dimension. This is materialised via `_materialize_lazy_params()`.
 
-#### 6.5.2 Dual Decomposition: Baseline + Residual
+#### 6.5.2 Block Architecture
+
+```mermaid
+flowchart TB
+    subgraph proj_inputs ["Inputs"]
+        X_in["X  T x p\nTrade features"]
+        O_in["O  B x n_tgt x d_a\nAttended features"]
+        TI_in["target_idx  n_tgt"]
+    end
+
+    subgraph split ["Train / New Target Split"]
+        SPLIT_proj["Separate target_idx into\ntrained i <= n_0 vs new i > n_0"]
+    end
+
+    subgraph trained_path ["Trained Targets Path"]
+        KERN["Per-target kernels w_i  biases b_i\nnn.UninitializedParameter"]
+        WNORM["Weight Normalisation\nw_hat = w / norm w\ng = softplus g_tilde"]
+        BASE_T["beta_train = g * einsum bna,na->bn + b\nB x n_train"]
+    end
+
+    subgraph new_path ["New Targets Path"]
+        KNN["kNN Weights\ncosine_softmax or IDW\nK nearest trained targets"]
+        BASE_N["beta_new = sum w_ij * beta_j_train\nOutput-space mixing  B x n_new"]
+    end
+
+    subgraph residual_path ["Shared Residual MLP"]
+        CAT_res["cat attn_feats  trade_attrs  dim=-1"]
+        MLP1["nn.LazyLinear -> d_hidden\nActivation GELU + Dropout"]
+        MLP2["nn.Linear d_hidden -> 1\nsqueeze  B x n_tgt"]
+        DAMP["New targets: rho * lambda_damp"]
+    end
+
+    subgraph modulation ["Optional Modulation (new only)"]
+        SCALE["scale = softplus w_s @ attn"]
+        BIAS_mod["bias = w_b @ attn"]
+    end
+
+    subgraph assembly ["Final Assembly"]
+        COMBINE["y_hat = beta + rho\nConcat trained  new  B x n_tgt"]
+    end
+
+    O_in --> SPLIT_proj
+    TI_in --> SPLIT_proj
+    SPLIT_proj -->|"trained slice"| KERN
+    KERN --> WNORM
+    WNORM --> BASE_T
+    SPLIT_proj -->|"new slice"| KNN
+    X_in --> KNN
+    BASE_T --> KNN
+    KNN --> BASE_N
+    O_in --> CAT_res
+    X_in --> CAT_res
+    TI_in --> CAT_res
+    CAT_res --> MLP1
+    MLP1 --> MLP2
+    MLP2 --> DAMP
+    BASE_T --> COMBINE
+    BASE_N --> COMBINE
+    DAMP --> COMBINE
+    BASE_N --> SCALE
+    O_in --> SCALE
+    SCALE --> BIAS_mod
+    BIAS_mod --> COMBINE
+```
+
+#### 6.5.3 Dual Decomposition: Baseline + Residual
 
 The predicted P&L for each target $i$ is decomposed into two additive terms:
 
@@ -963,7 +1096,7 @@ $$\hat{y}_{b,i} = \underbrace{\beta_i(\mathbf{o}_{b,i})}_{\text{baseline}} + \un
 
 where $\mathbf{o}_{b,i} \in \mathbb{R}^{d_a}$ is the attended representation and $\mathbf{x}_i \in \mathbb{R}^{p}$ is the trade's encoded attribute vector.
 
-#### 6.5.3 Baseline — Trained Targets ($i \leq n_0$)
+#### 6.5.4 Baseline — Trained Targets ($i \leq n_0$)
 
 Each of the $n_0$ trained targets has a dedicated learned kernel $\mathbf{w}_i \in \mathbb{R}^{d_a}$ and bias $b_i \in \mathbb{R}$. When **weight normalisation** is enabled (default), the kernel is decomposed into direction and magnitude:
 
@@ -981,7 +1114,7 @@ Without weight normalisation, the baseline simplifies to:
 
 $$\beta_i^{\text{train}} = \mathbf{w}_i^\top \mathbf{o}_{b,i} + b_i$$
 
-#### 6.5.4 Baseline — New Targets ($i > n_0$): kNN Output-Space Mixing
+#### 6.5.5 Baseline — New Targets ($i > n_0$): kNN Output-Space Mixing
 
 New targets have no calibrated kernel. Their baseline is constructed as a convex combination of trained target baselines, with weights determined by attribute-space proximity:
 
@@ -1010,7 +1143,7 @@ where $p > 0$ (default 2.0) is the distance exponent. Pairwise Euclidean distanc
 2. The curse of dimensionality is avoided (interpolating in $\mathbb{R}^1$ vs $\mathbb{R}^{d_a}$).
 3. The amplitude scale of the baseline is preserved (a simple average of calibrated predictions inherits their calibrated scale).
 
-#### 6.5.5 Residual — All Targets
+#### 6.5.6 Residual — All Targets
 
 A shared 2-layer MLP processes the concatenation of attended features and trade attributes:
 
@@ -1026,7 +1159,7 @@ $$\rho_i^{\text{new}} = \lambda_\text{damp} \cdot \rho_i, \quad \lambda_\text{da
 
 The damping factor $\lambda_\text{damp}$ (default 1.0, i.e., no damping) can be reduced to suppress the MLP correction for unseen trades where the residual has not been explicitly calibrated.
 
-#### 6.5.6 Optional Attention-Conditioned Modulation
+#### 6.5.7 Optional Attention-Conditioned Modulation
 
 For new targets only, optional learned scale and bias heads provide post-hoc modulation:
 
@@ -1034,7 +1167,7 @@ $$\hat{y}_i^{\text{new}} = \underbrace{\text{softplus}(\mathbf{w}_s^\top \mathbf
 
 Trained targets pass through unmodified ($\text{scale} = 1$, $\text{bias} = 0$). This separation ensures calibrated targets are never degraded by the modulation mechanism.
 
-#### 6.5.7 Final Prediction Assembly
+#### 6.5.8 Final Prediction Assembly
 
 The full prediction for all $n_\text{tgt}$ targets is assembled by concatenating the trained and new components:
 
