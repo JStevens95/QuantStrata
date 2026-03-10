@@ -613,6 +613,40 @@ A stack of $L$ recurrent layers using PyTorch's `nn.LSTM`, `nn.GRU`, or bidirect
 
 The `RnnBlock` uses **lazy initialisation**: layers are constructed on the first `forward()` call once the input size $T_e$ is known from the data, avoiding the need to hardcode input dimensions in the configuration.
 
+```mermaid
+flowchart TB
+    subgraph rnn_in ["Input"]
+        P_in["P  B x S x T_e\nStandardised P&L history"]
+    end
+
+    subgraph lazy ["Lazy Build (first forward)"]
+        BUILD["_build input_size=T_e\nConstruct nn.LSTM / nn.GRU"]
+    end
+
+    subgraph stack ["Multi-Layer RNN Stack"]
+        L1["Layer 1\nnn.LSTM hidden_size=d_r\nbatch_first=True"]
+        D1["Inter-layer Dropout p"]
+        L2["Layer 2\nnn.LSTM hidden_size=d_r"]
+        LN["...\nLayer L"]
+    end
+
+    subgraph extract ["Hidden State Extraction"]
+        LSTM_HN["LSTM: h_n -1\nBiLSTM: cat h_n -2  h_n -1\nGRU: h_n -1"]
+    end
+
+    subgraph rnn_out ["Output"]
+        R_out["r  B x d_r\nTemporal embedding"]
+    end
+
+    P_in --> BUILD
+    BUILD --> L1
+    L1 -->|"B x S x d_r"| D1
+    D1 --> L2
+    L2 --> LN
+    LN -->|"output, h_n, c_n"| LSTM_HN
+    LSTM_HN --> R_out
+```
+
 Supported cell types:
 - **LSTM** (default): Long Short-Term Memory [5] with forget gate, input gate, output gate.
 - **BiLSTM**: Bidirectional LSTM — concatenates forward and backward final hidden states, producing output dimension $2 \cdot d_r$.
@@ -683,7 +717,56 @@ Note: Unlike Keras (which defaults to Glorot uniform for kernels, orthogonal for
 
 Merges the structural (GNN) and temporal (RNN) information streams into a single per-trade, per-scenario representation. This is the critical junction where "what a trade is" (its graph position, Greeks profile, product type) meets "what the market has done" (the recent P&L dynamics across scenarios). The design ensures that the fusion is **graph-constrained**: each trade's fused representation is influenced only by its structural neighbours, not by the entire portfolio.
 
-#### 6.3.2 Broadcasting and Projection
+#### 6.3.2 Block Architecture
+
+```mermaid
+flowchart TB
+    subgraph fusion_inputs ["Inputs"]
+        G_in["G  T x d_g\nGNN embeddings"]
+        R_in["R  B x d_r\nRNN embeddings"]
+        A_in["A  T x T\nSparse adjacency"]
+    end
+
+    subgraph broadcast ["Broadcast + Project"]
+        G_BC["GNN: unsqueeze 0 expand B\nW_gnn projection  B x T x d_f"]
+        R_BC["RNN: unsqueeze 1 expand T\nW_rnn projection  B x T x d_f"]
+    end
+
+    subgraph qkv ["Q / K / V Formation"]
+        Q_form["Q = W_q_rnn E_rnn + W_q_gnn E_gnn\nJoint query: temporal + structural"]
+        KV_form["K = W_k E_gnn    V = W_v E_gnn\nKeys and values: structural only"]
+    end
+
+    subgraph mh_attn ["Multi-Head Sparse Attention"]
+        SPLIT["Split into h heads  d_h = d_f / h\nReshape B x h x T x d_h"]
+        SPARSE["Neighbor gather  padded T x k\nScaled dot-product over k neighbors\nMasked softmax + NaN cleanup"]
+        CONCAT_heads["Head concat + W_O projection\nB x T x d_f"]
+    end
+
+    subgraph gate_block ["Gated Fusion"]
+        GATE["gate = sigmoid W_g cat attn rnn\nout = gate * attn + 1-gate * rnn"]
+    end
+
+    subgraph fusion_out ["Output"]
+        LN_fuse["LayerNorm\nF  B x T x d_f"]
+    end
+
+    G_in --> G_BC
+    R_in --> R_BC
+    G_BC --> Q_form
+    R_BC --> Q_form
+    G_BC --> KV_form
+    Q_form --> SPLIT
+    KV_form --> SPLIT
+    A_in --> SPARSE
+    SPLIT --> SPARSE
+    SPARSE --> CONCAT_heads
+    CONCAT_heads --> GATE
+    R_BC --> GATE
+    GATE --> LN_fuse
+```
+
+#### 6.3.3 Broadcasting and Projection
 
 The GNN embedding is static across the batch (shared structure); the RNN embedding is static across trades (shared temporal context). Both are broadcast and projected to a common dimension $d_f$:
 
@@ -693,7 +776,7 @@ $$\mathbf{E}^{\text{rnn}}_{b,v} = \mathbf{W}_{\text{rnn}} \, \mathbf{r}_b + \mat
 
 where $\mathbf{W}_{\text{gnn}} \in \mathbb{R}^{d_f \times d_g}$, $\mathbf{W}_{\text{rnn}} \in \mathbb{R}^{d_f \times d_r}$ are learned projections (`nn.LazyLinear`). Broadcasting is performed via `unsqueeze` + `expand`: GNN $[T, d_g] \to [1, T, d_g] \to [B, T, d_g]$, RNN $[B, d_r] \to [B, 1, d_r] \to [B, T, d_r]$.
 
-#### 6.3.3 Joint Query Formation
+#### 6.3.4 Joint Query Formation
 
 Queries encode both temporal context and structural identity via an additive projection — each trade's query is a function of both "what the market is doing" (RNN) and "what this trade looks like" (GNN):
 
@@ -705,7 +788,7 @@ $$\mathbf{K} = \mathbf{W}_K\, \mathbf{E}^{\text{gnn}} \in \mathbb{R}^{B \times T
 
 where $\mathbf{W}_Q^{\text{rnn}}, \mathbf{W}_Q^{\text{gnn}}, \mathbf{W}_K, \mathbf{W}_V \in \mathbb{R}^{d_f \times d_f}$ are learned (bias-free) projection matrices. This is a deliberate asymmetry: the temporal stream generates the "question" and the structural stream provides the "answer."
 
-#### 6.3.4 Multi-Head Split
+#### 6.3.5 Multi-Head Split
 
 Following Vaswani et al. [9], Q, K, V are split into $h$ heads of dimension $d_h = d_f / h$ and reshaped via `.view(B, T, h, d_h).permute(0, 2, 1, 3)` to $[B, h, T, d_h]$:
 
@@ -713,7 +796,7 @@ $$\mathbf{Q}^{(m)} = \mathbf{Q}_{:,:, (m-1)d_h : m \cdot d_h} \in \mathbb{R}^{B 
 
 Each head independently computes attention, enabling the model to attend to different aspects of structural similarity in parallel (e.g., head 1 may focus on maturity-similar neighbours, head 2 on delta-similar neighbours).
 
-#### 6.3.5 Sparse Neighborhood Attention
+#### 6.3.6 Sparse Neighborhood Attention
 
 This is the core scalability innovation. Rather than computing the full $T \times T$ attention matrix ($\mathcal{O}(T^2)$ memory), each trade attends **only to its $k$ neighbors** from the adjacency graph:
 
@@ -753,7 +836,7 @@ Implemented via `.permute(0, 2, 1, 3).reshape(B, T, d_f)` followed by `output_pr
 
 **Memory analysis**: The score tensor is $[B, h, T, k]$ — at $T = 10\,000$, $k = 50$, $B = 16$, $h = 1$: $\approx 32$ MB (float32). Compared to the full $[B, h, T, T]$ attention: $\approx 6.4$ GB. Reduction factor: $T / k = 200\times$.
 
-#### 6.3.6 Gated Fusion
+#### 6.3.7 Gated Fusion
 
 The fusion output combines the attended structural signal with the temporal signal via a learned sigmoid gate (Highway Networks [10]):
 
@@ -765,7 +848,7 @@ $$\mathbf{f}_{b,v} = \text{LayerNorm}\!\left(\hat{\mathbf{f}}_{b,v}\right) \in \
 
 The gate operates **per-element** across the $d_f$ dimensions, allowing fine-grained control: some dimensions may rely on structural information while others rely on temporal. The sigmoid initialisation (bias $\approx 0$) places the gate near $0.5$ at initialisation, providing an unbiased starting point.
 
-#### 6.3.7 Design Rationale
+#### 6.3.8 Design Rationale
 
 - **Cross-attention (not self-attention)**: The asymmetric query formation (RNN + GNN) and key/value sourcing (GNN only) creates a directional information flow: the temporal context "asks" the structural graph "which trade relationships are relevant right now?" This prevents the temporal signal from being diluted by self-attending to itself.
 - **Sparse masking via graph structure**: The k-NN graph provides a natural sparsification of the attention pattern. This is both a **regularisation** mechanism (prevents overfitting to spurious long-range correlations in large portfolios) and a **scalability** enabler ($\mathcal{O}(T \cdot k)$ vs $\mathcal{O}(T^2)$).
