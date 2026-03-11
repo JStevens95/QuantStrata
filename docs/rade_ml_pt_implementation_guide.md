@@ -228,7 +228,7 @@ Update `data/__init__.py` to export `build_dataloader`, `DataBuildResult`, `Cach
 
 ---
 
-## Phase 7: Model Assembly + Graph Builder (PyTorch-ported)
+## Phase 7: Model Assembly + Graph Builder (PyTorch-ported) -- COMPLETED
 
 ### Source (PORT)
 
@@ -252,7 +252,7 @@ Update `models/hybrid_gnn_rnn/__init__.py` and `utilities/__init__.py`.
 
 ---
 
-## Phase 8: Training Infrastructure (PyTorch-ported)
+## Phase 8: Training Infrastructure (PyTorch-ported) -- COMPLETED
 
 ### Source (PORT)
 
@@ -278,7 +278,7 @@ Update `training/__init__.py`.
 
 ---
 
-## Phase 9: Evaluation, Inference, Registry (PyTorch-ported)
+## Phase 9: Evaluation, Inference, Registry (PyTorch-ported) -- COMPLETED
 
 ### Source (PORT)
 
@@ -356,9 +356,9 @@ Update `src/rade_ml_pt/__init__.py` to export all public symbols.
 | 4 | Features, tracking, tuning, plots | 19 | Copy | DONE |
 | 5 | Data pipeline | 6 | **PORT** | DONE |
 | 6 | Model layers | 13 | **PORT** | DONE |
-| 7 | Model + graph builder | 6 | **PORT** | |
-| 8 | Training infrastructure | 8 | **PORT** | |
-| 9 | Eval, inference, registry | 7 | **PORT** | |
+so| 7 | Model + graph builder | 6 | **PORT** | DONE |
+| 8 | Training infrastructure | 8 | **PORT** | DONE |
+| 9 | Eval, inference, registry | 7 | **PORT** | DONE |
 | 10 | Pipelines | 7 | **PORT** | |
 | 11 | Top-level init + final sweep | 1 | Wire up | |
 | 12 | Example scripts | 3 | **PORT** | |
@@ -388,3 +388,26 @@ Items to revisit once the full migration is complete:
   container that matches the `nn.LSTM` / `nn.GRU` return API. Auto-select between cuDNN
   (default activations) and custom cells (non-default) in `RnnBlock._build()` to preserve
   performance when custom activations are not needed.
+
+- **Trainer built-in verbose epoch progress:** The `Trainer.fit()` loop now prints a
+  Keras-style one-liner per epoch (`Epoch 1/500  loss=...  val_loss=...  [2.3s]`) when
+  `TrainingConfig.verbose=True`. This is independent of the `MetricsLogger` callback
+  (which requires `log_dir` to be set). Port this change to the work version of
+  `src/rade_ml_pt/training/trainer.py`: add `epoch_start = time.time()` at the top of
+  the epoch loop, then after history accumulation print the progress line gated on
+  `self.config.verbose`.
+
+- **Hybrid GNN-RNN integration tests:** Add dedicated unit tests for the model-specific
+  modules that currently only have coverage through higher-level pipeline / model tests:
+  - `tests/rade_ml_pt/data/hybrid_gnn_rnn/test_deep_hedging_build.py` — test `build()`
+    end-to-end (sparse tensor construction, DataLoader shapes, config-driven splits).
+  - `tests/rade_ml_pt/data/hybrid_gnn_rnn/test_deep_hedging_config.py` — test
+    `DeepHedgingDataConfig` serialisation roundtrips and field validation.
+  - `tests/rade_ml_pt/pipelines/hybrid_gnn_rnn/test_train_pipeline.py` — test training
+    pipeline orchestration (data build → model build → trainer.fit → checkpoint save).
+  - `tests/rade_ml_pt/pipelines/hybrid_gnn_rnn/test_eval_pipeline.py` — test evaluation
+    pipeline (checkpoint load → evaluator.run → EvaluationResult).
+  - `tests/rade_ml_pt/pipelines/hybrid_gnn_rnn/test_infer_pipeline.py` — test inference
+    pipeline (checkpoint load → predict → InferenceResult).
+  - `tests/rade_ml_pt/pipelines/hybrid_gnn_rnn/test_tune_pipeline.py` — test tuning
+    pipeline (Optuna trial → model build → score).

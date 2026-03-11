@@ -239,11 +239,11 @@ def build_metadata(metadata: Dict[str, Any], elementary_pnl: pd.DataFrame, targe
         "test_scenarios": metadata["test_scenarios"],
         "test_end_scenarios": metadata["test_end_scenarios"],
 
-        # trade universe
-        "elementary_idx": np.arange(0, n_elementary),
+        # trade universe (plain Python lists for JSON serialization)
+        "elementary_idx": list(range(n_elementary)),
         "elementary_ids": list(elementary_pnl.columns),
 
-        "target_idx": np.arange(n_elementary, n_elementary + n_targets),
+        "target_idx": list(range(n_elementary, n_elementary + n_targets)),
         "target_ids": list(target_pnl.columns),
 
         # inverse transforms

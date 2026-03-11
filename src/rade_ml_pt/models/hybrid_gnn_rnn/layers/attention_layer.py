@@ -100,7 +100,7 @@ class TargetAttentionLayer(nn.Module):
         self.output_proj = nn.LazyLinear(self.units)
 
         # --- Feed-forward network: two linear layers with activation in between ---
-        self.ffn_linear1 = nn.LazyLinear(self.units)
+        self.ffn_linear1 = nn.LazyLinear(self.units * 4)
         self.ffn_linear2 = nn.LazyLinear(self.units)
         self.ffn_activation = _build_activation_module(self.activation)
 

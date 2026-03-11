@@ -29,6 +29,7 @@ from __future__ import annotations
 import abc
 import logging
 import time
+from pathlib import Path
 
 import torch
 import torch.nn as nn
@@ -142,11 +143,14 @@ class TrainPipeline(abc.ABC):
         """
         from src.rade_ml_pt.training.trainer import Trainer, setup_training_environment
         from src.rade_ml_pt.training.strategy import get_training_strategy
-        from src.rade_ml_pt.registry.store import ModelRegistry
-        from src.rade_ml_pt.tracking.tracker import ExperimentTracker
 
         logger.info("TrainPipeline: starting")
         t0 = time.perf_counter()
+
+        if self.config.artifacts_dir:
+            Path(self.config.artifacts_dir).mkdir(parents=True, exist_ok=True)
+        if self.config.registry_dir:
+            Path(self.config.registry_dir).mkdir(parents=True, exist_ok=True)
 
         training_config = self._resolve_training_config()
         seed = self._resolve_seed()
@@ -161,6 +165,15 @@ class TrainPipeline(abc.ABC):
         model = model.to(device)
         logger.info(f"TrainPipeline: model built (device={device})")
 
+        if training_config.compile_model and device.type != "cpu":
+            model = torch.compile(model)
+            logger.info("TrainPipeline: model compiled with torch.compile()")
+        elif training_config.compile_model:
+            logger.warning(
+                "compile_model=True but device is CPU; skipping torch.compile "
+                "(inductor backend is slower on CPU than eager mode)"
+            )
+
         trainer = Trainer(model=model, config=training_config, seed=seed)
 
         result = trainer.fit(
@@ -169,27 +182,40 @@ class TrainPipeline(abc.ABC):
         )
         logger.info(f"TrainPipeline: training complete ({time.perf_counter() - t0:.1f}s)")
 
-        registry = (
-            ModelRegistry(self.config.registry_dir) if self.config.registry_dir else None
-        )
-        tracker = (
-            ExperimentTracker(self.config.tracking_dir) if self.config.tracking_dir else None
-        )
-        run = tracker.start_run(
-            name=self.config.metadata.get("run_name", "train"),
-            tags=self.config.metadata.get("tags", []),
-        ) if tracker else None
+        registry = None
+        if self.config.registry_dir:
+            try:
+                from src.rade_ml_pt.registry.store import ModelRegistry
+                registry = ModelRegistry(self.config.registry_dir)
+            except Exception as exc:
+                logger.error("Failed to initialise ModelRegistry: %s", exc)
+
+        tracker = None
+        run = None
+        if self.config.tracking_dir:
+            try:
+                from src.rade_ml_pt.tracking.tracker import ExperimentTracker
+                tracker = ExperimentTracker(self.config.tracking_dir)
+                run = tracker.start_run(
+                    name=self.config.metadata.get("run_name", "train"),
+                    tags=self.config.metadata.get("tags", []),
+                )
+            except Exception as exc:
+                logger.error("Failed to initialise ExperimentTracker: %s", exc)
 
         self.post_train(
             result, model, registry=registry, tracker=tracker, run=run,
             data_result=data_result,
         )
 
-        if run is not None:
+        if run is not None and tracker is not None:
             tracker.end_run(run)
 
         if self.config.artifacts_dir and self.config.metadata.get("generate_training_report", True):
-            self._generate_training_report(result, model, data_result)
+            try:
+                self._generate_training_report(result, model, data_result)
+            except Exception as exc:
+                logger.error("Failed to generate training report: %s", exc)
 
         logger.info("TrainPipeline: done")
         return result
@@ -207,7 +233,6 @@ class TrainPipeline(abc.ABC):
         Otherwise falls back to artifacts_dir/training/{run_name}_{timestamp}/.
         """
         from datetime import datetime
-        from pathlib import Path
         from src.rade_ml_pt.training.reports import generate_training_report
 
         run_name = self.config.metadata.get("run_name", "train")

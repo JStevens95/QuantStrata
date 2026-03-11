@@ -88,6 +88,11 @@ class EarlyStopping(Callback):
         self.stopped_epoch: int = 0
         self.stop_training: bool = False
 
+        logger.info(
+            "EarlyStopping: monitor=%s, patience=%d, min_delta=%.2e, mode=%s",
+            self.monitor, self.patience, self.min_delta, self.mode,
+        )
+
     # Injected by the Trainer before the loop starts
     _model: Optional[torch.nn.Module] = None
 
@@ -95,6 +100,9 @@ class EarlyStopping(Callback):
         logs = logs or {}
         current = logs.get(self.monitor)
         if current is None:
+            print(
+                f"  [ES] epoch {epoch+1}: '{self.monitor}' NOT in logs (keys={list(logs.keys())})"
+            )
             return
 
         is_improvement = (
@@ -104,25 +112,34 @@ class EarlyStopping(Callback):
         )
 
         if is_improvement:
+            print(
+                f"  [ES] epoch {epoch+1}: {self.monitor}={current:.6f}  best={self.best_value:.6f}"
+                f"  delta={self.min_delta}  mode={self.mode}  -> IMPROVED  wait=0"
+            )
             self.best_value = current
             self.wait = 0
             if self.restore_best_weights and self._model is not None:
                 self.best_weights = copy.deepcopy(self._model.state_dict())
         else:
             self.wait += 1
+            print(
+                f"  [ES] epoch {epoch+1}: {self.monitor}={current:.6f}  best={self.best_value:.6f}"
+                f"  delta={self.min_delta}  mode={self.mode}  -> NO IMPROVE  wait={self.wait}/{self.patience}"
+            )
             if self.wait >= self.patience:
                 self.stopped_epoch = epoch
                 self.stop_training = True
+                print(
+                    f"  [ES] STOPPING at epoch {epoch+1}. {self.monitor} did not improve"
+                    f" from {self.best_value:.6f} for {self.patience} epochs."
+                )
                 if (
                     self.restore_best_weights
                     and self.best_weights is not None
                     and self._model is not None
                 ):
                     self._model.load_state_dict(self.best_weights)
-                    logger.info(
-                        "EarlyStopping: restoring best weights from epoch %d.",
-                        epoch - self.wait,
-                    )
+                    print(f"  [ES] Restored best weights from epoch {epoch+1-self.wait}.")
 
 
 # ---------------------------------------------------------------------------

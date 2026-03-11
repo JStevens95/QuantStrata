@@ -13,17 +13,25 @@ from typing import Dict, Any, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
+def _leaky_relu(x: torch.Tensor) -> torch.Tensor:
+    return F.leaky_relu(x, negative_slope=0.2)
+
+
+def _identity(x: torch.Tensor) -> torch.Tensor:
+    return x
+
+
 # Mapping from activation name strings to callable torch functions.
 _ACTIVATION_MAP = {
     "relu": F.relu,
-    "leaky_relu": lambda x: F.leaky_relu(x, negative_slope=0.2),
+    "leaky_relu": _leaky_relu,
     "tanh": torch.tanh,
     "sigmoid": torch.sigmoid,
     "elu": F.elu,
     "selu": F.selu,
     "gelu": F.gelu,
-    "linear": lambda x: x,
-    None: lambda x: x,
+    "linear": _identity,
+    None: _identity,
 }
 
 
@@ -203,9 +211,7 @@ class FusionLayer(nn.Module):
         # Softmax over key dimension (last axis) to get attention weights
         attn_weights = torch.softmax(scores, dim=-1)   # [B, H, T, T]
         # Replace NaN values (from rows where all scores are -inf) with zeros
-        attn_weights = torch.where(
-            torch.isnan(attn_weights), torch.zeros_like(attn_weights), attn_weights
-        )
+        attn_weights = torch.nan_to_num(attn_weights, nan=0.0)
 
         # Weighted sum of values: [B, H, T, T] @ [B, H, T, d_h] -> [B, H, T, d_h]
         attn_out = torch.matmul(attn_weights, V)
@@ -299,9 +305,7 @@ class FusionLayer(nn.Module):
         # Softmax over the neighbor dimension to get attention weights
         attn_weights = torch.softmax(scores, dim=-1)   # [B, H, T, k]
         # Replace NaN (from nodes with zero neighbors) with zeros
-        attn_weights = torch.where(
-            torch.isnan(attn_weights), torch.zeros_like(attn_weights), attn_weights
-        )
+        attn_weights = torch.nan_to_num(attn_weights, nan=0.0)
 
         # --- Weighted sum of neighbor values ---
         # attn_weights: [B, H, T, 1, k] @ V_nbr: [B, H, T, k, d_h] -> [B, H, T, 1, d_h] -> squeeze

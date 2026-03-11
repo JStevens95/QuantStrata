@@ -16,17 +16,25 @@ from typing import Dict, Any, Optional, Union
 
 logger = logging.getLogger(__name__)
 
+def _leaky_relu(x: torch.Tensor) -> torch.Tensor:
+    return F.leaky_relu(x, negative_slope=0.2)
+
+
+def _identity(x: torch.Tensor) -> torch.Tensor:
+    return x
+
+
 # Mapping from activation name strings to callable torch functions.
 _ACTIVATION_MAP = {
     "relu": F.relu,
-    "leaky_relu": lambda x: F.leaky_relu(x, negative_slope=0.2),
+    "leaky_relu": _leaky_relu,
     "tanh": torch.tanh,
     "sigmoid": torch.sigmoid,
     "elu": F.elu,
     "selu": F.selu,
     "gelu": F.gelu,
-    "linear": lambda x: x,
-    None: lambda x: x,
+    "linear": _identity,
+    None: _identity,
 }
 
 
@@ -310,6 +318,7 @@ class GnnBlock(nn.Module):
             # Force sublayers to be linear (no activation).
             sub_config = copy.deepcopy(self.layer_config)
             sub_config["parameters"]["activation"] = None
+            sub_config["general"]["dropout_rate"] = 0.0
 
             layer_type_lower = self.layer_type.lower()
             sub_name = f"{self.layer_name}_{layer_type_lower}_{i}"

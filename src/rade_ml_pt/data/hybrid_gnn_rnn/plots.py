@@ -267,7 +267,7 @@ def _plot_adjacency_heatmap(
     # Colour strip above heatmap (axes coords): blue=elementary, red=target
     strip = np.array([[0 if i < n_elem else 1 for i in range(n)]], dtype=float)
     strip_cmap = mcolors.ListedColormap([_ELEM_COLOUR, _TARGET_COLOUR])
-    strip_ax = ax.inset_axes([0, 0.94, 1, 0.06])
+    strip_ax = ax.inset_axes([0, 0.97, 1, 0.03])
     strip_ax.imshow(strip, aspect="auto", cmap=strip_cmap, interpolation="nearest")
     strip_ax.set_xticks([])
     strip_ax.set_yticks([])

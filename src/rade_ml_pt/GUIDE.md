@@ -6,9 +6,24 @@ rade_ml_pt is a production-grade machine learning framework designed for quantit
 
 The framework is built on **PyTorch** and targets use cases such as full revaluation PnL prediction via static replication, derivative pricing, and calibration -- though its architecture is generic enough to accommodate any supervised learning model.
 
+### Table of Contents
+
+| # | Section | Description |
+|---|---------|-------------|
+| 1 | [Architecture](#1-architecture) | Package layout and dependency flow |
+| 2 | [Component Reference](#2-component-reference) | Detailed API guide for every module |
+| 3 | [Workflow Diagrams](#3-workflow-diagrams) | Mermaid diagrams for train, eval, inference, and tuning |
+| 4 | [Adding a New Model](#4-adding-a-new-model) | Step-by-step guide to integrate a new model |
+| 5 | [Standalone Usage](#5-standalone-usage-without-pipelines) | Using components independently without pipelines |
+| 6 | [Reproducibility and Audit](#6-reproducibility-and-audit) | Seeds, versioning, provenance tracking |
+| 7 | [Logging](#7-logging) | Framework logging configuration |
+| 8 | [Error Handling](#8-error-handling) | Custom exceptions reference |
+| 9 | [Key Differences from rade_ml](#9-key-differences-from-rade_ml-tensorflow) | TensorFlow vs PyTorch migration reference |
+| 10 | [Summary](#10-summary-model-independent-vs-model-dependent) | Model-independent vs model-dependent breakdown |
+
 ---
 
-## Architecture
+## 1. Architecture
 
 ```
 rade_ml_pt/
@@ -78,7 +93,7 @@ flowchart LR
 
 ---
 
-## Component Reference
+## 2. Component Reference
 
 ### 1. core/ -- Foundation
 
@@ -654,7 +669,7 @@ validate_dict_keys(
 
 ---
 
-## Workflow Diagrams
+## 3. Workflow Diagrams
 
 ### Training Workflow
 
@@ -827,7 +842,7 @@ flowchart TB
 
 ---
 
-## Adding a New Model
+## 4. Adding a New Model
 
 This section walks through exactly what you need to implement to add a new model (`model_x`) to the framework.
 
@@ -1059,7 +1074,7 @@ rade_ml_pt/
 
 ---
 
-## Standalone Usage (Without Pipelines)
+## 5. Standalone Usage (Without Pipelines)
 
 Pipelines are optional. Every component works independently:
 
@@ -1102,7 +1117,7 @@ pred_result = runner.predict(new_inputs, sample_ids=["trade_001"])
 
 ---
 
-## Reproducibility and Audit
+## 6. Reproducibility and Audit
 
 The framework provides end-to-end reproducibility:
 
@@ -1119,7 +1134,7 @@ Every prediction can be traced back through: `InferenceResult.model_version` -> 
 
 ---
 
-## Logging
+## 7. Logging
 
 The framework uses Python's standard `logging` module. Every module creates its own logger:
 
@@ -1149,7 +1164,7 @@ Key log events:
 
 ---
 
-## Error Handling
+## 8. Error Handling
 
 Custom exceptions in `validation/exceptions.py`:
 
@@ -1170,7 +1185,7 @@ Custom exceptions in `validation/exceptions.py`:
 
 ---
 
-## Key Differences from rade_ml (TensorFlow)
+## 9. Key Differences from rade_ml (TensorFlow)
 
 | Aspect | rade_ml (TensorFlow) | rade_ml_pt (PyTorch) |
 |---|---|---|
@@ -1193,7 +1208,7 @@ Custom exceptions in `validation/exceptions.py`:
 
 ---
 
-## Summary: Model-Independent vs Model-Dependent
+## 10. Summary: Model-Independent vs Model-Dependent
 
 | Component | Model-independent | Model-dependent |
 |---|---|---|

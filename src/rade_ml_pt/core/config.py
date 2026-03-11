@@ -93,7 +93,7 @@ class EarlyStoppingConfig:
     """Configuration for early stopping during training."""
 
     patience: int = 10
-    min_delta: float = 1e-4
+    min_delta: float = 0.0
     monitor: str = "val_loss"
     mode: str = "min"
     restore_best_weights: bool = True
@@ -346,14 +346,14 @@ class TrainingConfig:
             optimizer=OptimizerConfig.from_dict(d["optimizer"]) if d.get("optimizer") else OptimizerConfig(),
             lr_schedule=LrScheduleConfig.from_dict(d["lr_schedule"]) if d.get("lr_schedule") else None,
             lr_reduction=ReduceLrConfig.from_dict(d["lr_reduction"]) if d.get("lr_reduction") else None,
-            early_stopping=EarlyStoppingConfig.from_dict(d["early_stopping"]) if d.get("early_stopping") else None,
+            early_stopping=EarlyStoppingConfig.from_dict(d["early_stopping"]) if d.get("early_stopping") else EarlyStoppingConfig(),
             checkpoint=CheckpointConfig.from_dict(d["checkpoint"]) if d.get("checkpoint") else None,
             loss=d.get("loss", "mae"),
-            metrics=d.get("metrics"),
-            mixed_precision=d.get("mixed_precision"),
-            compile_model=d.get("compile_model"),
+            metrics=d.get("metrics", ["mae", "mse"]),
+            mixed_precision=d.get("mixed_precision", False),
+            compile_model=d.get("compile_model", False),
             strategy=d.get("strategy"),
-            verbose=d.get("verbose"),
+            verbose=d.get("verbose", False),
             log_dir=d.get("log_dir"),
         )
 

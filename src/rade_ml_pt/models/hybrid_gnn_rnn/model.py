@@ -13,7 +13,8 @@ Architecture flow:
     4. TargetAttentionLayer — self-attention over targets [B, n_targets, attn_dim]
     5. TargetPnlOutput — per-target PnL logits [B, n_targets]
 
-LayerNorm is applied after each block (GNN, RNN, Fusion) for training stability.
+LayerNorm is applied after GNN and RNN blocks for training stability.
+    FusionLayer applies its own internal LayerNorm.
 """
 from __future__ import annotations
 
@@ -101,11 +102,25 @@ class HybridGnnRnn(BaseModel):
         # Read units from each layer's parameters config.
         gnn_units = self.gnn_config.get("parameters", {}).get("units", 128)
         rnn_units = self.rnn_config.get("parameters", {}).get("units", 128)
-        fusion_units = self.fusion_config.get("parameters", {}).get("units", 64)
+
+        rnn_layer_type = self.rnn_config.get("general", {}).get("layer_type", "lstm")
+        rnn_ln_dim = rnn_units * 2 if rnn_layer_type == "bilstm" else rnn_units
 
         self.gnn_block_ln = nn.LayerNorm(gnn_units, eps=1e-5)
-        self.rnn_block_ln = nn.LayerNorm(rnn_units, eps=1e-5)
-        self.fusion_ln = nn.LayerNorm(fusion_units, eps=1e-5)
+        self.rnn_block_ln = nn.LayerNorm(rnn_ln_dim, eps=1e-5)
+
+        # Cache for static GNN outputs (trade_features + adjacency are batch-invariant).
+        # Cleared on train()/eval() mode switch and by invalidate_gnn_cache().
+        self._gnn_cache: Dict[str, Any] = {}
+
+    def train(self, mode: bool = True):
+        """Override to clear GNN cache on mode switch (train <-> eval)."""
+        self._gnn_cache.clear()
+        return super().train(mode)
+
+    def invalidate_gnn_cache(self) -> None:
+        """Explicitly clear the cached GNN features (call if graph structure changes)."""
+        self._gnn_cache.clear()
 
     def forward(self, inputs: Dict[str, Any], **kwargs) -> torch.Tensor:
         """
@@ -161,16 +176,27 @@ class HybridGnnRnn(BaseModel):
         """
         Core model logic: GNN -> RNN -> Fusion -> Attention -> Projection.
 
-        Kept separate from forward() for clarity and to allow direct invocation
-        when adjacency is already constructed.
+        GNN features and the target adjacency submatrix depend only on
+        trade_features, adjacency, and target_indices -- all of which are
+        static (batch-invariant) inputs.  They are computed once and cached
+        for the duration of the epoch, avoiding redundant work across batches.
 
         :param inputs: Tuple of (trade_features, pnl_history, adjacency, target_indices).
         :return: PnL predictions [batch, num_targets].
         """
         trade_features, elementary_pnl, adjacency, target_indices = inputs
 
-        gnn_features = self.gnn_block(trade_features, adjacency)
-        gnn_features = self.gnn_block_ln(gnn_features)
+        # GNN features depend only on static inputs (trade_features + adjacency).
+        # During eval/inference we cache them to avoid redundant computation
+        # across batches.  During training we recompute every batch so that
+        # gradients flow correctly back through the GNN block.
+        if not self.training and "gnn_features" in self._gnn_cache:
+            gnn_features = self._gnn_cache["gnn_features"]
+        else:
+            gnn_features = self.gnn_block(trade_features, adjacency)
+            gnn_features = self.gnn_block_ln(gnn_features)
+            if not self.training:
+                self._gnn_cache["gnn_features"] = gnn_features
 
         rnn_features = self.rnn_block(elementary_pnl)
         rnn_features = self.rnn_block_ln(rnn_features)
@@ -178,7 +204,6 @@ class HybridGnnRnn(BaseModel):
         fused_features = self.fusion_layer(
             inputs=(gnn_features, rnn_features, adjacency),
         )
-        fused_features = self.fusion_ln(fused_features)
 
         attended_features = self.attention_layer(
             fused_features, adjacency, target_indices,

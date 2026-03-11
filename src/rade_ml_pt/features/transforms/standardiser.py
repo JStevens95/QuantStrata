@@ -10,10 +10,14 @@ from sklearn.preprocessing import FunctionTransformer
 from src.rade_ml_pt.validation.exceptions import UndefinedTransformerType
 
 
+def _passthrough(x: Any) -> Any:
+    return x
+
+
 def get_transformer(transform_type: str) -> Any:
     """Get standard transformer object."""
     if transform_type.lower() == "none":
-        return FunctionTransformer(func=lambda x: x, inverse_func=lambda x: x)
+        return FunctionTransformer(func=_passthrough, inverse_func=_passthrough)
     if transform_type.lower() == "standard":
         return preprocessing.StandardScaler()
     elif transform_type.lower() == "minmax":

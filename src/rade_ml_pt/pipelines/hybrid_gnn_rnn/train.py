@@ -188,8 +188,8 @@ class HybridGnnRnnTrainPipeline(TrainPipeline):
         universe = {
             "elementary_ids": data_result.metadata.get("elementary_ids", []),
             "target_ids": data_result.metadata.get("target_ids", []),
-            "elementary_idx": [int(x) for x in data_result.metadata.get("elementary_idx", [])],
-            "target_idx": [int(x) for x in data_result.metadata.get("target_idx", [])],
+            "elementary_idx": data_result.metadata.get("elementary_idx", []),
+            "target_idx": data_result.metadata.get("target_idx", []),
             "selected_trades": data_result.metadata.get("selected_trades", []),
             "removed_trades": data_result.metadata.get("removed_trades", []),
         }

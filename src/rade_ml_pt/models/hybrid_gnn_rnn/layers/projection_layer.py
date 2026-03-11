@@ -18,17 +18,25 @@ from typing import Dict, Any, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+def _leaky_relu(x: torch.Tensor) -> torch.Tensor:
+    return F.leaky_relu(x, negative_slope=0.2)
+
+
+def _identity(x: torch.Tensor) -> torch.Tensor:
+    return x
+
+
 # Mapping from activation name strings to callable torch functions.
 _ACTIVATION_MAP = {
     "relu": F.relu,
-    "leaky_relu": lambda x: F.leaky_relu(x, negative_slope=0.2),
+    "leaky_relu": _leaky_relu,
     "gelu": F.gelu,
     "tanh": torch.tanh,
     "sigmoid": torch.sigmoid,
     "elu": F.elu,
     "selu": F.selu,
-    "linear": lambda x: x,
-    None: lambda x: x,
+    "linear": _identity,
+    None: _identity,
 }
 
 

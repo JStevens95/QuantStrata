@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import Any, Dict
 from numpy.typing import NDArray
 from sklearn.neighbors import NearestNeighbors
-from scipy.sparse import coo_matrix, csr_matrix, diags
+from scipy.sparse import coo_matrix, csr_matrix
 
 logger = logging.getLogger(__name__)
 
@@ -649,9 +649,10 @@ class TradeGraphBuilder:
     @staticmethod
     def _row_normalise(adj) -> csr_matrix:
         """D^{-1}A row normalisation: multiply each row by 1/row_sum so rows sum to 1."""
-        row_sum = np.asarray(adj.sum(axis=1)).ravel().astype(np.float32)
+        csr = csr_matrix(adj)
+        row_sum = np.asarray(csr.sum(axis=1)).ravel().astype(np.float32)
         inv = np.divide(1.0, row_sum, out=np.zeros_like(row_sum), where=row_sum > 0)
-        return diags(inv) @ adj
+        return csr.multiply(inv.reshape(-1, 1)).tocsr()
 
     @staticmethod
     def _scale_embedding(emb: NDArray) -> NDArray:

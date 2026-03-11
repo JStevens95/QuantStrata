@@ -15,6 +15,7 @@ Usage::
 """
 from __future__ import annotations
 
+import gc
 import logging
 import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
@@ -24,7 +25,7 @@ import torch
 import torch.nn as nn
 
 from src.rade_ml_pt.core.types import TrainingResult
-from src.rade_ml_pt.training.callbacks import Callback, get_standard_callbacks
+from src.rade_ml_pt.training.callbacks import Callback, EarlyStopping, get_standard_callbacks
 
 if TYPE_CHECKING:
     from src.rade_ml_pt.core.config import TrainingConfig
@@ -145,11 +146,22 @@ class Trainer:
             if hasattr(cb, "set_optimizer") and self.optimizer is not None:
                 cb.set_optimizer(self.optimizer)
 
+        if self.config.verbose:
+            es_cb = next((cb for cb in callbacks if isinstance(cb, EarlyStopping)), None)
+            if es_cb:
+                print(
+                    f"[Trainer] EarlyStopping active: monitor={es_cb.monitor}, "
+                    f"patience={es_cb.patience}, min_delta={es_cb.min_delta}, mode={es_cb.mode}"
+                )
+            print(f"[Trainer] epochs={self.config.epochs}, val_data={'provided' if val_data is not None else 'NONE'}")
+
         history: Dict[str, List[float]] = {}
         start_time = time.time()
 
         for cb in callbacks:
             cb.on_train_begin()
+
+        gc.disable()
 
         for epoch in range(self.config.epochs):
             epoch_start = time.time()
@@ -179,9 +191,9 @@ class Trainer:
 
             # ---- validation pass ----
             if val_data is not None:
-                val_loss = self._run_validation(val_data)
-                if val_loss is not None:
-                    logs["val_loss"] = val_loss
+                val_metrics = self._run_validation(val_data)
+                if val_metrics is not None:
+                    logs.update(val_metrics)
 
             # Step LR scheduler (per-epoch)
             if self.scheduler is not None:
@@ -191,18 +203,46 @@ class Trainer:
             for key, value in logs.items():
                 history.setdefault(key, []).append(value)
 
-            # Built-in epoch progress (mirrors Keras verbose=1 behaviour)
-            if self.config.verbose:
-                epoch_t = time.time() - epoch_start
-                parts = "  ".join(f"{k}={v:.6f}" for k, v in logs.items())
-                print(f"Epoch {epoch + 1}/{self.config.epochs}  {parts}  [{epoch_t:.1f}s]")
-
             for cb in callbacks:
                 cb.on_epoch_end(epoch, logs)
+
+            # Built-in epoch progress (mirrors Keras verbose=1)
+            if self.config.verbose:
+                epoch_t = time.time() - epoch_start
+                n_batches = len(train_losses)
+                ms_per_step = (epoch_t / n_batches * 1000) if n_batches else 0
+
+                bar_width = 20
+                progress = "━" * bar_width
+
+                metric_parts = []
+                for k, v in logs.items():
+                    metric_parts.append(f"{k}: {v:.4f}")
+
+                current_lr = self.optimizer.param_groups[0]["lr"]
+                metric_parts.append(f"lr: {current_lr:.4e}")
+
+                es_info = ""
+                for cb in callbacks:
+                    if hasattr(cb, "wait") and hasattr(cb, "patience"):
+                        es_info = f" - es: {cb.wait}/{cb.patience}"
+                        break
+
+                metrics_str = " - ".join(metric_parts)
+                print(
+                    f"Epoch {epoch + 1}/{self.config.epochs}\n"
+                    f"{n_batches}/{n_batches} {progress} "
+                    f"{epoch_t:.0f}s {ms_per_step:.0f}ms/step - {metrics_str}{es_info}"
+                )
 
             # Early stopping check
             if any(getattr(cb, "stop_training", False) for cb in callbacks):
                 break
+
+            # Controlled GC between epochs instead of random mid-batch pauses
+            gc.collect()
+
+        gc.enable()
 
         for cb in callbacks:
             cb.on_train_end()
@@ -249,17 +289,40 @@ class Trainer:
         if self.config.optimizer.clipvalue:
             torch.nn.utils.clip_grad_value_(self.model.parameters(), self.config.optimizer.clipvalue)
 
-    def _run_validation(self, val_data: Any) -> Optional[float]:
-        """Compute mean validation loss over *val_data*."""
+    def _run_validation(self, val_data: Any) -> Optional[Dict[str, float]]:
+        """Compute validation loss and metrics over *val_data*."""
         self.model.eval()
+        all_preds: List[torch.Tensor] = []
+        all_targets: List[torch.Tensor] = []
         val_losses: List[float] = []
+
         with torch.no_grad():
             for batch in val_data:
                 inputs, targets = self._unpack_batch(batch)
                 outputs = self.model(inputs)
                 if targets is not None:
                     val_losses.append(self.loss_fn(outputs, targets).item())
-        return float(np.mean(val_losses)) if val_losses else None
+                    all_preds.append(outputs.detach().cpu())
+                    all_targets.append(targets.detach().cpu())
+
+        if not val_losses:
+            return None
+
+        metrics: Dict[str, float] = {"val_loss": float(np.mean(val_losses))}
+
+        if all_preds and self.config.metrics:
+            preds = torch.cat(all_preds)
+            tgts = torch.cat(all_targets)
+            for name in self.config.metrics:
+                key = name.lower()
+                if key == "mae":
+                    metrics["val_mae"] = float((preds - tgts).abs().mean().item())
+                elif key == "mse":
+                    metrics["val_mse"] = float(((preds - tgts) ** 2).mean().item())
+                elif key == "rmse":
+                    metrics["val_rmse"] = float(((preds - tgts) ** 2).mean().sqrt().item())
+
+        return metrics
 
     def _build_result(self, history: Dict[str, List[float]], total_time: float) -> TrainingResult:
         """Construct the canonical :class:`TrainingResult` from accumulated data."""
