@@ -52,7 +52,7 @@ def _sparse_max_aggregation(x: torch.Tensor, adjacency: torch.Tensor, num_nodes:
     For each node i, computes max over {x[j] : (i, j) is an edge} across each feature.
     Isolated nodes (no neighbors) get zeros instead of -inf.
     """
-    indices = adjacency.coalesce().indices()  # [2, nnz] — row and column edge indices
+    indices = adjacency.indices() if adjacency.is_coalesced() else adjacency.coalesce().indices()
     rows, cols = indices[0], indices[1]
 
     # Gather neighbor features for every edge, then scatter-reduce to max per row.

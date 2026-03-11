@@ -262,7 +262,7 @@ def _plot_adjacency_heatmap(
     cmap.set_bad(color=_BG_COLOUR)
     masked = np.ma.masked_where(adj_plot == 0, adj_plot)
     im = ax.imshow(masked, cmap=cmap, aspect="auto", interpolation="nearest")
-    plt.colorbar(im, ax=ax, shrink=0.8, label="Edge weight")
+    plt.colorbar(im, ax=ax, shrink=0.8, pad=0.02, fraction=0.046, label="Edge weight")
 
     # Colour strip above heatmap (axes coords): blue=elementary, red=target
     strip = np.array([[0 if i < n_elem else 1 for i in range(n)]], dtype=float)
@@ -314,7 +314,7 @@ def _plot_network(
     """Panel (b): force-directed network layout."""
     ax.set_facecolor(_BG_COLOUR)
 
-    pos = nx.spring_layout(G, seed=42, k=2.5 / max(1, np.sqrt(n)), iterations=80)
+    pos = nx.spring_layout(G, seed=42, k=3.5 / max(1, np.sqrt(n)), iterations=100)
 
     edge_weights = np.array([d["weight"] for _, _, d in G.edges(data=True)])
     if len(edge_weights) > max_edges:
@@ -325,29 +325,39 @@ def _plot_network(
         draw_edges = list(G.edges())
         draw_weights = list(edge_weights)
 
+    # Draw nodes first (low zorder) so edges render on top
+    node_sizes = np.where(
+        np.array([G.nodes[i]["is_target"] for i in G.nodes()]), 25, 10,
+    )
+    nx.draw_networkx_nodes(
+        G, pos, ax=ax, node_color=list(node_colours), node_size=node_sizes,
+        edgecolors="white", linewidths=0.3, alpha=0.7,
+    )
+
+    # Draw edges on top of nodes
+    _TGT_EDGE = "#EF4444"
+    _CROSS_EDGE = "#8B5CF6"
+
     if draw_weights:
         w_arr = np.array(draw_weights)
-        edge_alphas = 0.08 + 0.5 * (w_arr / max(w_arr.max(), 1e-9))
-        edge_widths = 0.3 + 1.2 * (w_arr / max(w_arr.max(), 1e-9))
+        edge_alphas = 0.25 + 0.55 * (w_arr / max(w_arr.max(), 1e-9))
+        edge_widths = 0.5 + 1.5 * (w_arr / max(w_arr.max(), 1e-9))
     else:
         edge_alphas, edge_widths = [], []
 
     for (u, v), alpha, width in zip(draw_edges, edge_alphas, edge_widths):
-        ax.annotate(
-            "", xy=pos[v], xytext=pos[u],
-            arrowprops=dict(
-                arrowstyle="-", color=_EDGE_COLOUR, alpha=float(alpha),
-                lw=float(width), connectionstyle="arc3,rad=0.05",
-            ),
+        u_tgt = G.nodes[u]["is_target"]
+        v_tgt = G.nodes[v]["is_target"]
+        if u_tgt and v_tgt:
+            colour = _TGT_EDGE
+        elif u_tgt or v_tgt:
+            colour = _CROSS_EDGE
+        else:
+            colour = _EDGE_COLOUR
+        ax.plot(
+            [pos[u][0], pos[v][0]], [pos[u][1], pos[v][1]],
+            color=colour, alpha=float(alpha), linewidth=float(width), zorder=3,
         )
-
-    node_sizes = np.where(
-        np.array([G.nodes[i]["is_target"] for i in G.nodes()]), 60, 30,
-    )
-    nx.draw_networkx_nodes(
-        G, pos, ax=ax, node_color=list(node_colours), node_size=node_sizes,
-        edgecolors="white", linewidths=0.4,
-    )
 
     ax.set_title("(b)  Network Layout", fontsize=13, fontweight="bold", pad=10)
     ax.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
@@ -355,8 +365,11 @@ def _plot_network(
     legend = [
         Line2D([0], [0], marker="o", color="w", markerfacecolor=_ELEM_COLOUR, markersize=8, label="Elementary"),
         Line2D([0], [0], marker="o", color="w", markerfacecolor=_TARGET_COLOUR, markersize=10, label="Target"),
+        Line2D([0], [0], color=_CROSS_EDGE, alpha=0.6, linewidth=1.2, label="Target ↔ Elementary"),
+        Line2D([0], [0], color=_TGT_EDGE, alpha=0.6, linewidth=1.2, label="Target ↔ Target"),
+        Line2D([0], [0], color=_EDGE_COLOUR, alpha=0.6, linewidth=1.2, label="Elementary ↔ Elementary"),
     ]
-    ax.legend(handles=legend, loc="upper right", fontsize=9, framealpha=0.9)
+    ax.legend(handles=legend, loc="upper right", fontsize=8, framealpha=0.9)
 
 
 def _plot_degree_distribution_from_edges(
@@ -431,18 +444,20 @@ def _plot_feature_projection_from_edges(
         keep = weights >= threshold
         rows, cols, weights = rows[keep], cols[keep], weights[keep]
 
+    # Draw nodes first (low zorder) so edges render on top
+    sizes = np.where(is_target, 20, 8)
+    ax.scatter(
+        proj[:, 0], proj[:, 1], c=list(node_colours), s=sizes,
+        edgecolors="white", linewidths=0.2, alpha=0.7, zorder=1,
+    )
+
+    # Draw edges on top of nodes
     w_norm = weights / max(weights.max(), 1e-9)
     for r, c, w in zip(rows, cols, w_norm):
         ax.plot(
             [proj[r, 0], proj[c, 0]], [proj[r, 1], proj[c, 1]],
-            color=_EDGE_COLOUR, alpha=float(0.05 + 0.35 * w), linewidth=0.4, zorder=1,
+            color=_EDGE_COLOUR, alpha=float(0.25 + 0.55 * w), linewidth=0.7, zorder=3,
         )
-
-    sizes = np.where(is_target, 40, 18)
-    ax.scatter(
-        proj[:, 0], proj[:, 1], c=list(node_colours), s=sizes,
-        edgecolors="white", linewidths=0.3, zorder=2,
-    )
 
     ax.set_xlabel("PC 1")
     ax.set_ylabel("PC 2")

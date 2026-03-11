@@ -3,6 +3,7 @@ Evaluation plots: residual diagnostics, prediction analysis, and model compariso
 
 Usage:
     from rade_ml_pt.evaluation.plots import plot_residual_distribution, plot_predicted_vs_actual
+    from rade_ml_pt.evaluation.plots import save_evaluation_plots
 """
 from src.rade_ml_pt.evaluation.plots.residuals import (
     plot_residual_distribution,
@@ -16,6 +17,7 @@ from src.rade_ml_pt.evaluation.plots.predictions import (
     plot_cumulative_error,
     plot_prediction_timeseries,
 )
+from src.rade_ml_pt.evaluation.plots.save_plots import save_evaluation_plots
 
 __all__ = [
     # residuals
@@ -28,4 +30,6 @@ __all__ = [
     "plot_error_distribution",
     "plot_cumulative_error",
     "plot_prediction_timeseries",
+    # pipeline
+    "save_evaluation_plots",
 ]

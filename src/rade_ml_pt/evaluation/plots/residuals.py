@@ -29,6 +29,7 @@ def plot_residual_distribution(
     bins: int = 80,
     figsize: tuple = (14, 5),
     save_path: Optional[Union[str, Path]] = None,
+    show: bool = True,
 ) -> None:
     """
     Histogram + KDE of residuals with summary statistics overlay.
@@ -68,13 +69,17 @@ def plot_residual_distribution(
 
     plt.tight_layout()
     _maybe_save(fig, save_path, "residual_distribution.png")
-    plt.show()
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
 
 
 def plot_qq(
     result: "EvaluationResult",
     figsize: tuple = (6, 6),
     save_path: Optional[Union[str, Path]] = None,
+    show: bool = True,
 ) -> None:
     """
     QQ plot of residuals against a standard normal distribution.
@@ -96,7 +101,10 @@ def plot_qq(
 
     plt.tight_layout()
     _maybe_save(fig, save_path, "residual_qq.png")
-    plt.show()
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
 
 
 def plot_residual_scatter(
@@ -104,6 +112,7 @@ def plot_residual_scatter(
     figsize: tuple = (10, 5),
     alpha: float = 0.3,
     save_path: Optional[Union[str, Path]] = None,
+    show: bool = True,
 ) -> None:
     """
     Scatter plot of residuals against predicted values.
@@ -136,7 +145,10 @@ def plot_residual_scatter(
 
     plt.tight_layout()
     _maybe_save(fig, save_path, "residual_scatter.png")
-    plt.show()
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
 
 
 def plot_residual_by_target(
@@ -145,6 +157,7 @@ def plot_residual_by_target(
     top_n: int = 20,
     figsize: tuple = (12, 6),
     save_path: Optional[Union[str, Path]] = None,
+    show: bool = True,
 ) -> None:
     """
     Per-target MAE bar chart showing which targets the model struggles with.
@@ -176,14 +189,17 @@ def plot_residual_by_target(
     ax.barh(range(len(order)), values, color="#4C72B0", edgecolor="black", linewidth=0.3)
     ax.set_yticks(range(len(order)))
     ax.set_yticklabels(labels, fontsize=8)
-    ax.invert_yaxis()
     ax.set_xlabel("MAE")
+    ax.invert_yaxis()  # no args: flips y so worst (first in order) is at top
     ax.set_title(f"Top {top_n} Targets by MAE")
     ax.grid(True, axis="x", alpha=0.3)
 
     plt.tight_layout()
     _maybe_save(fig, save_path, "residual_by_target.png")
-    plt.show()
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
 
 
 # ---------------------------------------------------------------------------

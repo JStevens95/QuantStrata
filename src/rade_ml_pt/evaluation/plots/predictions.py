@@ -28,6 +28,7 @@ def plot_predicted_vs_actual(
     figsize: tuple = (7, 7),
     alpha: float = 0.3,
     save_path: Optional[Union[str, Path]] = None,
+    show: bool = True,
 ) -> None:
     """
     Scatter plot of predicted vs actual values with a 45-degree reference line.
@@ -61,7 +62,10 @@ def plot_predicted_vs_actual(
 
     plt.tight_layout()
     _maybe_save(fig, save_path, "predicted_vs_actual.png")
-    plt.show()
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
 
 
 def plot_error_distribution(
@@ -69,6 +73,7 @@ def plot_error_distribution(
     bins: int = 60,
     figsize: tuple = (10, 5),
     save_path: Optional[Union[str, Path]] = None,
+    show: bool = True,
 ) -> None:
     """
     Histogram of absolute errors with P95 and P99 vertical lines.
@@ -97,13 +102,17 @@ def plot_error_distribution(
 
     plt.tight_layout()
     _maybe_save(fig, save_path, "error_distribution.png")
-    plt.show()
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
 
 
 def plot_cumulative_error(
     result: "EvaluationResult",
     figsize: tuple = (10, 5),
     save_path: Optional[Union[str, Path]] = None,
+    show: bool = True,
 ) -> None:
     """
     Empirical CDF of absolute errors.
@@ -132,7 +141,10 @@ def plot_cumulative_error(
 
     plt.tight_layout()
     _maybe_save(fig, save_path, "cumulative_error.png")
-    plt.show()
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
 
 
 def plot_prediction_timeseries(
@@ -141,6 +153,7 @@ def plot_prediction_timeseries(
     scenario_labels: Optional[list] = None,
     figsize: tuple = (14, 5),
     save_path: Optional[Union[str, Path]] = None,
+    show: bool = True,
 ) -> None:
     """
     Time-series overlay of predicted vs actual for a single target.
@@ -187,7 +200,10 @@ def plot_prediction_timeseries(
 
     plt.tight_layout()
     _maybe_save(fig, save_path, f"prediction_timeseries_t{target_idx}.png")
-    plt.show()
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
 
 
 # ---------------------------------------------------------------------------

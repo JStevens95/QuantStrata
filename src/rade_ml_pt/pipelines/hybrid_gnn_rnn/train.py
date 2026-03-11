@@ -18,6 +18,21 @@ from typing import Any, TYPE_CHECKING, Optional
 from src.rade_ml_pt.pipelines.base import TrainPipeline
 from src.rade_ml_pt.pipelines.config import PipelineConfig
 from src.rade_ml_pt.data.hybrid_gnn_rnn.config import HybridGnnRnnDataConfig
+
+
+def _json_safe(obj):
+    """Convert numpy types to native Python for JSON serialisation."""
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    if isinstance(obj, (np.str_,)):
+        return str(obj)
+    if isinstance(obj, (np.bool_,)):
+        return bool(obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 from src.rade_ml_pt.data.hybrid_gnn_rnn.build import build_dataset
 
 if TYPE_CHECKING:
@@ -194,7 +209,7 @@ class HybridGnnRnnTrainPipeline(TrainPipeline):
             "removed_trades": data_result.metadata.get("removed_trades", []),
         }
         with open(version_dir / "trade_universe.json", "w") as f:
-            json.dump(universe, f, indent=2)
+            json.dump(universe, f, indent=2, default=_json_safe)
 
         if data_result.target_pnl is not None:
             data_result.target_pnl.to_parquet(version_dir / "target_pnl.parquet")
@@ -203,10 +218,10 @@ class HybridGnnRnnTrainPipeline(TrainPipeline):
 
         if data_result.target_attributes is not None:
             with open(version_dir / "target_attributes.json", "w") as f:
-                json.dump(data_result.target_attributes, f, indent=2)
+                json.dump(data_result.target_attributes, f, indent=2, default=_json_safe)
         if data_result.elementary_attributes is not None:
             with open(version_dir / "elementary_attributes.json", "w") as f:
-                json.dump(data_result.elementary_attributes, f, indent=2)
+                json.dump(data_result.elementary_attributes, f, indent=2, default=_json_safe)
 
         self._save_datasets(version_dir, data_result)
 

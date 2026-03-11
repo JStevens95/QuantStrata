@@ -122,6 +122,45 @@ class HybridGnnRnn(BaseModel):
         """Explicitly clear the cached GNN features (call if graph structure changes)."""
         self._gnn_cache.clear()
 
+    def _get_adjacency(self, inputs: Dict[str, Any]) -> torch.Tensor:
+        """Build or retrieve the cached sparse adjacency matrix.
+
+        The adjacency is static (batch-invariant) so we build it once on the
+        first forward call and cache it for all subsequent batches within the
+        same train/eval epoch.  The cache is cleared on mode switch via
+        ``train()`` and can be manually invalidated with ``invalidate_gnn_cache()``.
+        """
+        if "adjacency" in self._gnn_cache:
+            return self._gnn_cache["adjacency"]
+
+        indices = inputs["adjacency_indices"]
+        values = inputs["adjacency_values"]
+        shape = inputs["adjacency_dense_shape"]
+
+        # Ensure raw numpy arrays from the data pipeline are converted.
+        if not isinstance(indices, torch.Tensor):
+            indices = torch.as_tensor(indices, dtype=torch.long)
+        if not isinstance(values, torch.Tensor):
+            values = torch.as_tensor(values, dtype=torch.float32)
+        if not isinstance(shape, torch.Tensor):
+            shape = torch.as_tensor(shape, dtype=torch.long)
+
+        # Data pipeline stores indices as [nnz, 2]; sparse_coo_tensor expects [2, nnz].
+        if indices.dim() == 2 and indices.shape[1] == 2:
+            indices = indices.t().contiguous()
+
+        # Expect 1-D shape [2] from _collate_dict_batch; fail fast if not.
+        if shape.dim() != 1:
+            raise ValueError(
+                f"adjacency_dense_shape should be 1-D but got shape {tuple(shape.shape)}. "
+                f"Check that DataLoader uses _collate_dict_batch."
+            )
+        # int() cast handles float tensors that can arise from torch.load().
+        size = tuple(int(s) for s in shape.tolist())
+        adjacency = torch.sparse_coo_tensor(indices, values, size).coalesce()
+        self._gnn_cache["adjacency"] = adjacency
+        return adjacency
+
     def forward(self, inputs: Dict[str, Any], **kwargs) -> torch.Tensor:
         """
         Forward pass: validate inputs, reconstruct sparse adjacency, run the model.
@@ -134,34 +173,11 @@ class HybridGnnRnn(BaseModel):
             elementary_indices, target_indices.
         :return: PnL predictions [batch, num_targets].
         """
-        # Ensure all required keys are present in the input dict.
-        validate_dict_keys(input_dict=inputs, keys=_REQUIRED_KEYS)
+        if not getattr(self, "_keys_validated", False):
+            validate_dict_keys(input_dict=inputs, keys=_REQUIRED_KEYS)
+            self._keys_validated = True
 
-        # Reconstruct sparse adjacency from stored components.
-        # Data pipeline stores indices as [nnz, 2]; PyTorch sparse_coo_tensor
-        # expects indices as [2, nnz].
-        adj_indices = inputs["adjacency_indices"]
-        adj_values = inputs["adjacency_values"]
-        adj_shape = inputs["adjacency_dense_shape"]
-
-        # Convert numpy arrays to tensors if needed.
-        if not isinstance(adj_indices, torch.Tensor):
-            adj_indices = torch.as_tensor(adj_indices, dtype=torch.long)
-        if not isinstance(adj_values, torch.Tensor):
-            adj_values = torch.as_tensor(adj_values, dtype=torch.float32)
-        if not isinstance(adj_shape, torch.Tensor):
-            adj_shape = torch.as_tensor(adj_shape, dtype=torch.long)
-
-        # Transpose indices from [nnz, 2] to [2, nnz] for PyTorch sparse COO format.
-        if adj_indices.dim() == 2 and adj_indices.shape[1] == 2:
-            adj_indices = adj_indices.t().contiguous()
-
-        # Build sparse COO tensor and coalesce for efficient operations.
-        adjacency = torch.sparse_coo_tensor(
-            indices=adj_indices,
-            values=adj_values,
-            size=tuple(adj_shape.tolist()),
-        ).coalesce()
+        adjacency = self._get_adjacency(inputs)
 
         return self.run_model(
             inputs=(

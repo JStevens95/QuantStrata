@@ -321,8 +321,20 @@ class EvalPipeline(abc.ABC):
         Optional hook for custom post-evaluation actions.
 
         The loaded model's RegistryEntry is available via ``self._loaded_entry``.
+        When ``config.artifacts_dir`` and ``self._loaded_entry`` are set, standard
+        evaluation plots (predicted vs actual, residual distribution, etc.) are
+        saved to ``artifacts_dir/evaluation/{version}/``.
         """
-        pass
+        if config.artifacts_dir and self._loaded_entry is not None:
+            try:
+                from src.rade_ml_pt.evaluation.plots import save_evaluation_plots
+
+                version = self._loaded_entry.version
+                eval_dir = Path(config.artifacts_dir) / "evaluation" / version
+                save_evaluation_plots(eval_result, eval_dir)
+                logger.info("Saved evaluation plots to %s", eval_dir)
+            except Exception as exc:
+                logger.warning("Could not generate evaluation plots: %s", exc)
 
     def get_target_scaler(self, data_result: "DataBuildResult") -> Optional[Any]:
         """

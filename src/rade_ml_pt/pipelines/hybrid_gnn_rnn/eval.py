@@ -149,6 +149,7 @@ class HybridGnnRnnEvalPipeline(EvalPipeline):
         import pandas as pd
         import joblib
         from torch.utils.data import DataLoader
+        from src.rade_ml_pt.data.dataset import _collate_dict_batch
 
         if self._loaded_entry is None:
             return None
@@ -160,18 +161,19 @@ class HybridGnnRnnEvalPipeline(EvalPipeline):
             return None
 
         # reconstruct DataLoaders from saved datasets
+        # _collate_dict_batch preserves static tensors (adjacency) without adding batch dims
         test_dataset = torch.load(str(ds_dir / "test.pt"), weights_only=False)
-        test_ds = DataLoader(test_dataset, batch_size=32, shuffle=False)
+        test_ds = DataLoader(test_dataset, batch_size=32, shuffle=False, collate_fn=_collate_dict_batch)
 
         train_ds = None
         if (ds_dir / "train.pt").exists():
             train_dataset = torch.load(str(ds_dir / "train.pt"), weights_only=False)
-            train_ds = DataLoader(train_dataset, batch_size=32, shuffle=False)
+            train_ds = DataLoader(train_dataset, batch_size=32, shuffle=False, collate_fn=_collate_dict_batch)
 
         val_ds = None
         if (ds_dir / "val.pt").exists():
             val_dataset = torch.load(str(ds_dir / "val.pt"), weights_only=False)
-            val_ds = DataLoader(val_dataset, batch_size=32, shuffle=False)
+            val_ds = DataLoader(val_dataset, batch_size=32, shuffle=False, collate_fn=_collate_dict_batch)
 
         metadata = {}
         scaler_path = version_dir / "target_scaler.pkl"
@@ -228,6 +230,8 @@ class HybridGnnRnnEvalPipeline(EvalPipeline):
         data_result: Optional["DataBuildResult"] = None,
         split_predictions: Optional[Dict[str, Dict[str, np.ndarray]]] = None,
     ) -> None:
+        super().post_eval(eval_result, config, data_result=data_result)
+
         if eval_result.metrics:
             loss_str = f"{eval_result.loss:.6f}" if eval_result.loss is not None else "N/A"
             logger.info(
