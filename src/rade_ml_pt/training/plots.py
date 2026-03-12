@@ -95,20 +95,20 @@ def _create_training_figure(
     ax_c.set_title("(c)  Val/Train Ratio")
     ax_c.grid(True, alpha=0.3)
 
-    # --- (d) Other metrics ---
+    # --- (d) Other metrics (val_mae, val_mse, etc. from TrainingConfig.metrics) ---
     skip = {"loss", "val_loss"}
-    other = [(k, v) for k, v in history.items() if k not in skip and len(v) == n_epochs]
+    other = [(k, v) for k, v in history.items() if k not in skip and isinstance(v, (list, tuple)) and len(v) == n_epochs]
     if other:
         for k, v in other:
-            ax_d.plot(epochs, v, label=k.replace("_", " "), linewidth=1.2)
+            ax_d.plot(epochs, np.asarray(v), label=k.replace("_", " "), linewidth=1.2)
         if result.best_epoch > 0:
             ax_d.axvline(result.best_epoch, color="green", linestyle="--", alpha=0.7)
         ax_d.legend(fontsize=8)
     else:
         ax_d.text(
             0.5, 0.5,
-            "No additional metrics\n(loss & val_loss only)",
-            ha="center", va="center", transform=ax_d.transAxes, fontsize=11,
+            "No additional metrics\n\nSet training_config.metrics to e.g.\n[\"mae\", \"mse\"] to plot val_mae, val_mse.",
+            ha="center", va="center", transform=ax_d.transAxes, fontsize=10,
         )
     ax_d.set_xlabel("Epoch")
     ax_d.set_ylabel("Metric")

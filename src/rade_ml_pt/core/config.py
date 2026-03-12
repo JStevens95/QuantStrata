@@ -349,7 +349,7 @@ class TrainingConfig:
             early_stopping=EarlyStoppingConfig.from_dict(d["early_stopping"]) if d.get("early_stopping") else EarlyStoppingConfig(),
             checkpoint=CheckpointConfig.from_dict(d["checkpoint"]) if d.get("checkpoint") else None,
             loss=d.get("loss", "mae"),
-            metrics=d.get("metrics", ["mae", "mse"]),
+            metrics=d.get("metrics") or ["mae", "mse"],
             mixed_precision=d.get("mixed_precision", False),
             compile_model=d.get("compile_model", False),
             strategy=d.get("strategy"),

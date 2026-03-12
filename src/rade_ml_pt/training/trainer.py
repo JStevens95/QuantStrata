@@ -290,7 +290,7 @@ class Trainer:
             torch.nn.utils.clip_grad_value_(self.model.parameters(), self.config.optimizer.clipvalue)
 
     def _run_validation(self, val_data: Any) -> Optional[Dict[str, float]]:
-        """Compute validation loss and metrics over *val_data*."""
+        """Compute mean validation loss and optional metrics (val_mae, val_mse, val_rmse) over *val_data*."""
         self.model.eval()
         all_preds: List[torch.Tensor] = []
         all_targets: List[torch.Tensor] = []
@@ -310,17 +310,19 @@ class Trainer:
 
         metrics: Dict[str, float] = {"val_loss": float(np.mean(val_losses))}
 
+        # Optional metrics from config.metrics; error = pred - target (same convention as Evaluator residuals).
         if all_preds and self.config.metrics:
             preds = torch.cat(all_preds)
             tgts = torch.cat(all_targets)
+            err = preds - tgts
             for name in self.config.metrics:
                 key = name.lower()
                 if key == "mae":
-                    metrics["val_mae"] = float((preds - tgts).abs().mean().item())
+                    metrics["val_mae"] = float(err.abs().mean().item())
                 elif key == "mse":
-                    metrics["val_mse"] = float(((preds - tgts) ** 2).mean().item())
+                    metrics["val_mse"] = float((err ** 2).mean().item())
                 elif key == "rmse":
-                    metrics["val_rmse"] = float(((preds - tgts) ** 2).mean().sqrt().item())
+                    metrics["val_rmse"] = float((err ** 2).mean().sqrt().item())
 
         return metrics
 
