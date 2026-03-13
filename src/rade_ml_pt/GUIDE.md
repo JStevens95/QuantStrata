@@ -20,6 +20,7 @@ The framework is built on **PyTorch** and targets use cases such as full revalua
 | 8 | [Error Handling](#8-error-handling) | Custom exceptions reference |
 | 9 | [Key Differences from rade_ml](#9-key-differences-from-rade_ml-tensorflow) | TensorFlow vs PyTorch migration reference |
 | 10 | [Summary](#10-summary-model-independent-vs-model-dependent) | Model-independent vs model-dependent breakdown |
+| 11 | [Ensemble Model](#11-ensemble-model) | Multi-member ensemble with routing and aggregation |
 
 ---
 
@@ -29,6 +30,7 @@ The framework is built on **PyTorch** and targets use cases such as full revalua
 rade_ml_pt/
   core/                 # Base classes, configs, result types
   data/                 # Dataset building, I/O, model-specific data builders
+  ensemble/             # Ensemble model: config, routing, aggregation, registry
   features/             # Preprocessing transforms (sklearn wrappers)
   models/               # Model architectures (model-specific)
   training/             # Trainer, callbacks, LR schedules
@@ -37,7 +39,7 @@ rade_ml_pt/
   registry/             # Model versioning and checkpoint storage
   tracking/             # Experiment logging and comparison
   tuning/               # Hyperparameter optimisation (Optuna)
-  pipelines/            # Abstract pipeline orchestration
+  pipelines/            # Abstract pipeline orchestration + ensemble pipelines
   utilities/            # Domain-specific helpers (graph builders, encoders)
   validation/           # Input validation, custom exceptions
 ```
@@ -1226,7 +1228,278 @@ Custom exceptions in `validation/exceptions.py`:
 | `tuning/` | **All** (Tuner, plots) | Objective function body only |
 | `pipelines/base.py` | **All** (abstract base classes) | -- |
 | `pipelines/model_x/` | -- | **train.py, eval.py, infer.py** |
+| `ensemble/` | **All** (config, router, model, aggregation, builder, registry, metrics, plots) | -- |
+| `pipelines/ensemble/` | **All** (train.py, eval.py, infer.py) | -- |
 | `validation/` | **All** (exceptions, validators) | -- |
 | `utilities/` | -- | **Model-specific** (graph builder, attribute encoder) |
 
 **Ratio**: approximately 70% generic infrastructure, 30% model-specific code per model.
+
+---
+
+## 11. Ensemble Model
+
+The ensemble module combines N trained member models (each responsible for a cluster of trades) into a single prediction surface.
+
+### Architecture
+
+```
+ensemble/
+  config.py           # EnsembleConfig dataclass
+  router.py           # TradeRouter: trade_id -> cluster_id mapping
+  aggregation.py      # concat / weighted_mean strategies
+  model.py            # EnsembleModel: orchestrate members + route + aggregate
+  builder.py          # EnsembleBuilder: load members, validate coverage
+  registry.py         # EnsembleRegistry: version ensemble bundles
+  metrics.py          # Ensemble-level + per-member metric aggregation
+  plots.py            # Member comparison, cluster heatmap, version comparison
+
+pipelines/ensemble/
+  train.py            # EnsembleTrainPipeline: train N members + register ensemble
+  eval.py             # EnsembleEvalPipeline: per-member + ensemble evaluation
+  infer.py            # EnsembleInferencePipeline: route inputs, predict, aggregate
+```
+
+### Model-Agnostic Design
+
+The ensemble layer is completely decoupled from any specific model architecture.  Each cluster specifies its own pipeline class via a Python dotpath string in ``EnsembleConfig.pipeline_class``.  The default is ``HybridGnnRnnTrainPipeline``, but any ``TrainPipeline`` subclass works.  You can mix architectures within a single ensemble.
+
+```python
+config = EnsembleConfig(
+    cluster_mapping={
+        "exotics": ["USDHKD_Call_1Y", "EURUSD_Barrier_6M", ...],
+        "vanillas": ["USDJPY_Swap_2Y", "GBPUSD_FRA_1Y", ...],
+    },
+    pipeline_class={
+        "exotics": "src.rade_ml_pt.pipelines.hybrid_gnn_rnn.train.HybridGnnRnnTrainPipeline",
+        "vanillas": "src.rade_ml_pt.pipelines.rnn.train.RnnTrainPipeline",
+    },
+    member_configs={
+        "exotics": {"training_config": {...}, "data_config": {...}, "model_config": {...}},
+        "vanillas": {"training_config": {...}, "data_config": {...}, "model_config": {...}},
+    },
+    aggregation="concat",
+    registry_dir="./model_store",
+    artifacts_dir="./artifacts",
+)
+```
+
+### EnsembleConfig
+
+Aggregates per-cluster member configs, trade-to-cluster mapping, and aggregation strategy.
+
+```python
+from rade_ml_pt.ensemble import EnsembleConfig
+
+config = EnsembleConfig(
+    cluster_mapping={"cluster_0": [...], "cluster_1": [...]},
+    member_configs={"cluster_0": {...}, "cluster_1": {...}},
+    aggregation="concat",       # or "weighted_mean"
+    weights=None,               # for weighted_mean: {"cluster_0": 0.6, "cluster_1": 0.4}
+    registry_dir="./model_store",
+    artifacts_dir="./artifacts",
+)
+
+# Serialisation
+config.to_json("ensemble_config.json")
+config = EnsembleConfig.from_json("ensemble_config.json")
+config = EnsembleConfig.from_yaml("ensemble_config.yaml")
+
+# Derived properties
+config.cluster_ids       # sorted list of cluster names
+config.n_members         # number of clusters
+config.all_trade_ids     # flat list of every trade across all clusters
+```
+
+### TradeRouter
+
+Maps each trade to its responsible cluster.
+
+```python
+from rade_ml_pt.ensemble import TradeRouter
+
+router = TradeRouter(cluster_mapping=config.cluster_mapping)
+
+# Single trade lookup
+cluster = router.get_cluster_for_trade("USDHKD_Call_1Y")  # -> "exotics"
+
+# Batch routing
+routed = router.route(["USDHKD_Call_1Y", "USDJPY_Swap_2Y"])
+# -> {"exotics": ["USDHKD_Call_1Y"], "vanillas": ["USDJPY_Swap_2Y"]}
+
+# New trade assignment (nearest centroid)
+cluster = router.assign_new_trade(attribs, cluster_centroids=centroids)
+
+# For UI drill-down
+trade_cluster_map = router.to_trade_cluster_map()
+# -> {"USDHKD_Call_1Y": "exotics", "USDJPY_Swap_2Y": "vanillas", ...}
+```
+
+### EnsembleModel
+
+Orchestrates N ``nn.Module`` members under a single ``predict()`` API.
+
+```python
+from rade_ml_pt.ensemble import EnsembleBuilder, EnsembleConfig
+from rade_ml_pt.registry import ModelRegistry
+
+registry = ModelRegistry("./model_store")
+builder = EnsembleBuilder(registry)
+ensemble = builder.build(config, member_versions={"cluster_0": "v1", "cluster_1": "v2"})
+
+# Predict (member_inputs pre-routed by the caller or pipeline)
+combined_preds = ensemble.predict(member_inputs={"cluster_0": inputs_0, "cluster_1": inputs_1})
+
+# Single member
+preds_0 = ensemble.predict_member("cluster_0", inputs_0)
+
+# Metadata for UI
+meta = ensemble.get_member_metadata()
+# -> {"cluster_0": {"model_class": "HybridGnnRnn", "n_parameters": 524288, "n_trades": 412}, ...}
+```
+
+### Aggregation Strategies
+
+```python
+from rade_ml_pt.ensemble.aggregation import concat_aggregate, weighted_mean_aggregate
+
+# Disjoint clusters: place each member's predictions at the correct column positions
+combined = concat_aggregate(member_preds, cluster_trade_indices, n_total_targets)
+
+# Overlapping clusters: weighted average
+combined = weighted_mean_aggregate(member_preds, weights={"cluster_0": 0.6, "cluster_1": 0.4})
+```
+
+### EnsembleRegistry
+
+Versions ensemble bundles (member versions + cluster mapping + aggregation config).
+
+```python
+from rade_ml_pt.ensemble import EnsembleRegistry
+
+ens_registry = EnsembleRegistry("./model_store")
+
+# Register
+version = ens_registry.register(config, member_versions, member_summary, tags=["production"])
+
+# Load
+config, member_versions, version = ens_registry.load("production")
+
+# Tag management
+ens_registry.tag(version, "staging")
+
+# List all ensemble versions
+for v in ens_registry.list_versions():
+    print(v)
+
+# Get metadata for UI
+meta = ens_registry.get_metadata("production")
+# -> {"version": "...", "member_summary": {...}, "trade_cluster_map": {...}}
+```
+
+### Ensemble Pipelines
+
+#### Training
+
+```python
+from rade_ml_pt.pipelines.ensemble import EnsembleTrainPipeline
+
+pipeline = EnsembleTrainPipeline(config, tags=["production"])
+result = pipeline.run()
+# result = {"ensemble_version": "ens_20260222_...", "member_versions": {...}, "member_results": {...}}
+```
+
+Training workflow:
+
+```mermaid
+flowchart TB
+  subgraph train_loop ["For each cluster"]
+    Resolve["Resolve pipeline class<br/>(importlib)"]
+    BuildConfig["Build member PipelineConfig"]
+    RunMember["pipeline_cls(config).run()"]
+    Register["Register member in ModelRegistry"]
+  end
+
+  subgraph assemble ["Assemble"]
+    Validate["Validate trade coverage"]
+    BuildEnsemble["EnsembleBuilder.build()"]
+    RegisterEns["EnsembleRegistry.register()"]
+  end
+
+  train_loop --> assemble
+```
+
+#### Evaluation
+
+```python
+from rade_ml_pt.pipelines.ensemble import EnsembleEvalPipeline
+
+eval_pipeline = EnsembleEvalPipeline(config, ensemble_version="production")
+result = eval_pipeline.run()
+# result = {"ensemble_metrics": {...}, "per_member_metrics": {...}, "member_summary": {...}}
+```
+
+#### Inference
+
+```python
+from rade_ml_pt.pipelines.ensemble import EnsembleInferencePipeline
+
+infer_pipeline = EnsembleInferencePipeline(
+    config,
+    ensemble_version="production",
+)
+result = infer_pipeline.run()
+# result.predictions: combined array across all members
+```
+
+### Metrics
+
+```python
+from rade_ml_pt.ensemble.metrics import (
+    compute_ensemble_metrics,
+    compute_per_member_metrics,
+    aggregate_member_metrics,
+    build_version_comparison,
+    build_trade_to_cluster_mapping,
+)
+
+# Ensemble-level
+metrics = compute_ensemble_metrics(combined_preds, targets)
+# -> {"mae": 0.041, "mse": 0.006, "rmse": 0.077, "max_ae": 0.52, "p95_ae": 0.12, "p99_ae": 0.31}
+
+# Per-member
+per_member = compute_per_member_metrics(member_preds, member_targets)
+# -> {"cluster_0": {"mae": 0.038, ...}, "cluster_1": {"mae": 0.044, ...}}
+
+# Rollup
+rollup = aggregate_member_metrics(per_member)
+# -> {"mean_mae": 0.041, "std_mae": 0.003, "min_mae": 0.038, "max_mae": 0.044, ...}
+
+# Version comparison
+comparison = build_version_comparison(metrics_v1, metrics_v2, "v1", "v2")
+# -> {"mae": {"v1": 0.045, "v2": 0.041, "delta": -0.004, "improved": True}, ...}
+```
+
+### Plots
+
+```python
+from rade_ml_pt.ensemble.plots import (
+    plot_member_comparison,
+    plot_cluster_performance_heatmap,
+    plot_version_comparison,
+    plot_ensemble_vs_members,
+    save_ensemble_plots,
+)
+
+# Member comparison bar chart
+plot_member_comparison(per_member_metrics, metric="mae")
+
+# Cluster heatmap (clusters × metrics)
+plot_cluster_performance_heatmap(per_member_metrics)
+
+# Version comparison grouped bars
+plot_version_comparison(comparison, "v1", "v2")
+
+# Automated artifact saving (used by eval pipeline)
+save_ensemble_plots(per_member_metrics, save_dir=Path("artifacts/ensemble/plots"))
+```
