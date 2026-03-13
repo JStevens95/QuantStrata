@@ -1,0 +1,121 @@
+"""
+Ensemble configuration dataclasses.
+
+``EnsembleConfig`` aggregates per-cluster member configs, trade-to-cluster
+mapping, aggregation strategy, and infrastructure paths.  It is the single
+config object consumed by all ensemble pipelines and the EnsembleBuilder.
+"""
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field, asdict
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
+
+from src.rade_ml_pt.pipelines.config import PipelineConfig
+
+
+@dataclass
+class EnsembleConfig:
+    """
+    Top-level configuration for an ensemble of model members.
+
+    Attributes
+    ----------
+    member_configs : dict
+        ``{cluster_id: PipelineConfig_dict}`` — per-cluster pipeline config.
+    pipeline_class : dict
+        ``{cluster_id: dotpath_str}`` — pipeline class for each cluster.
+        Omit or set to ``None`` for a cluster to use the default
+        (``HybridGnnRnnTrainPipeline``).
+    cluster_mapping : dict
+        ``{cluster_id: [trade_id, ...]}`` — assigns every target trade to
+        exactly one cluster.
+    aggregation : str
+        Aggregation strategy: ``"concat"`` (disjoint clusters) or
+        ``"weighted_mean"`` (overlapping clusters).
+    weights : dict or None
+        ``{cluster_id: float}`` — member weights for weighted-mean
+        aggregation.  Ignored when *aggregation* is ``"concat"``.
+    registry_dir : str or None
+        Root directory for ensemble and member registries.
+    artifacts_dir : str or None
+        Root directory for ensemble artifacts (plots, metrics, predictions).
+    metadata : dict
+        Arbitrary key-value pairs forwarded into run records.
+    """
+
+    member_configs: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    pipeline_class: Dict[str, Optional[str]] = field(default_factory=dict)
+    cluster_mapping: Dict[str, List[str]] = field(default_factory=dict)
+    aggregation: str = "concat"
+    weights: Optional[Dict[str, float]] = None
+    registry_dir: Optional[str] = None
+    artifacts_dir: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    # ------------------------------------------------------------------
+    # Derived helpers
+    # ------------------------------------------------------------------
+
+    @property
+    def cluster_ids(self) -> List[str]:
+        """Ordered list of cluster identifiers."""
+        return sorted(self.cluster_mapping.keys())
+
+    @property
+    def n_members(self) -> int:
+        return len(self.cluster_mapping)
+
+    @property
+    def all_trade_ids(self) -> List[str]:
+        """Flat list of every trade ID across all clusters."""
+        ids: List[str] = []
+        for cid in self.cluster_ids:
+            ids.extend(self.cluster_mapping[cid])
+        return ids
+
+    def get_member_pipeline_config(self, cluster_id: str) -> PipelineConfig:
+        """Build a ``PipelineConfig`` for one member from its dict representation."""
+        raw = self.member_configs.get(cluster_id, {})
+        return PipelineConfig(
+            training_config=raw.get("training_config"),
+            data_config=raw.get("data_config"),
+            model_config=raw.get("model_config"),
+            registry_dir=self.registry_dir,
+            tracking_dir=raw.get("tracking_dir"),
+            artifacts_dir=self.artifacts_dir,
+            version_or_tag=raw.get("version_or_tag", "latest"),
+            metadata={
+                **raw.get("metadata", {}),
+                "cluster_id": cluster_id,
+                "trade_ids": self.cluster_mapping.get(cluster_id, []),
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # Serialisation
+    # ------------------------------------------------------------------
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "EnsembleConfig":
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+
+    def to_json(self, path: Union[str, Path]) -> None:
+        with open(path, "w") as f:
+            json.dump(self.to_dict(), f, indent=2)
+
+    @classmethod
+    def from_json(cls, path: Union[str, Path]) -> "EnsembleConfig":
+        with open(path, "r") as f:
+            return cls.from_dict(json.load(f))
+
+    @classmethod
+    def from_yaml(cls, path: Union[str, Path]) -> "EnsembleConfig":
+        """Load from a YAML file (requires ``pyyaml``)."""
+        import yaml
+        with open(path, "r") as f:
+            return cls.from_dict(yaml.safe_load(f))
