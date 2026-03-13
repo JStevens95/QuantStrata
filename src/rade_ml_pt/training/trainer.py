@@ -323,6 +323,15 @@ class Trainer:
                     metrics["val_mse"] = float((err ** 2).mean().item())
                 elif key == "rmse":
                     metrics["val_rmse"] = float((err ** 2).mean().sqrt().item())
+                elif key == "huber":
+                    delta = 1.0
+                    abs_err = err.abs()
+                    huber = torch.where(
+                        abs_err <= delta,
+                        0.5 * err ** 2,
+                        delta * (abs_err - 0.5 * delta),
+                    )
+                    metrics["val_huber"] = float(huber.mean().item())
 
         return metrics
 

@@ -89,6 +89,16 @@ class HybridGnnRnnEvalPipeline(EvalPipeline):
         eval_result = evaluator.run(data_result.test_ds)
         logger.info("EvalPipeline: test evaluation complete")
 
+        # Attach target trade labels to metadata for downstream plots.
+        if eval_result.metadata is None:
+            eval_result.metadata = {}
+        if hasattr(data_result, "target_pnl") and data_result.target_pnl is not None:
+            eval_result.metadata["target_labels"] = data_result.target_pnl.columns.tolist()
+        elif hasattr(data_result, "target_attributes") and data_result.target_attributes is not None:
+            eval_result.metadata["target_labels"] = [
+                a.get("name", f"T{i}") for i, a in enumerate(data_result.target_attributes)
+            ]
+
         split_predictions = self._collect_all_split_predictions(
             model, data_result, target_scaler,
         )

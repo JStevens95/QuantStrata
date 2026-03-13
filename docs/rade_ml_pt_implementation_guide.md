@@ -411,3 +411,317 @@ Items to revisit once the full migration is complete:
     pipeline (checkpoint load → predict → InferenceResult).
   - `tests/rade_ml_pt/pipelines/hybrid_gnn_rnn/test_tune_pipeline.py` — test tuning
     pipeline (Optuna trial → model build → score).
+
+---
+
+## Hybrid GNN-RNN inference pipeline (`infer.py`)
+
+### `run()` docstring (loading and steps with function names)
+
+Use the following docstring on `HybridGnnRnnInferencePipeline.run()` so loading and each step are documented with the corresponding method names:
+
+```python
+def run(self) -> InferenceResult:
+    """
+    Execute the full inference pipeline.
+
+    Input mode is taken from config (e.g. ``config.metadata["inference"]["input_mode"]``):
+    - ``"new_trades"``: CSV of new trade attributes (same schema as training).
+    - ``"new_scenarios"``: Folder of risk-factor scenario CSVs (same trades, new paths).
+
+    Loading
+    -------
+    1. ``load_runner()`` — Load model and InferenceRunner from registry.
+    2. ``_load_registry_artifacts()`` — Load graph_builder, encoder, scalers, job
+       (asset portfolio, elementary trade objects), and any target/trade metadata
+       from the registered version directory.
+
+    Steps
+    -----
+    3. Resolve input_mode from config.
+    4. If new_trades: ``_run_new_trades()`` — Load new trade CSV, extend graph via
+       ``build_graph_projection()``, build model inputs, ``runner.predict()``, then ``post_infer()``.
+    5. If new_scenarios: ``_run_new_scenarios()`` — Load job and scenario CSVs,
+       build new elementary PnL (existing pricing logic), same graph and trade features,
+       build model inputs, ``runner.predict()``, then ``post_infer()``.
+    6. ``post_infer()`` — Inference-specific analytics (logging, save predictions CSV, optional plots).
+
+    Returns
+    -------
+    InferenceResult
+    """
+```
+
+### `_load_registry_artifacts()` docstring
+
+```python
+def _load_registry_artifacts(self, version_dir: Path) -> Dict[str, Any]:
+    """
+    Load everything saved at training from the registered version directory.
+
+    Steps
+    -----
+    1. Load model state (e.g. ``torch.load(version_dir / "model.pt")`` or via registry).
+    2. Load graph_builder (e.g. ``TradeGraphBuilder.load(path)`` or joblib/pickle).
+    3. Load encoder (e.g. ``TradeAttributeEncoder.load(path)``).
+    4. Load scalers: target PnL scaler, elementary PnL scaler (for inverse transform if needed).
+    5. Load job: asset portfolio and elementary trade objects (for ``_run_new_scenarios()``).
+    6. Optionally load target_pnl columns or target_attributes for ordering/labels.
+
+    Returns
+    -------
+    Dict with keys such as graph_builder, encoder, scalers, job, target_labels, etc.
+    """
+```
+
+### `_run_new_trades()` docstring
+
+```python
+def _run_new_trades(self) -> InferenceResult:
+    """
+    New trade attributes CSV → extend graph, build inputs, predict.
+
+    Steps
+    -----
+    1. Load new trade attributes CSV (schema matches training; validation handled elsewhere).
+    2. Encode new trades: merge with original attribs or encode new only; use ``encoder.transform()``.
+    3. Extend graph: ``graph_builder.build_graph_projection(adjacency_matrix=..., encoded_trades=..., new_targets=n_new, k=...)`` — trained adjacency unchanged, new edges for new trades only.
+    4. Build trade_features (e.g. ``graph_builder._weighted_features(encoded_trades)``), pnl_history (from registry; same scenarios, new target columns padded/zeros or your rule).
+    5. Build model input dict: trade_features, pnl_history, adjacency_*, elementary_indices, target_indices.
+    6. ``runner.predict(inputs)`` → InferenceResult.
+    7. ``post_infer(result, config)``.
+
+    Returns
+    -------
+    InferenceResult
+    """
+```
+
+### `_run_new_scenarios()` docstring
+
+```python
+def _run_new_scenarios(self) -> InferenceResult:
+    """
+    Folder of scenario CSVs → new elementary PnLs, same graph, predict.
+
+    Steps
+    -----
+    1. Load job from registry (``_load_registry_artifacts()``): asset portfolio, elementary trade objects.
+    2. Load scenario CSVs from config path (e.g. ``config.metadata["inference"]["new_scenarios_dir"]``).
+    3. Build new elementary PnL: existing pricing logic (e.g. price elementary trades under each scenario using job).
+    4. Target PnL: same trades as training; compute if pricing available, else placeholders/zeros per product requirement.
+    5. Scale PnLs with scalers from registry (transform only; fit was at training).
+    6. Reuse graph from registry: same adjacency, same trade_features (no new trades).
+    7. Build model input dict: trade_features (unchanged), pnl_history = new elementary PnL matrix, adjacency unchanged, elementary_indices/target_indices unchanged.
+    8. ``runner.predict(inputs)`` → InferenceResult.
+    9. ``post_infer(result, config)``.
+
+    Returns
+    -------
+    InferenceResult
+    """
+```
+
+### `prepare_inputs()` docstring
+
+```python
+def prepare_inputs(self, config: PipelineConfig) -> Dict[str, Any]:
+    """
+    Build model-ready inputs from the pipeline config.
+
+    Used when the base ``run()`` flow is kept: base calls ``prepare_inputs()`` then
+    ``runner.predict(prepared["inputs"])``. For the two-mode inference design, either:
+
+    Option A — Dispatch here: resolve input_mode, call ``_prepare_inputs_new_trades()``
+    or ``_prepare_inputs_new_scenarios()``, return same dict shape (inputs, sample_ids, metadata).
+
+    Option B — Override ``run()``: do not use base ``prepare_inputs()``; ``run()`` calls
+    ``_run_new_trades()`` or ``_run_new_scenarios()`` which build inputs and call
+    ``runner.predict()`` directly.
+
+    Returns
+    -------
+    Dict with "inputs" (model input dict), optional "sample_ids", optional "metadata".
+    """
+```
+
+### `post_infer()` docstring
+
+```python
+def post_infer(self, result: InferenceResult, config: PipelineConfig) -> None:
+    """
+    Inference-specific analytics after prediction.
+
+    Steps
+    -----
+    1. Log summary: ``result.n_samples``, mean/std/min/max of ``result.predictions``.
+    2. If ``config.artifacts_dir``: save predictions (e.g. CSV with sample_ids and predictions).
+    3. Optional: save plots (e.g. prediction distribution), export to downstream format.
+    """
+```
+
+---
+
+## Cloud Training (Google Cloud / Vertex AI)
+
+### Overview
+
+Add cloud-based training support via Google Cloud Vertex AI (Option 2: custom Docker
+container). This is the standard front-office approach: reproducible, auditable,
+cost-efficient (pay only for training time), and integrates with GCS for artifact storage.
+
+### Folder Structure
+
+```
+src/rade_ml_pt/
+├── cloud/                              # All cloud/infra code
+│   ├── __init__.py
+│   │
+│   ├── config.py                       # CloudConfig dataclass
+│   │                                   #   (project_id, region, bucket, machine_type,
+│   │                                   #    accelerator, image_uri)
+│   │
+│   ├── storage/                        # Abstract away GCS vs local filesystem
+│   │   ├── __init__.py
+│   │   ├── base.py                     # ArtifactStore ABC (save, load, list, exists)
+│   │   ├── local.py                    # LocalStore -- wraps current pathlib behaviour
+│   │   └── gcs.py                      # GcsStore -- same interface, reads/writes gs://
+│   │
+│   ├── vertex/                         # Vertex AI job submission and monitoring
+│   │   ├── __init__.py
+│   │   ├── job.py                      # submit_training_job(), monitor_job(), cancel_job()
+│   │   ├── config.py                   # VertexJobConfig (machine_type, accelerator,
+│   │   │                               #   replica_count, timeout, env_vars)
+│   │   └── utils.py                    # Build worker pool spec, parse job status
+│   │
+│   └── docker/                         # Dockerfile + build helpers
+│       ├── Dockerfile                  # Multi-stage: pytorch-gpu base + project code
+│       ├── .dockerignore
+│       └── build.py                    # Build image, tag, push to GCR/Artifact Registry
+│
+scripts/                                # Top-level CLI convenience scripts
+├── cloud_train.py                      # Parse args, build CloudConfig, submit Vertex job
+├── cloud_eval.py                       # Submit eval job to Vertex
+└── cloud_build.py                      # Build + push Docker image
+```
+
+### Key Abstraction: ArtifactStore
+
+The most important piece is `cloud/storage/`. Currently the framework uses raw `Path()`
+strings for `artifacts_dir`, `registry_dir`, etc. The `ArtifactStore` ABC abstracts
+filesystem operations so the same pipeline code works locally and on GCS:
+
+```python
+class ArtifactStore(ABC):
+    def save(self, data: bytes, key: str) -> None: ...
+    def load(self, key: str) -> bytes: ...
+    def save_file(self, local_path: Path, key: str) -> None: ...
+    def download_file(self, key: str, local_path: Path) -> None: ...
+    def exists(self, key: str) -> bool: ...
+    def list_keys(self, prefix: str) -> List[str]: ...
+```
+
+- `LocalStore` wraps current pathlib logic (backward compatible, zero behaviour change).
+- `GcsStore` uses `google-cloud-storage` client for GCS read/write.
+
+### Changes to Existing Code
+
+| File | Change | Impact |
+|------|--------|--------|
+| `PipelineConfig` | Add optional `artifact_store` field | Backward compatible -- defaults to `LocalStore(artifacts_dir)` |
+| `ModelRegistry` | Accept `ArtifactStore` instead of path string | Same interface, reads/writes via the store |
+| `TrainPipeline.run()` | Use `self.store.save_file()` instead of raw `Path()` writes | ~5-10 lines |
+| `EvalPipeline.run()` | Same pattern for loading | ~5-10 lines |
+
+Model, layers, trainer, callbacks, data pipeline, and plots are **unchanged**.
+
+### Dependencies
+
+```
+google-cloud-storage       # GCS read/write
+google-cloud-aiplatform    # Vertex AI job submission
+```
+
+Both are optional cloud-only dependencies. Keep in a separate `requirements-cloud.txt`
+or as an extras group (`pip install rade_ml_pt[cloud]`).
+
+### Implementation Order
+
+1. `cloud/storage/` -- foundation; once ArtifactStore works, everything plugs in.
+2. `cloud/docker/` -- get a working container that runs training locally via `docker run`.
+3. `cloud/vertex/` -- submit that container to Vertex AI.
+4. `scripts/` -- CLI wrappers for convenience.
+
+### Expected GPU Speedup
+
+| Hardware | Approx. epoch time | Speedup vs CPU |
+|----------|-------------------|----------------|
+| CPU (current) | ~60s | 1x |
+| T4 GPU | ~5–10s | 6–12x |
+| A100 GPU | ~2–4s | 15–30x |
+
+---
+
+## Ensemble Model
+
+### Overview
+
+The ensemble model combines N members (each trained on a separate cluster of trades) into
+a single prediction surface. A `TradeRouter` assigns each target trade to its cluster's
+model; predictions are concatenated (disjoint clusters) or aggregated (overlapping). The
+ensemble is registered as a first-class version in the registry.
+
+**Model-agnostic:** The ensemble layer is not coupled to Hybrid GNN-RNN. Each cluster's
+pipeline class is configurable via `EnsembleConfig.pipeline_class` (a dotpath string
+resolved at runtime via `importlib`). Members can be Hybrid GNN-RNN, RNN-only, GNN-only,
+or any `BaseModel` subclass. Different clusters can use different architectures.
+
+See `docs/ensemble_implementation.md` for full implementation details including folder
+structure, artifacts layout, visualization flow, and UI dashboard integration.
+
+### Folder Structure (summary)
+
+```
+src/rade_ml_pt/
+├── ensemble/
+│   ├── config.py           # EnsembleConfig (member_configs, cluster_mapping, aggregation)
+│   ├── builder.py          # EnsembleBuilder (load members, validate coverage)
+│   ├── model.py            # EnsembleModel (predict, route, aggregate)
+│   ├── router.py           # TradeRouter (trade → cluster mapping)
+│   ├── aggregation.py      # concat / weighted_mean / stacking strategies
+│   ├── registry.py         # EnsembleRegistry (register, load, tag, list)
+│   ├── metrics.py          # Ensemble-level metric aggregation for UI
+│   └── plots.py            # Member comparison, cluster heatmap, version comparison
+│
+├── pipelines/ensemble/
+│   ├── train.py            # EnsembleTrainPipeline (orchestrate N member trains)
+│   ├── eval.py             # EnsembleEvalPipeline (route, aggregate, per-member + ensemble metrics)
+│   └── infer.py            # EnsembleInferencePipeline (route new trades/scenarios, aggregate)
+```
+
+### UI Dashboard (summary)
+
+The dashboard is a **read-only** consumer of artifacts produced by offline pipelines
+(training, evaluation). Only inference runs live in the UI.
+
+| Page | Purpose | Cluster filtering |
+|------|---------|-------------------|
+| **Overview** | Active version, key metrics, worst trade, thumbnails | No (ensemble-level) |
+| **Model Performance** | Training/eval plots, per-cluster breakdown table, cluster drill-down | Yes (click row) |
+| **Inference** | Upload scenarios/trades, run predictions, download CSV | Yes (dropdown) |
+| **Risk & Analytics** | PnL timeline, tail metrics, worst trades, trade drill-down, version comparison | Yes (dropdown + trade click) |
+
+The key artifact enabling cluster filtering is `trade_cluster_map.json` which maps every
+trade ID to its cluster. See `docs/ensemble_implementation.md` for the full visualization
+flow and artifacts layout.
+
+### Implementation Order
+
+1. `ensemble/config.py` + `router.py` — config and trade routing (foundation).
+2. `ensemble/model.py` + `aggregation.py` — EnsembleModel with predict/route/aggregate.
+3. `ensemble/builder.py` + `registry.py` — build from members, register/load.
+4. `pipelines/ensemble/train.py` — orchestrate N member trains + ensemble registration.
+5. `pipelines/ensemble/eval.py` — route eval data, per-member + ensemble metrics.
+6. `ensemble/metrics.py` + `plots.py` — aggregation helpers and visualisations.
+7. `pipelines/ensemble/infer.py` — inference with routing for new trades/scenarios.
+8. Dash UI dashboard (separate repo or `dash_app/` folder).

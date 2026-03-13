@@ -55,6 +55,11 @@ def save_evaluation_plots(
     )
     has_residuals = eval_result.residuals is not None
 
+    # Try to get target labels from metadata; fall back to default T0, T1, ...
+    target_labels = None
+    if eval_result.metadata:
+        target_labels = eval_result.metadata.get("target_labels")
+
     plots = []
 
     if has_pred_tgt:
@@ -80,7 +85,8 @@ def save_evaluation_plots(
         )))
     if has_residuals:
         plots.append(("residual_by_target", lambda: plot_residual_by_target(
-            eval_result, save_path=save_path, show=False,
+            eval_result, target_labels=target_labels,
+            save_path=save_path, show=False,
         )))
 
     for name, fn in plots:

@@ -150,7 +150,7 @@ def plot_parallel_coordinate(
     params : list of str, optional
         Subset of parameter names to include. All params if None.
     """
-    fig = optuna.visualization.matplotlib.plot_parallel_coordinate(study, params=params)
+    _ = optuna.visualization.matplotlib.plot_parallel_coordinate(study, params=params)
     plt.title("Parallel Coordinate Plot")
     plt.tight_layout()
 
@@ -171,7 +171,7 @@ def plot_contour(
     if len(params) != 2:
         raise ValueError("plot_contour requires exactly two parameter names.")
 
-    fig = optuna.visualization.matplotlib.plot_contour(study, params=params)
+    _ = optuna.visualization.matplotlib.plot_contour(study, params=params)
     plt.title(f"Contour: {params[0]} vs {params[1]}")
     plt.tight_layout()
 
@@ -189,6 +189,6 @@ def plot_slice(
     params : list of str, optional
         Subset of parameters. All if None.
     """
-    fig = optuna.visualization.matplotlib.plot_slice(study, params=params)
+    _ = optuna.visualization.matplotlib.plot_slice(study, params=params)
     plt.suptitle("Slice Plot", y=1.02)
     plt.tight_layout()
