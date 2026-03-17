@@ -26,7 +26,7 @@ class EnsembleInferencePipeline:
     """
     Run inference through an ensemble of models.
 
-    Supports two input modes:
+    Supports two input modes (set in config.metadata["inference"]["input_mode"]):
     - ``new_scenarios``: Same trades, new risk-factor scenario data.
     - ``new_trades``: New trade attributes to route and predict.
 
@@ -78,7 +78,9 @@ class EnsembleInferencePipeline:
         elif input_mode == "new_scenarios":
             result = self._run_new_scenarios(infer_meta)
         else:
-            raise ValueError(f"Unknown input_mode: '{input_mode}'. Expected 'new_trades' or 'new_scenarios'.")
+            raise ValueError(
+                f"Unknown input_mode: '{input_mode}'. Expected 'new_trades' or 'new_scenarios'."
+            )
 
         result.latency_seconds = time.perf_counter() - t0
         self.post_infer(result)

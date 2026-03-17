@@ -3,8 +3,8 @@ Trade-to-cluster routing for ensemble inference.
 
 ``TradeRouter`` maps each trade ID to its responsible cluster.  For known
 trades this is a simple dictionary lookup.  For unseen trades the router
-falls back to a configurable strategy (nearest-cluster by trade attributes,
-or a default cluster).
+uses one of: attribute/key-based rules (e.g. ccy, product, desk), nearest
+centroid in feature space, or a default cluster.
 """
 from __future__ import annotations
 
@@ -27,15 +27,23 @@ class TradeRouter:
     default_cluster : str or None
         Fallback cluster for trades not found in any mapping.
         If ``None``, unknown trades raise ``KeyError``.
+    cluster_keys : dict or None
+        ``{cluster_id: {attr_name: value, ...}}`` — attribute-based routing for
+        new trades. E.g. cluster_0 = {"ccy": "ccy1", "product": "product1", "desk": "desk1"}.
+        A new trade is assigned to the cluster whose key matches the trade's
+        attributes (all key fields must match). Used by ``assign_new_trade``
+        when no centroids are supplied.
     """
 
     def __init__(
         self,
         cluster_mapping: Dict[str, List[str]],
         default_cluster: Optional[str] = None,
+        cluster_keys: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> None:
         self._cluster_mapping = cluster_mapping
         self._default_cluster = default_cluster
+        self._cluster_keys = cluster_keys or {}
 
         # Build the reverse index: trade_id -> cluster_id.
         self._trade_to_cluster: Dict[str, str] = {}
@@ -93,26 +101,57 @@ class TradeRouter:
         self,
         trade_attribs: Dict[str, Any],
         cluster_centroids: Optional[Dict[str, np.ndarray]] = None,
+        cluster_keys: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> str:
         """
-        Assign an unseen trade to the nearest cluster.
+        Assign an unseen trade to a cluster.
 
-        If *cluster_centroids* is provided the trade is assigned to the
-        cluster whose centroid is closest in Euclidean distance.  Otherwise
-        the *default_cluster* is returned.
+        Tried in order:
+        1. **Attribute/key match** — If *cluster_keys* (or the router's
+           ``cluster_keys``) is set, find the cluster whose key dict matches
+           the trade's attributes (every key field must match). E.g. cluster_0
+           key ``{"ccy": "ccy1", "product": "product1", "desk": "desk1"}``
+           matches a trade with the same ccy, product, desk.
+        2. **Nearest centroid** — If *cluster_centroids* is provided, assign
+           to the cluster whose centroid is closest in Euclidean distance
+           (using ``trade_attribs["features"]`` or ``"encoded"``).
+        3. **Default** — Return *default_cluster* if set, else raise.
 
         Parameters
         ----------
         trade_attribs : dict
-            Encoded feature vector (or raw attributes) for the new trade.
+            New trade attributes: either raw (e.g. ccy, product, desk) for
+            key-based routing, or containing ``"features"``/``"encoded"`` for
+            centroid-based routing.
         cluster_centroids : dict or None
-            ``{cluster_id: centroid_array}`` — pre-computed cluster centroids.
+            ``{cluster_id: centroid_array}`` — for nearest-centroid assignment.
+        cluster_keys : dict or None
+            ``{cluster_id: {attr_name: value, ...}}`` — for attribute-based
+            assignment. If ``None``, the router's constructor ``cluster_keys``
+            are used (if any).
 
         Returns
         -------
         str
             The assigned cluster ID.
         """
+        keys = cluster_keys if cluster_keys is not None else self._cluster_keys
+
+        if keys:
+            for cid, key_dict in keys.items():
+                if not key_dict:
+                    continue
+                match = all(
+                    trade_attribs.get(k) == v
+                    for k, v in key_dict.items()
+                )
+                if match:
+                    logger.info(
+                        "New trade assigned to cluster '%s' (key match: %s)",
+                        cid, key_dict,
+                    )
+                    return cid
+
         if cluster_centroids is not None:
             feat = np.asarray(trade_attribs.get("features", trade_attribs.get("encoded", [])))
             if feat.size > 0:
@@ -122,15 +161,18 @@ class TradeRouter:
                     if dist < best_dist:
                         best_cid, best_dist = cid, dist
                 if best_cid is not None:
-                    logger.info("New trade assigned to cluster '%s' (dist=%.4f)", best_cid, best_dist)
+                    logger.info(
+                        "New trade assigned to cluster '%s' (dist=%.4f)",
+                        best_cid, best_dist,
+                    )
                     return best_cid
 
         if self._default_cluster is not None:
             return self._default_cluster
 
         raise ValueError(
-            "Cannot assign new trade: no cluster_centroids supplied and "
-            "no default_cluster configured."
+            "Cannot assign new trade: no cluster_keys match, no cluster_centroids "
+            "supplied, and no default_cluster configured."
         )
 
     # ------------------------------------------------------------------

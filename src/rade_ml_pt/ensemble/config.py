@@ -31,6 +31,17 @@ class EnsembleConfig:
     cluster_mapping : dict
         ``{cluster_id: [trade_id, ...]}`` — assigns every target trade to
         exactly one cluster.
+    cluster_keys : dict or None
+        ``{cluster_id: {attr_name: value, ...}}`` — optional attribute-based
+        routing for new trades. Can be set directly or derived from
+        ``cluster_key`` + ``cluster_key_values`` via ``get_cluster_keys_for_router()``.
+    cluster_key : list or None
+        Shared list of attribute names that define routing, e.g. ``["ccy", "desk", "product"]``.
+        Used with ``cluster_key_values`` to build the key dict per cluster.
+    cluster_key_values : dict or None
+        ``{cluster_id: [value_ccy, value_desk, value_product, ...]}`` — per-cluster values
+        in the same order as ``cluster_key``. E.g. cluster_0 = ``["GBP", "FLOW_RATES", "EUROPEAN"]``
+        means cluster_0 has ccy=GBP, desk=FLOW_RATES, product=EUROPEAN.
     aggregation : str
         Aggregation strategy: ``"concat"`` (disjoint clusters) or
         ``"weighted_mean"`` (overlapping clusters).
@@ -48,6 +59,9 @@ class EnsembleConfig:
     member_configs: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     pipeline_class: Dict[str, Optional[str]] = field(default_factory=dict)
     cluster_mapping: Dict[str, List[str]] = field(default_factory=dict)
+    cluster_keys: Optional[Dict[str, Dict[str, Any]]] = None
+    cluster_key: Optional[List[str]] = None
+    cluster_key_values: Optional[Dict[str, List[Any]]] = None
     aggregation: str = "concat"
     weights: Optional[Dict[str, float]] = None
     registry_dir: Optional[str] = None
@@ -74,6 +88,25 @@ class EnsembleConfig:
         for cid in self.cluster_ids:
             ids.extend(self.cluster_mapping[cid])
         return ids
+
+    def get_cluster_keys_for_router(self) -> Optional[Dict[str, Dict[str, Any]]]:
+        """
+        Return ``{cluster_id: {attr_name: value, ...}}`` for TradeRouter.
+
+        If ``cluster_keys`` is set, return it. Otherwise if ``cluster_key`` and
+        ``cluster_key_values`` are set, build the dict from the shared attribute
+        names and per-cluster value lists (same order). E.g. cluster_key =
+        ["ccy", "desk", "product"], cluster_0_keys = ["GBP", "FLOW_RATES", "EUROPEAN"]
+        -> cluster_0 key = {"ccy": "GBP", "desk": "FLOW_RATES", "product": "EUROPEAN"}.
+        """
+        if self.cluster_keys is not None:
+            return self.cluster_keys
+        if self.cluster_key is not None and self.cluster_key_values is not None:
+            return {
+                cid: dict(zip(self.cluster_key, values))
+                for cid, values in self.cluster_key_values.items()
+            }
+        return None
 
     def get_member_pipeline_config(self, cluster_id: str) -> PipelineConfig:
         """Build a ``PipelineConfig`` for one member from its dict representation."""

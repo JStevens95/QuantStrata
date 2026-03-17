@@ -181,7 +181,7 @@ class HybridGnnRnnTrainPipeline(TrainPipeline):
             logger.info(f"Saved graph_builder.pkl to {version_dir}")
 
         if data_result.encoder is not None:
-            joblib.dump(data_result.encoder, version_dir / "encoder.pkl")
+            data_result.encoder.save(version_dir / "encoder.pkl")
             logger.info(f"Saved encoder.pkl to {version_dir}")
 
         target_scaler = data_result.metadata.get("target_pnl_transformer")

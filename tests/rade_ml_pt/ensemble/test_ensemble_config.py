@@ -71,6 +71,43 @@ class TestEnsembleConfigSerialisation:
         assert "aggregation" in data
 
 
+class TestEnsembleConfigClusterKeysForRouter:
+    def test_from_cluster_key_and_values(self):
+        config = EnsembleConfig(
+            cluster_mapping={"cluster_0": ["t1"], "cluster_1": ["t2"]},
+            cluster_key=["ccy", "desk", "product"],
+            cluster_key_values={
+                "cluster_0": ["GBP", "FLOW_RATES", "EUROPEAN"],
+                "cluster_1": ["USD", "FLOW_RATES", "AMERICAN"],
+            },
+        )
+        keys = config.get_cluster_keys_for_router()
+        assert keys is not None
+        assert keys["cluster_0"] == {"ccy": "GBP", "desk": "FLOW_RATES", "product": "EUROPEAN"}
+        assert keys["cluster_1"] == {"ccy": "USD", "desk": "FLOW_RATES", "product": "AMERICAN"}
+
+    def test_explicit_cluster_keys_take_precedence(self):
+        config = EnsembleConfig(
+            cluster_mapping={"cluster_0": ["t1"]},
+            cluster_keys={"cluster_0": {"ccy": "GBP"}},
+            cluster_key=["ccy", "desk"],
+            cluster_key_values={"cluster_0": ["EUR", "OTHER"]},
+        )
+        keys = config.get_cluster_keys_for_router()
+        assert keys == {"cluster_0": {"ccy": "GBP"}}
+
+    def test_no_keys_returns_none(self):
+        config = EnsembleConfig(cluster_mapping={"cluster_0": ["t1"]})
+        assert config.get_cluster_keys_for_router() is None
+
+    def test_cluster_key_without_values_returns_none(self):
+        config = EnsembleConfig(
+            cluster_mapping={"cluster_0": ["t1"]},
+            cluster_key=["ccy"],
+        )
+        assert config.get_cluster_keys_for_router() is None
+
+
 class TestEnsembleConfigDefaults:
     def test_default_aggregation(self):
         config = EnsembleConfig()

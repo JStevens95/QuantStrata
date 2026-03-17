@@ -58,7 +58,10 @@ class EnsembleBuilder:
         self._validate_coverage(config)
 
         members = self._load_members(config, member_versions)
-        router = TradeRouter(config.cluster_mapping)
+        router = TradeRouter(
+            config.cluster_mapping,
+            cluster_keys=config.get_cluster_keys_for_router(),
+        )
 
         cluster_trade_indices = self._build_cluster_trade_indices(config)
         n_total = len(config.all_trade_ids)

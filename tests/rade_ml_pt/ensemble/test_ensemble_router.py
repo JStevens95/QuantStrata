@@ -98,3 +98,62 @@ class TestTradeRouterAssignNewTrade:
     def test_assign_without_centroids_or_default_raises(self, router):
         with pytest.raises(ValueError, match="Cannot assign"):
             router.assign_new_trade({"features": np.array([1.0])})
+
+    def test_assign_with_cluster_keys_match(self, cluster_mapping):
+        cluster_keys = {
+            "cluster_0": {"ccy": "ccy1", "product": "product1", "desk": "desk1"},
+            "cluster_1": {"ccy": "ccy1", "product": "product2", "desk": "desk1"},
+        }
+        router = TradeRouter(cluster_mapping, cluster_keys=cluster_keys)
+        cid = router.assign_new_trade({"ccy": "ccy1", "product": "product2", "desk": "desk1"})
+        assert cid == "cluster_1"
+
+    def test_assign_with_cluster_keys_match_first_cluster(self, cluster_mapping):
+        cluster_keys = {
+            "cluster_0": {"ccy": "ccy1", "product": "product1", "desk": "desk1"},
+            "cluster_1": {"ccy": "ccy1", "product": "product2", "desk": "desk1"},
+        }
+        router = TradeRouter(cluster_mapping, cluster_keys=cluster_keys)
+        cid = router.assign_new_trade({"ccy": "ccy1", "product": "product1", "desk": "desk1"})
+        assert cid == "cluster_0"
+
+    def test_assign_with_cluster_keys_no_match_falls_back_to_default(self, cluster_mapping):
+        cluster_keys = {
+            "cluster_0": {"ccy": "ccy1", "product": "product1"},
+            "cluster_1": {"ccy": "ccy1", "product": "product2"},
+        }
+        router = TradeRouter(cluster_mapping, default_cluster="cluster_0", cluster_keys=cluster_keys)
+        cid = router.assign_new_trade({"ccy": "ccy2", "product": "product3"})
+        assert cid == "cluster_0"
+
+    def test_assign_with_cluster_key_and_values_format(self, cluster_mapping):
+        """Router receives keys built from cluster_key + cluster_key_values (e.g. from config)."""
+        cluster_key = ["ccy", "desk", "product"]
+        cluster_key_values = {
+            "cluster_0": ["GBP", "FLOW_RATES", "EUROPEAN"],
+            "cluster_1": ["USD", "FLOW_RATES", "AMERICAN"],
+        }
+        cluster_keys = {
+            cid: dict(zip(cluster_key, values))
+            for cid, values in cluster_key_values.items()
+        }
+        router = TradeRouter(cluster_mapping, cluster_keys=cluster_keys)
+        assert router.assign_new_trade({"ccy": "GBP", "desk": "FLOW_RATES", "product": "EUROPEAN"}) == "cluster_0"
+        assert router.assign_new_trade({"ccy": "USD", "desk": "FLOW_RATES", "product": "AMERICAN"}) == "cluster_1"
+
+    def test_assign_cluster_keys_take_precedence_over_centroids(self, cluster_mapping):
+        cluster_keys = {
+            "cluster_0": {"ccy": "ccy1", "product": "product1"},
+            "cluster_1": {"ccy": "ccy1", "product": "product2"},
+        }
+        router = TradeRouter(cluster_mapping, cluster_keys=cluster_keys)
+        centroids = {
+            "cluster_0": np.array([0.0, 0.0]),
+            "cluster_1": np.array([1.0, 1.0]),
+        }
+        # Trade attributes match cluster_1; even if features are near cluster_0 centroid, key wins
+        cid = router.assign_new_trade(
+            {"ccy": "ccy1", "product": "product2", "features": np.array([0.0, 0.0])},
+            cluster_centroids=centroids,
+        )
+        assert cid == "cluster_1"

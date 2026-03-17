@@ -40,6 +40,9 @@ src/rade_ml_pt/
 │   │                               #     defaults to HybridGnnRnnTrainPipeline for all if omitted
 │   │                               #   - cluster_mapping: Dict[str, List[str]]
 │   │                               #     (cluster_id -> list of trade IDs)
+│   │                               #   - cluster_key: optional ["ccy", "desk", "product"]
+│   │                               #   - cluster_key_values: optional {cluster_id: [val_ccy, val_desk, val_product]}
+│   │                               #   - get_cluster_keys_for_router() -> {cluster_id: {attr: value}}
 │   │                               #   - aggregation: str ("concat", "weighted_mean")
 │   │                               #   - weights: Optional[Dict[str, float]]
 │   │                               #   - registry_dir, artifacts_dir
@@ -59,8 +62,10 @@ src/rade_ml_pt/
 │   │
 │   ├── router.py                   # TradeRouter
 │   │                               #   - cluster_mapping: Dict[str, List[str]]
+│   │                               #   - cluster_keys: optional {cluster_id: {ccy, product, desk, ...}}
+│   │                               #     for attribute-based routing of new trades (no centroids needed)
 │   │                               #   - route(trade_ids) -> Dict[str, List[str]]
-│   │                               #   - assign_new_trade(attribs) -> cluster_id
+│   │                               #   - assign_new_trade(attribs) -> cluster_id (keys or centroids)
 │   │                               #   - get_cluster_for_trade(trade_id) -> cluster_id
 │   │
 │   ├── aggregation.py              # Aggregation strategies
@@ -540,6 +545,80 @@ disjoint; add overlap support later if needed.
 An ensemble version is a **bundle** of member versions plus routing config. Changing any
 member (re-training one cluster) creates a new ensemble version. The registry stores the
 full mapping so any past ensemble can be exactly reproduced.
+
+### New-trade routing: cluster keys vs centroids
+
+For **known** trades, routing is a lookup: `cluster_mapping` (and `trade_cluster_map.json`)
+give trade_id → cluster_id. For **new** trades at inference time you need a rule to assign
+them. Two options:
+
+- **Cluster keys (attribute-based):** You can define routing by a shared list of attribute
+  names and per-cluster value lists. Set **cluster_key** = e.g. `["ccy", "desk", "product"]`
+  and **cluster_key_values** = e.g. `{"cluster_0": ["GBP", "FLOW_RATES", "EUROPEAN"], "cluster_1": ["USD", "FLOW_RATES", "AMERICAN"]}`.
+  The config builds the key dict per cluster (same order as `cluster_key`), and the router
+  assigns a new trade to the cluster whose key matches the trade’s attributes. Alternatively
+  set **cluster_keys** directly: `{cluster_id: {attr: value, ...}}`. No centroid data needed.
+- **Centroids:** You have a feature vector per cluster (e.g. from training). The router
+  assigns the new trade to the cluster whose centroid is nearest to the trade’s feature
+  vector (e.g. `trade_attribs["features"]`). Requires pre-computed centroids.
+
+`assign_new_trade` tries **keys first**, then **centroids**, then **default_cluster**. So
+you can use cluster keys only (no centroids), and route by ccy/product/desk (or any
+attribute set you define per cluster).
+
+**Example: config, router, and ensemble with attribute-based routing**
+
+Using the shared-attribute-names + per-cluster-values format:
+
+```python
+from src.rade_ml_pt.ensemble.config import EnsembleConfig
+from src.rade_ml_pt.ensemble.builder import EnsembleBuilder
+from src.rade_ml_pt.ensemble.router import TradeRouter
+
+# 1. Config: cluster_key = list of attribute names; each cluster has a list of values in that order
+config = EnsembleConfig(
+    cluster_mapping={
+        "cluster_0": ["trade_001", "trade_002"],   # known trades in this cluster
+        "cluster_1": ["trade_003", "trade_004"],
+    },
+    cluster_key=["ccy", "desk", "product"],
+    cluster_key_values={
+        "cluster_0": ["GBP", "FLOW_RATES", "EUROPEAN"],
+        "cluster_1": ["USD", "FLOW_RATES", "AMERICAN"],
+    },
+    aggregation="concat",
+    registry_dir="/path/to/registry",
+    artifacts_dir="/path/to/artifacts",
+)
+
+# 2. Build ensemble (loads members from registry; router gets keys from config)
+from src.rade_ml_pt.registry.store import ModelRegistry
+registry = ModelRegistry(config.registry_dir)
+builder = EnsembleBuilder(registry)
+member_versions = {"cluster_0": "v_abc", "cluster_1": "v_def"}  # from EnsembleRegistry
+ensemble = builder.build(config, member_versions)
+
+# 3. Router is inside the ensemble; it has cluster_keys = {"cluster_0": {"ccy": "GBP", ...}, ...}
+router = ensemble.router
+
+# --- Known trades: lookup by trade_id ---
+router.get_cluster_for_trade("trade_001")   # -> "cluster_0"
+router.route(["trade_001", "trade_003"])   # -> {"cluster_0": ["trade_001"], "cluster_1": ["trade_003"]}
+
+# --- New trades: assign by attributes (no centroids) ---
+new_trade_attribs = {"ccy": "USD", "desk": "FLOW_RATES", "product": "AMERICAN"}
+cluster_id = router.assign_new_trade(new_trade_attribs)   # -> "cluster_1"
+
+# 4. Inference: pipeline builds member_inputs per cluster (e.g. from new scenario/trade data),
+#    then ensemble.predict(member_inputs) returns combined predictions
+member_inputs = {
+    "cluster_0": {"trade_features": ..., "pnl_history": ..., ...},
+    "cluster_1": {"trade_features": ..., "pnl_history": ..., ...},
+}
+predictions = ensemble.predict(member_inputs)   # shape (n_scenarios, n_total_targets)
+```
+
+So: **config** holds `cluster_key` + `cluster_key_values` (and `cluster_mapping` for known trades). **Builder** turns that into a **TradeRouter** with derived `cluster_keys` and an **EnsembleModel**. **Known trades** use `get_cluster_for_trade` / `route`; **new trades** use `assign_new_trade(trade_attribs)` with the same attribute names. **Inference** uses the same ensemble and router; the inference pipeline is responsible for building `member_inputs` (e.g. routing new trades to clusters via `assign_new_trade`, then preparing each cluster’s model inputs).
 
 ### Pipeline reuse
 

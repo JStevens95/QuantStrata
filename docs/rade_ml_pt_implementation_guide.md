@@ -416,6 +416,58 @@ Items to revisit once the full migration is complete:
 
 ## Hybrid GNN-RNN inference pipeline (`infer.py`)
 
+### Clean pattern: same keys as training, no targets, one assembly point
+
+The model’s `forward()` expects a single dict with **exactly** these keys (see `_REQUIRED_KEYS` in the model):
+
+- `trade_features`, `pnl_history`, `adjacency_indices`, `adjacency_values`, `adjacency_dense_shape`, `elementary_indices`, `target_indices`
+
+Training adds a **targets** key for the loss; at inference you **never** add targets. So the inference “batch” is the same dict shape as training, with **different dimensions** (e.g. different number of scenarios, or more nodes for new trades), and **no** `targets` key.
+
+**Recommended structure:**
+
+1. **Load once (read-only)**  
+   Load all inference artifacts into a single **inference context**: `graph_builder`, `encoder`, `scalers`, `portfolio`, `elementary_universe` (and any precomputed static pieces you want). Do not mutate these; use them only to **build** the model input dict.
+
+2. **Single assembly function**  
+   Implement one helper that turns “static” and “variable” pieces into the dict the model expects:
+
+   ```text
+   _build_model_input_dict(static_dict, pnl_history) -> Dict[str, Tensor]
+   ```
+
+   - **static_dict**: `trade_features`, `adjacency_indices`, `adjacency_values`, `adjacency_dense_shape`, `elementary_indices`, `target_indices` (all tensors or arrays; you convert to tensor once here).
+   - **pnl_history**: `[n_scenarios, seq_len, n_elementary]` — the only per-scenario part.
+   - Return a dict with exactly the 7 keys above (same names as training). No `targets`.
+
+   This is the **only** place that knows how to assemble the model input. Both new_scenarios and new_trades end by calling this.
+
+3. **Branch only on how you get static_dict and pnl_history**
+
+   - **new_scenarios**  
+     - Static: from loaded artifacts (graph_builder + encoder) — same graph, same trade_features, same indices. Build `static_dict` from them.  
+     - Variable: build **pnl_history** from scenario data (portfolio + universe + PnL calculator), then scale with loaded scalers.  
+     - Call `_build_model_input_dict(static_dict, pnl_history)` → pass to `model.forward(inputs)`.
+
+   - **new_trades**  
+     - Static: extend graph via `build_graph_projection`, get new trade_features, new adjacency, new `elementary_indices` / `target_indices`. Build `static_dict` from these.  
+     - Variable: **pnl_history** — same as training scenario set or pad/zeros for new target columns, scaled with loaded scalers.  
+     - Call `_build_model_input_dict(static_dict, pnl_history)` → pass to `model.forward(inputs)`.
+
+4. **Inference “dataset”**  
+   You don’t need a separate Dataset class. The pipeline produces **one** dict (with the 7 keys) and calls `model.forward(inputs)`. If `n_scenarios` is very large, batch **pnl_history** (e.g. chunk into batches of 256), keep the same static_dict for every chunk, run `forward()` per chunk and concatenate predictions. The contract is always: same key names as training, no targets, dimensions can differ (batch size, or graph size for new_trades).
+
+5. **Summary**
+
+   | Step | What |
+   |------|------|
+   | Load | One-off: artifacts → inference context (graph_builder, encoder, scalers, portfolio, universe). |
+   | Branch | new_scenarios vs new_trades → only affects how you build `static_dict` and `pnl_history`. |
+   | Assemble | Single `_build_model_input_dict(static_dict, pnl_history)` → dict with 7 keys, no targets. |
+   | Predict | `model.forward(inputs)` (optionally batched over pnl_history chunks). |
+
+   This keeps logic in one place, avoids duplicating the “training batch shape” logic, and makes it explicit that inference uses the same names as training with different dimensions and no targets.
+
 ### `run()` docstring (loading and steps with function names)
 
 Use the following docstring on `HybridGnnRnnInferencePipeline.run()` so loading and each step are documented with the corresponding method names:
@@ -559,6 +611,78 @@ def post_infer(self, result: InferenceResult, config: PipelineConfig) -> None:
     3. Optional: save plots (e.g. prediction distribution), export to downstream format.
     """
 ```
+
+---
+
+## Artifact strategy: what to save at training for eval / inference
+
+Training consumes a **job** object (from rade_sr preprocessing) that includes asset portfolio, elementary trade universe, preprocessing config, and the ability to compute elementary PnLs (e.g. a PnL calculator). For **eval** and **inference** (standalone and ensemble) we need:
+
+- **Asset portfolio** and **elementary trade universe** — to build or extend inputs (e.g. new scenario → new elementary PnLs).
+- **PnL calculator** (or equivalent) — to turn new scenario data into elementary PnL for inference.
+
+You want to keep **rade_sr** (preprocessing) separate from **rade_ml**: eval/inference should not depend on re-running preprocessing or on user-defined paths that point into rade_sr at runtime. So the question is what to **persist at training time** so that eval/inference are self-contained.
+
+### Option A: Extract and save only portfolio + elementary trade universe (recommended)
+
+**What:** At training time, extract from the job the **asset portfolio** and **elementary trade universe** and save them under the registry version (e.g. `registry/{version}/inference_artifacts/portfolio.pt`, `elementary_universe.pt` or similar). Use a format rade_ml owns (e.g. pickle, joblib, or a small serialized schema).
+
+**Pros:**
+
+- Only the data needed for inference is stored; no full job blob.
+- rade_ml defines the artifact contract; eval/inference load from registry and do not call back into rade_sr for *data*.
+- Lighter than saving the whole job; versioning is clear (one version dir = one model + one portfolio + one universe).
+
+**Cons:**
+
+- You must keep the extracted set complete (if something else is needed later, you add it to the extract list).
+- The **PnL calculator** is separate (see below).
+
+**PnL calculator:** The calculator is logic (often depends on curves, market data, rade_sr). Three sub-options:
+
+1. **Serialize the calculator** (e.g. pickle) alongside portfolio/universe — only viable if the calculator and all its dependencies are picklable and the same code exists at load time; can be fragile across environments.
+2. **Calculator factory at inference time** — Do not persist the calculator. At inference, config (or user) supplies a path or module that, given portfolio + universe (loaded from artifacts), returns a callable that computes elementary PnL from scenario data. So: rade_ml loads portfolio + universe from artifacts; calls into a thin rade_sr hook: “build_calculator(portfolio, universe)” or “load_calculator_from(path)”. That keeps heavy logic in rade_sr but data in rade_ml.
+3. **Save calculator config / version** — Persist only a reference (e.g. calculator version or config name). At inference, that reference plus portfolio + universe (from artifacts) is passed to rade_sr to reconstruct the calculator (e.g. from a user-defined path or a known rade_sr API). Again, data lives in artifacts; calculator construction stays in rade_sr.
+
+Recommendation: **Option A for data** (extract portfolio + elementary trade universe into registry artifacts). For the calculator, use **2 or 3** so rade_ml stays agnostic of rade_sr’s internals and you avoid fragile pickling.
+
+### Option B: Save the whole job in artifacts
+
+**What:** At training time, save the entire job object (e.g. `job.pt`) under the registry version. Eval/inference load the job and pull portfolio, universe, and (if possible) calculator from it.
+
+**Pros:**
+
+- Nothing is missed; one artifact = everything training had.
+
+**Cons:**
+
+- Heavy (job can be large); ties artifact format to the current job structure from rade_sr. If the job schema changes, old artifacts can break. Blurs ownership: the “registry artifact” is literally the preprocessing job.
+
+**Verdict:** Prefer **Option A** for a clear separation: rade_ml owns a minimal, stable inference payload (portfolio + universe + model + graph/encoder/scalers); rade_sr owns job structure and calculator construction.
+
+### Option C: User-defined path at eval/inference time
+
+**What:** Do not save portfolio/universe at training. At eval/inference, the user supplies a path (or config) that points to the output of a preprocessing run; the pipeline loads portfolio/universe (and maybe calculator) from there.
+
+**Pros:**
+
+- No heavy write at training; no duplication of large objects.
+
+**Cons:**
+
+- Eval/inference depend on that path and on rade_sr being available at load time. Reproducibility and versioning are harder (which path? which preprocessing version?). Less self-contained.
+
+**Verdict:** Use only if you explicitly want “inference always reads latest preprocessing output from a known location.” For “this model version was trained with this portfolio/universe,” **Option A** is cleaner.
+
+### Summary (standalone and ensemble)
+
+| Approach | Save at training | Eval/inference load | rade_sr coupling |
+|----------|------------------|----------------------|------------------|
+| **A: Extract portfolio + universe** | Yes (minimal) | From registry | Only for calculator factory/config (optional) |
+| **B: Save whole job** | Yes (full job) | From registry | Artifact is rade_sr object |
+| **C: User path** | No | From user path | Eval/inference call rade_sr or read its output |
+
+**Recommended:** **Option A** — extract asset portfolio and elementary trade universe from the job during training and save them as part of the version’s inference artifacts. Use a small, rade_ml-defined contract (e.g. `load_inference_artifacts(version_dir)` → dict with `portfolio`, `elementary_universe`, plus graph_builder, encoder, scalers as today). For the PnL calculator, require a factory or config at inference time (or a serialized calculator only if it is simple and stable). Same pattern applies to **ensemble**: each member version can store its own inference artifacts (portfolio + universe for that cluster’s training job); the ensemble inference pipeline loads per member from each member’s registry version.
 
 ---
 
