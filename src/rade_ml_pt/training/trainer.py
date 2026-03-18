@@ -26,6 +26,11 @@ import torch.nn as nn
 
 from src.rade_ml_pt.core.types import TrainingResult
 from src.rade_ml_pt.training.callbacks import Callback, EarlyStopping, get_standard_callbacks
+from src.rade_ml_pt.training.losses import (
+    QuantileLoss,
+    HuberQuantileLoss,
+    CompositeMAEQuantileLoss,
+)
 
 if TYPE_CHECKING:
     from src.rade_ml_pt.core.config import TrainingConfig
@@ -38,6 +43,9 @@ _LOSS_MAP: Dict[str, type] = {
     "mae": nn.L1Loss,
     "huber": nn.HuberLoss,
     "smooth_l1": nn.SmoothL1Loss,
+    "quantile": QuantileLoss,
+    "huber_quantile": HuberQuantileLoss,
+    "mae_quantile": CompositeMAEQuantileLoss,
 }
 
 

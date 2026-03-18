@@ -8,6 +8,7 @@ Public API::
         EnsembleModel,
         EnsembleBuilder,
         EnsembleRegistry,
+        EnsembleSession,
         TradeRouter,
     )
 """
@@ -15,6 +16,7 @@ from src.rade_ml_pt.ensemble.config import EnsembleConfig
 from src.rade_ml_pt.ensemble.model import EnsembleModel
 from src.rade_ml_pt.ensemble.builder import EnsembleBuilder
 from src.rade_ml_pt.ensemble.registry import EnsembleRegistry
+from src.rade_ml_pt.ensemble.session import EnsembleSession
 from src.rade_ml_pt.ensemble.router import TradeRouter
 
 __all__ = [
@@ -22,5 +24,6 @@ __all__ = [
     "EnsembleModel",
     "EnsembleBuilder",
     "EnsembleRegistry",
+    "EnsembleSession",
     "TradeRouter",
 ]

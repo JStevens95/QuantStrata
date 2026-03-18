@@ -18,22 +18,8 @@ from typing import Any, TYPE_CHECKING, Optional
 from src.rade_ml_pt.pipelines.base import TrainPipeline
 from src.rade_ml_pt.pipelines.config import PipelineConfig
 from src.rade_ml_pt.data.hybrid_gnn_rnn.config import HybridGnnRnnDataConfig
-
-
-def _json_safe(obj):
-    """Convert numpy types to native Python for JSON serialisation."""
-    if isinstance(obj, np.ndarray):
-        return obj.tolist()
-    if isinstance(obj, (np.integer,)):
-        return int(obj)
-    if isinstance(obj, (np.floating,)):
-        return float(obj)
-    if isinstance(obj, (np.str_,)):
-        return str(obj)
-    if isinstance(obj, (np.bool_,)):
-        return bool(obj)
-    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 from src.rade_ml_pt.data.hybrid_gnn_rnn.build import build_dataset
+from src.rade_ml_pt.data.hybrid_gnn_rnn.plots import plot_pnl_distribution, plot_trade_graph
 
 if TYPE_CHECKING:
     import torch.nn as nn
@@ -43,6 +29,7 @@ if TYPE_CHECKING:
     from src.rade_ml_pt.tracking.tracker import ExperimentTracker
     from src.rade_ml_pt.core.types import TrainingResult
 
+# define module level logging.
 logger = logging.getLogger(__name__)
 
 
@@ -69,47 +56,6 @@ class HybridGnnRnnTrainPipeline(TrainPipeline):
             self._plot_graph(result, data_config)
 
         return result
-
-    def _plot_graph(self, result: "DataBuildResult", config: HybridGnnRnnDataConfig) -> None:
-        """Visualise the trade graph after the data build."""
-        from src.rade_ml_pt.data.hybrid_gnn_rnn.plots import plot_trade_graph
-        from src.rade_ml_pt.data.hybrid_gnn_rnn.build import HybridGnnRnnResult
-
-        if not isinstance(result, HybridGnnRnnResult) or result.graph_builder is None:
-            logger.warning("Cannot plot trade graph: missing graph_builder on result.")
-            return
-
-        builder = result.graph_builder
-        n = builder.sparse_shape[0]
-        is_target = np.zeros(n, dtype=bool)
-        if result.target_idx is not None:
-            is_target[result.target_idx] = True
-
-        trade_ids = None
-        if result.elementary_ids and result.target_ids:
-            all_ids = [""] * n
-            if result.elementary_idx is not None:
-                for i, tid in zip(result.elementary_idx, result.elementary_ids):
-                    all_ids[i] = tid
-            if result.target_idx is not None:
-                for i, tid in zip(result.target_idx, result.target_ids):
-                    all_ids[i] = tid
-            trade_ids = all_ids
-
-        save_dir = Path(config.folders.root_folder) / "plots"
-        save_path = save_dir / "trade_graph.png"
-
-        plot_trade_graph(
-            adjacency_indices=builder.sparse_indices,
-            adjacency_values=builder.sparse_values,
-            adjacency_dense_shape=np.array(builder.sparse_shape, dtype=np.int64),
-            is_target=is_target,
-            trade_ids=trade_ids,
-            features=builder.features,
-            title="Trade Relationship Graph — Training",
-            save_path=save_path,
-        )
-        logger.info(f"Trade graph visualisation saved to {save_path}")
 
     def build_model(
         self,
@@ -144,22 +90,17 @@ class HybridGnnRnnTrainPipeline(TrainPipeline):
         Register model, log run, save inference artifacts alongside the model,
         then run custom post-training plotting.
         """
-        super().post_train(
-            result, model, registry=registry, tracker=tracker, run=run,
-            data_result=data_result,
-        )
+        # default: register model and log to tracker
+        super().post_train(result, model, registry=registry, tracker=tracker, run=run, data_result=data_result)
 
+        # custom: save input artifacts.
         if self._registered_entry is not None and data_result is not None:
-            self._save_inference_artifacts(self._registered_entry, data_result)
+            self._save_training_artifacts(self._registered_entry, data_result)
 
         if self.config.artifacts_dir and data_result is not None:
             self._post_train_plots(result, model, data_result)
 
-    def _save_inference_artifacts(
-        self,
-        entry: Any,
-        data_result: "DataBuildResult",
-    ) -> None:
+    def _save_training_artifacts(self, entry: Any, data_result: "DataBuildResult") -> None:
         """
         Save artifacts needed for cold-start inference alongside the registered model.
 
@@ -170,37 +111,82 @@ class HybridGnnRnnTrainPipeline(TrainPipeline):
         import joblib
         from src.rade_ml_pt.data.hybrid_gnn_rnn.build import HybridGnnRnnResult
 
-        if not isinstance(data_result, HybridGnnRnnResult):
-            logger.warning("Cannot save inference artifacts: data_result is not HybridGnnRnnResult")
-            return
+        # check data results are of correct type.
+        assert isinstance(data_result, HybridGnnRnnResult), \
+            "Cannot save artifacts: data_result isn't HybridGnnRnnResult"
 
+        # create dir for saving.
         version_dir = Path(entry.model_dir)
 
-        if data_result.builder is not None:
-            data_result.builder.save(version_dir / "graph_builder.pkl")
+        # ---- saving graph builder object & results. ----
+        if data_result.graph_builder is not None:
+            data_result.graph_builder.save(version_dir / "graph_builder.pkl")
             logger.info(f"Saved graph_builder.pkl to {version_dir}")
+        if data_result.graph_results is not None:
+            joblib.dump(value=data_result.graph_results, filename=version_dir / "graph_results.joblib", compress=5)
+            logger.info(f"Saved graph_results.joblib to {version_dir}")
 
+        # ---- saving attribute encoder object & results ----
         if data_result.encoder is not None:
             data_result.encoder.save(version_dir / "encoder.pkl")
             logger.info(f"Saved encoder.pkl to {version_dir}")
+        if data_result.encoder_results is not None:
+            joblib.dump(value=data_result.encoder_results, filename=version_dir / "encoder_results.joblib", compress=5)
+            logger.info(f"Saved encoder_results.joblib to {version_dir}")
 
-        target_scaler = data_result.metadata.get("target_pnl_transformer")
+        # ---- saving elementary and target transformer objects. ----
+        target_scaler = data_result.metadata["target_pnl_transformer"]
         if target_scaler is not None:
-            joblib.dump(target_scaler, version_dir / "target_scaler.pkl")
-
-        elementary_scaler = data_result.metadata.get("elementary_pnl_transformer")
+            joblib.dump(value=target_scaler, filename=version_dir / "target_scaler.pkl")
+            logger.info(f"Saved target_scaler.pkl to {version_dir}")
+        elementary_scaler = data_result.metadata["elementary_pnl_transformer"]
         if elementary_scaler is not None:
-            joblib.dump(elementary_scaler, version_dir / "elementary_scaler.pkl")
+            joblib.dump(value=elementary_scaler, filename=version_dir / "elementary_scaler.pkl")
+            logger.info(f"Saved elementary_scaler.pkl to {version_dir}")
 
-        data_config = self.config.data_config
+        # ---- saving data pipeline configuration. ----
+        data_config = data_result.data_config
         if data_config is not None:
             if hasattr(data_config, "to_json"):
-                data_config.to_json(version_dir / "data_config.json")
+                data_config.to_json(path=version_dir / "data_config.json")
+                logger.info(f"Saved data_config.json to {version_dir}")
             elif isinstance(data_config, dict):
                 with open(version_dir / "data_config.json", "w") as f:
                     json.dump(data_config, f, indent=2)
+                logger.info(f"Saved data_config.json to {version_dir}")
 
+        # ---- saving trade universe. ----
         universe = {
+            # scenario / split tracking.
+            "scenarios": data_result.metadata.get("scenarios", []),
+            "sequence_length": data_result.metadata.get("sequence_length", int),
+            "scenarios_idx": data_result.metadata.get("scenarios_idx", []),
+
+            # training periods
+            "train_indices": data_result.metadata.get("train_indices", np.array([])).tolist(),
+            "train_starts": data_result.metadata.get("train_starts", np.array([])).tolist(),
+            "train_ends": data_result.metadata.get("train_ends", np.array([])).tolist(),
+            "train_size": data_result.metadata.get("train_size", np.array([])),
+            "train_scenarios": data_result.metadata.get("train_scenarios", np.array([])),
+            "train_end_scenarios": data_result.metadata.get("train_end_scenarios", np.array([])),
+
+            # validation periods.
+            "val_indices": data_result.metadata.get("val_indices", np.array([])).tolist(),
+            "val_starts": data_result.metadata.get("val_starts", np.array([])).tolist(),
+            "val_ends": data_result.metadata.get("val_ends", np.array([])).tolist(),
+            "val_size": data_result.metadata.get("val_size", np.array([])).tolist(),
+            "val_scenarios": data_result.metadata.get("val_scenarios", np.array([])),
+            "val_end_scenarios": data_result.metadata.get("val_end_scenarios", np.array([])),
+
+            # test periods.
+            "test_indices": data_result.metadata.get("test_indices", np.array([])).tolist(),
+            "test_starts": data_result.metadata.get("test_starts", np.array([])).tolist(),
+            "test_ends": data_result.metadata.get("test_ends", np.array([])).tolist(),
+            "test_size": data_result.metadata.get("test_size", np.array([])).tolist(),
+            "test_scenarios": data_result.metadata.get("test_scenarios", np.array([])),
+            "test_end_scenarios": data_result.metadata.get("test_end_scenarios", np.array([])),
+
+            # trade universe
             "elementary_ids": data_result.metadata.get("elementary_ids", []),
             "target_ids": data_result.metadata.get("target_ids", []),
             "elementary_idx": data_result.metadata.get("elementary_idx", []),
@@ -209,29 +195,40 @@ class HybridGnnRnnTrainPipeline(TrainPipeline):
             "removed_trades": data_result.metadata.get("removed_trades", []),
         }
         with open(version_dir / "trade_universe.json", "w") as f:
-            json.dump(universe, f, indent=2, default=_json_safe)
+            json.dump(universe, f, indent=2)
+        logger.info(f"Saved trade_universe.json to {version_dir}")
 
+        # ---- saving scaled and reduced elementary and target pnl. ----
         if data_result.target_pnl is not None:
-            data_result.target_pnl.to_parquet(version_dir / "target_pnl.parquet")
+            data_result.target_pnl.to_parquet(path=version_dir / "target_pnl.parquet")
+            logger.info(f"Saved target_pnl.parquet to {version_dir}")
         if data_result.elementary_pnl is not None:
-            data_result.elementary_pnl.to_parquet(version_dir / "elementary_pnl.parquet")
+            data_result.elementary_pnl.to_parquet(path=version_dir / "elementary_pnl.parquet")
+            logger.info(f"Saved elementary_pnl.parquet to {version_dir}")
 
+        # ---- saving elementary and target attributes ----
         if data_result.target_attributes is not None:
             with open(version_dir / "target_attributes.json", "w") as f:
-                json.dump(data_result.target_attributes, f, indent=2, default=_json_safe)
+                json.dump(data_result.target_attributes, f, indent=2)
+            logger.info(f"Saved target_attributes.json to {version_dir}")
         if data_result.elementary_attributes is not None:
             with open(version_dir / "elementary_attributes.json", "w") as f:
-                json.dump(data_result.elementary_attributes, f, indent=2, default=_json_safe)
+                json.dump(data_result.elementary_attributes, f, indent=2)
+            logger.info(f"Saved elementary_attributes.json to {version_dir}")
 
+        # ---- save datasets ----
         self._save_datasets(version_dir, data_result)
 
-        logger.info(f"Inference artifacts saved to {version_dir}")
+        # ---- save input job object as pkl file. ----
+        job = self.config.metadata.get("job", {})
+        for key, value in job.items():
+            if key not in ["name", "request_log"]:
+                joblib.dump(value, version_dir / f"{key}.joblib", compress=5)
+            logger.info(f"Saved {key} to {version_dir}")
+        logger.info(f"Artifacts saved to {version_dir}")
 
-    def _save_datasets(
-        self,
-        version_dir: Path,
-        data_result: "DataBuildResult",
-    ) -> None:
+    @staticmethod
+    def _save_datasets(version_dir: Path, data_result: "DataBuildResult") -> None:
         """
         Persist DataLoader backing data to the registry version directory.
 
@@ -242,19 +239,41 @@ class HybridGnnRnnTrainPipeline(TrainPipeline):
         ds_dir = version_dir / "datasets"
         ds_dir.mkdir(exist_ok=True)
 
-        for name, loader in [("train", data_result.train_ds),
-                             ("val", data_result.val_ds),
-                             ("test", data_result.test_ds)]:
+        for name, loader in [
+            ("train", data_result.train_ds), ("val", data_result.val_ds), ("test", data_result.test_ds)
+        ]:
             if loader is not None and hasattr(loader, "dataset"):
                 save_path = ds_dir / f"{name}.pt"
                 torch.save(loader.dataset, str(save_path))
                 logger.info(f"Saved {name} dataset to {save_path}")
 
-    def _post_train_plots(
-        self,
-        result: "TrainingResult",
-        model: "nn.Module",
-        data_result: "DataBuildResult",
-    ) -> None:
+    def _post_train_plots(self, result: "TrainingResult", model: "nn.Module", data_result: "DataBuildResult") -> None:
         """Run GNN-RNN-specific plots after training (e.g. prediction scatter, attention)."""
-        pass
+        from src.rade_ml_pt.training.plots import plot_training_analytics
+
+        # define training artifacts path.
+        save_path = Path(self.config.artifacts_dir, "training", self._registered_entry.version)
+        save_path.mkdir(parents=True, exist_ok=True)
+
+        # plotting training analytics.
+        plot_training_analytics(result=result, save_dir=save_path)
+
+        # plotting pnl distribution, if specified in configuration.
+        if self.config.data_config["plot_pnl_distribution"] and self.config.artifacts_dir:
+            plot_pnl_distribution(
+                elementary_pnl=data_result.elementary_pnl, target_pnl=data_result.target_pnl,
+                train_indices=data_result.metadata["train_indices"], save_path=save_path
+            )
+
+        # plotting trade graph
+        if self.config.data_config["plot_trade_graph"]:
+            # plot trade graph analytics.
+            plot_trade_graph(
+                adjacency_indices=data_result.graph_results["sparse_indices"],
+                adjacency_values=data_result.graph_results["sparse_values"],
+                adjacency_dense_shape=data_result.graph_results["sparse_shape"],
+                is_target=data_result.graph_results["is_target"],
+                features=data_result.encoder_results["combined_features"],
+                trade_ids=data_result.metadata["elementary_ids"] + data_result.metadata["target_ids"],
+                save_path=save_path
+            )

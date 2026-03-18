@@ -402,7 +402,12 @@ class InferencePipeline(abc.ABC):
     """
 
     def __init__(self, config: PipelineConfig) -> None:
+
+        # initiate required variables.
         self.config = config
+
+        # initiate placeholder for loaded runner.
+        self._loaded_runner: Optional[Any] = None
 
     # ------------------------------------------------------------------
     # Abstract hooks
@@ -464,14 +469,18 @@ class InferencePipeline(abc.ABC):
         """
         logger.info("InferencePipeline: starting")
 
+        # 1. load inference runner.
         runner = self.load_runner(self.config)
+        self._loaded_runner = runner
         logger.info("InferencePipeline: runner loaded")
 
+        # 2. prepare inputs.
         prepared = self.prepare_inputs(self.config)
         inputs = prepared["inputs"]
         sample_ids = prepared.get("sample_ids", prepared.get("trade_ids"))
         metadata = prepared.get("metadata")
 
+        # 3. return cls instance.
         result_cls = self.get_result_cls()
         result = runner.predict(
             inputs=inputs,
@@ -484,6 +493,7 @@ class InferencePipeline(abc.ABC):
             f"({result.n_samples} samples, {result.latency_seconds:.3f}s)"
         )
 
+        # 4. optional post-infer hook.
         self.post_infer(result, self.config)
 
         logger.info("InferencePipeline: done")

@@ -42,6 +42,12 @@ logger = logging.getLogger(__name__)
 @dataclass
 class HybridGnnRnnResult(DataBuildResult):
     """Result of build_dataset() and DataLoader splits for Hybrid GNN-RNN model."""
+    # cluster information for training run -- from input job.
+    cluster_info: Dict[str, Any] = None
+
+    # data configuration -- configuration to build input data.
+    data_config: HybridGnnRnnDataConfig = None
+
     # elementary result objects
     elementary_pnl: Optional[pd.DataFrame] = None
     elementary_attributes: Optional[Dict[str, List[Any]]] = None
@@ -51,7 +57,7 @@ class HybridGnnRnnResult(DataBuildResult):
     target_attributes: Optional[Dict[str, List[Any]]] = None
 
     # graph builder objects
-    builder: Optional[TradeGraphBuilder] = None
+    graph_builder: Optional[TradeGraphBuilder] = None
     graph_results: Optional[Dict[str, Any]] = None
 
     # attribute encoder objects
@@ -115,13 +121,12 @@ def build_dataset(
     )
 
     # ---- 4. construct trade graph ----
-    builder, graph_result = build_trade_graph(
+    graph_builder, graph_result = build_trade_graph(
         config=config.graph_builder, encoded_features=encoder_results["combined_encoded"]
     )
 
     # ---- 5. build DataLoader splits ----
     # extract adjacency components as numpy arrays for static inputs
-    adj_sp = graph_result["adjacency_matrix"]
     elem_pnl = elementary_pnl.to_numpy()
     tgt_pnl = target_pnl.to_numpy()
 
@@ -155,6 +160,12 @@ def build_dataset(
     ) if metadata["test_size"] > 0.0 else None
 
     return HybridGnnRnnResult(
+        # cluster information.
+        cluster_info=cluster_info,
+
+        # data configuration
+        data_config=config,
+
         # elementary trade objects
         elementary_pnl=elementary_pnl, elementary_attributes=elementary_attributes,
 
@@ -162,7 +173,7 @@ def build_dataset(
         target_pnl=target_pnl, target_attributes=target_attributes,
 
         # graph builder objects
-        builder=builder, graph_results=graph_result,
+        graph_builder=graph_builder, graph_results=graph_result,
 
         # attribute encoder objects
         encoder=encoder, encoder_results=encoder_results,
@@ -213,6 +224,7 @@ def build_metadata(metadata: Dict[str, Any], elementary_pnl: pd.DataFrame, targe
     return {
         # scenario / split tracking.
         "scenarios": metadata["scenarios"],
+        "scenario_idx": np.arange(len(elementary_pnl)).tolist(),
         "sequence_length": metadata["sequence_length"],
 
         # training periods.
@@ -382,7 +394,9 @@ def standardise_pnl_history(
     # ---- 2. fit transformer on training data only ----
     training_idx = pnl_periods["train_indices"]
     elementary_transformer.fit(elementary_pnl_arr[training_idx, :])
+    elementary_transformer.feature_names_in_ = np.array(elementary_pnl.columns.to_list())
     target_transformer.fit(target_pnl_arr[training_idx, :])
+    target_transformer.feature_names_in_ = np.array(target_pnl.columns.to_list())
 
     # ---- 3. transform full pnl history (train/val/test) ----
     elementary_pnl_scaled = elementary_transformer.transform(elementary_pnl_arr)
