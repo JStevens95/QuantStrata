@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from src.rade_ml_pt.data.result import DataBuildResult
+from src.rade_ml_pt.data.hybrid_gnn_rnn.config import HybridGnnRnnDataConfig
 from src.rade_ml_pt.utilities.graph_builder import TradeGraphBuilder
 from src.rade_ml_pt.utilities.attribute_encoder import TradeAttributeEncoder
 
@@ -121,14 +122,20 @@ class HybridGnnRnnInferencePipeline(InferencePipeline):
     _prepare_new_scenarios_inputs() or _prepare_new_trade_inputs().
     """
 
+    def __init__(self, config: PipelineConfig) -> None:
+        super().__init__(config)
+        self._inference_context: Optional[InferenceContext] = None
+
     def get_result_cls(self) -> type:
         return InferenceResult
 
     def build_inference_context(self) -> InferenceContext:
-        """Build InferenceContext instance."""
-        # load context data.
+        """Build and cache InferenceContext instance (loaded once, reused by post_infer)."""
+        if self._inference_context is not None:
+            return self._inference_context
+
         context = self.load_inference_context()
-        return InferenceContext(
+        self._inference_context = InferenceContext(
             data_config=context.get("data_config"), encoder=context.get("encoder"),
             encoder_results=context.get("encoder_results"), graph_builder=context.get("graph_builder"),
             graph_results=context.get("graph_results"), elementary_pnl=context.get("elementary_pnl"),
@@ -137,6 +144,7 @@ class HybridGnnRnnInferencePipeline(InferencePipeline):
             trade_universe=context.get("trade_universe"), cluster_info=context.get("cluster_info"),
             cluster_assets=context.get("cluster_assets"), cluster_elem_trades=context.get("cluster_elem_trades"),
         )
+        return self._inference_context
 
     @staticmethod
     def calculate_elementary_pnl(
@@ -217,23 +225,24 @@ class HybridGnnRnnInferencePipeline(InferencePipeline):
         context: Dict[str, Any] = {
             "encoder": TradeAttributeEncoder.load(file_path=version_dir / "encoder.pkl"),
             "graph_builder": TradeGraphBuilder.load(file_path=version_dir / "graph_builder.pkl"),
+            "data_config": HybridGnnRnnDataConfig.from_json(path=version_dir / "data_config.json"),
         }
         if version_dir is not None:
             for name, fname in [
-                ("data_config", "data_config.json"),
                 ("graph_results", "graph_results.joblib"),
                 ("encoder_results", "encoder_results.joblib"),
                 ("elementary_pnl", "elementary_pnl.parquet"),
                 ("elementary_attribs", "elementary_attributes.json"),
                 ("elementary_scaler", "elementary_scaler.pkl"),
                 ("target_attribs", "target_attributes.json"),
+                ("target_scaler", "target_scaler.pkl"),
                 ("trade_universe", "trade_universe.json"),
                 ("cluster_info", "cluster_info.joblib"),
                 ("cluster_assets", "cluster_assets.joblib"),
                 ("cluster_elem_trades", "cluster_elem_trades.joblib"),
             ]:
                 p = version_dir / fname
-                if p.exists() and str(p).endswith(".joblib") or str(p).endswith(".pkl"):
+                if p.exists() and (str(p).endswith(".joblib") or str(p).endswith(".pkl")):
                     context[name] = joblib.load(str(p))
                 if p.exists() and str(p).endswith(".json"):
                     with open(p) as f:
@@ -258,7 +267,7 @@ class HybridGnnRnnInferencePipeline(InferencePipeline):
     def prepare_inputs(self, config: PipelineConfig) -> Dict[str, Any]:
         """Build mode-ready inputs from the pipeline config."""
         # 0. load inference context from artifacts registry.
-        context = self.load_inference_context()
+        context = self.build_inference_context()
 
         # extract inference metadata from pipeline configuration.
         infer_meta = config.metadata.get("inference", {})
@@ -277,13 +286,21 @@ class HybridGnnRnnInferencePipeline(InferencePipeline):
             self, config: PipelineConfig, context: InferenceContext
     ) -> Dict[str, Any]:
         """
-        Build mode-ready inputs - incorporating new risk-factor scenario shocks.
+        Build mode-ready inputs — incorporating new risk-factor scenario shocks.
 
         Steps
         -----
-
+        1. Load new risk-factor shock CSVs.
+        2. Inject unchanged static inputs (trade_features, adjacency, indices).
+        3. Deep-copy asset portfolio with new shocks injected.
+        4. Filter elementary trades to match cluster's reduced population.
+        5. Calculate elementary PnL for new scenarios.
+        6. Concatenate elementary PnL across assets, reorder to training column order.
+        7. Standardise elementary PnL using saved scaler.
+        8. Store scaled PnL on InferenceInputData.
+        9. Build PnL sequences with same windowing as training.
+        10. Assemble 7-key model input dict and return base-class contract.
         """
-
         # 1. load and format new risk-factor shock data.
         new_scenario_dir = config.metadata["inference"].get("new_scenario_dir")
         new_scenario_shocks = self.load_new_scenarios(new_scenario_dir)
@@ -317,20 +334,135 @@ class HybridGnnRnnInferencePipeline(InferencePipeline):
         # 8. inject new scaled elementary pnl dataframe into inputs.
         inputs.elementary_pnl = pd.DataFrame(
             new_elementary_pnl_scaled, columns=context.elementary_pnl.columns.tolist(),
-            index=context.elementary_pnl.index.tolist()
+            index=new_elementary_pnl.index.tolist(),
         )
 
-        # 9. build inference dataloader.
+        # 9. build PnL sequences — same windowing as training.
+        elem_seq = self.build_new_pnl_sequences(
+            elementary_pnl=inputs.elementary_pnl,
+            seq_length=context.data_config.seq_length,
+            n_targets=len(inputs.target_indices),
+        )
 
-        # 10. construct final inference inputs.
-        output = {}
-        return output
+        # 10. assemble 7-key model input dict and base-class contract.
+        return self.build_model_inputs(
+            elem_seq=elem_seq,
+            inputs=inputs,
+            seq_length=context.data_config.seq_length,
+        )
 
     def post_infer(self, result: InferenceResult, config: PipelineConfig) -> None:
-        """Inference specific analytics after predictions."""
+        """
+        Inverse-scale predictions back to original PnL units.
+
+        The model outputs predictions in the scaled space that training used.
+        Applying the target scaler's inverse_transform converts them back to
+        real PnL values.
+        """
+        context = self.build_inference_context()
+        target_scaler = context.target_scaler
+        if target_scaler is None:
+            logger.warning("No target_scaler found — predictions remain in scaled space.")
+            return
+
+        raw = result.predictions
+        n_scaler_features = len(target_scaler.feature_names_in_)
+
+        if raw.shape[1] == n_scaler_features:
+            result.predictions = target_scaler.inverse_transform(raw)
+        elif raw.shape[1] < n_scaler_features:
+            padded = np.zeros((raw.shape[0], n_scaler_features), dtype=np.float32)
+            padded[:, :raw.shape[1]] = raw
+            unscaled = target_scaler.inverse_transform(padded)
+            result.predictions = unscaled[:, :raw.shape[1]]
+        else:
+            logger.warning(
+                f"Prediction width ({raw.shape[1]}) > scaler features ({n_scaler_features}). "
+                f"Applying inverse_transform to first {n_scaler_features} columns only."
+            )
+            head = target_scaler.inverse_transform(raw[:, :n_scaler_features])
+            result.predictions = np.concatenate([head, raw[:, n_scaler_features:]], axis=1)
+
+        logger.info(
+            f"Inverse-scaled {raw.shape[0]} predictions "
+            f"({raw.shape[1]} targets) to original PnL units."
+        )
 
     def post_infer_plots(self, result: "InferenceResult", data_result: "DataBuildResult"):
         """Run HybridGnnRnn specific plots for inference."""
+
+    @staticmethod
+    def build_new_pnl_sequences(
+            elementary_pnl: pd.DataFrame, seq_length: int, n_targets: int,
+    ) -> np.ndarray:
+        """
+        Build windowed elementary PnL sequences for inference, using the same
+        windowing logic as training.
+
+        :param elementary_pnl: scaled elementary PnL [n_scenarios, n_elementary].
+        :param seq_length: sequence length (must match training config).
+        :param n_targets: number of target trades (for placeholder shape).
+        :return: elementary sequences [n_windows, seq_length, n_elementary].
+        """
+        from src.rade_ml_pt.data.hybrid_gnn_rnn.build import (
+            _build_pnl_sequences, window_starts_from_days,
+        )
+
+        n_scenarios = elementary_pnl.shape[0]
+        inference_starts, _ = window_starts_from_days(
+            scenario_idx=np.arange(n_scenarios), sequence_length=seq_length,
+        )
+        if inference_starts.size == 0:
+            raise ValueError(
+                f"No valid inference windows: {n_scenarios} scenarios with seq_length={seq_length}. "
+                f"Need at least {seq_length} contiguous scenarios."
+            )
+
+        target_placeholder = np.zeros((n_scenarios, n_targets), dtype=np.float32)
+        elem_seq, _ = _build_pnl_sequences(
+            elementary_pnl=elementary_pnl.to_numpy(),
+            target_pnl=target_placeholder,
+            period_starts=inference_starts,
+            sequence_length=seq_length,
+        )
+        logger.info(
+            f"Built {elem_seq.shape[0]} inference sequences "
+            f"(seq_length={seq_length}, n_elementary={elem_seq.shape[2]})"
+        )
+        return elem_seq
+
+    @staticmethod
+    def build_model_inputs(
+            elem_seq: np.ndarray, inputs: InferenceInputData, seq_length: int,
+    ) -> Dict[str, Any]:
+        """
+        Assemble the 7-key model input dict and wrap in the base-class contract.
+
+        :param elem_seq: windowed elementary PnL [n_windows, seq_length, n_elementary].
+        :param inputs: populated InferenceInputData with static inputs.
+        :param seq_length: sequence length used for windowing.
+        :return: dict with "inputs", "sample_ids", and "metadata" keys.
+        """
+        model_inputs = {
+            "pnl_history": elem_seq,
+            "trade_features": inputs.trade_features,
+            "adjacency_indices": inputs.adjacency_indices,
+            "adjacency_values": inputs.adjacency_values,
+            "adjacency_dense_shape": np.array(inputs.adjacency_dense_shape, dtype=np.int64),
+            "elementary_indices": np.array(inputs.elementary_indices, dtype=np.int64),
+            "target_indices": np.array(inputs.target_indices, dtype=np.int64),
+        }
+        return {
+            "inputs": model_inputs,
+            "sample_ids": inputs.target_ids,
+            "metadata": {
+                "mode": "new_scenarios",
+                "n_scenarios": elem_seq.shape[0],
+                "seq_length": seq_length,
+                "elementary_ids": inputs.elementary_ids,
+                "target_ids": inputs.target_ids,
+            },
+        }
 
     @staticmethod
     def _standardise_pnl(pnl_unscaled: pd.DataFrame, scaler: Any) -> np.ndarray:
@@ -339,7 +471,7 @@ class HybridGnnRnnInferencePipeline(InferencePipeline):
         feat_index = pd.Index(scaler.feature_names_in_).get_indexer(pnl_unscaled.columns.tolist()).tolist()
 
         # define padded shape.
-        padded = np.zeros((pnl_unscaled.shape[0], len(scaler.mean_)))
+        padded = np.zeros((pnl_unscaled.shape[0], len(scaler.feature_names_in_)))
         padded[:, feat_index] = pnl_unscaled.to_numpy()
         pnl_scaled = scaler.transform(padded)
         return pnl_scaled[:, feat_index]
@@ -348,7 +480,14 @@ class HybridGnnRnnInferencePipeline(InferencePipeline):
     def _update_asset_portfolio(
             asset_portfolio: Dict[str, Any], new_scenario_shocks: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Update asset portfolio object with new shock data."""
+        """
+        Update asset portfolio object with new shock data.
+
+        After injection, validates that all risk factors across all assets have
+        the same number of scenarios. Mixed counts (e.g. some RF with 100 new
+        scenarios, others with the original 1000) would cause PnL calculation
+        to fail or produce incorrect results.
+        """
         # 0. define new asset portfolio via deep copy.
         new_asset_portfolio = copy.deepcopy(asset_portfolio)
 
@@ -364,4 +503,25 @@ class HybridGnnRnnInferencePipeline(InferencePipeline):
                     # 1.3. replace old risk factor shocks with new rf shocks.
                     new_asset_portfolio[k].risk_factor_shocks[rf] = new_scenario_shocks[rf]
                     logger.info(f"Injected new scenario shocks into asset portfolio for risk-factor: {rf}")
+
+        # 2. validate consistent scenario counts across all risk factors.
+        scenario_counts: Dict[str, int] = {}
+        for asset_name, asset in new_asset_portfolio.items():
+            for rf_name, rf_shocks in asset.risk_factor_shocks.items():
+                scenario_counts[f"{asset_name}/{rf_name}"] = len(rf_shocks)
+
+        unique_counts = set(scenario_counts.values())
+        if len(unique_counts) > 1:
+            examples = {n: [] for n in unique_counts}
+            for rf_key, count in scenario_counts.items():
+                if len(examples[count]) < 3:
+                    examples[count].append(rf_key)
+            detail = "; ".join(
+                f"{n} scenarios: [{', '.join(rfs)}]" for n, rfs in sorted(examples.items())
+            )
+            raise ValueError(
+                f"Inconsistent scenario counts across risk factors after shock injection. "
+                f"All risk factors must have the same number of scenarios. Found: {detail}"
+            )
+
         return new_asset_portfolio

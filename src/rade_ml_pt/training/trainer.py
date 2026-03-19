@@ -145,7 +145,6 @@ class Trainer:
         """
         if not self._is_compiled:
             self.compile()
-
         callbacks = get_standard_callbacks(self.config) + list(self.custom_callbacks)
 
         # Inject model & optimizer references into callbacks
@@ -153,15 +152,6 @@ class Trainer:
             cb._model = self.model
             if hasattr(cb, "set_optimizer") and self.optimizer is not None:
                 cb.set_optimizer(self.optimizer)
-
-        if self.config.verbose:
-            es_cb = next((cb for cb in callbacks if isinstance(cb, EarlyStopping)), None)
-            if es_cb:
-                print(
-                    f"[Trainer] EarlyStopping active: monitor={es_cb.monitor}, "
-                    f"patience={es_cb.patience}, min_delta={es_cb.min_delta}, mode={es_cb.mode}"
-                )
-            print(f"[Trainer] epochs={self.config.epochs}, val_data={'provided' if val_data is not None else 'NONE'}")
 
         history: Dict[str, List[float]] = {}
         start_time = time.time()

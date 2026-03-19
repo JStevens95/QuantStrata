@@ -133,7 +133,7 @@ class HybridGnnRnnEvalPipeline(EvalPipeline):
             output.update({"test_results": test_eval_result})
             print(" ------ Test Dataset ------")
             print(test_eval_result.summary())
-            logger.error("EvalPipeline: test dataset evaluation complete.")
+            logger.info("EvalPipeline: test dataset evaluation complete.")
 
         logger.info("EvalPipeline: done")
         return output

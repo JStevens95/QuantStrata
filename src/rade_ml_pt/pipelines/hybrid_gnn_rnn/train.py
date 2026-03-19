@@ -159,8 +159,8 @@ class HybridGnnRnnTrainPipeline(TrainPipeline):
         universe = {
             # scenario / split tracking.
             "scenarios": data_result.metadata.get("scenarios", []),
-            "sequence_length": data_result.metadata.get("sequence_length", int),
-            "scenarios_idx": data_result.metadata.get("scenarios_idx", []),
+            "sequence_length": data_result.metadata.get("sequence_length", 1),
+            "scenario_idx": data_result.metadata.get("scenario_idx", []),
 
             # training periods
             "train_indices": data_result.metadata.get("train_indices", np.array([])).tolist(),
