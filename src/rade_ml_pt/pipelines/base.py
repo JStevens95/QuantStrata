@@ -620,10 +620,14 @@ class TunePipeline(abc.ABC):
                 training_config, params, trial,
             )
             trainer = Trainer(model=model, config=trial_training_config, seed=seed)
-            result = trainer.fit(
-                train_data=data_result.train_ds,
-                val_data=data_result.val_ds,
-            )
+            try:
+                result = trainer.fit(
+                    train_data=data_result.train_ds,
+                    val_data=data_result.val_ds,
+                )
+            except RuntimeError as exc:
+                logger.warning(f"Trial {trial.number} failed: {exc}")
+                return float("inf")
             return result.best_val_loss if result.best_val_loss is not None else float("inf")
 
         tuner_kw = {"seed": seed, **self.tuner_kwargs}

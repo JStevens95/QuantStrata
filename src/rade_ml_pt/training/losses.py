@@ -61,7 +61,7 @@ class HuberQuantileLoss(nn.Module):
         alpha: float = 0.3,
     ) -> None:
         super().__init__()
-        self.huber = nn.HuberLoss(delta=delta)
+        self.huber = nn.HuberLoss(reduction="mean", delta=delta)
         self.quantile = QuantileLoss(tau=tau)
         self.alpha = alpha
 
