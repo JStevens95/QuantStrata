@@ -27,7 +27,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from src.rade_ml_pt.ensemble.config import EnsembleConfig
-from src.rade_ml_pt.ensemble.model import EnsembleModel
 
 logger = logging.getLogger(__name__)
 

@@ -216,40 +216,6 @@ class HybridGnnRnnTunePipeline(TunePipeline):
     # Artifact saving — extends base with parallel coordinate plot
     # ------------------------------------------------------------------
 
-    def _save_tuning_artifacts(self, result: Any, tuner: Any) -> None:
-        """
-        Save tuning results and plots to ``artifacts_dir/tuning/{study_name}/``.
-
-        Extends the base class (which saves optimization_history.png and
-        param_importances.png) with an additional parallel coordinate plot.
-        """
-        from pathlib import Path
-
-        # delegate to base — saves tuning_result.json, optimization_history.png,
-        # and param_importances.png.
-        super()._save_tuning_artifacts(result, tuner)
-
-        # save additional plots that need the live study.
-        study = getattr(tuner, "study", None)
-        if study is None or not self.config.artifacts_dir:
-            return
-
-        study_name = result.study_name or "tune"
-        tune_dir = Path(self.config.artifacts_dir) / "tuning" / study_name
-
-        try:
-            import matplotlib.pyplot as plt
-            from src.rade_ml_pt.tuning.plots import plot_parallel_coordinate
-
-            # parallel coordinate — multi-dimensional view of params vs objective.
-            plot_parallel_coordinate(study)
-            fig = plt.gcf()
-            fig.savefig(tune_dir / "parallel_coordinate.png", dpi=150, bbox_inches="tight")
-            plt.close(fig)
-            logger.info(f"Saved parallel_coordinate.png to {tune_dir}")
-        except Exception as exc:
-            logger.warning(f"Could not save parallel coordinate plot: {exc}")
-
     # ------------------------------------------------------------------
     # Post-tuning hooks
     # ------------------------------------------------------------------

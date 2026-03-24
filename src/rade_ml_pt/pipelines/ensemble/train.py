@@ -3,6 +3,22 @@ Ensemble training pipeline.
 
 Orchestrates N member training runs (one per cluster) using each cluster's
 configured pipeline class, then assembles and registers the ensemble.
+
+Execution strategies
+--------------------
+``EnsembleConfig.execution_strategy`` controls how member training is
+parallelised:
+
+- ``"sequential"`` — one at a time in a for-loop (default, simplest).
+- ``"process_pool"`` — ``concurrent.futures.ProcessPoolExecutor``.
+- ``"gpu_parallel"`` — ``torch.multiprocessing`` with per-device affinity.
+- ``"distributed"`` — external backend (Ray, Vertex AI, K8s).
+
+Only ``"sequential"`` is implemented today.  The architecture is designed so
+that adding a new strategy requires only a new ``_run_<strategy>`` method and
+one line in ``_dispatch_training``.  The per-member work function
+``train_single_member`` is module-level and fully picklable so it can be
+shipped across process/machine boundaries.
 """
 from __future__ import annotations
 
@@ -25,6 +41,9 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_PIPELINE = "src.rade_ml_pt.pipelines.hybrid_gnn_rnn.train.HybridGnnRnnTrainPipeline"
 
+_SUPPORTED_STRATEGIES = {"sequential"}
+_PLANNED_STRATEGIES = {"process_pool", "gpu_parallel", "distributed"}
+
 
 def _import_pipeline_class(dotpath: str) -> type:
     """Dynamically import a TrainPipeline subclass from a dotpath string."""
@@ -33,6 +52,62 @@ def _import_pipeline_class(dotpath: str) -> type:
     return getattr(module, cls_name)
 
 
+# ======================================================================
+# Module-level worker — picklable, portable across processes / nodes
+# ======================================================================
+
+def train_single_member(
+    config: EnsembleConfig,
+    cluster_id: str,
+    default_pipeline: str = _DEFAULT_PIPELINE,
+) -> Dict[str, Any]:
+    """
+    Train one cluster's member model and return the result.
+
+    This is a **module-level function** (not a method) so that it can be
+    pickled and dispatched to ``ProcessPoolExecutor``,
+    ``torch.multiprocessing``, or ``ray.remote`` without any special
+    serialisation logic.
+
+    Parameters
+    ----------
+    config : EnsembleConfig
+        Full ensemble config (picklable dataclass).
+    cluster_id : str
+        Which cluster to train.
+    default_pipeline : str
+        Fallback dotpath if no pipeline_class is specified for this cluster.
+
+    Returns
+    -------
+    dict
+        ``{"result": TrainingResult, "version": str}``.
+    """
+    dotpath = config.pipeline_class.get(cluster_id) or default_pipeline
+    pipeline_cls = _import_pipeline_class(dotpath)
+
+    member_config = config.get_member_pipeline_config(cluster_id)
+
+    existing_tags = member_config.metadata.get("tags", [])
+    member_config.metadata["tags"] = existing_tags + [
+        f"{cluster_id}_latest",
+        f"ensemble_member_{cluster_id}",
+    ]
+
+    pipeline: "TrainPipeline" = pipeline_cls(member_config)
+    result = pipeline.run()
+
+    version = "unknown"
+    if hasattr(pipeline, "_registered_entry") and pipeline._registered_entry is not None:
+        version = pipeline._registered_entry.version
+
+    return {"result": result, "version": version}
+
+
+# ======================================================================
+# Pipeline
+# ======================================================================
+
 class EnsembleTrainPipeline:
     """
     Train N member models (one per cluster) and register the ensemble.
@@ -40,7 +115,8 @@ class EnsembleTrainPipeline:
     Parameters
     ----------
     config : EnsembleConfig
-        Full ensemble configuration including per-cluster member configs.
+        Full ensemble configuration including per-cluster member configs
+        and ``execution_strategy``.
     tags : list of str or None
         Tags to apply to the registered ensemble version.
     """
@@ -60,12 +136,8 @@ class EnsembleTrainPipeline:
         Steps
         -----
         1. Create artifacts and registry directories.
-        2. For each cluster:
-           a. Resolve pipeline class (from config or default).
-           b. Build per-member ``PipelineConfig``.
-           c. Run ``pipeline_cls(member_config).run()``.
-           d. Record the registered model version.
-        3. Build ensemble via ``EnsembleBuilder``.
+        2. Dispatch member training via the configured execution strategy.
+        3. Build ensemble via ``EnsembleBuilder`` to validate trade coverage.
         4. Register ensemble in ``EnsembleRegistry``.
         5. Save per-member summary.
 
@@ -74,7 +146,11 @@ class EnsembleTrainPipeline:
         dict
             ``{ensemble_version, member_versions, member_results}``.
         """
-        logger.info("EnsembleTrainPipeline: starting (%d clusters)", self.config.n_members)
+        strategy = self.config.execution_strategy
+        logger.info(
+            "EnsembleTrainPipeline: starting (%d clusters, strategy='%s')",
+            self.config.n_members, strategy,
+        )
         t0 = time.perf_counter()
 
         if self.config.artifacts_dir:
@@ -82,19 +158,7 @@ class EnsembleTrainPipeline:
         if self.config.registry_dir:
             Path(self.config.registry_dir).mkdir(parents=True, exist_ok=True)
 
-        member_versions: Dict[str, str] = {}
-        member_results: Dict[str, "TrainingResult"] = {}
-
-        for cid in self.config.cluster_ids:
-            logger.info("--- Training member '%s' ---", cid)
-            result, version = self._train_member(cid)
-            member_results[cid] = result
-            member_versions[cid] = version
-            logger.info(
-                "Member '%s' trained: version='%s', best_val_loss=%.6f",
-                cid, version,
-                result.best_val_loss if result.best_val_loss is not None else float("nan"),
-            )
+        member_versions, member_results = self._dispatch_training()
 
         # Build ensemble to validate coverage.
         if self.config.registry_dir:
@@ -119,31 +183,57 @@ class EnsembleTrainPipeline:
         }
 
     # ------------------------------------------------------------------
-    # Member training
+    # Execution strategy dispatch
     # ------------------------------------------------------------------
 
-    def _train_member(self, cluster_id: str) -> tuple:
-        """Train a single cluster's model and return (TrainingResult, version_string)."""
-        dotpath = self.config.pipeline_class.get(cluster_id) or _DEFAULT_PIPELINE
-        pipeline_cls = _import_pipeline_class(dotpath)
+    def _dispatch_training(self) -> tuple:
+        """
+        Route to the configured execution strategy.
 
-        member_config = self.config.get_member_pipeline_config(cluster_id)
+        Adding a new strategy:
+            1. Implement ``_run_<strategy>(self) -> (member_versions, member_results)``.
+            2. Add the strategy name to ``_SUPPORTED_STRATEGIES``.
+            3. Add an ``elif`` branch here.
+        """
+        strategy = self.config.execution_strategy
 
-        # Inject a cluster-specific tag so the member version is retrievable.
-        existing_tags = member_config.metadata.get("tags", [])
-        member_config.metadata["tags"] = existing_tags + [
-            f"{cluster_id}_latest",
-            f"ensemble_member_{cluster_id}",
-        ]
+        if strategy == "sequential":
+            return self._run_sequential()
+        elif strategy in _PLANNED_STRATEGIES:
+            raise NotImplementedError(
+                f"Execution strategy '{strategy}' is planned but not yet "
+                f"implemented. Contributions welcome — see ARCHITECTURE.md "
+                f"for the extension point contract. Available now: "
+                f"{sorted(_SUPPORTED_STRATEGIES)}."
+            )
+        else:
+            raise ValueError(
+                f"Unknown execution_strategy '{strategy}'. "
+                f"Supported: {sorted(_SUPPORTED_STRATEGIES)}. "
+                f"Planned: {sorted(_PLANNED_STRATEGIES)}."
+            )
 
-        pipeline: "TrainPipeline" = pipeline_cls(member_config)
-        result = pipeline.run()
+    # ------------------------------------------------------------------
+    # Strategy: sequential
+    # ------------------------------------------------------------------
 
-        version = "unknown"
-        if hasattr(pipeline, "_registered_entry") and pipeline._registered_entry is not None:
-            version = pipeline._registered_entry.version
+    def _run_sequential(self) -> tuple:
+        """Train all members sequentially in a single process."""
+        member_versions: Dict[str, str] = {}
+        member_results: Dict[str, "TrainingResult"] = {}
 
-        return result, version
+        for cid in self.config.cluster_ids:
+            logger.info("--- Training member '%s' ---", cid)
+            out = train_single_member(self.config, cid)
+            member_results[cid] = out["result"]
+            member_versions[cid] = out["version"]
+            logger.info(
+                "Member '%s' trained: version='%s', best_val_loss=%.6f",
+                cid, out["version"],
+                out["result"].best_val_loss if out["result"].best_val_loss is not None else float("nan"),
+            )
+
+        return member_versions, member_results
 
     # ------------------------------------------------------------------
     # Ensemble registration

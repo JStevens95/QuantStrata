@@ -260,30 +260,56 @@ class DeepHedgingInferenceResult(InferenceResult):
 @dataclass
 class TuningResult:
     """
-    Output of hyper parameter tuning run.
+    Aggregated output of a hyperparameter search.
 
+    Attributes
+    ----------
+    study_name : str
+        Name of the Optuna study.
+    direction : str
+        Optimisation direction ("minimize" or "maximize").
+    n_trials : int
+        Total number of trials executed.
+    n_completed : int
+        Number of trials that completed successfully.
+    n_pruned : int
+        Number of trials pruned early.
+    best_trial_number : int
+        Index of the best trial.
+    best_value : float
+        Objective value of the best trial.
+    best_params : dict
+        Parameters of the best trial.
+    all_trials : list of dict
+        Per-trial summary (number, value, params, state, duration).
+    elapsed_seconds : float
+        Total wall-clock time for the tuning run.
     """
 
-    best_config: Dict[str, Any]
-    best_score: float
-    best_checkpoint_path: Optional[str] = None
-    trials: List[Dict[str, Any]] = field(default_factory=list)
-    measurements: Dict[str, Any] = field(default_factory=dict)
+    study_name: str = ""
+    direction: str = "minimize"
+    n_trials: int = 0
+    n_completed: int = 0
+    n_pruned: int = 0
+    best_trial_number: int = 0
+    best_value: float = float("inf")
+    best_params: Dict[str, Any] = field(default_factory=dict)
+    all_trials: List[Dict[str, Any]] = field(default_factory=list)
+    elapsed_seconds: float = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dict (excludes large arrays for serialization)."""
         return asdict(self)
 
     def to_json(self, path: Union[str, Path]) -> None:
-        """Save to JSON file."""
+        """Persist the tuning result to a JSON file."""
         with open(path, "w") as f:
             json.dump(self.to_dict(), f, indent=2)
 
     @classmethod
     def from_json(cls, path: Union[str, Path]) -> "TuningResult":
-        """Load from JSON file."""
+        """Load a TuningResult from JSON."""
         with open(path, "r") as f:
-            return cls(**json.load(f))
+            return cls(**{k: v for k, v in json.load(f).items() if k in cls.__dataclass_fields__})
 
 
 __all__ = [

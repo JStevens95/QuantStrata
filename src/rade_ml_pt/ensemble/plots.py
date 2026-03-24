@@ -170,6 +170,7 @@ def plot_ensemble_vs_members(
     ensemble_preds: np.ndarray,
     member_preds: Dict[str, np.ndarray],
     targets: np.ndarray,
+    cluster_trade_indices: Optional[Dict[str, List[int]]] = None,
     title: Optional[str] = None,
     save_path: Optional[str] = None,
     show: bool = True,
@@ -179,19 +180,45 @@ def plot_ensemble_vs_members(
 
     One point per target; x-axis is ensemble MAE, y-axis is the member
     MAE (coloured by cluster).
+
+    Parameters
+    ----------
+    ensemble_preds : np.ndarray
+        Combined predictions, shape ``[n_scenarios, n_total_targets]``.
+    member_preds : dict
+        ``{cluster_id: np.ndarray}`` — per-member predictions.
+    targets : np.ndarray
+        Ground truth, shape ``[n_scenarios, n_total_targets]``.
+    cluster_trade_indices : dict or None
+        ``{cluster_id: [global_col_indices]}`` mapping each member's
+        predictions to their column positions in the full target array.
+        When ``None``, columns are assumed to be sequential (member 0
+        gets columns 0..k, member 1 gets k..k+m, etc.).
     """
     import matplotlib.pyplot as plt
 
     ensemble_mae = np.mean(np.abs(ensemble_preds - targets), axis=0)
 
+    if cluster_trade_indices is None:
+        offset = 0
+        cluster_trade_indices = {}
+        for cid, preds in sorted(member_preds.items()):
+            n_cols = preds.shape[-1] if preds.ndim > 1 else 1
+            cluster_trade_indices[cid] = list(range(offset, offset + n_cols))
+            offset += n_cols
+
     fig, ax = plt.subplots(figsize=(7, 7))
     colour_idx = 0
     for cid, preds in sorted(member_preds.items()):
-        member_targets_slice = targets  # placeholder — caller should pass aligned targets
-        member_mae = np.mean(np.abs(preds - member_targets_slice[:, :preds.shape[-1]]), axis=0)
+        col_indices = cluster_trade_indices.get(cid, [])
+        if not col_indices:
+            continue
+        member_targets = targets[:, col_indices]
+        member_mae = np.mean(np.abs(preds - member_targets), axis=0)
+        member_ensemble_mae = ensemble_mae[col_indices]
 
         ax.scatter(
-            ensemble_mae[:len(member_mae)], member_mae,
+            member_ensemble_mae, member_mae,
             s=15, alpha=0.6, color=_PALETTE[colour_idx % len(_PALETTE)],
             label=cid,
         )

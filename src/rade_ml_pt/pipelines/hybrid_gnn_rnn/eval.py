@@ -34,7 +34,6 @@ from src.rade_ml_pt.data.dataset import _collate_dict_batch
 from src.rade_ml_pt.data.hybrid_gnn_rnn.config import HybridGnnRnnDataConfig
 from src.rade_ml_pt.data.hybrid_gnn_rnn.build import build_dataset, HybridGnnRnnResult
 from src.rade_ml_pt.data.hybrid_gnn_rnn.plots import plot_portfolio_pnl
-from tests.rade_ml_pt.pipelines.ensemble.conftest import cluster_mapping
 
 if TYPE_CHECKING:
     from src.rade_ml_pt.core.types import EvaluationResult
@@ -105,35 +104,32 @@ class HybridGnnRnnEvalPipeline(EvalPipeline):
         post_eval_train = self.post_eval(train_eval_result, self.config, data_result, **add_data)
         self.post_eval_plots(post_eval_train, data_result, "train")
 
-        # update output with training results.
         output.update({"training_results": train_eval_result})
-        print(" ------ Training Dataset ------")
-        print(train_eval_result.summary())
-        logger.info("EvalPipeline: training data evaluation complete.")
+        logger.info("------ Training Dataset ------\n%s", train_eval_result.summary())
 
-        # 5.2. evaluate validation period data + post eval hook (if availabe).
-        if data_result.data_config["validation_split"] != 0.0:
+        # 5.2. evaluate validation period data + post eval hook (if available).
+        val_split = getattr(data_result.data_config, "validation_split", None)
+        if val_split is None and isinstance(data_result.data_config, dict):
+            val_split = data_result.data_config.get("validation_split", 0.0)
+        if val_split and val_split != 0.0:
             val_eval_result = evaluator.run(data_result.val_ds)
             post_eval_eval = self.post_eval(val_eval_result, self.config, data_result, **add_data)
             self.post_eval_plots(post_eval_eval, data_result, "val")
 
-            # update output with validation results.
             output.update({"validation_results": val_eval_result})
-            print(" ------ Validation Dataset ------")
-            print(val_eval_result.summary())
-            logger.info("EvalPipeline: validation dataset evaluation complete.")
+            logger.info("------ Validation Dataset ------\n%s", val_eval_result.summary())
 
         # 5.3. evaluate testing period data + post eval hook (if available).
-        if data_result.data_config["test_split"] != 0.0:
+        test_split = getattr(data_result.data_config, "test_split", None)
+        if test_split is None and isinstance(data_result.data_config, dict):
+            test_split = data_result.data_config.get("test_split", 0.0)
+        if test_split and test_split != 0.0:
             test_eval_result = evaluator.run(data_result.test_ds)
             post_eval_eval = self.post_eval(test_eval_result, self.config, data_result, **add_data)
             self.post_eval_plots(post_eval_eval, data_result, "test")
 
-            # update output with testing result.
             output.update({"test_results": test_eval_result})
-            print(" ------ Test Dataset ------")
-            print(test_eval_result.summary())
-            logger.info("EvalPipeline: test dataset evaluation complete.")
+            logger.info("------ Test Dataset ------\n%s", test_eval_result.summary())
 
         logger.info("EvalPipeline: done")
         return output
@@ -155,7 +151,7 @@ class HybridGnnRnnEvalPipeline(EvalPipeline):
         transformer = self.get_target_scaler(data_result)
 
         # 1. invert standardisation of targets.
-        predictions_unsclaed, targets_unsclaed = self._inverse_target_transforms(predictions, targets, transformer)
+        predictions_unscaled, targets_unscaled = self._inverse_target_transforms(predictions, targets, transformer)
 
         # 2. aggregate predictions / target pnl across trades.
         portfolio_pnl = self._aggregate_trade_pnl(predictions, targets)
@@ -179,8 +175,8 @@ class HybridGnnRnnEvalPipeline(EvalPipeline):
         save_path = Path(self.config.artifacts_dir, "evaluation", self._loaded_entry.version, period)
         save_path.mkdir(parents=True, exist_ok=True)
 
-        # 0. run standard evaulation plots.
-        save_evaluation_plots(result, save_path, data_result.metadata["target_ids"])
+        # 0. run standard evaluation plots.
+        save_evaluation_plots(result, save_path)
 
         # 1. plot portfolio period analytics -- scaled predictions/targets.
         plot_portfolio_pnl(
@@ -242,10 +238,9 @@ class HybridGnnRnnEvalPipeline(EvalPipeline):
     def _rebuild_target_portfolio(
             predictions: np.ndarray, m1: pd.DataFrame, m2: pd.DataFrame,
     ) -> pd.DataFrame:
-        """Reconstruct the original target trade portfolio from linearly independent basis (M! and M2)."""
-        inter_df = np.matmul(predictions, m1.T)
-        inter_df.columns = m1.index
-        inter_df.index = m2.index
+        """Reconstruct the original target trade portfolio from linearly independent basis (M1 and M2)."""
+        inter_arr = np.matmul(predictions, m1.values.T)
+        inter_df = pd.DataFrame(inter_arr, columns=m1.index, index=m2.index)
         reconstructed_df = inter_df + m2
         return reconstructed_df
 
@@ -311,25 +306,30 @@ class HybridGnnRnnEvalPipeline(EvalPipeline):
         # load cluster information.
         cluster_info = None
         if os.path.exists(version_dir / "cluster_info.json"):
-            cluster_info = joblib.load(version_dir / "cluster_info.json")
+            with open(version_dir / "cluster_info.json") as f:
+                cluster_info = json.load(f)
 
-        # reconstruct DataLoaders from saved datasets - train.
+        # reconstruct DataLoaders from saved datasets.
+        batch_size = 32
+        if isinstance(data_config, dict):
+            batch_size = data_config.get("batch_size", 32)
+        elif data_config is not None:
+            batch_size = getattr(data_config, "batch_size", 32)
+
         train_ds = None
         if (ds_dir / "train.pt").exists():
             train_dataset = torch.load(str(ds_dir / "train.pt"), weights_only=False)
-            train_ds = DataLoader(train_dataset, batch_size=data_config["batch_size"], collate_fn=_collate_dict_batch)
+            train_ds = DataLoader(train_dataset, batch_size=batch_size, collate_fn=_collate_dict_batch)
 
-        # reconstruct DataLoaders from saved datasets - val.
         val_ds = None
         if (ds_dir / "val.pt").exists():
             val_dataset = torch.load(str(ds_dir / "val.pt"), weights_only=False)
-            val_ds = DataLoader(val_dataset, batch_size=data_config["batch_size"], collate_fn=_collate_dict_batch)
+            val_ds = DataLoader(val_dataset, batch_size=batch_size, collate_fn=_collate_dict_batch)
 
-        # reconstruct DataLoaders from saved datasets - test
         test_ds = None
         if (ds_dir / "test.pt").exists():
             test_dataset = torch.load(str(ds_dir / "test.pt"), weights_only=False)
-            test_ds = DataLoader(test_dataset, batch_size=data_config["batch_size"], collate_fn=_collate_dict_batch)
+            test_ds = DataLoader(test_dataset, batch_size=batch_size, collate_fn=_collate_dict_batch)
 
         return HybridGnnRnnResult(
             train_ds=train_ds, val_ds=val_ds, test_ds=test_ds, data_config=data_config, cluster_info=cluster_info,

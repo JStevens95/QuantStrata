@@ -48,6 +48,17 @@ class EnsembleConfig:
     weights : dict or None
         ``{cluster_id: float}`` — member weights for weighted-mean
         aggregation.  Ignored when *aggregation* is ``"concat"``.
+    execution_strategy : str
+        How to execute per-member pipelines.  ``"sequential"`` runs one at
+        a time (default).  Future values: ``"process_pool"`` (multi-CPU),
+        ``"gpu_parallel"`` (multi-GPU), ``"distributed"`` (Ray / cloud).
+    max_workers : int or None
+        Maximum number of parallel workers for ``process_pool`` and
+        ``gpu_parallel``.  ``None`` means one worker per cluster.
+    gpu_device_ids : list of int or None
+        Explicit GPU device IDs for ``gpu_parallel`` strategy.  ``None``
+        means use all available GPUs via ``torch.cuda.device_count()``.
+        Ignored by other strategies.
     registry_dir : str or None
         Root directory for ensemble and member registries.
     artifacts_dir : str or None
@@ -64,6 +75,9 @@ class EnsembleConfig:
     cluster_key_values: Optional[Dict[str, List[Any]]] = None
     aggregation: str = "concat"
     weights: Optional[Dict[str, float]] = None
+    execution_strategy: str = "sequential"
+    max_workers: Optional[int] = None
+    gpu_device_ids: Optional[List[int]] = None
     registry_dir: Optional[str] = None
     artifacts_dir: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)

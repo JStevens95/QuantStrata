@@ -4,9 +4,7 @@ Ensemble builder: load member models from the registry and assemble an
 """
 from __future__ import annotations
 
-import json
 import logging
-from pathlib import Path
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 import torch.nn as nn

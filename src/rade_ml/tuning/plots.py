@@ -27,7 +27,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import optuna
 
-from src.rade_ml.tuning.tuner import TuningResult
+from src.rade_ml.core.types import TuningResult
 
 logger = logging.getLogger(__name__)
 

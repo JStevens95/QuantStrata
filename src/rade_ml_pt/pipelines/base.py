@@ -692,7 +692,13 @@ class TunePipeline(abc.ABC):
     def _save_tuning_artifacts(self, result: Any, tuner: Any) -> None:
         """Save tuning results and plots to artifacts_dir/tuning/{study_name}/."""
         from pathlib import Path
-        from src.rade_ml_pt.tuning.plots import plot_optimization_history
+        from src.rade_ml_pt.tuning.plots import (
+            plot_optimization_history,
+            plot_param_importances,
+            plot_parallel_coordinate,
+            plot_slice,
+            plot_contour,
+        )
 
         study_name = result.study_name or "tune"
         tune_dir = Path(self.config.artifacts_dir) / "tuning" / study_name
@@ -700,18 +706,40 @@ class TunePipeline(abc.ABC):
 
         result.to_json(tune_dir / "tuning_result.json")
 
+        study = getattr(tuner, "study", None)
+
         try:
             import matplotlib.pyplot as plt
+
             fig, ax = plt.subplots(figsize=(10, 5))
             plot_optimization_history(result, ax=ax)
             fig.savefig(tune_dir / "optimization_history.png", dpi=150, bbox_inches="tight")
             plt.close(fig)
 
-            from src.rade_ml_pt.tuning.plots import plot_param_importances
-            fig, ax = plt.subplots(figsize=(8, 5))
-            plot_param_importances(tuner.study, ax=ax)
-            fig.savefig(tune_dir / "param_importances.png", dpi=150, bbox_inches="tight")
-            plt.close(fig)
+            if study is not None:
+                fig, ax = plt.subplots(figsize=(8, 5))
+                plot_param_importances(study, ax=ax)
+                fig.savefig(tune_dir / "param_importances.png", dpi=150, bbox_inches="tight")
+                plt.close(fig)
+
+                plot_parallel_coordinate(study)
+                fig = plt.gcf()
+                fig.savefig(tune_dir / "parallel_coordinate.png", dpi=150, bbox_inches="tight")
+                plt.close(fig)
+
+                plot_slice(study)
+                fig = plt.gcf()
+                fig.savefig(tune_dir / "slice.png", dpi=150, bbox_inches="tight")
+                plt.close(fig)
+
+                import optuna
+                top_params = list(optuna.importance.get_param_importances(study).keys())[:2]
+                if len(top_params) == 2:
+                    plot_contour(study, params=top_params)
+                    fig = plt.gcf()
+                    fig.savefig(tune_dir / "contour.png", dpi=150, bbox_inches="tight")
+                    plt.close(fig)
+
         except Exception as exc:
             logger.warning(f"Could not generate tuning plots: {exc}")
 
