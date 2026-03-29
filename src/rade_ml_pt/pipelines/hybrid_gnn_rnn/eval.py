@@ -155,14 +155,14 @@ class HybridGnnRnnEvalPipeline(EvalPipeline):
 
         # 2. aggregate predictions / target pnl across trades.
         portfolio_pnl = self._aggregate_trade_pnl(predictions, targets)
-        portfolio_pnl_unscaled = self._aggregate_trade_pnl(predictions_unsclaed, targets_unsclaed)
+        portfolio_pnl_unscaled = self._aggregate_trade_pnl(predictions_unscaled, targets_unscaled)
 
         # 3. re-build full target trade portfolio from linear independent basis model was calibrated on.
         # TODO: implement scaling to full tagrte portfolio + original notional.
 
         # amend extra information / data to EvaluationResult.
         eval_result.metadata.update({
-            "predictions_unscaled": predictions_unsclaed, "targets_unsclaed": targets_unsclaed,
+            "predictions_unscaled": predictions_unscaled, "targets_unsclaed": targets_unscaled,
             "portfolio_pnl_unscaled": portfolio_pnl_unscaled, "portfolio_pnl": portfolio_pnl,
         })
         return eval_result

@@ -36,6 +36,30 @@ logger = logging.getLogger(__name__)
 
 _SUPPORTED_STRATEGIES = {"sequential"}
 _PLANNED_STRATEGIES = {"process_pool", "gpu_parallel", "distributed"}
+_EVAL_SPLITS = ("train", "val", "test")
+_PRIMARY_SPLIT = "test"
+
+
+# ======================================================================
+# Module-level helpers
+# ======================================================================
+
+_DEFAULT_BATCH_SIZE = 32
+
+
+def _resolve_batch_size(version_dir: Path) -> int:
+    """Read batch_size from the member's saved data config, or fall back to default."""
+    dc_path = version_dir / "data_config.json"
+    if dc_path.exists():
+        try:
+            with open(dc_path, "r") as f:
+                cfg = json.load(f)
+            bs = cfg.get("batch_size")
+            if bs is not None:
+                return int(bs)
+        except Exception:
+            pass
+    return _DEFAULT_BATCH_SIZE
 
 
 # ======================================================================
@@ -47,9 +71,10 @@ def evaluate_single_member(
     model: Any,
     registry_root_dir: str,
     member_version: str,
+    split: str = "test",
 ) -> Optional[Dict[str, Any]]:
     """
-    Evaluate one member model on its cached test data.
+    Evaluate one member model on a single cached dataset split.
 
     Module-level so it can be dispatched to ``ProcessPoolExecutor`` or
     ``ray.remote`` in future parallel strategies.
@@ -61,44 +86,53 @@ def evaluate_single_member(
     model : nn.Module
         Member model in eval mode.
     registry_root_dir : str
-        Root registry directory (to locate cached test datasets).
+        Root registry directory (to locate cached datasets).
     member_version : str
         Registry version string for this member.
+    split : str
+        Dataset split to evaluate (``"train"``, ``"val"``, or ``"test"``).
 
     Returns
     -------
     dict or None
         ``{"predictions": ndarray, "targets": ndarray, "metrics": dict}``
-        or ``None`` if no test data is available.
+        or ``None`` if the split is not available.
     """
     from src.rade_ml_pt.evaluation.evaluator import Evaluator
 
     version_dir = Path(registry_root_dir) / member_version
     ds_dir = version_dir / "datasets"
 
-    test_ds = None
-    if (ds_dir / "test.pt").exists():
-        import torch
-        from torch.utils.data import DataLoader
-        try:
-            from src.rade_ml_pt.data.dataset import _collate_dict_batch
-            test_dataset = torch.load(str(ds_dir / "test.pt"), weights_only=False)
-            test_ds = DataLoader(
-                test_dataset, batch_size=32, shuffle=False,
-                collate_fn=_collate_dict_batch,
-            )
-        except Exception as exc:
-            logger.warning("Could not load cached test data for '%s': %s", cluster_id, exc)
-
-    if test_ds is None:
-        logger.warning(
-            "No test data available for member '%s' (version '%s'). "
-            "Skipping evaluation.", cluster_id, member_version,
+    ds_path = ds_dir / f"{split}.pt"
+    if not ds_path.exists():
+        logger.debug(
+            "No %s data for member '%s' (version '%s'). Skipping.",
+            split, cluster_id, member_version,
         )
         return None
 
+    batch_size = _resolve_batch_size(version_dir)
+
+    loader = None
+    import torch
+    from torch.utils.data import DataLoader
+    try:
+        from src.rade_ml_pt.data.dataset import _collate_dict_batch
+        dataset = torch.load(str(ds_path), weights_only=False)
+        loader = DataLoader(
+            dataset, batch_size=batch_size, shuffle=False,
+            collate_fn=_collate_dict_batch,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Could not load cached %s data for '%s': %s", split, cluster_id, exc,
+        )
+
+    if loader is None:
+        return None
+
     evaluator = Evaluator(model=model)
-    eval_result = evaluator.run(test_ds)
+    eval_result = evaluator.run(loader)
 
     return {
         "predictions": eval_result.predictions,
@@ -139,15 +173,17 @@ class EnsembleEvalPipeline:
         Steps
         -----
         1. Load ensemble (all members + router) from registry.
-        2. Dispatch per-member evaluation via execution strategy.
-        3. Aggregate predictions across members.
-        4. Compute ensemble-level metrics.
-        5. Save evaluation artifacts.
+        2. Dispatch per-member evaluation across all available splits.
+        3. Compute per-member and ensemble-level metrics for each split.
+        4. Save evaluation artifacts.
 
         Returns
         -------
         dict
-            ``{ensemble_metrics, per_member_metrics, member_summary}``.
+            Top-level keys (``ensemble_metrics``, ``per_member_metrics``,
+            ``member_summary``) correspond to the primary split (test).
+            ``additional_splits`` holds the same structure for train/val
+            when those datasets are available.
         """
         strategy = self.config.execution_strategy
         logger.info("EnsembleEvalPipeline: starting (strategy='%s')", strategy)
@@ -162,29 +198,49 @@ class EnsembleEvalPipeline:
         builder = EnsembleBuilder(registry)
         ensemble = builder.build(config, member_versions)
 
-        # Dispatch per-member evaluation.
-        per_member_preds, per_member_targets, per_member_eval = (
+        # Dispatch per-member evaluation (returns per-split structures).
+        split_preds, split_targets, split_metrics = (
             self._dispatch_evaluation(config, ensemble, registry, member_versions)
         )
 
-        # Per-member metrics.
-        per_member_metrics = compute_per_member_metrics(per_member_preds, per_member_targets)
-        member_rollup = aggregate_member_metrics(per_member_metrics)
+        # Compute metrics for every available split.
+        all_split_results: Dict[str, Dict[str, Any]] = {}
+        combined_arrays: Dict[str, Dict[str, np.ndarray]] = {}
 
-        # Ensemble-level metrics (from aggregated predictions).
-        ensemble_metrics: Dict[str, float] = {}
-        if per_member_preds:
-            try:
-                combined_preds = ensemble._combine(per_member_preds)
-                combined_targets = ensemble._combine(per_member_targets)
-                ensemble_metrics = compute_ensemble_metrics(combined_preds, combined_targets)
-            except Exception as exc:
-                logger.warning("Could not compute ensemble-level metrics: %s", exc)
+        for split in split_preds:
+            preds = split_preds[split]
+            targets = split_targets[split]
+
+            pm_metrics = compute_per_member_metrics(preds, targets)
+            rollup = aggregate_member_metrics(pm_metrics)
+
+            ens_metrics: Dict[str, float] = {}
+            if preds:
+                try:
+                    c_preds = ensemble._combine(preds)
+                    c_targets = ensemble._combine(targets)
+                    ens_metrics = compute_ensemble_metrics(c_preds, c_targets)
+                    combined_arrays[split] = {
+                        "predictions": c_preds,
+                        "targets": c_targets,
+                    }
+                except Exception as exc:
+                    logger.warning("Could not compute ensemble metrics for '%s': %s", split, exc)
+
+            all_split_results[split] = {
+                "ensemble_metrics": ens_metrics,
+                "per_member_metrics": pm_metrics,
+                "member_summary": rollup,
+            }
+
+        primary = all_split_results.get(_PRIMARY_SPLIT, {})
+        additional = {s: v for s, v in all_split_results.items() if s != _PRIMARY_SPLIT}
 
         # Save artifacts.
         if self.config.artifacts_dir:
             self._save_artifacts(
-                resolved_version, per_member_metrics, ensemble_metrics, member_rollup,
+                resolved_version, all_split_results, config,
+                split_preds, split_targets, combined_arrays,
             )
 
         elapsed = time.perf_counter() - t0
@@ -192,9 +248,10 @@ class EnsembleEvalPipeline:
 
         return {
             "ensemble_version": resolved_version,
-            "ensemble_metrics": ensemble_metrics,
-            "per_member_metrics": per_member_metrics,
-            "member_summary": member_rollup,
+            "ensemble_metrics": primary.get("ensemble_metrics", {}),
+            "per_member_metrics": primary.get("per_member_metrics", {}),
+            "member_summary": primary.get("member_summary", {}),
+            "additional_splits": additional,
         }
 
     # ------------------------------------------------------------------
@@ -244,25 +301,27 @@ class EnsembleEvalPipeline:
         registry: Any,
         member_versions: Dict[str, str],
     ) -> tuple:
-        """Evaluate all members sequentially in a single process."""
-        per_member_preds: Dict[str, np.ndarray] = {}
-        per_member_targets: Dict[str, np.ndarray] = {}
-        per_member_eval: Dict[str, Dict[str, float]] = {}
+        """Evaluate all members sequentially across all available splits."""
+        split_preds: Dict[str, Dict[str, np.ndarray]] = {}
+        split_targets: Dict[str, Dict[str, np.ndarray]] = {}
+        split_metrics: Dict[str, Dict[str, Dict[str, float]]] = {}
 
         for cid in config.cluster_ids:
             logger.info("--- Evaluating member '%s' ---", cid)
-            member_result = evaluate_single_member(
-                cluster_id=cid,
-                model=ensemble.members[cid],
-                registry_root_dir=str(registry.root_dir),
-                member_version=member_versions[cid],
-            )
-            if member_result is not None:
-                per_member_preds[cid] = member_result["predictions"]
-                per_member_targets[cid] = member_result["targets"]
-                per_member_eval[cid] = member_result["metrics"]
+            for split in _EVAL_SPLITS:
+                member_result = evaluate_single_member(
+                    cluster_id=cid,
+                    model=ensemble.members[cid],
+                    registry_root_dir=str(registry.root_dir),
+                    member_version=member_versions[cid],
+                    split=split,
+                )
+                if member_result is not None:
+                    split_preds.setdefault(split, {})[cid] = member_result["predictions"]
+                    split_targets.setdefault(split, {})[cid] = member_result["targets"]
+                    split_metrics.setdefault(split, {})[cid] = member_result["metrics"]
 
-        return per_member_preds, per_member_targets, per_member_eval
+        return split_preds, split_targets, split_metrics
 
     # ------------------------------------------------------------------
     # Artifact persistence
@@ -271,30 +330,84 @@ class EnsembleEvalPipeline:
     def _save_artifacts(
         self,
         version: str,
-        per_member_metrics: Dict[str, Dict[str, float]],
-        ensemble_metrics: Dict[str, float],
-        member_rollup: Dict[str, Any],
+        all_split_results: Dict[str, Dict[str, Any]],
+        config: EnsembleConfig,
+        split_preds: Dict[str, Dict[str, np.ndarray]],
+        split_targets: Dict[str, Dict[str, np.ndarray]],
+        combined_arrays: Dict[str, Dict[str, np.ndarray]],
     ) -> None:
-        """Save evaluation artifacts to artifacts_dir/ensemble/{version}/."""
-        eval_dir = Path(self.config.artifacts_dir) / "ensemble" / version / "evaluation"
+        """Save evaluation artifacts for all splits.
+
+        Primary split (test) files are written without a suffix for backward
+        compatibility.  Additional splits get a ``_<split>`` suffix.
+
+        Also persists per-member and combined prediction/target arrays as
+        ``.npz`` files, plus a ``manifest.json`` that maps trade IDs to
+        cluster positions — enough for the dashboard to reconstruct
+        portfolio-level views without re-running evaluation.
+        """
+        eval_dir = Path(self.   config.artifacts_dir) / "ensemble" / version / "evaluation"
         eval_dir.mkdir(parents=True, exist_ok=True)
 
-        with open(eval_dir / "ensemble_metrics.json", "w") as f:
-            json.dump(ensemble_metrics, f, indent=2)
+        cluster_trade_indices = EnsembleBuilder._build_cluster_trade_indices(config)
 
-        with open(eval_dir / "per_member_metrics.json", "w") as f:
-            json.dump(per_member_metrics, f, indent=2)
+        # --- Manifest (written once, shared across splits) ---------------
+        manifest = {
+            "trade_ids": config.all_trade_ids,
+            "cluster_ids": config.cluster_ids,
+            "cluster_trade_indices": {
+                k: v.tolist() if isinstance(v, np.ndarray) else list(v)
+                for k, v in cluster_trade_indices.items()
+            },
+            "splits_available": sorted(all_split_results.keys()),
+        }
+        with open(eval_dir / "manifest.json", "w") as f:
+            json.dump(manifest, f, indent=2)
 
-        with open(eval_dir / "member_rollup.json", "w") as f:
-            json.dump(member_rollup, f, indent=2)
+        # --- Per-split artifacts -----------------------------------------
+        for split, results in all_split_results.items():
+            suffix = "" if split == _PRIMARY_SPLIT else f"_{split}"
 
-        # Generate ensemble plots.
-        try:
-            from src.rade_ml_pt.ensemble.plots import save_ensemble_plots
-            plots_dir = eval_dir / "plots"
-            save_ensemble_plots(per_member_metrics, plots_dir, ensemble_metrics)
-            logger.info("Saved ensemble evaluation plots to %s", plots_dir)
-        except Exception as exc:
-            logger.warning("Could not generate ensemble evaluation plots: %s", exc)
+            with open(eval_dir / f"ensemble_metrics{suffix}.json", "w") as f:
+                json.dump(results["ensemble_metrics"], f, indent=2)
+
+            with open(eval_dir / f"per_member_metrics{suffix}.json", "w") as f:
+                json.dump(results["per_member_metrics"], f, indent=2)
+
+            with open(eval_dir / f"member_rollup{suffix}.json", "w") as f:
+                json.dump(results["member_summary"], f, indent=2)
+
+            # Per-member prediction/target arrays
+            if split in split_preds:
+                for cid in split_preds[split]:
+                    member_dir = eval_dir / "members" / cid / "predictions"
+                    member_dir.mkdir(parents=True, exist_ok=True)
+                    np.savez_compressed(
+                        member_dir / f"{split}.npz",
+                        predictions=split_preds[split][cid],
+                        targets=split_targets[split][cid],
+                    )
+
+            # Combined (portfolio-level) arrays
+            if split in combined_arrays:
+                combined_dir = eval_dir / "combined"
+                combined_dir.mkdir(parents=True, exist_ok=True)
+                np.savez_compressed(
+                    combined_dir / f"{split}.npz",
+                    predictions=combined_arrays[split]["predictions"],
+                    targets=combined_arrays[split]["targets"],
+                )
+
+            # Plots
+            try:
+                from src.rade_ml_pt.ensemble.plots import save_ensemble_plots
+                plots_dir = eval_dir / "plots" / split
+                save_ensemble_plots(
+                    results["per_member_metrics"], plots_dir,
+                    results["ensemble_metrics"],
+                )
+                logger.info("Saved %s evaluation plots to %s", split, plots_dir)
+            except Exception as exc:
+                logger.warning("Could not generate %s plots: %s", split, exc)
 
         logger.info("Ensemble evaluation artifacts saved to %s", eval_dir)

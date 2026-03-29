@@ -39,6 +39,21 @@ from src.rade_ml_pt.utilities.graph_builder import TradeGraphBuilder
 logger = logging.getLogger(__name__)
 
 
+def _set_feature_names(transformer: Any, names: np.ndarray) -> None:
+    """Set ``feature_names_in_`` on a transformer, handling sklearn Pipelines.
+
+    In sklearn >=1.2 ``Pipeline.feature_names_in_`` is a read-only property
+    that delegates to the first step.  Setting it directly raises
+    ``AttributeError``, so for Pipelines we set the attribute on the first
+    step instead — the property then exposes it transparently.
+    """
+    from sklearn.pipeline import Pipeline
+    if isinstance(transformer, Pipeline):
+        transformer.steps[0][1].feature_names_in_ = names
+    else:
+        transformer.feature_names_in_ = names
+
+
 @dataclass
 class HybridGnnRnnResult(DataBuildResult):
     """Result of build_dataset() and DataLoader splits for Hybrid GNN-RNN model."""
@@ -394,9 +409,9 @@ def standardise_pnl_history(
     # ---- 2. fit transformer on training data only ----
     training_idx = pnl_periods["train_indices"]
     elementary_transformer.fit(elementary_pnl_arr[training_idx, :])
-    elementary_transformer.feature_names_in_ = np.array(elementary_pnl.columns.to_list())
+    _set_feature_names(elementary_transformer, np.array(elementary_pnl.columns.to_list()))
     target_transformer.fit(target_pnl_arr[training_idx, :])
-    target_transformer.feature_names_in_ = np.array(target_pnl.columns.to_list())
+    _set_feature_names(target_transformer, np.array(target_pnl.columns.to_list()))
 
     # ---- 3. transform full pnl history (train/val/test) ----
     elementary_pnl_scaled = elementary_transformer.transform(elementary_pnl_arr)

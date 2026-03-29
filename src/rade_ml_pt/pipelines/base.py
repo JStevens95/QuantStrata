@@ -254,13 +254,13 @@ class TrainPipeline(abc.ABC):
 
     def _resolve_training_config(self) -> Any:
         """Resolve the training config from PipelineConfig."""
-        from src.rade_ml_pt.core.config import TrainingConfig
+        from src.rade_ml_pt.core.config import TrainingConfig, sanitize_yaml_values
 
         tc = self.config.training_config
         if tc is None:
             return TrainingConfig()
         if isinstance(tc, dict):
-            return TrainingConfig.from_dict(tc)
+            return TrainingConfig.from_dict(sanitize_yaml_values(tc))
         return tc
 
     def _resolve_seed(self) -> int:
@@ -268,7 +268,13 @@ class TrainPipeline(abc.ABC):
         dc = self.config.data_config
         if dc is None:
             return 42
-        return dc.get("seed", 42) if isinstance(dc, dict) else getattr(dc, "seed", 42)
+        if isinstance(dc, dict):
+            val = dc.get("seed", 42)
+        else:
+            val = getattr(dc, "seed", 42)
+        if isinstance(val, str):
+            val = None if val.lower() in ("none", "null", "~", "") else int(val)
+        return val if val is not None else 42
 
 
 # ======================================================================

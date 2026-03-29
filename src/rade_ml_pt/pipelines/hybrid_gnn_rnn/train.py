@@ -67,10 +67,15 @@ class HybridGnnRnnTrainPipeline(TrainPipeline):
             HybridGnnRnnModelConfig,
             default_model_config,
         )
+        from src.rade_ml_pt.core.config import sanitize_yaml_values
 
         raw = config.model_config or default_model_config()
         if hasattr(raw, "to_dict"):
             model_config = raw.to_dict()
+        elif isinstance(raw, dict):
+            model_config = HybridGnnRnnModelConfig.from_dict(
+                sanitize_yaml_values(raw)
+            ).to_dict()
         else:
             model_config = HybridGnnRnnModelConfig.from_dict(raw).to_dict()
         model = HybridGnnRnn(config=model_config)
@@ -156,6 +161,12 @@ class HybridGnnRnnTrainPipeline(TrainPipeline):
                 logger.info(f"Saved data_config.json to {version_dir}")
 
         # ---- saving trade universe. ----
+        def _to_serializable(val):
+            """Convert numpy arrays/scalars to JSON-serializable Python types."""
+            if hasattr(val, "tolist"):
+                return val.tolist()
+            return val
+
         universe = {
             # scenario / split tracking.
             "scenarios": data_result.metadata.get("scenarios", []),
@@ -163,28 +174,28 @@ class HybridGnnRnnTrainPipeline(TrainPipeline):
             "scenario_idx": data_result.metadata.get("scenario_idx", []),
 
             # training periods
-            "train_indices": data_result.metadata.get("train_indices", np.array([])).tolist(),
-            "train_starts": data_result.metadata.get("train_starts", np.array([])).tolist(),
-            "train_ends": data_result.metadata.get("train_ends", np.array([])).tolist(),
-            "train_size": data_result.metadata.get("train_size", np.array([])),
-            "train_scenarios": data_result.metadata.get("train_scenarios", np.array([])),
-            "train_end_scenarios": data_result.metadata.get("train_end_scenarios", np.array([])),
+            "train_indices": _to_serializable(data_result.metadata.get("train_indices", [])),
+            "train_starts": _to_serializable(data_result.metadata.get("train_starts", [])),
+            "train_ends": _to_serializable(data_result.metadata.get("train_ends", [])),
+            "train_size": _to_serializable(data_result.metadata.get("train_size", 0)),
+            "train_scenarios": _to_serializable(data_result.metadata.get("train_scenarios", [])),
+            "train_end_scenarios": _to_serializable(data_result.metadata.get("train_end_scenarios", [])),
 
             # validation periods.
-            "val_indices": data_result.metadata.get("val_indices", np.array([])).tolist(),
-            "val_starts": data_result.metadata.get("val_starts", np.array([])).tolist(),
-            "val_ends": data_result.metadata.get("val_ends", np.array([])).tolist(),
-            "val_size": data_result.metadata.get("val_size", np.array([])).tolist(),
-            "val_scenarios": data_result.metadata.get("val_scenarios", np.array([])),
-            "val_end_scenarios": data_result.metadata.get("val_end_scenarios", np.array([])),
+            "val_indices": _to_serializable(data_result.metadata.get("val_indices", [])),
+            "val_starts": _to_serializable(data_result.metadata.get("val_starts", [])),
+            "val_ends": _to_serializable(data_result.metadata.get("val_ends", [])),
+            "val_size": _to_serializable(data_result.metadata.get("val_size", 0)),
+            "val_scenarios": _to_serializable(data_result.metadata.get("val_scenarios", [])),
+            "val_end_scenarios": _to_serializable(data_result.metadata.get("val_end_scenarios", [])),
 
             # test periods.
-            "test_indices": data_result.metadata.get("test_indices", np.array([])).tolist(),
-            "test_starts": data_result.metadata.get("test_starts", np.array([])).tolist(),
-            "test_ends": data_result.metadata.get("test_ends", np.array([])).tolist(),
-            "test_size": data_result.metadata.get("test_size", np.array([])).tolist(),
-            "test_scenarios": data_result.metadata.get("test_scenarios", np.array([])),
-            "test_end_scenarios": data_result.metadata.get("test_end_scenarios", np.array([])),
+            "test_indices": _to_serializable(data_result.metadata.get("test_indices", [])),
+            "test_starts": _to_serializable(data_result.metadata.get("test_starts", [])),
+            "test_ends": _to_serializable(data_result.metadata.get("test_ends", [])),
+            "test_size": _to_serializable(data_result.metadata.get("test_size", 0)),
+            "test_scenarios": _to_serializable(data_result.metadata.get("test_scenarios", [])),
+            "test_end_scenarios": _to_serializable(data_result.metadata.get("test_end_scenarios", [])),
 
             # trade universe
             "elementary_ids": data_result.metadata.get("elementary_ids", []),
@@ -259,14 +270,17 @@ class HybridGnnRnnTrainPipeline(TrainPipeline):
         plot_training_analytics(result=result, save_dir=save_path)
 
         # plotting pnl distribution, if specified in configuration.
-        if self.config.data_config["plot_pnl_distribution"] and self.config.artifacts_dir:
+        dc = self.config.data_config
+        plot_pnl = dc.get("plot_pnl_distribution", False) if isinstance(dc, dict) else getattr(dc, "plot_pnl_distribution", False)
+        if plot_pnl and self.config.artifacts_dir:
             plot_pnl_distribution(
                 elementary_pnl=data_result.elementary_pnl, target_pnl=data_result.target_pnl,
                 train_indices=data_result.metadata["train_indices"], save_path=save_path
             )
 
         # plotting trade graph
-        if self.config.data_config["plot_trade_graph"]:
+        plot_graph = dc.get("plot_trade_graph", False) if isinstance(dc, dict) else getattr(dc, "plot_trade_graph", False)
+        if plot_graph:
             # plot trade graph analytics.
             plot_trade_graph(
                 adjacency_indices=data_result.graph_results["sparse_indices"],

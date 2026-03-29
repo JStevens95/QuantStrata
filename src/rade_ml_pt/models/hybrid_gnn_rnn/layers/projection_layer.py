@@ -103,8 +103,10 @@ class TargetPnlOutput(nn.Module):
         # Inverse softplus(1.0) — used to initialise gain so softplus(gain) ≈ 1.
         self.softplus_inv: float = float(np.log(np.expm1(1.0)))
 
-        n0 = self.baseline_trade_count
-        d = self.attn_dim
+        n0 = self._coerce_optional_int(self.baseline_trade_count, "baseline_trade_count")
+        d = self._coerce_optional_int(self.attn_dim, "attn_dim")
+        self.baseline_trade_count = n0
+        self.attn_dim = d
 
         # ----- Baseline parameters: per-train-target learned projection -----
         # Kernels need both n0 and d; biases/gain need only n0.
@@ -496,6 +498,36 @@ class TargetPnlOutput(nn.Module):
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _coerce_optional_int(value: Any, name: str) -> Optional[int]:
+        """Convert a value to ``Optional[int]``, handling YAML string artefacts.
+
+        ``yaml.safe_load`` returns the unquoted token ``None`` as the
+        **string** ``'None'`` rather than Python ``None``.  This guard
+        prevents downstream ``torch.empty(str, str)`` TypeErrors.
+        """
+        if value is None:
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped.lower() in ("none", "null", "~", ""):
+                return None
+            try:
+                return int(stripped)
+            except ValueError:
+                raise TypeError(
+                    f"TargetPnlOutput: {name} must be None or int, "
+                    f"got string {value!r} (hint: use `null` instead of "
+                    f"`None` in YAML files)"
+                )
+        if isinstance(value, float) and value == int(value):
+            return int(value)
+        raise TypeError(
+            f"TargetPnlOutput: {name} must be None or int, got {type(value).__name__}"
+        )
 
     def _unpack_configuration(self, config: Dict[str, Any]) -> None:
         """Set instance attributes from a config sub-dict (key=value -> self.key = value)."""

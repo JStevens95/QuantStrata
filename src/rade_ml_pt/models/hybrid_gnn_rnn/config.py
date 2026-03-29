@@ -270,6 +270,7 @@ class ProjectionGeneralConfig:
     knn_power: float = 2.0
     residual_new_damp: float = 1.0
     baseline_trade_count: Optional[int] = None
+    attn_dim: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -278,7 +279,11 @@ class ProjectionGeneralConfig:
     def from_dict(cls, d: Optional[Dict[str, Any]]) -> "ProjectionGeneralConfig":
         if not d:
             return cls()
-        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+        filtered = {k: v for k, v in d.items() if k in cls.__dataclass_fields__}
+        for int_field in ("baseline_trade_count", "attn_dim"):
+            if int_field in filtered and filtered[int_field] is not None:
+                filtered[int_field] = int(filtered[int_field])
+        return cls(**filtered)
 
 
 @dataclass
@@ -379,8 +384,9 @@ class HybridGnnRnnModelConfig:
             import yaml
         except ImportError:
             raise ImportError("from_yaml requires PyYAML. Install with: pip install pyyaml")
+        from src.rade_ml_pt.core.config import sanitize_yaml_values
         with open(path, "r") as f:
-            data = yaml.safe_load(f)
+            data = sanitize_yaml_values(yaml.safe_load(f))
         return cls.from_dict(data)
 
 

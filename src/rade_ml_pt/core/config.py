@@ -26,6 +26,48 @@ from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, Iterator, List, Optional, Union
 
 
+# ---------------------------------------------------------------------------
+# YAML / config sanitisation helpers
+# ---------------------------------------------------------------------------
+
+_YAML_NONE_STRINGS = frozenset({"None", "none", "NONE"})
+
+
+def sanitize_yaml_values(obj: Any) -> Any:
+    """Recursively fix common ``yaml.safe_load`` artefacts.
+
+    ``yaml.safe_load`` only recognises ``null``, ``Null``, ``NULL``, ``~``
+    and empty values as Python ``None``.  The unquoted token ``None`` is
+    returned as the **string** ``'None'`` — a frequent source of downstream
+    ``TypeError`` when the value is expected to be ``NoneType`` or ``int``.
+
+    This function walks a nested dict/list structure and:
+
+    * Converts the strings ``'None'``, ``'none'``, ``'NONE'`` → ``None``.
+    * Converts numeric strings (``'42'``, ``'1e-3'``) → ``int`` / ``float``
+      only when the *entire* string is a valid literal.
+
+    Call this on the dict returned by ``yaml.safe_load`` before passing it
+    into any ``from_dict`` constructor.
+    """
+    if isinstance(obj, dict):
+        return {k: sanitize_yaml_values(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [sanitize_yaml_values(v) for v in obj]
+    if isinstance(obj, str):
+        if obj in _YAML_NONE_STRINGS:
+            return None
+        try:
+            return int(obj)
+        except ValueError:
+            pass
+        try:
+            return float(obj)
+        except ValueError:
+            pass
+    return obj
+
+
 @dataclass
 class DataPipelineConfig:
     """
@@ -86,6 +128,13 @@ class DataPipelineConfig:
         """Load configuration from JSON file."""
         with open(path, "r") as f:
             return cls.from_dict(json.load(f))
+
+    @classmethod
+    def from_yaml(cls, path: Union[str, Path]) -> "DataPipelineConfig":
+        """Load configuration from YAML file (requires ``pyyaml``)."""
+        import yaml
+        with open(path, "r") as f:
+            return cls.from_dict(sanitize_yaml_values(yaml.safe_load(f)))
 
 
 @dataclass
@@ -367,3 +416,10 @@ class TrainingConfig:
         """Load configuration from JSON file."""
         with open(path, "r") as f:
             return cls.from_dict(json.load(f))
+
+    @classmethod
+    def from_yaml(cls, path: Union[str, Path]) -> "TrainingConfig":
+        """Load configuration from YAML file (requires ``pyyaml``)."""
+        import yaml
+        with open(path, "r") as f:
+            return cls.from_dict(sanitize_yaml_values(yaml.safe_load(f)))

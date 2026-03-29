@@ -5,7 +5,7 @@ Two usage patterns:
 
 1. **Standalone (non-UI):** Construct with an ``EnsembleConfig``, call ``run()``.
    The pipeline loads the ensemble from the registry, builds per-member inputs
-   via the single-cluster inference functions, predicts, and aggregates.
+   via the single-cluster inference helpers, predicts, and aggregates.
 
 2. **Via EnsembleSession (UI):** The session pre-loads models + inference
    contexts.  Call ``run(session=session)`` or use ``EnsembleSession.run_inference()``
@@ -17,9 +17,10 @@ import csv
 import logging
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 import numpy as np
+import pandas as pd
 
 from src.rade_ml_pt.ensemble.config import EnsembleConfig
 from src.rade_ml_pt.ensemble.builder import EnsembleBuilder
@@ -28,9 +29,54 @@ from src.rade_ml_pt.core.types import InferenceResult
 
 if TYPE_CHECKING:
     from src.rade_ml_pt.ensemble.session import EnsembleSession
+    from src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer import InferenceContext
 
 logger = logging.getLogger(__name__)
 
+
+# ------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------
+
+def _dict_to_inference_context(
+    raw: Dict[str, Any],
+    data_config_override: Any = None,
+) -> "InferenceContext":
+    """
+    Convert a raw context dict (as returned by ``load_inference_context_from_dir``)
+    into an ``InferenceContext`` dataclass.
+
+    Parameters
+    ----------
+    raw : dict
+        Keys match those produced by ``load_inference_context_from_dir``.
+    data_config_override : optional
+        If provided, replaces the ``data_config`` from *raw*.
+    """
+    from src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer import InferenceContext
+
+    dc = data_config_override if data_config_override is not None else raw.get("data_config")
+    return InferenceContext(
+        data_config=dc,
+        encoder=raw.get("encoder"),
+        encoder_results=raw.get("encoder_results"),
+        graph_builder=raw.get("graph_builder"),
+        graph_results=raw.get("graph_results"),
+        elementary_pnl=raw.get("elementary_pnl"),
+        elementary_scaler=raw.get("elementary_scaler"),
+        elementary_attributes=raw.get("elementary_attribs"),
+        target_scaler=raw.get("target_scaler"),
+        target_attributes=raw.get("target_attribs"),
+        trade_universe=raw.get("trade_universe"),
+        cluster_info=raw.get("cluster_info"),
+        cluster_assets=raw.get("cluster_assets"),
+        cluster_elem_trades=raw.get("cluster_elem_trades"),
+    )
+
+
+# ------------------------------------------------------------------
+# Pipeline
+# ------------------------------------------------------------------
 
 class EnsembleInferencePipeline:
     """
@@ -38,7 +84,7 @@ class EnsembleInferencePipeline:
 
     Supports two input modes (set in config.metadata["inference"]["input_mode"]):
     - ``new_scenarios``: Same trades, new risk-factor scenario data.
-    - ``new_trades``: New trade attributes to route and predict.
+    - ``new_trades``: New trade attributes to route and predict (not yet implemented).
 
     Parameters
     ----------
@@ -62,9 +108,13 @@ class EnsembleInferencePipeline:
         self._session = session
 
         self._ensemble = None
-        self._ens_config = None
-        self._member_versions = None
-        self._inference_contexts: Dict[str, Dict[str, Any]] = {}
+        self._ens_config: Optional[EnsembleConfig] = None
+        self._member_versions: Optional[Dict[str, str]] = None
+        self._inference_contexts: Dict[str, Any] = {}
+
+    # ==================================================================
+    # Orchestration
+    # ==================================================================
 
     def run(self) -> InferenceResult:
         """
@@ -93,17 +143,15 @@ class EnsembleInferencePipeline:
                 f"Supported modes: 'new_scenarios', 'new_trades'."
             )
 
-        # If member_inputs are already prepared externally, skip model-specific
-        # context loading and keep the pipeline model-agnostic.
         need_contexts = not bool(infer_meta.get("member_inputs"))
         if self._session is not None and self._session.all_inference_ready:
             self._load_from_session()
         else:
             self._load_from_registry(need_contexts=need_contexts)
 
-        member_inputs = self._build_member_inputs(input_mode, infer_meta)
+        member_inputs, extra_meta = self._build_member_inputs(input_mode, infer_meta)
         combined = self._ensemble.predict(member_inputs)
-        result = self._build_result(combined, infer_meta)
+        result = self._build_result(combined, infer_meta, extra_meta)
 
         result.latency_seconds = time.perf_counter() - t0
         self.post_infer(result)
@@ -114,9 +162,9 @@ class EnsembleInferencePipeline:
         )
         return result
 
-    # ------------------------------------------------------------------
+    # ==================================================================
     # Loading
-    # ------------------------------------------------------------------
+    # ==================================================================
 
     def _load_from_registry(self, need_contexts: bool = True) -> None:
         """Cold-start: load ensemble + per-member inference contexts from registry."""
@@ -126,30 +174,36 @@ class EnsembleInferencePipeline:
         self._member_versions = member_versions
 
         from src.rade_ml_pt.registry.store import ModelRegistry
+
         registry = ModelRegistry(self.config.registry_dir)
         builder = EnsembleBuilder(registry)
         self._ensemble = builder.build(config, member_versions)
 
         if need_contexts:
-            from src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer import load_inference_context
+            from src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer import (
+                load_inference_context_from_dir,
+            )
+
             for cid in config.cluster_ids:
                 ver = member_versions[cid]
                 version_dir = Path(self.config.registry_dir) / ver
                 try:
-                    self._inference_contexts[cid] = load_inference_context({
-                        "graph_builder_path": str(version_dir / "graph_builder.pkl"),
-                        "encoder_path": str(version_dir / "encoder.pkl"),
-                        "version_dir": str(version_dir),
-                    })
+                    raw = load_inference_context_from_dir(version_dir)
+                    self._inference_contexts[cid] = _dict_to_inference_context(raw)
                 except Exception as exc:
                     raise ValueError(
-                        f"Could not build member inputs for cluster '{cid}'. "
+                        f"Could not load inference context for cluster '{cid}' "
+                        f"(version '{ver}', dir={version_dir}). "
                         f"Provide metadata['inference']['member_inputs'] for "
                         f"model-agnostic ensemble inference, or ensure model-"
-                        f"specific inference artifacts are present. Root cause: {exc}"
+                        f"specific inference artifacts are present. "
+                        f"Root cause: {exc}"
                     ) from exc
 
-        logger.info("Loaded ensemble '%s' (%d members) from registry", version, config.n_members)
+        logger.info(
+            "Loaded ensemble '%s' (%d members) from registry",
+            version, config.n_members,
+        )
 
     def _load_from_session(self) -> None:
         """Warm-start: reuse the session's pre-loaded models + contexts."""
@@ -157,107 +211,176 @@ class EnsembleInferencePipeline:
         self._member_versions = self._session.member_versions
         self._ensemble = self._session.ensemble_model
 
+        from src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer import InferenceContext
+
         for cid in self._ens_config.cluster_ids:
             state = self._session._inference[cid]
-            self._inference_contexts[cid] = state.inference_context
+            ctx = state.inference_context
+            if isinstance(ctx, InferenceContext):
+                self._inference_contexts[cid] = ctx
+            else:
+                self._inference_contexts[cid] = _dict_to_inference_context(
+                    ctx, data_config_override=state.data_config,
+                )
 
         logger.info(
             "Using pre-loaded session (ensemble '%s', %d members)",
             self._session.ensemble_version, self._ens_config.n_members,
         )
 
-    # ------------------------------------------------------------------
-    # Input building (uses single-cluster inference functions)
-    # ------------------------------------------------------------------
+    # ==================================================================
+    # Input building
+    # ==================================================================
 
     def _build_member_inputs(
-        self, input_mode: str, infer_meta: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        self,
+        input_mode: str,
+        infer_meta: Dict[str, Any],
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """
-        Build the 7-key model input dict for each member.
+        Build the per-member model input dicts.
 
-        Uses the same ``build_static_dict`` + ``build_model_input_dict`` functions
-        as the single-cluster pipeline.  Falls back to pre-built ``member_inputs``
-        in infer_meta if provided (backward compatible).
+        Returns
+        -------
+        tuple of (member_inputs, extra_meta)
+            *member_inputs*: ``{cluster_id: 7-key model input dict}`` ready
+            for ``EnsembleModel.predict``.
+            *extra_meta*: auxiliary info (sample_ids per member, etc.).
         """
         pre_built = infer_meta.get("member_inputs")
         if pre_built:
-            return pre_built
+            return pre_built, {}
 
-        if input_mode == "new_scenarios" and not self._inference_contexts:
-            raise ValueError(
-                "metadata['inference']['member_inputs'] is required for "
-                "new_scenarios mode unless model-specific inference contexts are loaded."
+        if input_mode == "new_scenarios":
+            return self._build_new_scenarios_inputs(infer_meta)
+
+        if input_mode == "new_trades":
+            raise NotImplementedError(
+                "new_trades inference is not yet supported in the ensemble "
+                "pipeline. The underlying HybridGnnRnnInferencePipeline does "
+                "not implement _prepare_new_trade_inputs yet."
             )
 
+        raise ValueError(f"Unknown input_mode: {input_mode}")
+
+    def _build_new_scenarios_inputs(
+        self,
+        infer_meta: Dict[str, Any],
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """
+        Build per-member inputs for new-scenarios mode.
+
+        Mirrors the flow of
+        ``HybridGnnRnnInferencePipeline._prepare_new_scenarios_inputs``
+        for every member, sharing the new-scenario shocks across clusters.
+
+        Steps (per member)
+        ------------------
+        1. Load new risk-factor shock CSVs (shared, loaded once).
+        2. Inject unchanged static inputs (trade_features, adjacency, indices).
+        3. Deep-copy asset portfolio with new shocks injected.
+        4. Filter elementary trades to match cluster's reduced population.
+        5. Calculate elementary PnL for new scenarios.
+        6. Concatenate elementary PnL across assets, reorder to training column order.
+        7. Standardise elementary PnL using saved scaler.
+        8. Store scaled PnL on InferenceInputData.
+        9. Build PnL sequences with same windowing as training.
+        10. Assemble 7-key model input dict.
+        """
         from src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer import (
-            build_static_dict,
-            build_model_input_dict,
+            HybridGnnRnnInferencePipeline,
         )
 
-        cluster_pnl = infer_meta.get("cluster_pnl_histories", {})
-        new_trade_attribs = infer_meta.get("new_trade_attribs")
-
-        routed_attribs: Dict[str, Any] = {}
-        if input_mode == "new_trades" and new_trade_attribs is not None:
-            first_key = next(iter(new_trade_attribs), None)
-            if first_key in self._ens_config.cluster_ids:
-                routed_attribs = new_trade_attribs
-            else:
-                cid = self._ensemble.router.assign_new_trade(new_trade_attribs)
-                routed_attribs[cid] = new_trade_attribs
-
-        member_inputs: Dict[str, Any] = {}
-        for cid in self._ens_config.cluster_ids:
-            context = self._inference_contexts[cid]
-            data_config = self._resolve_data_config(cid)
-            attribs = routed_attribs.get(cid)
-
-            static_dict = build_static_dict(context, attribs, data_config)
-
-            pnl = cluster_pnl.get(cid)
-            if pnl is None:
-                pnl = infer_meta.get("pnl_history")
-            if pnl is None and self._session is not None:
-                state = self._session._inference.get(cid)
-                if state and state.baseline_pnl is not None:
-                    pnl = state.baseline_pnl
-            if pnl is None:
-                raise ValueError(
-                    f"No pnl_history for cluster '{cid}'. Provide "
-                    f"cluster_pnl_histories['{cid}'] or a global pnl_history."
-                )
-
-            member_inputs[cid] = build_model_input_dict(
-                static_dict, np.asarray(pnl, dtype=np.float32),
+        if not self._inference_contexts:
+            raise ValueError(
+                "Inference contexts not loaded. Provide "
+                "metadata['inference']['member_inputs'] for model-agnostic "
+                "ensemble inference, or load contexts via registry/session."
             )
 
-        return member_inputs
+        new_scenario_dir = infer_meta.get("new_scenario_dir")
+        if not new_scenario_dir:
+            raise ValueError(
+                "metadata['inference']['new_scenario_dir'] is required for "
+                "new_scenarios mode."
+            )
 
-    def _resolve_data_config(self, cluster_id: str) -> Any:
-        """Resolve HybridGnnRnnDataConfig for a cluster."""
-        if self._session is not None:
-            state = self._session._inference.get(cluster_id)
-            if state and state.data_config is not None:
-                return state.data_config
+        new_scenario_shocks = HybridGnnRnnInferencePipeline.load_new_scenarios(
+            new_scenario_dir,
+        )
 
-        version = self._member_versions.get(cluster_id, "")
-        dc_path = Path(self.config.registry_dir) / version / "data_config.json"
-        if dc_path.exists():
-            from src.rade_ml_pt.data.hybrid_gnn_rnn.config import HybridGnnRnnDataConfig
-            return HybridGnnRnnDataConfig.from_json(dc_path)
+        member_inputs: Dict[str, Any] = {}
+        extra_meta: Dict[str, Any] = {"sample_ids": {}}
 
-        from src.rade_ml_pt.data.hybrid_gnn_rnn.config import HybridGnnRnnDataConfig
-        return HybridGnnRnnDataConfig()
+        for cid in self._ens_config.cluster_ids:
+            context = self._inference_contexts[cid]
 
-    # ------------------------------------------------------------------
+            inputs = HybridGnnRnnInferencePipeline._inject_unchanged_inputs(
+                context, mode="new_scenarios",
+            )
+
+            new_asset_portfolio = HybridGnnRnnInferencePipeline._update_asset_portfolio(
+                context.cluster_assets, new_scenario_shocks,
+            )
+
+            elem_trades = {
+                z: [
+                    x for x in context.cluster_elem_trades[z]
+                    if x["id"] in inputs.elementary_ids
+                ]
+                for z in context.cluster_elem_trades.keys()
+            }
+
+            asset_elementary_pnl = HybridGnnRnnInferencePipeline.calculate_elementary_pnl(
+                asset_portfolio=new_asset_portfolio,
+                elementary_trades=elem_trades,
+            )
+
+            new_elementary_pnl = pd.concat(asset_elementary_pnl.values(), axis=1)
+            new_elementary_pnl = new_elementary_pnl[
+                context.elementary_attributes["trade_id"]
+            ]
+
+            new_elementary_pnl_scaled = HybridGnnRnnInferencePipeline._standardise_pnl(
+                pnl_unscaled=new_elementary_pnl,
+                scaler=context.elementary_scaler,
+            )
+
+            inputs.elementary_pnl = pd.DataFrame(
+                new_elementary_pnl_scaled,
+                columns=context.elementary_pnl.columns.tolist(),
+                index=new_elementary_pnl.index.tolist(),
+            )
+
+            elem_seq = HybridGnnRnnInferencePipeline.build_new_pnl_sequences(
+                elementary_pnl=inputs.elementary_pnl,
+                seq_length=context.data_config.seq_length,
+                n_targets=len(inputs.target_indices),
+            )
+
+            result = HybridGnnRnnInferencePipeline.build_model_inputs(
+                elem_seq=elem_seq,
+                inputs=inputs,
+                seq_length=context.data_config.seq_length,
+            )
+
+            member_inputs[cid] = result["inputs"]
+            extra_meta["sample_ids"][cid] = result.get("sample_ids")
+
+            logger.info(
+                "Built new-scenarios inputs for cluster '%s' "
+                "(%d windows, seq_length=%d)",
+                cid, elem_seq.shape[0], context.data_config.seq_length,
+            )
+
+        return member_inputs, extra_meta
+
+    # ==================================================================
     # Post-inference
-    # ------------------------------------------------------------------
+    # ==================================================================
 
     def post_infer(self, result: InferenceResult) -> None:
-        """
-        Post-inference analytics: log summary, save predictions CSV.
-        """
+        """Post-inference analytics: log summary, save predictions CSV."""
         if result.predictions is not None:
             preds = result.predictions
             logger.info(
@@ -299,26 +422,39 @@ class EnsembleInferencePipeline:
 
         result.to_json(out_dir / "inference_result.json")
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    # ==================================================================
+    # Result building
+    # ==================================================================
 
     def _build_result(
         self,
         combined: np.ndarray,
         infer_meta: Dict[str, Any],
+        extra_meta: Dict[str, Any],
     ) -> InferenceResult:
-        meta = {
+        """Wrap aggregated predictions into an ``InferenceResult``."""
+        meta: Dict[str, Any] = {
             "input_mode": infer_meta.get("input_mode", "new_scenarios"),
-            "n_members": self._ensemble.router.cluster_ids if self._ensemble else [],
+            "cluster_ids": self._ensemble.router.cluster_ids if self._ensemble else [],
+            "n_members": self._ens_config.n_members if self._ens_config else 0,
         }
-        if "new_trade_assignments" in infer_meta:
-            meta["new_trade_assignments"] = infer_meta["new_trade_assignments"]
+        if extra_meta.get("sample_ids"):
+            meta["per_member_sample_ids"] = extra_meta["sample_ids"]
+
+        all_sample_ids = None
+        per_member_ids = extra_meta.get("sample_ids", {})
+        if per_member_ids:
+            all_sample_ids = []
+            for cid in sorted(per_member_ids.keys()):
+                ids = per_member_ids[cid]
+                if ids:
+                    all_sample_ids.extend(ids)
+            all_sample_ids = all_sample_ids or None
 
         return InferenceResult(
             predictions=combined,
             n_samples=combined.shape[0],
-            sample_ids=infer_meta.get("sample_ids"),
+            sample_ids=all_sample_ids or infer_meta.get("sample_ids"),
             model_version=self.ensemble_version,
             metadata=meta,
         )

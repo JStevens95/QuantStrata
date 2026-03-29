@@ -24,7 +24,7 @@ import numpy as np
 
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
 
 from src.rade_ml_pt.data.result import DataBuildResult
 from src.rade_ml_pt.data.hybrid_gnn_rnn.config import HybridGnnRnnDataConfig
@@ -112,6 +112,56 @@ class InferenceInputData:
 
     # inference data-loader
     infer_inputs: Optional[Any] = None
+
+
+def load_inference_context_from_dir(version_dir: Union[str, Path]) -> Dict[str, Any]:
+    """
+    Load all inference artifacts from a member's version directory.
+
+    Standalone equivalent of
+    ``HybridGnnRnnInferencePipeline.load_inference_context`` that takes a
+    directory path directly, so callers (e.g. ensemble pipelines) can load a
+    member's context without instantiating the full inference pipeline.
+
+    Parameters
+    ----------
+    version_dir : str or Path
+        Registry version directory containing saved model artifacts.
+
+    Returns
+    -------
+    dict
+        Raw context dict whose keys match those produced by
+        ``HybridGnnRnnInferencePipeline.load_inference_context``.
+    """
+    version_dir = Path(version_dir)
+    context: Dict[str, Any] = {
+        "encoder": TradeAttributeEncoder.load(file_path=version_dir / "encoder.pkl"),
+        "graph_builder": TradeGraphBuilder.load(file_path=version_dir / "graph_builder.pkl"),
+        "data_config": HybridGnnRnnDataConfig.from_json(path=version_dir / "data_config.json"),
+    }
+    for name, fname in [
+        ("graph_results", "graph_results.joblib"),
+        ("encoder_results", "encoder_results.joblib"),
+        ("elementary_pnl", "elementary_pnl.parquet"),
+        ("elementary_attribs", "elementary_attributes.json"),
+        ("elementary_scaler", "elementary_scaler.pkl"),
+        ("target_attribs", "target_attributes.json"),
+        ("target_scaler", "target_scaler.pkl"),
+        ("trade_universe", "trade_universe.json"),
+        ("cluster_info", "cluster_info.joblib"),
+        ("cluster_assets", "cluster_assets.joblib"),
+        ("cluster_elem_trades", "cluster_elem_trades.joblib"),
+    ]:
+        p = version_dir / fname
+        if p.exists() and (str(p).endswith(".joblib") or str(p).endswith(".pkl")):
+            context[name] = joblib.load(str(p))
+        if p.exists() and str(p).endswith(".json"):
+            with open(p) as f:
+                context[name] = json.load(f)
+        if p.exists() and str(p).endswith(".parquet"):
+            context[name] = pd.read_parquet(path=str(p))
+    return context
 
 
 class HybridGnnRnnInferencePipeline(InferencePipeline):

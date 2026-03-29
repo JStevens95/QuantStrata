@@ -47,7 +47,7 @@ def plot_training_analytics(result: TrainingResult, save_dir: Path) -> Path:
     val_loss_arr = np.array(val_vals) if has_val else np.full(n_epochs, np.nan)
 
     # ---- loss curve ----
-    ax_a.plot(epochs, train_loss, label="train", linewidth=1.5, color="£2563eb")
+    ax_a.plot(epochs, train_loss, label="train", linewidth=1.5, color="#2563eb")
     if has_val:
         ax_a.plot(epochs, val_loss_arr, label="val", linewidth=1.5, color="#dc2626")
     if result.best_epoch > 0:

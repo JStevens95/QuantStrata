@@ -197,3 +197,11 @@ class HybridGnnRnnDataConfig(DataPipelineConfig):
         """Load configuration from json file."""
         with open(path, "r") as f:
             return cls.from_dict(json.load(f))
+
+    @classmethod
+    def from_yaml(cls, path: Union[str, Path]) -> "HybridGnnRnnDataConfig":
+        """Load configuration from YAML file (requires ``pyyaml``)."""
+        import yaml
+        from src.rade_ml_pt.core.config import sanitize_yaml_values
+        with open(path, "r") as f:
+            return cls.from_dict(sanitize_yaml_values(yaml.safe_load(f)))

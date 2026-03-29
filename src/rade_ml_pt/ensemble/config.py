@@ -164,5 +164,6 @@ class EnsembleConfig:
     def from_yaml(cls, path: Union[str, Path]) -> "EnsembleConfig":
         """Load from a YAML file (requires ``pyyaml``)."""
         import yaml
+        from src.rade_ml_pt.core.config import sanitize_yaml_values
         with open(path, "r") as f:
-            return cls.from_dict(yaml.safe_load(f))
+            return cls.from_dict(sanitize_yaml_values(yaml.safe_load(f)))
