@@ -660,3 +660,822 @@ and CSV files from the artifacts directory. This means:
 - The UI can run on a lightweight server (no GPU, no PyTorch install).
 - Artifacts are the contract between ML code and the UI.
 - You can swap the UI framework without touching any ML code.
+
+---
+
+## 8. Step-by-Step Workflow (Hybrid GNN-RNN)
+
+This section is the hands-on execution guide for building, evaluating, and running inference
+with an ensemble of Hybrid GNN-RNN models. Follow these steps in order.
+
+### 8.1 Prerequisites
+
+Before starting you need:
+
+1. **Data caches per cluster.** Each cluster needs its own set of cached data files:
+   - `elementary_pnl.pkl` — elementary PnL time series for this cluster's trades.
+   - `target_pnl.pkl` — target PnL time series.
+   - `elementary_attribs.pkl` — trade attributes for elementary trades.
+   - `target_attribs.pkl` — trade attributes for target trades.
+
+   These are typically produced by a clustering / data preparation step that splits
+   the full trade universe into groups (by ccy, desk, product type, etc.) and saves
+   each group's data to a separate directory.
+
+2. **A list of job dictionaries.** Each job has a `cluster_info` key containing the
+   four file paths for that cluster:
+
+   ```python
+   jobs = [
+       {
+           "cluster_info": {
+               "elementary_pnl_path": "/data/cluster_0/elementary_pnl.pkl",
+               "target_pnl_path": "/data/cluster_0/target_pnl.pkl",
+               "elementary_attribs_path": "/data/cluster_0/elementary_attribs.pkl",
+               "target_attribs_path": "/data/cluster_0/target_attribs.pkl",
+           }
+       },
+       {
+           "cluster_info": {
+               "elementary_pnl_path": "/data/cluster_1/elementary_pnl.pkl",
+               "target_pnl_path": "/data/cluster_1/target_pnl.pkl",
+               "elementary_attribs_path": "/data/cluster_1/elementary_attribs.pkl",
+               "target_attribs_path": "/data/cluster_1/target_attribs.pkl",
+           }
+       },
+       # ... one per cluster
+   ]
+   ```
+
+3. **Directories for outputs:**
+   - `registry_dir` — where member models and ensemble registrations are saved.
+   - `artifacts_dir` — where plots, metrics, and evaluation results are written.
+
+4. **Trade-to-cluster assignment.** You need to know which target trade IDs belong
+   to each cluster. This comes from your clustering step (e.g. a `trade_cluster_map`
+   CSV or dict produced by your data prep pipeline).
+
+### 8.2 Prepare Jobs and Cluster Mapping
+
+The goal is to go from your list of job dicts to the three inputs `EnsembleConfig` needs:
+
+```
+jobs: List[Dict]
+  │
+  ├─► cluster_mapping:    {cluster_id: [trade_ids]}
+  ├─► member_configs:     {cluster_id: {data_config, training_config, metadata}}
+  └─► cluster_key_values: {cluster_id: [routing_attribute_values]}
+  │
+  ▼
+EnsembleConfig(...)
+```
+
+**Step 2a: Build `cluster_mapping`**
+
+Load the target trade IDs from each cluster's data and assign them a cluster ID:
+
+```python
+from src.rade_ml_pt.data.io import CacheLoader
+
+cluster_mapping = {}
+for i, job in enumerate(jobs):
+    cluster_id = f"cluster_{i}"
+    target_attribs = CacheLoader.load(job["cluster_info"]["target_attribs_path"])
+    # target_attribs is a dict with a "trade_id" key containing the list of IDs
+    trade_ids = target_attribs["trade_id"]
+    cluster_mapping[cluster_id] = trade_ids
+```
+
+**Step 2b: Build `member_configs`**
+
+Each cluster needs its own `PipelineConfig` dict with the data paths, training settings,
+and model config. The ensemble train pipeline will turn each into a full `PipelineConfig`
+via `EnsembleConfig.get_member_pipeline_config()`:
+
+```python
+from src.rade_ml_pt.data.hybrid_gnn_rnn.config import (
+    HybridGnnRnnDataConfig,
+    FolderEnvironmentConfig,
+    DimensionalityConfig,
+    BasisSelectionConfig,
+    GraphBuilderConfig,
+    AttributeEncoderConfig,
+)
+from src.rade_ml_pt.core.config import TrainingConfig, OptimizerConfig, EarlyStoppingConfig
+
+member_configs = {}
+for i, job in enumerate(jobs):
+    cluster_id = f"cluster_{i}"
+
+    data_config = HybridGnnRnnDataConfig(
+        folders=FolderEnvironmentConfig(root_folder=f"/data/cluster_{i}"),
+        validation_split=0.10,
+        test_split=0.05,
+        seq_length=1,
+        batch_size=32,
+        shuffle=True,
+        transform_type="standard",
+        dimensionality=DimensionalityConfig(
+            reduction_mode="basis_selection",
+            basis_selection=BasisSelectionConfig(var_threshold=0.999999, method="pca", max_components=10),
+        ),
+        graph_builder=GraphBuilderConfig(k=3, distance_metric="euclidean"),
+        attribute_encoder=AttributeEncoderConfig(
+            numeric_keys=["moneyness", "yrs_to_maturity", "delta", "vega"],
+            categorical_keys=["product_type", "product_subtype", "trade_type"],
+            multi_label_keys=["underlying_risk_factors"],
+        ),
+        seed=42,
+    )
+
+    training_config = TrainingConfig(
+        epochs=100,
+        loss="mae",
+        metrics=["mae"],
+        optimizer=OptimizerConfig(name="adam", learning_rate=1e-3),
+        early_stopping=EarlyStoppingConfig(patience=10, monitor="val_loss", mode="min", restore_best_weights=True),
+        strategy="auto",
+        verbose=False,
+    )
+
+    member_configs[cluster_id] = {
+        "data_config": data_config,
+        "training_config": training_config.to_dict(),
+        "model_config": None,  # uses HybridGnnRnn defaults; override per cluster if needed
+        "metadata": {"job": job, "run_name": f"ensemble_{cluster_id}"},
+    }
+```
+
+**Step 2c: Build routing keys (for new-trade assignment)**
+
+If your clusters are defined by business attributes (e.g. ccy, desk, product), provide
+them so `TradeRouter` can assign unseen trades at inference time:
+
+```python
+cluster_key = ["ccy", "desk"]
+
+cluster_key_values = {
+    "cluster_0": ["GBP", "FLOW_RATES"],
+    "cluster_1": ["USD", "FLOW_RATES"],
+    "cluster_2": ["EUR", "EXOTICS"],
+}
+```
+
+If clusters are defined by a more complex rule (e.g. ML-based clustering), skip
+`cluster_key` / `cluster_key_values` and rely on centroid-based routing or a
+`default_cluster` instead.
+
+### 8.3 Configure EnsembleConfig
+
+Bring it all together:
+
+```python
+from src.rade_ml_pt.ensemble.config import EnsembleConfig
+
+REGISTRY_DIR = "/path/to/registry"
+ARTIFACTS_DIR = "/path/to/artifacts"
+
+ensemble_config = EnsembleConfig(
+    member_configs=member_configs,
+    cluster_mapping=cluster_mapping,
+    cluster_key=cluster_key,
+    cluster_key_values=cluster_key_values,
+    aggregation="concat",              # disjoint clusters
+    execution_strategy="sequential",   # one member at a time
+    registry_dir=REGISTRY_DIR,
+    artifacts_dir=ARTIFACTS_DIR,
+    metadata={"run_name": "ensemble_v1"},
+)
+```
+
+Verify before proceeding:
+
+```python
+print(f"Members: {ensemble_config.n_members}")
+print(f"Total trades: {len(ensemble_config.all_trade_ids)}")
+print(f"Cluster IDs: {ensemble_config.cluster_ids}")
+
+# Check routing keys resolve correctly
+router_keys = ensemble_config.get_cluster_keys_for_router()
+for cid, keys in router_keys.items():
+    print(f"  {cid}: {keys}")
+```
+
+### 8.4 Run EnsembleTrainPipeline
+
+Train all member models sequentially and register the ensemble:
+
+```python
+from src.rade_ml_pt.pipelines.ensemble.train import EnsembleTrainPipeline
+
+train_pipeline = EnsembleTrainPipeline(
+    config=ensemble_config,
+    tags=["production"],  # tag the ensemble for easy retrieval
+)
+
+train_output = train_pipeline.run()
+
+print(f"Ensemble version: {train_output['ensemble_version']}")
+print(f"Member versions:")
+for cid, ver in train_output["member_versions"].items():
+    result = train_output["member_results"][cid]
+    print(f"  {cid}: {ver} (val_loss={result.best_val_loss:.6f}, epoch={result.best_epoch})")
+```
+
+**What gets saved:**
+
+For each member (in `registry_dir/{member_version}/`):
+- Model weights (`model.pt`)
+- Training result (`training_result.json`)
+- Data artifacts: `graph_results.joblib`, `encoder_results.joblib`, scalers, trade_universe
+- Cached datasets: `datasets/train.pt`, `datasets/val.pt`, `datasets/test.pt`
+- Job metadata: `cluster_info.joblib`
+
+For the ensemble (in `registry_dir/ensemble/{ensemble_version}/`):
+- `ensemble_config.json` — full `EnsembleConfig`
+- `member_versions.json` — `{cluster_id: member_version}`
+- `trade_cluster_map.json` — `{trade_id: cluster_id}` for every trade
+- `member_summary.json` — per-member training stats
+
+### 8.5 Run EnsembleEvalPipeline
+
+Evaluate the ensemble on each member's cached test data:
+
+```python
+from src.rade_ml_pt.pipelines.ensemble.eval import EnsembleEvalPipeline
+
+eval_pipeline = EnsembleEvalPipeline(
+    ensemble_config=ensemble_config,
+    ensemble_version=train_output["ensemble_version"],
+)
+
+eval_output = eval_pipeline.run()
+
+print(f"Ensemble metrics: {eval_output['ensemble_metrics']}")
+print(f"Per-member metrics:")
+for cid, metrics in eval_output["per_member_metrics"].items():
+    print(f"  {cid}: MAE={metrics.get('mae', 'N/A'):.6f}, MSE={metrics.get('mse', 'N/A'):.6f}")
+```
+
+**What gets saved** (in `artifacts_dir/ensemble/{version}/evaluation/`):
+- `ensemble_metrics.json` — combined MAE, MSE, R2, etc.
+- `per_member_metrics.json` — per-cluster metrics
+- `member_rollup.json` — aggregated summary
+- `plots/member_comparison_mae.png` — bar chart comparing members
+- `plots/cluster_performance_heatmap.png` — heatmap of all metrics x clusters
+
+**Prerequisite:** Each member must have cached test data (`datasets/test.pt`) saved
+during training. The `HybridGnnRnnTrainPipeline` saves these automatically when
+`artifacts_dir` is set on the member's `PipelineConfig`.
+
+### 8.6 Run EnsembleInferencePipeline
+
+Two inference modes are supported:
+
+**Mode 1: New Scenarios (same trades, new risk-factor data)**
+
+```python
+from src.rade_ml_pt.pipelines.ensemble.infer import EnsembleInferencePipeline
+import numpy as np
+
+# Prepare PnL history per cluster (new scenario data)
+cluster_pnl_histories = {
+    "cluster_0": np.load("/data/new_scenarios/cluster_0_pnl.npy"),
+    "cluster_1": np.load("/data/new_scenarios/cluster_1_pnl.npy"),
+}
+
+infer_config = EnsembleConfig(
+    **ensemble_config.to_dict(),
+    metadata={
+        **ensemble_config.metadata,
+        "inference": {
+            "input_mode": "new_scenarios",
+            "cluster_pnl_histories": cluster_pnl_histories,
+        },
+    },
+)
+
+infer_pipeline = EnsembleInferencePipeline(
+    ensemble_config=infer_config,
+    ensemble_version=train_output["ensemble_version"],
+)
+result = infer_pipeline.run()
+
+print(f"Predictions shape: {result.predictions.shape}")
+print(f"Latency: {result.latency_seconds:.3f}s")
+```
+
+**Mode 2: New Trades (unseen trades routed via cluster keys)**
+
+```python
+# Trade attributes for the new trade
+new_trade = {
+    "ccy": "GBP",
+    "desk": "FLOW_RATES",
+    "product_type": "vanilla_option",
+    # ... other attributes
+}
+
+infer_config = EnsembleConfig(
+    **ensemble_config.to_dict(),
+    metadata={
+        **ensemble_config.metadata,
+        "inference": {
+            "input_mode": "new_trades",
+            "new_trade_attribs": new_trade,
+            "pnl_history": pnl_array,  # global fallback PnL
+        },
+    },
+)
+
+infer_pipeline = EnsembleInferencePipeline(
+    ensemble_config=infer_config,
+    ensemble_version=train_output["ensemble_version"],
+)
+result = infer_pipeline.run()
+```
+
+The router assigns the new trade to its cluster using the `cluster_key` / `cluster_key_values`
+rules defined in the config. In this example, `ccy=GBP, desk=FLOW_RATES` matches `cluster_0`.
+
+**Pre-built member inputs (model-agnostic fallback):**
+
+If you prepare member inputs yourself (e.g. for a non-hybrid model), pass them directly
+via `metadata["inference"]["member_inputs"]` and the pipeline skips all model-specific
+context loading:
+
+```python
+metadata={
+    "inference": {
+        "input_mode": "new_scenarios",
+        "member_inputs": {
+            "cluster_0": {"pnl_history": ..., "edge_index": ..., ...},
+            "cluster_1": {"pnl_history": ..., "edge_index": ..., ...},
+        },
+    },
+}
+```
+
+### 8.7 Load via EnsembleSession (UI / Interactive Use)
+
+For repeated inference (e.g. in a dashboard), load the ensemble once and reuse:
+
+```python
+from src.rade_ml_pt.ensemble.session import EnsembleSession
+
+session = EnsembleSession(
+    registry_dir=REGISTRY_DIR,
+    artifacts_dir=ARTIFACTS_DIR,
+)
+
+# Phase 1: Light metadata (fast — config, member versions, trade map)
+session.load_metadata(version_or_tag="production")
+
+print(f"Version: {session.ensemble_version}")
+print(f"Members: {session.config.n_members}")
+
+# Phase 2: Display artifacts (training/eval plots, metrics — for UI rendering)
+session.load_display_artifacts()
+
+# Phase 3: Full inference state (models + inference contexts — heavy, do once)
+session.load_inference_state()
+
+# Now run inference as many times as needed without reloading
+result = session.run_inference(
+    input_mode="new_scenarios",
+    cluster_pnl_histories=cluster_pnl_histories,
+)
+
+# Or via the pipeline with session warm-start
+infer_pipeline = EnsembleInferencePipeline(
+    ensemble_config=ensemble_config,
+    ensemble_version="production",
+    session=session,
+)
+result = infer_pipeline.run()
+```
+
+**Session phases:**
+
+| Phase | What loads | Memory | Time |
+|-------|-----------|--------|------|
+| 1. `load_metadata` | Config, member_versions, trade_cluster_map | Small | Fast |
+| 2. `load_display_artifacts` | Eval metrics, plot paths, member summaries | Small | Fast |
+| 3. `load_inference_state` | Member models, graph builders, encoders, scalers | Large | Slow |
+
+Phase 3 is the heavy step. After that, `run_inference()` only builds inputs from the
+user's new data and runs the forward pass — no disk I/O.
+
+### 8.8 Artifact Inventory
+
+Complete checklist of what each pipeline produces and where:
+
+**EnsembleTrainPipeline**
+
+```
+registry_dir/
+├── {member_version}/                    # one per cluster (via ModelRegistry)
+│   ├── model.pt
+│   ├── training_result.json
+│   ├── graph_results.joblib
+│   ├── encoder_results.joblib
+│   ├── elementary_scaler.pkl
+│   ├── target_scaler.pkl
+│   ├── trade_universe.json
+│   ├── cluster_info.joblib
+│   ├── data_config.json
+│   └── datasets/
+│       ├── train.pt
+│       ├── val.pt
+│       └── test.pt
+└── ensemble/
+    └── {ensemble_version}/
+        ├── ensemble_config.json
+        ├── member_versions.json
+        ├── trade_cluster_map.json
+        └── member_summary.json
+
+artifacts_dir/
+└── ensemble/
+    └── {ensemble_version}/
+        └── member_summary.json
+```
+
+**EnsembleEvalPipeline**
+
+```
+artifacts_dir/
+└── ensemble/
+    └── {ensemble_version}/
+        └── evaluation/
+            ├── ensemble_metrics.json
+            ├── per_member_metrics.json
+            ├── member_rollup.json
+            └── plots/
+                ├── member_comparison_mae.png
+                └── cluster_performance_heatmap.png
+```
+
+**EnsembleInferencePipeline**
+
+```
+artifacts_dir/
+└── inference/
+    ├── predictions.csv
+    └── inference_result.json
+```
+
+### 8.9 Quick-Reference: Minimal End-to-End Script
+
+```python
+"""Minimal ensemble: train, evaluate, infer."""
+from src.rade_ml_pt.ensemble.config import EnsembleConfig
+from src.rade_ml_pt.pipelines.ensemble.train import EnsembleTrainPipeline
+from src.rade_ml_pt.pipelines.ensemble.eval import EnsembleEvalPipeline
+from src.rade_ml_pt.pipelines.ensemble.infer import EnsembleInferencePipeline
+
+# 1. Config (see sections 8.2–8.3 for building these)
+config = EnsembleConfig(
+    member_configs=member_configs,
+    cluster_mapping=cluster_mapping,
+    cluster_key=["ccy", "desk"],
+    cluster_key_values=cluster_key_values,
+    aggregation="concat",
+    execution_strategy="sequential",
+    registry_dir="/path/to/registry",
+    artifacts_dir="/path/to/artifacts",
+)
+
+# 2. Train
+train_out = EnsembleTrainPipeline(config, tags=["production"]).run()
+
+# 3. Evaluate
+eval_out = EnsembleEvalPipeline(config, train_out["ensemble_version"]).run()
+
+# 4. Infer (new scenarios)
+config.metadata["inference"] = {
+    "input_mode": "new_scenarios",
+    "cluster_pnl_histories": cluster_pnl_histories,
+}
+result = EnsembleInferencePipeline(config, train_out["ensemble_version"]).run()
+```
+
+---
+
+## 9. Pipeline Walkthrough: Inputs, Internal Flow, and Outputs
+
+This section provides a concrete trace of what each pipeline requires, what happens
+internally at each step, and what comes out. Use this as a reference when debugging or
+when constructing inputs for the first time.
+
+### 9.1 Ensemble Training
+
+**Inputs required:**
+
+| Input | Type | Where it comes from |
+|-------|------|---------------------|
+| `member_configs` | `{cluster_id: {data_config, training_config, model_config}}` | Built from your job dicts (Section 8.2b) |
+| `cluster_mapping` | `{cluster_id: [trade_id, ...]}` | Built from target attribs per cluster (Section 8.2a) |
+| `registry_dir` | `str` | Output directory for models and ensemble registration |
+| `artifacts_dir` | `str` | Output directory for plots and metrics |
+| `cluster_key` / `cluster_key_values` | `list` / `dict` | Optional — only needed if you want routing for new trades later |
+| `tags` | `list[str]` | Optional — e.g. `["production"]` for easy retrieval |
+
+**Internal flow:**
+
+```
+EnsembleTrainPipeline.run()
+│
+├── For each cluster_id (sorted):
+│   │
+│   ├── train_single_member(config, cluster_id)
+│   │   │
+│   │   ├── Resolve pipeline class:
+│   │   │     config.pipeline_class.get(cluster_id)
+│   │   │     or default: HybridGnnRnnTrainPipeline
+│   │   │
+│   │   ├── Build PipelineConfig from member_configs[cluster_id]:
+│   │   │     PipelineConfig(
+│   │   │       training_config = member_configs[cid]["training_config"],
+│   │   │       data_config     = member_configs[cid]["data_config"],
+│   │   │       model_config    = member_configs[cid]["model_config"],
+│   │   │       registry_dir    = config.registry_dir,
+│   │   │       metadata        = {cluster_id, trade_ids, tags}
+│   │   │     )
+│   │   │
+│   │   ├── pipeline_cls(member_config).run()
+│   │   │     → Reads data from paths in data_config
+│   │   │     → Builds graph, encodes features, creates train/val/test datasets
+│   │   │     → Trains model (epochs, early stopping, etc.)
+│   │   │     → Registers model in ModelRegistry → saves model.pt, graph_builder.pkl,
+│   │   │       encoder.pkl, datasets/test.pt, etc. to registry_dir/{version}/
+│   │   │     → Returns TrainingResult
+│   │   │
+│   │   └── Returns {"result": TrainingResult, "version": "v_20260324_..."}
+│   │
+│   └── Logs: member trained, version, best_val_loss
+│
+├── EnsembleBuilder.build(config, member_versions)
+│     → Loads all member nn.Modules from ModelRegistry
+│     → Validates trade coverage (no overlaps for concat, no missing trades)
+│     → Creates EnsembleModel + TradeRouter (validates only, not persisted)
+│
+└── EnsembleRegistry.register(config, member_versions, member_summary)
+      → Generates ensemble version string (e.g. "ens_20260324_143022_a1b2c3")
+      → Saves to registry_dir/ensemble/{version}/:
+          ensemble_config.json
+          member_versions.json     {cluster_id: member_version}
+          trade_cluster_map.json   {trade_id: cluster_id}
+          member_summary.json      {cluster_id: {n_trades, best_val_loss, ...}}
+      → Tags as "latest" + any custom tags
+```
+
+**Output:**
+
+```python
+{
+    "ensemble_version": "ens_20260324_143022_a1b2c3",
+    "member_versions": {"cluster_0": "v_20260324_...", "cluster_1": "v_20260324_...", ...},
+    "member_results": {"cluster_0": TrainingResult(...), "cluster_1": TrainingResult(...), ...},
+}
+```
+
+### 9.2 Ensemble Evaluation
+
+**Inputs required:**
+
+| Input | Type | Where it comes from |
+|-------|------|---------------------|
+| `ensemble_config` | `EnsembleConfig` | Same config used for training (needs `registry_dir`, `artifacts_dir`) |
+| `ensemble_version` | `str` | From training output, or `"latest"`, or a tag like `"production"` |
+
+Everything else is loaded from the registry. No raw data files needed — evaluation
+uses the cached `test.pt` datasets saved during training.
+
+**Internal flow:**
+
+```
+EnsembleEvalPipeline.run()
+│
+├── EnsembleRegistry.load(ensemble_version)
+│     → Returns (config, member_versions, resolved_version)
+│
+├── EnsembleBuilder.build(config, member_versions)
+│     → Loads all member nn.Modules from ModelRegistry
+│     → Creates EnsembleModel with TradeRouter + cluster_trade_indices
+│
+├── For each cluster_id:
+│   │
+│   ├── evaluate_single_member(cid, model, registry_dir, member_version)
+│   │   │
+│   │   ├── Load test dataset:
+│   │   │     registry_dir/{member_version}/datasets/test.pt
+│   │   │     → torch.load → DataLoader (batch_size=32)
+│   │   │
+│   │   ├── Evaluator(model).run(test_dataloader)
+│   │   │     → Forward pass on test data
+│   │   │     → Computes predictions, targets, metrics (MAE, MSE, etc.)
+│   │   │
+│   │   └── Returns {"predictions": ndarray, "targets": ndarray, "metrics": dict}
+│   │
+│   └── Stores per_member_preds[cid] and per_member_targets[cid]
+│
+├── compute_per_member_metrics(per_member_preds, per_member_targets)
+│     → {cluster_id: {mae, mse, rmse, n_targets, n_scenarios}}
+│
+├── Combine predictions using ensemble._combine():
+│     → concat_aggregate: scatters each cluster's predictions into correct
+│       columns of a full [n_scenarios, n_total_targets] array
+│     → Does the same for targets
+│
+├── compute_ensemble_metrics(combined_preds, combined_targets)
+│     → {mae, mse, rmse, max_ae, p95_ae, p99_ae}
+│
+└── Save artifacts to artifacts_dir/ensemble/{version}/evaluation/:
+      ensemble_metrics.json
+      per_member_metrics.json
+      member_rollup.json
+      plots/member_comparison_mae.png
+      plots/cluster_performance_heatmap.png
+```
+
+**Key dependency:** Each member must have `datasets/test.pt` saved during training.
+If a member is missing its test data, that member is skipped with a warning (its
+predictions won't be included in the ensemble metrics).
+
+**Output:**
+
+```python
+{
+    "ensemble_version": "ens_20260324_...",
+    "ensemble_metrics": {"mae": 0.0012, "mse": 0.000002, "rmse": 0.0014, ...},
+    "per_member_metrics": {"cluster_0": {"mae": ..., "mse": ...}, ...},
+    "member_summary": {"mean_mae": ..., "std_mae": ..., "per_member": {...}},
+}
+```
+
+### 9.3 Ensemble Inference — New Scenarios
+
+This is the "same trades, different market shocks" use case. You have new scenario
+PnL data and want to re-predict with the existing models.
+
+**Inputs required:**
+
+| Input | Type | Where it comes from |
+|-------|------|---------------------|
+| `cluster_pnl_histories` | `{cluster_id: ndarray [n_scenarios, seq_len, n_elementary]}` | Your new scenario data, sliced per cluster |
+| `ensemble_config` | `EnsembleConfig` | Same config (needs `registry_dir`) |
+| `ensemble_version` | `str` | Which ensemble to use |
+
+Each cluster has **different trades with different elementary PnLs**, so you must
+provide separate PnL arrays per cluster. There is no valid "global" PnL for disjoint
+clusters.
+
+**Via Session (UI flow):**
+
+```python
+session = EnsembleSession(registry_dir, artifacts_dir)
+session.load_metadata("production")       # Phase 1: config, member versions
+session.load_display_artifacts()           # Phase 2: eval metrics, plot paths
+session.load_inference_state()             # Phase 3: models, graph_builders, encoders
+
+result = session.run_inference(
+    mode="new_scenarios",
+    cluster_pnl_histories=cluster_pnl_histories,
+)
+```
+
+**Via Pipeline (standalone):**
+
+```python
+config.metadata["inference"] = {
+    "input_mode": "new_scenarios",
+    "cluster_pnl_histories": cluster_pnl_histories,
+}
+result = EnsembleInferencePipeline(config, ensemble_version="latest").run()
+```
+
+**Internal flow (both paths):**
+
+```
+run_inference(mode="new_scenarios")
+│
+├── For each cluster_id:
+│   │
+│   ├── Load inference context (if not already cached in session):
+│   │     registry_dir/{member_version}/graph_builder.pkl
+│   │     registry_dir/{member_version}/encoder.pkl
+│   │
+│   ├── build_static_dict(inference_context, None, data_config)
+│   │     → Builds trade feature matrix from cached graph_builder + encoder
+│   │     → Builds adjacency / edge_index from cached graph
+│   │     → No new trade attributes passed (None) — uses existing trades only
+│   │     → Returns: {trade_features, edge_index, node_encodings, ...}
+│   │
+│   ├── build_model_input_dict(static_dict, cluster_pnl_histories[cid])
+│   │     → Combines static features with the new PnL scenario data
+│   │     → Returns the 7-key model input dict ready for forward pass
+│   │
+│   ├── model.forward(inputs)
+│   │     → nn.Module forward pass (no grad)
+│   │     → Returns predictions: [n_scenarios, n_cluster_targets]
+│   │
+│   └── Store member_preds[cid]
+│
+└── concat_aggregate(member_preds, cluster_trade_indices, n_total_targets)
+      → Scatters each cluster's predictions into correct columns
+      → Returns combined: [n_scenarios, n_total_targets]
+```
+
+**No routing involved.** Every cluster runs on its known trades with the new PnL data.
+The TradeRouter exists in memory but is never called for this mode.
+
+**Output:**
+
+```python
+InferenceResult(
+    predictions=ndarray [n_scenarios, n_total_targets],
+    n_samples=n_scenarios,
+    model_version="ens_20260324_...",
+    latency_seconds=2.14,
+    metadata={"input_mode": "new_scenarios", ...},
+)
+```
+
+### 9.4 Ensemble Inference — New Trades
+
+This is the "previously unseen trade needs a prediction" use case. A new trade that
+wasn't in any cluster during training needs to be assigned to a cluster and predicted.
+
+**Inputs required:**
+
+| Input | Type | Where it comes from |
+|-------|------|---------------------|
+| `new_trade_attribs` | `dict` | New trade's attributes: `{ccy, desk, product, ...}` |
+| `cluster_pnl_histories` | `{cluster_id: ndarray}` | PnL data per cluster (still needed — models need PnL input) |
+| Loaded ensemble (session or pipeline) | | Same as new scenarios |
+
+**Internal flow:**
+
+```
+run_inference(mode="new_trades", new_trade_attribs={ccy: "EUR", ...})
+│
+├── _route_new_trades(new_trade_attribs)
+│   │
+│   ├── Check if attribs are already keyed by cluster_id
+│   │     (i.e. caller already routed) → use as-is
+│   │
+│   └── Otherwise: TradeRouter.assign_new_trade(trade_attribs)
+│         │
+│         ├── 1. Key match: check cluster_keys
+│         │     e.g. cluster_0 = {ccy: "GBP", desk: "FLOW_RATES"}
+│         │     Does trade match? All key fields must match.
+│         │
+│         ├── 2. Centroid match (if cluster_centroids provided):
+│         │     Nearest centroid in feature space.
+│         │
+│         └── 3. Default cluster (if configured), else raise error
+│
+│   → Returns {cluster_id: trade_attribs or None} for each cluster
+│     (only the assigned cluster gets the attribs; others get None)
+│
+├── For each cluster_id:
+│   │
+│   ├── If this is the assigned cluster:
+│   │     build_static_dict(context, trade_attribs, data_config)
+│   │       → Injects new trade features into this cluster's graph
+│   │
+│   ├── Otherwise:
+│   │     build_static_dict(context, None, data_config)
+│   │       → Normal features, no new trade
+│   │
+│   ├── build_model_input_dict(static_dict, pnl)
+│   │
+│   └── model.forward(inputs) → predictions
+│
+└── concat_aggregate → combined predictions
+```
+
+**Key difference from new scenarios:** `build_static_dict` receives the `trade_attribs`
+for the assigned cluster, which injects the new trade's features into that cluster's
+input. All other clusters run normally without modification.
+
+### 9.5 Summary: What Each Stage Requires
+
+| Stage | Required Inputs | Loaded from Registry | Routing Used? |
+|-------|----------------|---------------------|---------------|
+| **Training** | `member_configs` (data paths, training params, model config per cluster), `cluster_mapping`, `registry_dir` | Nothing (creates registry) | No |
+| **Evaluation** | `registry_dir`, `artifacts_dir`, `ensemble_version` | Config, member models, test.pt datasets | No |
+| **Inference (new scenarios)** | Per-cluster PnL arrays (`cluster_pnl_histories`) | Config, member models, inference contexts (graph_builder, encoder) | No |
+| **Inference (new trades)** | New trade attributes + per-cluster PnL arrays | Same as new scenarios | Yes — `TradeRouter.assign_new_trade()` |
+
+**Training and evaluation never touch routing.** They are orchestrated for-loops over
+existing single-cluster pipelines. Routing only activates for `new_trades` inference.
+
+**Session phases map to UI stages:**
+
+| Session Phase | What loads | UI Stage |
+|--------------|-----------|----------|
+| Phase 1: `load_metadata()` | Config, member_versions, trade_cluster_map, member_summary | Landing page — cluster list, trade counts, version selector |
+| Phase 2: `load_display_artifacts()` | Eval metrics JSONs, plot PNG paths, trade universe | Analytics — performance charts, cluster drill-down |
+| Phase 3: `load_inference_state()` | Member nn.Modules, graph_builders, encoders, baseline_pnl | Inference — run predictions on new data |

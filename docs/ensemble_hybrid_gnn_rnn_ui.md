@@ -2196,9 +2196,16 @@ def adjacency_spy(
     -------
     go.Figure
     """
+    if indices.ndim == 2 and indices.shape[0] == 2:
+        rows, cols = indices[0], indices[1]
+    elif indices.ndim == 2 and indices.shape[1] == 2:
+        rows, cols = indices[:, 0], indices[:, 1]
+    else:
+        rows, cols = indices[0], indices[1]
+
     fig = go.Figure(go.Scattergl(
-        x=indices[1] if indices.ndim == 2 else indices[:, 1],
-        y=indices[0] if indices.ndim == 2 else indices[:, 0],
+        x=cols,
+        y=rows,
         mode="markers",
         marker=dict(size=2, color=values, colorscale="Viridis", showscale=True),
     ))
@@ -2728,7 +2735,7 @@ from __future__ import annotations
 
 import numpy as np
 import dash_bootstrap_components as dbc
-from dash import Input, Output, callback, dcc, html, no_update
+from dash import Input, Output, dcc, html, no_update
 
 from src.ui.apps.ensemble_analytics.config import METRIC_DISPLAY_NAMES
 from src.ui.apps.ensemble_analytics.components.kpi_card import kpi_card
@@ -2832,9 +2839,8 @@ def register(app):
                 if v is not None:
                     all_metric_vals[mk].append(v)
 
-        import numpy as _np
-        p25 = {mk: float(_np.percentile(vs, 25)) if vs else 0 for mk, vs in all_metric_vals.items()}
-        p75 = {mk: float(_np.percentile(vs, 75)) if vs else 0 for mk, vs in all_metric_vals.items()}
+        p25 = {mk: float(np.percentile(vs, 25)) if vs else 0 for mk, vs in all_metric_vals.items()}
+        p75 = {mk: float(np.percentile(vs, 75)) if vs else 0 for mk, vs in all_metric_vals.items()}
 
         for mk in metric_keys:
             column_defs.append({
@@ -3225,7 +3231,7 @@ percentile table, and worst-scenario table.
 """
 from __future__ import annotations
 
-from dash import dcc, html
+from dash import html
 import dash_bootstrap_components as dbc
 
 from src.ui.apps.ensemble_analytics.theme.styles import CARD_STYLE, SECTION_TITLE_STYLE
@@ -3265,7 +3271,7 @@ time-series, residual box plots, and a metrics table.
 """
 from __future__ import annotations
 
-from dash import dcc, html
+from dash import html
 import dash_bootstrap_components as dbc
 
 from src.ui.apps.ensemble_analytics.theme.styles import CARD_STYLE, SECTION_TITLE_STYLE
@@ -3297,7 +3303,7 @@ Same pattern as By Desk, grouped by ``product_type`` / ``product_subtype``.
 """
 from __future__ import annotations
 
-from dash import dcc, html
+from dash import html
 import dash_bootstrap_components as dbc
 
 from src.ui.apps.ensemble_analytics.theme.styles import CARD_STYLE, SECTION_TITLE_STYLE
@@ -3330,7 +3336,7 @@ cross-currency residual correlation heatmap.
 """
 from __future__ import annotations
 
-from dash import dcc, html
+from dash import html
 import dash_bootstrap_components as dbc
 
 from src.ui.apps.ensemble_analytics.theme.styles import CARD_STYLE, SECTION_TITLE_STYLE
@@ -3365,7 +3371,7 @@ scatter, trade-level metrics table, and violin overlay.
 """
 from __future__ import annotations
 
-from dash import dcc, html
+from dash import html
 import dash_bootstrap_components as dbc
 
 from src.ui.apps.ensemble_analytics.theme.styles import CARD_STYLE, SECTION_TITLE_STYLE
@@ -3402,8 +3408,7 @@ from __future__ import annotations
 from typing import List, Optional
 
 import numpy as np
-from dash import Input, Output, State, callback, dcc, html, no_update
-import dash_bootstrap_components as dbc
+from dash import Input, Output, dcc, html, no_update
 
 from src.ui.apps.ensemble_analytics.config import (
     EVAL_SUB_PORTFOLIO,
@@ -3947,11 +3952,8 @@ when the cluster or split changes.
 """
 from __future__ import annotations
 
-import json
-
 import numpy as np
-from dash import Input, Output, callback, dcc, html, no_update
-import dash_bootstrap_components as dbc
+from dash import Input, Output, dcc, html, no_update
 
 from src.ui.apps.ensemble_analytics.config import METRIC_DISPLAY_NAMES
 from src.ui.apps.ensemble_analytics.components.cluster_selector import cluster_selector
@@ -4204,7 +4206,7 @@ cluster and asset.
 """
 from __future__ import annotations
 
-from dash import dcc, html
+from dash import html
 import dash_bootstrap_components as dbc
 
 from src.ui.apps.ensemble_analytics.theme.styles import CARD_STYLE
@@ -4293,8 +4295,7 @@ data loading from ``load_cluster_market_data``.
 from __future__ import annotations
 
 import numpy as np
-from dash import Input, Output, State, dcc, html, no_update
-import dash_bootstrap_components as dbc
+from dash import Input, Output, dcc, html, no_update
 
 from src.ui.apps.ensemble_analytics.config import (
     MD_SUB_RF_SUMMARY,
@@ -4305,7 +4306,6 @@ from src.ui.apps.ensemble_analytics.config import (
 from src.ui.apps.ensemble_analytics.components.cluster_selector import cluster_selector
 from src.ui.apps.ensemble_analytics.components.metric_table import metric_table
 from src.ui.apps.ensemble_analytics.figures.heatmaps import rf_scenario_heatmap
-from src.ui.apps.ensemble_analytics.figures.timeseries import pnl_timeseries
 from src.ui.apps.ensemble_analytics.figures.distributions import violin_overlay, qq_plot
 from src.ui.apps.ensemble_analytics.theme.colors import TEXT_SECONDARY
 
@@ -4675,7 +4675,7 @@ graph for a selected cluster.
 """
 from __future__ import annotations
 
-from dash import html
+from dash import dcc, html
 
 from src.ui.apps.ensemble_analytics.theme.styles import CARD_STYLE
 
@@ -5277,8 +5277,7 @@ execution, and results display.
 from __future__ import annotations
 
 import numpy as np
-from dash import Input, Output, State, dcc, html, no_update, callback
-import dash_bootstrap_components as dbc
+from dash import Input, Output, State, dcc, html, no_update
 
 from src.ui.apps.ensemble_analytics.components.loading_progress import loading_progress
 from src.ui.apps.ensemble_analytics.components.metric_table import metric_table
