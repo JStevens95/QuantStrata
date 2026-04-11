@@ -1,18 +1,20 @@
 """
-GNN layers for the Hybrid GNN-RNN model: GnnBlock, GraphSage, MixedGraphSage.
+GNN layers for the Hybrid GNN-RNN model: GnnBlock, GraphSage, MixedGraphSage, GraphormerLayer.
 
 Design (see ARCHITECTURE.md):
-- GNN sublayers (GraphSage, MixedGraphSage) are LINEAR primitives—they perform message
-  passing, aggregation, and a linear transform only. Activation is applied by the block.
+- GNN sublayers (GraphSage, MixedGraphSage, GraphormerLayer) are LINEAR primitives—they
+  perform message passing / attention and a linear transform only. Activation is applied
+  by the block.
 - GnnBlock stacks L sublayers with LayerNorm, activation, and dropout between layers,
   plus a residual connection and final activation.
 """
 import copy
 import logging
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
@@ -253,10 +255,255 @@ class MixedGraphSage(nn.Module):
             setattr(self, k, v)
 
 
+class GraphormerLayer(nn.Module):
+    """
+    Sparse Graph Transformer sublayer with centrality encoding (Graphormer-style).
+
+    Replaces the fixed aggregation of GraphSAGE (mean / max) with learned,
+    data-dependent multi-head attention over the k-NN neighborhood, augmented
+    by centrality encoding that distinguishes structurally important (high
+    in-degree) nodes from peripheral ones.
+
+    Per-node update:
+        Q_v = W_q · x_v  +  z_q(deg_in(v))       query with centrality bias
+        K_u = W_k · x_u  +  z_k(deg_in(u))       key with centrality bias
+        V_u = W_v · x_u                            value (no centrality)
+
+        α(v,u) = softmax_u( Q_v^T K_u / √d_h  +  b_spatial )   over u ∈ N(v)
+        h_v    = W_out · concat_heads( Σ_u α(v,u) V_u )
+
+    Centrality embeddings z_q, z_k are initialised to zero so the layer starts
+    equivalent to vanilla multi-head attention and learns structural biases
+    during training.
+
+    Follows Ying et al. (2021) "Do Transformers Really Perform Bad for Graph
+    Representation?" adapted for sparse k-NN trade graphs.  When used inside
+    GnnBlock, activation is typically None (block applies it).
+
+    Neighbor indices and in-degrees are cached internally since they depend
+    only on the adjacency topology (not on features).
+    """
+
+    def __init__(self, layer_config: Dict[str, Any], name: str = "graphormer") -> None:
+        super().__init__()
+
+        self.layer_config: Dict[str, Any] = layer_config
+        self.layer_name: str = name
+
+        # Defaults overridden by _unpack_configuration.
+        self.layers: int = 1
+        self.layer_type: Optional[str] = None
+        self.dropout_rate: float = 0.0
+        self.use_bias: Optional[bool] = None
+        self.num_heads: int = 4
+        self.k_nbrs: int = 50
+        self.max_degree: int = 512
+        self._unpack_configuration(config=layer_config.get("general"))
+
+        self.units: Optional[int] = None
+        self.activation: Optional[str] = None
+        self.kernel_initializer: Optional[str] = None
+        self.bias_initializer: Optional[str] = None
+        self._unpack_configuration(config=layer_config.get("parameters"))
+
+        assert self.units % self.num_heads == 0, (
+            f"Graphormer units ({self.units}) must be divisible by num_heads ({self.num_heads})"
+        )
+        self.head_dim: int = self.units // self.num_heads
+
+        # Centrality encoding: separate learned embeddings for query and key
+        # so the model can learn asymmetric effects (hub-as-query ≠ hub-as-key).
+        # Zero-initialised → starts equivalent to vanilla attention.
+        self.centrality_enc_q = nn.Embedding(self.max_degree + 1, self.units)
+        self.centrality_enc_k = nn.Embedding(self.max_degree + 1, self.units)
+        nn.init.zeros_(self.centrality_enc_q.weight)
+        nn.init.zeros_(self.centrality_enc_k.weight)
+
+        # Q / K / V projections (LazyLinear to handle variable d_in).
+        self.W_q = nn.LazyLinear(out_features=self.units, bias=self.use_bias)
+        self.W_k = nn.LazyLinear(out_features=self.units, bias=self.use_bias)
+        self.W_v = nn.LazyLinear(out_features=self.units, bias=self.use_bias)
+
+        # Output projection after head concatenation.
+        self.out_proj = nn.Linear(self.units, self.units, bias=self.use_bias)
+
+        # Per-head spatial bias added to every attention score within the
+        # k-NN window.  Allows each head to learn a different baseline
+        # attention strength toward neighbors vs. suppression.
+        self.spatial_bias = nn.Parameter(torch.zeros(self.num_heads))
+
+        self.dropout = nn.Dropout(p=self.dropout_rate) if self.dropout_rate > 0.0 else None
+        self._act_fn = _get_activation(self.activation)
+
+        # Topology-dependent caches (depend only on adjacency, not features).
+        self._cached_in_degrees: Optional[torch.Tensor] = None
+        self._cached_nbr_indices: Optional[torch.Tensor] = None
+        self._cached_nbr_mask: Optional[torch.Tensor] = None
+        self._cached_k: int = 0
+        self._cached_T: int = 0
+
+    def forward(self, features: torch.Tensor, adjacency: torch.Tensor) -> torch.Tensor:
+        """
+        Forward: multi-head attention with centrality encoding over k-NN neighbors.
+
+        :param features: Node features [T, d_in].
+        :param adjacency: Adjacency matrix [T, T], sparse COO or dense.
+        :return: Updated node features [T, d_out].
+        """
+        T = features.shape[0]
+        device = features.device
+
+        x = features
+        if self.dropout is not None:
+            x = self.dropout(x)
+
+        # --- Structural encodings (topology-only, cached across forward calls) ---
+        in_degrees = self._get_in_degrees(adjacency, T, device)
+        nbr_indices, nbr_mask, k = self._get_neighbor_indices(adjacency, T, device)
+
+        # --- Q, K, V with centrality bias on Q and K ---
+        Q = self.W_q(x) + self.centrality_enc_q(in_degrees)   # [T, units]
+        K = self.W_k(x) + self.centrality_enc_k(in_degrees)   # [T, units]
+        V = self.W_v(x)                                        # [T, units]
+
+        # --- Reshape for multi-head: [T, units] -> [H, T, d_h] ---
+        H = self.num_heads
+        d_h = self.head_dim
+        Q = Q.view(T, H, d_h).permute(1, 0, 2)   # [H, T, d_h]
+        K = K.view(T, H, d_h).permute(1, 0, 2)
+        V = V.view(T, H, d_h).permute(1, 0, 2)
+
+        # Edge case: graph has no edges.
+        if k == 0:
+            out = torch.zeros(T, self.units, dtype=features.dtype, device=device)
+            return self._act_fn(self.out_proj(out))
+
+        # --- Gather neighbor K, V from padded index tensor ---
+        nbr_flat = nbr_indices.reshape(-1)                          # [T*k]
+        K_nbr = K[:, nbr_flat, :].view(H, T, k, d_h)              # [H, T, k, d_h]
+        V_nbr = V[:, nbr_flat, :].view(H, T, k, d_h)
+
+        # --- Scaled dot-product scores + spatial bias ---
+        scale = math.sqrt(d_h)
+        scores = torch.matmul(
+            Q.unsqueeze(2), K_nbr.transpose(-2, -1),
+        ).squeeze(2) / scale                                        # [H, T, k]
+        scores = scores + self.spatial_bias.view(H, 1, 1)
+
+        # --- Masked softmax over valid neighbors ---
+        mask_exp = nbr_mask.unsqueeze(0)                            # [1, T, k]
+        scores = scores.masked_fill(~mask_exp, float("-inf"))
+        attn_weights = torch.softmax(scores, dim=-1)
+        attn_weights = torch.nan_to_num(attn_weights, nan=0.0)
+
+        # --- Weighted aggregation of neighbor values ---
+        attn_out = torch.matmul(
+            attn_weights.unsqueeze(2), V_nbr,
+        ).squeeze(2)                                                # [H, T, d_h]
+
+        # --- Concat heads -> output projection ---
+        attn_out = attn_out.permute(1, 0, 2).reshape(T, self.units) # [T, units]
+        out = self.out_proj(attn_out)
+        return self._act_fn(out)
+
+    # ── Structural encoding helpers (cached) ─────────────────────────
+
+    def _get_in_degrees(
+        self, adjacency: torch.Tensor, T: int, device: torch.device,
+    ) -> torch.Tensor:
+        """Compute clamped in-degree per node; cached across forward calls."""
+        if self._cached_in_degrees is not None and self._cached_T == T:
+            return self._cached_in_degrees
+
+        if adjacency.is_sparse:
+            adj = adjacency.coalesce()
+            cols = adj.indices()[1]
+            in_deg = torch.bincount(cols, minlength=T).clamp(max=self.max_degree)
+        else:
+            in_deg = (adjacency > 0).sum(dim=0).long().clamp(max=self.max_degree)
+
+        self._cached_in_degrees = in_deg
+        self._cached_T = T
+        return in_deg
+
+    def _get_neighbor_indices(
+        self, adjacency: torch.Tensor, T: int, device: torch.device,
+    ) -> Tuple[torch.Tensor, torch.Tensor, int]:
+        """Build padded neighbor index tensor [T, k] and validity mask; cached."""
+        if (
+            self._cached_nbr_indices is not None
+            and self._cached_T == T
+            and self._cached_nbr_indices.device == device
+        ):
+            return self._cached_nbr_indices, self._cached_nbr_mask, self._cached_k
+
+        if adjacency.is_sparse:
+            adj = adjacency.coalesce()
+            rows = adj.indices()[0]
+            cols = adj.indices()[1]
+        else:
+            rows, cols = torch.where(adjacency > 0)
+
+        row_counts = torch.bincount(rows, minlength=T)
+        k = min(self.k_nbrs, int(row_counts.max().item())) if row_counts.numel() > 0 else 0
+
+        if k == 0:
+            empty_idx = torch.zeros(T, 0, dtype=torch.long, device=device)
+            empty_mask = torch.zeros(T, 0, dtype=torch.bool, device=device)
+            self._cached_nbr_indices = empty_idx
+            self._cached_nbr_mask = empty_mask
+            self._cached_k = 0
+            return empty_idx, empty_mask, 0
+
+        cum_counts = torch.cat([
+            torch.tensor([0], device=device, dtype=torch.long),
+            torch.cumsum(row_counts, dim=0)[:-1],
+        ])
+        within_group_pos = torch.arange(len(rows), device=device) - cum_counts[rows]
+
+        keep_mask = within_group_pos < k
+        kept_rows = rows[keep_mask]
+        kept_cols = cols[keep_mask]
+        kept_pos = within_group_pos[keep_mask]
+
+        nbr_indices = torch.zeros(T, k, dtype=torch.long, device=device)
+        nbr_indices[kept_rows, kept_pos] = kept_cols
+
+        capped_counts = torch.clamp(row_counts, max=k)
+        nbr_mask = torch.arange(k, device=device).unsqueeze(0) < capped_counts.unsqueeze(1)
+
+        self._cached_nbr_indices = nbr_indices
+        self._cached_nbr_mask = nbr_mask
+        self._cached_k = k
+        return nbr_indices, nbr_mask, k
+
+    def invalidate_cache(self) -> None:
+        """Clear cached structural encodings (call if graph topology changes)."""
+        self._cached_in_degrees = None
+        self._cached_nbr_indices = None
+        self._cached_nbr_mask = None
+        self._cached_k = 0
+        self._cached_T = 0
+
+    def get_config(self) -> Dict[str, Any]:
+        """Serialize layer configuration to a plain dict."""
+        return {"layer_config": self.layer_config, "name": self.layer_name}
+
+    @classmethod
+    def from_config(cls, config: Dict[str, Any]) -> "GraphormerLayer":
+        """Reconstruct layer from a serialized config dict."""
+        return cls(**config)
+
+    def _unpack_configuration(self, config: Dict[str, Any]) -> None:
+        """Set instance attributes from config dict."""
+        for k, v in config.items():
+            setattr(self, k, v)
+
+
 class GnnBlock(nn.Module):
     """
-    Graph neural network block stacking L GNN sublayers (GraphSAGE or MixedGraphSAGE)
-    with residual connections, LayerNorm, activation, and dropout.
+    Graph neural network block stacking L GNN sublayers (GraphSAGE, MixedGraphSAGE,
+    or Graphormer) with residual connections, LayerNorm, activation, and dropout.
 
     Flow (2-layer example):
         X -> [GNN1 (linear)] -> LN -> σ -> Dropout -> [GNN2 (linear)] -> LN -> (Z + W_proj·X) -> σ -> H
@@ -309,13 +556,17 @@ class GnnBlock(nn.Module):
 
     def _build_gnn_layers(self) -> None:
         """
-        Build L GNN sublayers (GraphSage or MixedGraphSage) and optionally LayerNorm.
+        Build L GNN sublayers and optionally LayerNorm.
+
+        Supported sublayer types:
+            - ``graph_sage``       : GraphSAGE (Hamilton et al. 2017)
+            - ``mixed_graph_sage`` : Mixed mean+max aggregation
+            - ``graphormer``       : Sparse Graph Transformer with centrality encoding
 
         Deep-copies config and forces activation=None so each sublayer is linear. The block
         applies activation between layers and after the residual add.
         """
         for i in range(self.num_layers):
-            # Force sublayers to be linear (no activation).
             sub_config = copy.deepcopy(self.layer_config)
             sub_config["parameters"]["activation"] = None
             sub_config["general"]["dropout_rate"] = 0.0
@@ -327,13 +578,17 @@ class GnnBlock(nn.Module):
                 layer = GraphSage(layer_config=sub_config, name=sub_name)
             elif layer_type_lower == "mixed_graph_sage":
                 layer = MixedGraphSage(layer_config=sub_config, name=sub_name)
+            elif layer_type_lower == "graphormer":
+                layer = GraphormerLayer(layer_config=sub_config, name=sub_name)
             else:
-                raise ValueError(f"Undefined layer type, got {layer_type_lower}")
+                raise ValueError(
+                    f"Undefined GNN layer type: {layer_type_lower!r}. "
+                    f"Choose from: graph_sage, mixed_graph_sage, graphormer"
+                )
 
             self.gnn_layers.append(layer)
 
             if self.batch_norm:
-                # LayerNorm on last dimension (feature axis); epsilon for numerical stability.
                 self.norm_layers.append(nn.LayerNorm(self.units, eps=1e-5))
 
     def forward(self, features: torch.Tensor, adjacency: torch.Tensor) -> torch.Tensor:

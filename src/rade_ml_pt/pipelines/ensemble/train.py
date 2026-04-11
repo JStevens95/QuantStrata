@@ -27,7 +27,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Sequence, TYPE_CHECKING
 
 from src.rade_ml_pt.ensemble.config import EnsembleConfig
 from src.rade_ml_pt.ensemble.builder import EnsembleBuilder
@@ -41,8 +41,8 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_PIPELINE = "src.rade_ml_pt.pipelines.hybrid_gnn_rnn.train.HybridGnnRnnTrainPipeline"
 
-_SUPPORTED_STRATEGIES = {"sequential"}
-_PLANNED_STRATEGIES = {"process_pool", "gpu_parallel", "distributed"}
+_SUPPORTED_STRATEGIES = {"sequential", "process_pool", "gpu_parallel"}
+_PLANNED_STRATEGIES = {"distributed"}
 
 
 def _import_pipeline_class(dotpath: str) -> type:
@@ -50,6 +50,29 @@ def _import_pipeline_class(dotpath: str) -> type:
     module_path, cls_name = dotpath.rsplit(".", 1)
     module = importlib.import_module(module_path)
     return getattr(module, cls_name)
+
+
+# ======================================================================
+# Module-level helpers
+# ======================================================================
+
+def _read_trained_target_ids(version_dir: Path) -> Optional[List[str]]:
+    """Read the actual target trade IDs from a member's saved trade_universe.json.
+
+    After training the data pipeline may have filtered or reduced the
+    original trade list, so the model's output dimension corresponds to
+    these IDs — not the full ``cluster_mapping`` from the EnsembleConfig.
+    """
+    tu_path = version_dir / "trade_universe.json"
+    if not tu_path.exists():
+        return None
+    try:
+        with open(tu_path, "r") as f:
+            universe = json.load(f)
+        return universe.get("target_ids")
+    except Exception as exc:
+        logger.warning("Could not read target_ids from %s: %s", tu_path, exc)
+        return None
 
 
 # ======================================================================
@@ -98,10 +121,54 @@ def train_single_member(
     result = pipeline.run()
 
     version = "unknown"
+    trained_target_ids: Optional[List[str]] = None
     if hasattr(pipeline, "_registered_entry") and pipeline._registered_entry is not None:
         version = pipeline._registered_entry.version
+        trained_target_ids = _read_trained_target_ids(
+            Path(pipeline._registered_entry.model_dir)
+        )
 
-    return {"result": result, "version": version}
+    return {
+        "result": result,
+        "version": version,
+        "trained_target_ids": trained_target_ids,
+    }
+
+
+def _train_member_with_threads(
+    config: EnsembleConfig,
+    cluster_id: str,
+    num_threads: int,
+    default_pipeline: str = _DEFAULT_PIPELINE,
+) -> Dict[str, Any]:
+    """Train one member with PyTorch's intra-op thread count limited.
+
+    Prevents thread contention when multiple members train in parallel
+    on a shared CPU.  Each spawned process receives a pickled copy of
+    *config*, so calling ``torch.set_num_threads`` only affects this worker.
+    """
+    import torch
+    torch.set_num_threads(num_threads)
+    return train_single_member(config, cluster_id, default_pipeline)
+
+
+def _train_member_on_device(
+    config: EnsembleConfig,
+    cluster_id: str,
+    device_str: str,
+    default_pipeline: str = _DEFAULT_PIPELINE,
+) -> Dict[str, Any]:
+    """Train one member with its training strategy overridden to *device_str*.
+
+    Each spawned process receives a pickled copy of *config*, so the
+    mutation below is safe and does not affect other workers.
+    """
+    raw = config.member_configs.get(cluster_id, {})
+    tc = raw.get("training_config") or {}
+    if isinstance(tc, dict):
+        tc = {**tc, "strategy": device_str}
+    config.member_configs.setdefault(cluster_id, {})["training_config"] = tc
+    return train_single_member(config, cluster_id, default_pipeline)
 
 
 # ======================================================================
@@ -199,11 +266,14 @@ class EnsembleTrainPipeline:
 
         if strategy == "sequential":
             return self._run_sequential()
+        elif strategy == "process_pool":
+            return self._run_process_pool()
+        elif strategy == "gpu_parallel":
+            return self._run_gpu_parallel()
         elif strategy in _PLANNED_STRATEGIES:
             raise NotImplementedError(
                 f"Execution strategy '{strategy}' is planned but not yet "
-                f"implemented. Contributions welcome — see ARCHITECTURE.md "
-                f"for the extension point contract. Available now: "
+                f"implemented. Available now: "
                 f"{sorted(_SUPPORTED_STRATEGIES)}."
             )
         else:
@@ -227,6 +297,7 @@ class EnsembleTrainPipeline:
             out = train_single_member(self.config, cid)
             member_results[cid] = out["result"]
             member_versions[cid] = out["version"]
+            self._sync_cluster_mapping(cid, out.get("trained_target_ids"))
             logger.info(
                 "Member '%s' trained: version='%s', best_val_loss=%.6f",
                 cid, out["version"],
@@ -234,6 +305,156 @@ class EnsembleTrainPipeline:
             )
 
         return member_versions, member_results
+
+    # ------------------------------------------------------------------
+    # Strategy: process_pool (multi-CPU)
+    # ------------------------------------------------------------------
+
+    def _run_process_pool(self) -> tuple:
+        """Train members in parallel across CPU cores using ProcessPoolExecutor.
+
+        PyTorch's intra-op thread count is divided evenly across workers to
+        prevent over-subscription (e.g. 12 cores / 4 workers = 3 threads each).
+        """
+        import os
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+
+        n_clusters = len(self.config.cluster_ids)
+        max_w = self.config.max_workers or n_clusters
+        total_cores = os.cpu_count() or 1
+        threads_per_worker = max(1, total_cores // max_w)
+        logger.info(
+            "process_pool: %d members across %d workers (%d threads/worker on %d cores)",
+            n_clusters, max_w, threads_per_worker, total_cores,
+        )
+
+        member_versions: Dict[str, str] = {}
+        member_results: Dict[str, "TrainingResult"] = {}
+
+        with ProcessPoolExecutor(max_workers=max_w) as pool:
+            futures = {
+                pool.submit(
+                    _train_member_with_threads,
+                    self.config, cid, threads_per_worker,
+                ): cid
+                for cid in self.config.cluster_ids
+            }
+            for future in as_completed(futures):
+                cid = futures[future]
+                try:
+                    out = future.result()
+                except Exception:
+                    logger.exception("Member '%s' failed in process_pool", cid)
+                    raise
+                member_results[cid] = out["result"]
+                member_versions[cid] = out["version"]
+                self._sync_cluster_mapping(cid, out.get("trained_target_ids"))
+                logger.info(
+                    "Member '%s' trained: version='%s', best_val_loss=%.6f",
+                    cid, out["version"],
+                    out["result"].best_val_loss if out["result"].best_val_loss is not None else float("nan"),
+                )
+
+        return member_versions, member_results
+
+    # ------------------------------------------------------------------
+    # Strategy: gpu_parallel (multi-GPU)
+    # ------------------------------------------------------------------
+
+    def _resolve_gpu_ids(self) -> List[int]:
+        """Return the list of CUDA device IDs to use for gpu_parallel."""
+        if self.config.gpu_device_ids:
+            return list(self.config.gpu_device_ids)
+        import torch
+        n = torch.cuda.device_count()
+        if n == 0:
+            raise RuntimeError(
+                "gpu_parallel strategy requires at least one CUDA GPU, "
+                "but torch.cuda.device_count() == 0."
+            )
+        return list(range(n))
+
+    def _run_gpu_parallel(self) -> tuple:
+        """Train members in parallel, each pinned to a specific CUDA device.
+
+        Uses the ``spawn`` multiprocessing context so that each child process
+        gets a fresh CUDA context.  Members are round-robin assigned to the
+        available GPUs; ``max_workers`` is capped at the number of GPUs.
+        """
+        import multiprocessing as mp
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+
+        gpu_ids = self._resolve_gpu_ids()
+        n_gpus = len(gpu_ids)
+        max_w = min(self.config.max_workers or n_gpus, n_gpus)
+        ctx = mp.get_context("spawn")
+
+        assignments = {
+            cid: f"cuda:{gpu_ids[i % n_gpus]}"
+            for i, cid in enumerate(self.config.cluster_ids)
+        }
+        logger.info(
+            "gpu_parallel: %d members across %d GPUs (max_workers=%d). "
+            "Assignments: %s",
+            len(self.config.cluster_ids), n_gpus, max_w, assignments,
+        )
+
+        member_versions: Dict[str, str] = {}
+        member_results: Dict[str, "TrainingResult"] = {}
+
+        with ProcessPoolExecutor(max_workers=max_w, mp_context=ctx) as pool:
+            futures = {
+                pool.submit(
+                    _train_member_on_device,
+                    self.config, cid, assignments[cid],
+                ): cid
+                for cid in self.config.cluster_ids
+            }
+            for future in as_completed(futures):
+                cid = futures[future]
+                try:
+                    out = future.result()
+                except Exception:
+                    logger.exception("Member '%s' failed on %s", cid, assignments[cid])
+                    raise
+                member_results[cid] = out["result"]
+                member_versions[cid] = out["version"]
+                self._sync_cluster_mapping(cid, out.get("trained_target_ids"))
+                logger.info(
+                    "Member '%s' trained on %s: version='%s', best_val_loss=%.6f",
+                    cid, assignments[cid], out["version"],
+                    out["result"].best_val_loss if out["result"].best_val_loss is not None else float("nan"),
+                )
+
+        return member_versions, member_results
+
+    # ------------------------------------------------------------------
+    # Cluster mapping sync
+    # ------------------------------------------------------------------
+
+    def _sync_cluster_mapping(
+        self,
+        cluster_id: str,
+        trained_target_ids: Optional[List[str]],
+    ) -> None:
+        """Update ``cluster_mapping`` to reflect the trades the model was
+        actually trained on.
+
+        The data pipeline may filter or reduce the original trade list
+        (dimensionality reduction, trade selection, etc.), so the model's
+        output columns correspond to ``trained_target_ids`` — not the full
+        list originally placed in ``cluster_mapping``.
+        """
+        if trained_target_ids is None:
+            return
+        original = self.config.cluster_mapping.get(cluster_id, [])
+        if len(trained_target_ids) != len(original):
+            logger.info(
+                "Cluster '%s': updating cluster_mapping from %d -> %d trades "
+                "(data pipeline filtered trades during training)",
+                cluster_id, len(original), len(trained_target_ids),
+            )
+            self.config.cluster_mapping[cluster_id] = trained_target_ids
 
     # ------------------------------------------------------------------
     # Ensemble registration

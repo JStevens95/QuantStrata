@@ -16,6 +16,8 @@ from __future__ import annotations
 import json
 import matplotlib.pyplot as plt
 
+from src.rade_ml_pt.core import json_safe
+
 from pathlib import Path
 from datetime import datetime
 from dataclasses import dataclass, field, asdict
@@ -74,7 +76,7 @@ class TrainingResult:
     def to_json(self, path: Union[str, Path]) -> None:
         """Save to JSON file."""
         with open(path, "w") as f:
-            json.dump(self.to_dict(), f, indent=2)
+            json.dump(self.to_dict(), f, indent=2, default=json_safe)
 
     @classmethod
     def from_json(cls, path: Union[str, Path]) -> "TrainingResult":

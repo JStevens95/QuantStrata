@@ -97,6 +97,29 @@ class EnsembleModel:
 
         return self._combine(member_preds)
 
+    @staticmethod
+    def _model_device(model: nn.Module) -> torch.device:
+        """Return the device the model parameters live on."""
+        try:
+            return next(model.parameters()).device
+        except StopIteration:
+            return torch.device("cpu")
+
+    @staticmethod
+    def _to_device(obj: Any, device: torch.device) -> Any:
+        """Recursively move tensors / dicts / lists to *device*."""
+        if obj is None:
+            return None
+        if isinstance(obj, torch.Tensor):
+            return obj.to(device, non_blocking=True)
+        if isinstance(obj, np.ndarray):
+            return torch.as_tensor(obj).to(device, non_blocking=True)
+        if isinstance(obj, dict):
+            return {k: EnsembleModel._to_device(v, device) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return type(obj)(EnsembleModel._to_device(v, device) for v in obj)
+        return obj
+
     def predict_member(
         self,
         cluster_id: str,
@@ -104,6 +127,10 @@ class EnsembleModel:
     ) -> np.ndarray:
         """
         Run a single member's forward pass.
+
+        Inputs are automatically moved to the member model's device before
+        inference, so callers can pass CPU tensors or numpy arrays regardless
+        of where the model lives.
 
         Parameters
         ----------
@@ -117,14 +144,9 @@ class EnsembleModel:
         """
         model = self.members[cluster_id]
         model.eval()
+        device = self._model_device(model)
 
-        if isinstance(inputs, dict):
-            prepared = {
-                k: (torch.as_tensor(v) if isinstance(v, np.ndarray) else v)
-                for k, v in inputs.items()
-            }
-        else:
-            prepared = inputs
+        prepared = self._to_device(inputs, device)
 
         with torch.no_grad():
             output = model(prepared)

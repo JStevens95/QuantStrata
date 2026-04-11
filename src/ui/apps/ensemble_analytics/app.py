@@ -91,7 +91,10 @@ def _build_layout(version: str) -> dbc.Container:
     available_versions = []
     try:
         available_versions = [
-            {"label": v, "value": v}
+            {
+                "label": f"{v['version']} ({v['n_members']} clusters, {v['n_trades']} trades)",
+                "value": v["version"],
+            }
             for v in ens_registry.list_versions()
         ]
     except Exception:

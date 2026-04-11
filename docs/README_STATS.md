@@ -23,15 +23,27 @@ CURVE_LABEL = "ZARONIA_CAS"
 
 ## Tests
 
-Five tests producing seven flag conditions:
+Five tests.  Four produce flag conditions that feed the rating.  The
+fifth (Ljung-Box) is **informational only** — its statistics appear in
+the Detail tab but do not contribute to the rating.
 
 | # | Test | Question | Flag(s) |
 |---|------|----------|---------|
 | 1 | ADF Unit Root | Are daily returns stationary? | `ADF_NON_STATIONARY` if returns p > 0.05 |
 | 2 | Zero-Return Frequency | Is this rate genuinely traded? | `ZERO_RETURN` if zero days > 5 %; `STALE_RUNS` if longest unchanged streak > 5 days |
-| 3 | Ljung-Box (McLeod-Li) | Are squared returns serially independent? | `AUTOCORRELATION` if lag-10 p < 0.01 |
-| 4 | Excess Kurtosis | Is the return distribution pathological? | `EXTREME_TAILS` if excess kurtosis > 30 |
-| 5 | Unique Rate Granularity | Does the rate take enough distinct values? | `LOW_GRANULARITY` if unique ratio < 0.50 |
+| 3 | Ljung-Box (McLeod-Li) | Are squared returns serially independent? | *Informational only — not flagged* |
+| 4 | Excess Kurtosis | Is the return distribution pathological? | `EXTREME_TAILS` if excess kurtosis > 50 |
+| 5 | Unique Rate Granularity | Does the rate take enough distinct values? | `LOW_GRANULARITY` if unique ratio < 0.20 |
+
+### Why Ljung-Box is not flagged
+
+The McLeod-Li test detects volatility clustering (ARCH effects).  This
+is a **universal property of traded financial data** (Engle 1982) — not
+an indicator of administered behaviour.  Every genuine interest rate
+time series rejects the null at conventional thresholds.  Including it
+as a flag would produce false positives on traded curves, defeating the
+purpose of the framework.  The statistics are still reported for
+transparency.
 
 ### Rating
 
@@ -151,7 +163,7 @@ none of which are compatible with standard VaR assumptions.
 
 ---
 
-## Test 3 — Ljung-Box Autocorrelation (McLeod-Li variant)
+## Test 3 — Ljung-Box Autocorrelation (McLeod-Li variant, informational)
 
 ### What it tests
 
@@ -159,12 +171,6 @@ Whether the **squared** daily returns exhibit significant serial
 autocorrelation at lags 5 and 10.  This is the McLeod-Li variant of
 the Ljung-Box test, targeting dependence in the variance rather than
 the mean.
-
-Standard Ljung-Box on raw changes misses the step-function pattern of
-administered rates because symmetric jumps with random timing produce
-near-zero linear autocorrelation.  Squaring the changes converts the
-problem: long runs of zero-variance days followed by isolated spikes
-create strong autocorrelation in the squared series.
 
 ### Mathematics
 
@@ -186,44 +192,19 @@ acorr_ljungbox(squared, lags=[5, 10], return_df=True)
 
 ### Flag condition
 
-Lag-10 p-value < 0.01 raises `AUTOCORRELATION`.
-
-### Why lag 10
-
-Lag 10 covers two full trading weeks.  Administered rates that update
-weekly or fortnightly produce squared-return clustering at these lags.
-Lag 5 is reported for transparency but not used for flagging — mild
-short-lag variance dependence is common even in genuine traded rates.
-
-### Why squared returns
-
-A rate that is flat for 20 days then jumps has near-zero autocorrelation
-in the raw changes (the jumps are isolated and symmetric).  But the
-squared changes reveal the pattern clearly: 19 days of zero followed by
-a spike, repeating.  This creates strong positive autocorrelation in the
-squared series, which the McLeod-Li test reliably detects.
-
-### Expected results
-
-| Curve type | Expected lag-10 p | Interpretation |
-|-----------|-------------------|----------------|
-| Traded (JIBAR-CAS) | > 0.01 | No significant variance clustering |
-| Administered (SARB) | ≪ 0.01 | Step-function variance pattern |
-
-### What failure means
-
-Autocorrelated squared returns mean the variance is predictable — the
-time series alternates between periods of no change and periods of
-movement.  This violates the i.i.d. assumption underpinning historical
-simulation VaR and produces unstable risk estimates.
+**None.**  This test is informational only.  Volatility clustering
+(ARCH effects) is a universal property of traded financial data — every
+genuine interest rate time series will reject the null.  The statistics
+are reported in the Detail tab for transparency but do not contribute
+to the rating.
 
 ### Reference
 
 McLeod, A.I. and Li, W.K. (1983). *Diagnostic checking ARMA time
 series models using squared-residual autocorrelations.* Journal of Time
-Series Analysis, 4(4), 269-273.  Ljung, G.M. and Box, G.E.P. (1978).
-*On a measure of lack of fit in time series models.* Biometrika, 65(2),
-297-303.  BCBS 352 S16.
+Series Analysis, 4(4), 269-273.  Engle, R.F. (1982). *Autoregressive
+conditional heteroscedasticity with estimates of the variance of United
+Kingdom inflation.* Econometrica, 50(4), 987-1007.
 
 ---
 
@@ -264,13 +245,13 @@ scipy_skew(daily_changes_bps)
 
 ### Flag condition
 
-Excess kurtosis > 30 raises `EXTREME_TAILS`.
+Excess kurtosis > 50 raises `EXTREME_TAILS`.
 
 ### Expected results
 
 | Curve type | Expected excess kurtosis | Interpretation |
 |-----------|-------------------------|----------------|
-| Traded (JIBAR-CAS) | 3–15 | Fat tails, typical for financial data |
+| Traded (JIBAR-CAS) | 3–30 | Fat tails, typical for financial data (higher at short end) |
 | Administered (SARB) | 50–200+ | Pathological zero-dominated distribution |
 
 ### What failure means
@@ -311,13 +292,13 @@ ratio = n_unique / len(rate_levels)
 
 ### Flag condition
 
-Unique rate ratio < 0.50 raises `LOW_GRANULARITY`.
+Unique rate ratio < 0.20 raises `LOW_GRANULARITY`.
 
 ### Expected results
 
 | Curve type | Expected ratio | Expected unique levels (2 yr) |
 |-----------|---------------|------------------------------|
-| Traded (JIBAR-CAS) | > 0.95 | ~500 out of ~520 |
+| Traded (JIBAR-CAS) | > 0.50 (long end), 0.20–0.60 (short end) | ~250–500 out of ~520 |
 | Administered (SARB) | < 0.05 | ~15–25 out of ~520 |
 
 ### What failure means
@@ -349,7 +330,7 @@ Excel workbook with 2 tabs:
 | Tab | Contents |
 |-----|----------|
 | Summary | Rating, flags, obs count, mean level, daily vol per tenor |
-| Detail | ADF statistics, zero-return metrics, Ljung-Box results, kurtosis, and granularity per tenor |
+| Detail | ADF statistics, zero-return metrics, Ljung-Box results (informational), kurtosis, and granularity per tenor |
 
 ## Quick Start
 
@@ -441,9 +422,8 @@ THRESHOLDS: dict = {
     "adf_returns_p": 0.05,        # flag if returns p-value exceeds this
     "zero_return_pct": 5.0,       # flag if zero-return % exceeds this
     "max_consecutive_unchanged": 5,  # flag if longest unchanged run exceeds this
-    "ljung_box_p": 0.01,          # flag if lag-10 p-value is below this
-    "excess_kurtosis": 30.0,      # flag if excess kurtosis exceeds this
-    "unique_rate_ratio": 0.50,    # flag if distinct-values / observations < this
+    "excess_kurtosis": 50.0,      # flag if excess kurtosis exceeds this
+    "unique_rate_ratio": 0.20,    # flag if distinct-values / observations < this
     "fail_flag_count": 2,         # >= this many flags = FAIL
 }
 
@@ -619,9 +599,12 @@ def score_tenor(test_results: dict, thresholds: dict) -> tuple[list[str], str]:
         ADF_NON_STATIONARY  — returns fail to reject unit root
         ZERO_RETURN         — too many days with zero change
         STALE_RUNS          — longest unchanged streak exceeds threshold
-        AUTOCORRELATION     — squared returns are serially dependent
         EXTREME_TAILS       — excess kurtosis is pathologically high
         LOW_GRANULARITY     — too few distinct rate levels
+
+    The Ljung-Box (McLeod-Li) test is reported in the Detail tab but
+    NOT flagged.  Volatility clustering (ARCH effects) is universal in
+    traded rates and would produce false positives on genuine data.
     """
     flags: list[str] = []
 
@@ -635,9 +618,6 @@ def score_tenor(test_results: dict, thresholds: dict) -> tuple[list[str], str]:
     max_run = test_results["max_consecutive_unchanged"]
     if max_run > thresholds["max_consecutive_unchanged"]:
         flags.append(f"STALE_RUNS={max_run}d")
-
-    if test_results["lb_lag10_pvalue"] < thresholds["ljung_box_p"]:
-        flags.append("AUTOCORRELATION")
 
     kurt = test_results["excess_kurtosis"]
     if kurt > thresholds["excess_kurtosis"]:
@@ -835,9 +815,9 @@ def build_report(
         value=(
             f"ADF: returns p > {thresholds['adf_returns_p']} → flag.  "
             f"Zero-return: > {thresholds['zero_return_pct']}% → flag.  "
-            f"LB: lag-10 p < {thresholds['ljung_box_p']} → flag.  "
             f"Kurtosis: > {thresholds['excess_kurtosis']} → flag.  "
-            f"Unique ratio: < {thresholds['unique_rate_ratio']} → flag."
+            f"Unique ratio: < {thresholds['unique_rate_ratio']} → flag.  "
+            f"LB: informational only (not flagged)."
         ),
     ).font = _FONT_NOTE
 
@@ -887,10 +867,7 @@ def build_report(
         _write_cell(ws2, row, 10, res["lb_lag5_statistic"], "0.0")
         _write_cell(ws2, row, 11, res["lb_lag5_pvalue"], "0.00E+00")
         _write_cell(ws2, row, 12, res["lb_lag10_statistic"], "0.0")
-        lb10_p = res["lb_lag10_pvalue"]
-        lb_cell = _write_cell(ws2, row, 13, lb10_p, "0.00E+00")
-        if lb10_p < thresholds["ljung_box_p"]:
-            lb_cell.fill = sig_fill
+        _write_cell(ws2, row, 13, res["lb_lag10_pvalue"], "0.00E+00")
 
         _write_cell(ws2, row, 14, res["skewness"], "+0.00")
         kurt = res["excess_kurtosis"]

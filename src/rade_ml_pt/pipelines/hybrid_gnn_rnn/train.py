@@ -93,7 +93,7 @@ class HybridGnnRnnTrainPipeline(TrainPipeline):
     ) -> None:
         """
         Register model, log run, save inference artifacts alongside the model,
-        then run custom post-training plotting.
+        then run custom post-training plotting and inline evaluation.
         """
         # default: register model and log to tracker
         super().post_train(result, model, registry=registry, tracker=tracker, run=run, data_result=data_result)

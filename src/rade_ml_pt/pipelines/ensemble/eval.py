@@ -34,8 +34,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_SUPPORTED_STRATEGIES = {"sequential"}
-_PLANNED_STRATEGIES = {"process_pool", "gpu_parallel", "distributed"}
+_SUPPORTED_STRATEGIES = {"sequential", "process_pool", "gpu_parallel"}
+_PLANNED_STRATEGIES = {"distributed"}
 _EVAL_SPLITS = ("train", "val", "test")
 _PRIMARY_SPLIT = "test"
 
@@ -156,15 +156,31 @@ class EnsembleEvalPipeline:
         Must have ``registry_dir`` set.
     ensemble_version : str
         Ensemble version or tag to load (default ``"latest"``).
+    run_member_eval : bool
+        If ``True``, run the full ``HybridGnnRnnEvalPipeline`` for each
+        member (cold-start from registry).  Produces per-member evaluation
+        plots, portfolio PnL analytics, and inverse-transformed metrics.
+        Default ``False`` (lightweight metrics only).
+    member_eval_pipeline : str or None
+        Dotpath to the member eval pipeline class.  Defaults to
+        ``HybridGnnRnnEvalPipeline`` when ``None``.
     """
+
+    _DEFAULT_MEMBER_EVAL = (
+        "src.rade_ml_pt.pipelines.hybrid_gnn_rnn.eval.HybridGnnRnnEvalPipeline"
+    )
 
     def __init__(
         self,
         ensemble_config: EnsembleConfig,
         ensemble_version: str = "latest",
+        run_member_eval: bool = False,
+        member_eval_pipeline: Optional[str] = None,
     ) -> None:
         self.config = ensemble_config
         self.ensemble_version = ensemble_version
+        self.run_member_eval = run_member_eval
+        self._member_eval_dotpath = member_eval_pipeline or self._DEFAULT_MEMBER_EVAL
 
     def run(self) -> Dict[str, Any]:
         """
@@ -197,6 +213,10 @@ class EnsembleEvalPipeline:
         registry = ModelRegistry(self.config.registry_dir)
         builder = EnsembleBuilder(registry)
         ensemble = builder.build(config, member_versions)
+
+        # Full per-member evaluation (cold-start pipeline with plots).
+        if self.run_member_eval:
+            self._run_member_eval_pipelines(config, member_versions)
 
         # Dispatch per-member evaluation (returns per-split structures).
         split_preds, split_targets, split_metrics = (
@@ -255,6 +275,67 @@ class EnsembleEvalPipeline:
         }
 
     # ------------------------------------------------------------------
+    # Full per-member evaluation (cold-start pipeline)
+    # ------------------------------------------------------------------
+
+    def _run_member_eval_pipelines(
+        self,
+        config: EnsembleConfig,
+        member_versions: Dict[str, str],
+    ) -> None:
+        """Run the full member eval pipeline for each cluster.
+
+        Uses the configured ``member_eval_pipeline`` class (cold-start from
+        registry).  Each member's artifacts are saved under
+        ``<artifacts_dir>/members/<cluster_id>/``.
+        """
+        import importlib
+
+        module_path, cls_name = self._member_eval_dotpath.rsplit(".", 1)
+        try:
+            eval_cls = getattr(importlib.import_module(module_path), cls_name)
+        except (ImportError, AttributeError) as exc:
+            logger.warning(
+                "Could not import member eval pipeline (%s): %s. "
+                "Skipping per-member evaluation.",
+                self._member_eval_dotpath, exc,
+            )
+            return
+
+        for cid in config.cluster_ids:
+            version = member_versions.get(cid)
+            if not version:
+                logger.warning("No version for '%s'; skipping member eval.", cid)
+                continue
+
+            logger.info("--- Running member eval pipeline: '%s' (version='%s') ---", cid, version)
+            try:
+                from src.rade_ml_pt.pipelines.config import PipelineConfig
+
+                member_raw = config.member_configs.get(cid, {})
+                member_config = PipelineConfig(
+                    data_config=member_raw.get("data_config"),
+                    model_config=member_raw.get("model_config"),
+                    registry_dir=self.config.registry_dir,
+                    artifacts_dir=str(
+                        Path(self.config.artifacts_dir) / "members" / cid
+                    ) if self.config.artifacts_dir else None,
+                    version_or_tag=version,
+                    metadata={
+                        **member_raw.get("metadata", {}),
+                        "cluster_id": cid,
+                    },
+                )
+
+                eval_pipeline = eval_cls(member_config)
+                eval_pipeline.run()
+                logger.info("Member '%s' evaluation complete.", cid)
+            except Exception as exc:
+                logger.warning(
+                    "Member '%s' eval pipeline failed (non-fatal): %s", cid, exc,
+                )
+
+    # ------------------------------------------------------------------
     # Execution strategy dispatch
     # ------------------------------------------------------------------
 
@@ -277,6 +358,10 @@ class EnsembleEvalPipeline:
 
         if strategy == "sequential":
             return self._run_sequential_eval(config, ensemble, registry, member_versions)
+        elif strategy == "process_pool":
+            return self._run_threaded_eval(config, ensemble, registry, member_versions)
+        elif strategy == "gpu_parallel":
+            return self._run_gpu_parallel_eval(config, ensemble, registry, member_versions)
         elif strategy in _PLANNED_STRATEGIES:
             raise NotImplementedError(
                 f"Execution strategy '{strategy}' is planned but not yet "
@@ -324,6 +409,140 @@ class EnsembleEvalPipeline:
         return split_preds, split_targets, split_metrics
 
     # ------------------------------------------------------------------
+    # Strategy: process_pool (threaded, models already in memory)
+    # ------------------------------------------------------------------
+
+    def _run_threaded_eval(
+        self,
+        config: EnsembleConfig,
+        ensemble: Any,
+        registry: Any,
+        member_versions: Dict[str, str],
+    ) -> tuple:
+        """Evaluate members in parallel using ThreadPoolExecutor.
+
+        ThreadPoolExecutor is preferred over ProcessPoolExecutor for eval
+        because the models are already loaded in the main process — no
+        expensive pickling required.  PyTorch releases the GIL during
+        forward passes, so threads achieve real parallelism for both CPU
+        and CUDA inference.
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        split_preds: Dict[str, Dict[str, np.ndarray]] = {}
+        split_targets: Dict[str, Dict[str, np.ndarray]] = {}
+        split_metrics: Dict[str, Dict[str, Dict[str, float]]] = {}
+
+        max_w = self.config.max_workers or len(config.cluster_ids)
+        logger.info("process_pool eval: %d members, %d threads", len(config.cluster_ids), max_w)
+
+        tasks = [
+            (cid, split)
+            for cid in config.cluster_ids
+            for split in _EVAL_SPLITS
+        ]
+
+        def _eval_task(args):
+            cid, split = args
+            return cid, split, evaluate_single_member(
+                cluster_id=cid,
+                model=ensemble.members[cid],
+                registry_root_dir=str(registry.root_dir),
+                member_version=member_versions[cid],
+                split=split,
+            )
+
+        with ThreadPoolExecutor(max_workers=max_w) as pool:
+            futures = {pool.submit(_eval_task, t): t for t in tasks}
+            for future in as_completed(futures):
+                cid, split, member_result = future.result()
+                if member_result is not None:
+                    split_preds.setdefault(split, {})[cid] = member_result["predictions"]
+                    split_targets.setdefault(split, {})[cid] = member_result["targets"]
+                    split_metrics.setdefault(split, {})[cid] = member_result["metrics"]
+
+        return split_preds, split_targets, split_metrics
+
+    # ------------------------------------------------------------------
+    # Strategy: gpu_parallel (models moved to per-GPU devices)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _resolve_gpu_ids(config: EnsembleConfig) -> "List[int]":
+        """Return the list of CUDA device IDs to use."""
+        if config.gpu_device_ids:
+            return list(config.gpu_device_ids)
+        import torch
+        n = torch.cuda.device_count()
+        if n == 0:
+            raise RuntimeError(
+                "gpu_parallel strategy requires at least one CUDA GPU, "
+                "but torch.cuda.device_count() == 0."
+            )
+        return list(range(n))
+
+    def _run_gpu_parallel_eval(
+        self,
+        config: EnsembleConfig,
+        ensemble: Any,
+        registry: Any,
+        member_versions: Dict[str, str],
+    ) -> tuple:
+        """Evaluate members in parallel with each model pinned to a CUDA device.
+
+        Models are moved to their assigned GPU, then evaluation runs in a
+        ThreadPoolExecutor.  PyTorch releases the GIL during CUDA kernels,
+        so threads give true parallelism across GPUs.
+        """
+        import torch
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        gpu_ids = self._resolve_gpu_ids(config)
+        n_gpus = len(gpu_ids)
+
+        for i, cid in enumerate(config.cluster_ids):
+            device = torch.device(f"cuda:{gpu_ids[i % n_gpus]}")
+            ensemble.members[cid].to(device)
+            logger.info("Moved member '%s' to %s", cid, device)
+
+        max_w = min(self.config.max_workers or n_gpus, n_gpus)
+        logger.info(
+            "gpu_parallel eval: %d members across %d GPUs, %d threads",
+            len(config.cluster_ids), n_gpus, max_w,
+        )
+
+        split_preds: Dict[str, Dict[str, np.ndarray]] = {}
+        split_targets: Dict[str, Dict[str, np.ndarray]] = {}
+        split_metrics: Dict[str, Dict[str, Dict[str, float]]] = {}
+
+        tasks = [
+            (cid, split)
+            for cid in config.cluster_ids
+            for split in _EVAL_SPLITS
+        ]
+
+        def _eval_task(args):
+            cid, split = args
+            return cid, split, evaluate_single_member(
+                cluster_id=cid,
+                model=ensemble.members[cid],
+                registry_root_dir=str(registry.root_dir),
+                member_version=member_versions[cid],
+                split=split,
+            )
+
+        with ThreadPoolExecutor(max_workers=max_w) as pool:
+            futures = {pool.submit(_eval_task, t): t for t in tasks}
+            for future in as_completed(futures):
+                cid, split, member_result = future.result()
+                if member_result is not None:
+                    split_preds.setdefault(split, {})[cid] = member_result["predictions"]
+                    split_targets.setdefault(split, {})[cid] = member_result["targets"]
+                    split_metrics.setdefault(split, {})[cid] = member_result["metrics"]
+
+        return split_preds, split_targets, split_metrics
+
+    # ------------------------------------------------------------------
     # Artifact persistence
     # ------------------------------------------------------------------
 
@@ -346,7 +565,7 @@ class EnsembleEvalPipeline:
         cluster positions — enough for the dashboard to reconstruct
         portfolio-level views without re-running evaluation.
         """
-        eval_dir = Path(self.   config.artifacts_dir) / "ensemble" / version / "evaluation"
+        eval_dir = Path(self.config.artifacts_dir) / "ensemble" / version / "evaluation"
         eval_dir.mkdir(parents=True, exist_ok=True)
 
         cluster_trade_indices = EnsembleBuilder._build_cluster_trade_indices(config)

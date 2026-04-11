@@ -28,6 +28,10 @@ class GnnGeneralConfig:
     use_residual: bool = True
     batch_norm: bool = True
     aggregator_op: str = "mean"
+    # Graphormer-specific (ignored by GraphSAGE / MixedGraphSAGE).
+    num_heads: int = 4
+    k_nbrs: int = 50
+    max_degree: int = 512
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -87,6 +91,8 @@ class RnnGeneralConfig:
     layer_type: str = "lstm"
     dropout_rate: float = 0.1
     use_bias: bool = True
+    # TCN-specific (ignored by LSTM/GRU/Dense).
+    kernel_size: int = 3
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

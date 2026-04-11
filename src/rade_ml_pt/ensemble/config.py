@@ -12,6 +12,7 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+from src.rade_ml_pt.core import json_safe
 from src.rade_ml_pt.pipelines.config import PipelineConfig
 
 
@@ -153,7 +154,7 @@ class EnsembleConfig:
 
     def to_json(self, path: Union[str, Path]) -> None:
         with open(path, "w") as f:
-            json.dump(self.to_dict(), f, indent=2)
+            json.dump(self.to_dict(), f, indent=2, default=json_safe)
 
     @classmethod
     def from_json(cls, path: Union[str, Path]) -> "EnsembleConfig":

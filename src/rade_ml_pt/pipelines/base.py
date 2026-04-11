@@ -133,37 +133,72 @@ class TrainPipeline(abc.ABC):
         Steps
         -----
         1. ``build_data``
-        2. ``build_model``
+        2. ``build_model`` → device placement → optional compile / DDP wrap
         3. ``Trainer.fit``
-        4. ``post_train``
+        4. ``post_train`` (registration, tracking, reports — rank 0 only)
 
         Returns
         -------
         TrainingResult
         """
         from src.rade_ml_pt.training.trainer import Trainer, setup_training_environment
-        from src.rade_ml_pt.training.strategy import get_training_strategy
+        from src.rade_ml_pt.training.strategy import get_training_strategy, setup_ddp, cleanup_ddp
 
         logger.info("TrainPipeline: starting")
         t0 = time.perf_counter()
 
+        self._ensure_directories()
+        training_config = self._resolve_training_config()
+        seed = self._resolve_seed()
+        setup_training_environment(training_config, seed)
+
+        use_ddp = getattr(training_config, "strategy", None) == "ddp"
+        if use_ddp:
+            setup_ddp()
+
+        data_result = self.build_data(self.config)
+        logger.info("TrainPipeline: data built")
+
+        device = get_training_strategy(training_config)
+        model = self._prepare_model(training_config, data_result, device, use_ddp)
+
+        train_data, val_data = self._prepare_data(data_result, use_ddp)
+
+        trainer = Trainer(model=model, config=training_config, seed=seed)
+        result = trainer.fit(train_data=train_data, val_data=val_data)
+        logger.info("TrainPipeline: training complete (%.1fs)", time.perf_counter() - t0)
+
+        unwrapped = model.module if use_ddp else model
+        self._finalise(result, unwrapped, data_result, use_ddp)
+
+        if use_ddp:
+            cleanup_ddp()
+
+        logger.info("TrainPipeline: done")
+        return result
+
+    # ------------------------------------------------------------------
+    # run() sub-steps
+    # ------------------------------------------------------------------
+
+    def _ensure_directories(self) -> None:
+        """Create artifacts and registry directories if configured."""
         if self.config.artifacts_dir:
             Path(self.config.artifacts_dir).mkdir(parents=True, exist_ok=True)
         if self.config.registry_dir:
             Path(self.config.registry_dir).mkdir(parents=True, exist_ok=True)
 
-        training_config = self._resolve_training_config()
-        seed = self._resolve_seed()
-        setup_training_environment(training_config, seed)
-
-        data_result = self.build_data(self.config)
-        logger.info("TrainPipeline: data built")
-
-        # build model and move to the target device
-        device = get_training_strategy(training_config)
+    def _prepare_model(
+        self,
+        training_config: Any,
+        data_result: "DataBuildResult",
+        device: torch.device,
+        use_ddp: bool,
+    ) -> nn.Module:
+        """Build the model, move to device, optionally compile and wrap in DDP."""
         model = self.build_model(self.config, data_result)
         model = model.to(device)
-        logger.info(f"TrainPipeline: model built (device={device})")
+        logger.info("TrainPipeline: model built (device=%s)", device)
 
         if training_config.compile_model and device.type != "cpu":
             model = torch.compile(model)
@@ -174,34 +209,43 @@ class TrainPipeline(abc.ABC):
                 "(inductor backend is slower on CPU than eager mode)"
             )
 
-        trainer = Trainer(model=model, config=training_config, seed=seed)
+        if use_ddp:
+            from torch.nn.parallel import DistributedDataParallel as DDP
+            from src.rade_ml_pt.training.strategy import get_ddp_local_rank
+            model = DDP(model, device_ids=[get_ddp_local_rank()])
+            logger.info("TrainPipeline: model wrapped in DistributedDataParallel")
 
-        result = trainer.fit(
-            train_data=data_result.train_ds,
-            val_data=data_result.val_ds
-        )
-        logger.info(f"TrainPipeline: training complete ({time.perf_counter() - t0:.1f}s)")
+        return model
 
-        registry = None
-        if self.config.registry_dir:
-            try:
-                from src.rade_ml_pt.registry.store import ModelRegistry
-                registry = ModelRegistry(self.config.registry_dir)
-            except Exception as exc:
-                logger.error("Failed to initialise ModelRegistry: %s", exc)
+    def _prepare_data(
+        self,
+        data_result: "DataBuildResult",
+        use_ddp: bool,
+    ) -> tuple:
+        """Return ``(train_data, val_data)``, wrapping for DDP when needed."""
+        train_data = data_result.train_ds
+        val_data = data_result.val_ds
+        if use_ddp:
+            train_data = self._wrap_loader_for_ddp(train_data)
+            if val_data is not None:
+                val_data = self._wrap_loader_for_ddp(val_data)
+        return train_data, val_data
 
-        tracker = None
-        run = None
-        if self.config.tracking_dir:
-            try:
-                from src.rade_ml_pt.tracking.tracker import ExperimentTracker
-                tracker = ExperimentTracker(self.config.tracking_dir)
-                run = tracker.start_run(
-                    name=self.config.metadata.get("run_name", "train"),
-                    tags=self.config.metadata.get("tags", []),
-                )
-            except Exception as exc:
-                logger.error("Failed to initialise ExperimentTracker: %s", exc)
+    def _finalise(
+        self,
+        result: "TrainingResult",
+        model: nn.Module,
+        data_result: "DataBuildResult",
+        use_ddp: bool,
+    ) -> None:
+        """Register model, log run, and generate reports (rank 0 only)."""
+        from src.rade_ml_pt.training.strategy import is_main_process
+
+        if use_ddp and not is_main_process():
+            return
+
+        registry = self._init_registry()
+        tracker, run = self._init_tracker()
 
         self.post_train(
             result, model, registry=registry, tracker=tracker, run=run,
@@ -217,8 +261,32 @@ class TrainPipeline(abc.ABC):
             except Exception as exc:
                 logger.error("Failed to generate training report: %s", exc)
 
-        logger.info("TrainPipeline: done")
-        return result
+    def _init_registry(self) -> Optional[Any]:
+        """Build a ModelRegistry if ``registry_dir`` is set."""
+        if not self.config.registry_dir:
+            return None
+        try:
+            from src.rade_ml_pt.registry.store import ModelRegistry
+            return ModelRegistry(self.config.registry_dir)
+        except Exception as exc:
+            logger.error("Failed to initialise ModelRegistry: %s", exc)
+            return None
+
+    def _init_tracker(self) -> tuple:
+        """Build an ExperimentTracker + Run if ``tracking_dir`` is set."""
+        if not self.config.tracking_dir:
+            return None, None
+        try:
+            from src.rade_ml_pt.tracking.tracker import ExperimentTracker
+            tracker = ExperimentTracker(self.config.tracking_dir)
+            run = tracker.start_run(
+                name=self.config.metadata.get("run_name", "train"),
+                tags=self.config.metadata.get("tags", []),
+            )
+            return tracker, run
+        except Exception as exc:
+            logger.error("Failed to initialise ExperimentTracker: %s", exc)
+            return None, None
 
     def _generate_training_report(
         self,
@@ -250,6 +318,34 @@ class TrainPipeline(abc.ABC):
             run_name=run_name,
             include_loss_plot=True,
             format="markdown",
+        )
+
+    @staticmethod
+    def _wrap_loader_for_ddp(loader: Any) -> Any:
+        """Rebuild a DataLoader with a ``DistributedSampler``.
+
+        If *loader* is not a ``DataLoader`` (e.g. a plain list of batches),
+        it is returned unchanged.
+        """
+        from torch.utils.data import DataLoader, DistributedSampler
+        from src.rade_ml_pt.training.strategy import get_ddp_rank, get_ddp_world_size
+
+        if not isinstance(loader, DataLoader):
+            return loader
+
+        sampler = DistributedSampler(
+            loader.dataset,
+            num_replicas=get_ddp_world_size(),
+            rank=get_ddp_rank(),
+        )
+        return DataLoader(
+            loader.dataset,
+            batch_size=loader.batch_size,
+            sampler=sampler,
+            num_workers=getattr(loader, "num_workers", 0),
+            collate_fn=loader.collate_fn,
+            pin_memory=getattr(loader, "pin_memory", False),
+            drop_last=getattr(loader, "drop_last", False),
         )
 
     def _resolve_training_config(self) -> Any:

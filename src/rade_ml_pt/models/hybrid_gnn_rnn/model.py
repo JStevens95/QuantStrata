@@ -122,6 +122,13 @@ class HybridGnnRnn(BaseModel):
         """Explicitly clear the cached GNN features (call if graph structure changes)."""
         self._gnn_cache.clear()
 
+    def _model_device(self) -> torch.device:
+        """Return the device the model parameters live on."""
+        try:
+            return next(self.parameters()).device
+        except StopIteration:
+            return torch.device("cpu")
+
     def _get_adjacency(self, inputs: Dict[str, Any]) -> torch.Tensor:
         """Build or retrieve the cached sparse adjacency matrix.
 
@@ -129,6 +136,9 @@ class HybridGnnRnn(BaseModel):
         first forward call and cache it for all subsequent batches within the
         same train/eval epoch.  The cache is cleared on mode switch via
         ``train()`` and can be manually invalidated with ``invalidate_gnn_cache()``.
+
+        The tensor is placed on the same device as the model parameters so that
+        downstream GNN operations do not hit a device mismatch.
         """
         if "adjacency" in self._gnn_cache:
             return self._gnn_cache["adjacency"]
@@ -158,6 +168,10 @@ class HybridGnnRnn(BaseModel):
         # int() cast handles float tensors that can arise from torch.load().
         size = tuple(int(s) for s in shape.tolist())
         adjacency = torch.sparse_coo_tensor(indices, values, size).coalesce()
+
+        device = self._model_device()
+        adjacency = adjacency.to(device)
+
         self._gnn_cache["adjacency"] = adjacency
         return adjacency
 

@@ -1,15 +1,25 @@
 """
-RNN block for the Hybrid GNN-RNN model: LSTM, BiLSTM, or GRU.
+RNN block for the Hybrid GNN-RNN model: LSTM, BiLSTM, GRU, or TCN.
 
 Compresses P&L time series [B, S, T_e] into a fixed-length temporal embedding [B, d_r].
 PyTorch LSTM/GRU use hardcoded activations (tanh for cell, sigmoid for gates) inside
-fused cuDNN kernels. The ``activation`` config is used by the dense fallback branch.
+fused cuDNN kernels. The ``activation`` config is used by the dense and TCN branches.
+
+TCN (Temporal Convolutional Network) replaces recurrence with a stack of dilated
+causal convolutions, giving fully-parallel training, stable gradients, and a
+configurable receptive field of  1 + (kernel_size - 1) · (2^L - 1)  timesteps.
 """
 import logging
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from typing import Dict, Any, Optional, Type
+
+try:
+    from torch.nn.utils.parametrizations import weight_norm
+except ImportError:
+    from torch.nn.utils import weight_norm
 
 logger = logging.getLogger(__name__)
 
@@ -39,15 +49,91 @@ def _resolve_act_module(name: Optional[str]) -> Optional[nn.Module]:
     return cls()
 
 
+# ---------------------------------------------------------------------------
+#  TCN building blocks (Bai et al. 2018 "An Empirical Evaluation of Generic
+#  Convolutional and Recurrent Networks for Sequence Modeling")
+# ---------------------------------------------------------------------------
+
+
+class _CausalConv1d(nn.Module):
+    """
+    Weight-normalised 1D convolution with left-only (causal) padding.
+
+    Output at position t depends only on input positions [0, t], preserving
+    the causal property required for autoregressive / temporal modelling.
+    """
+
+    def __init__(
+        self, in_channels: int, out_channels: int, kernel_size: int,
+        dilation: int, bias: bool = True,
+    ) -> None:
+        super().__init__()
+        self.causal_pad = (kernel_size - 1) * dilation
+        self.conv = weight_norm(
+            nn.Conv1d(in_channels, out_channels, kernel_size,
+                      dilation=dilation, bias=bias)
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = F.pad(x, (self.causal_pad, 0))
+        return self.conv(x)
+
+
+class _TemporalBlock(nn.Module):
+    """
+    Single TCN residual block: two causal dilated convolutions (with weight
+    normalisation, activation, and dropout) plus a skip connection.
+
+        x ─→ CausalConv → act → drop → CausalConv → act → drop ─→ (+) → act → out
+        │                                                           ↑
+        └──────────── 1×1 conv (if channels change) ───────────────┘
+    """
+
+    def __init__(
+        self, in_channels: int, out_channels: int, kernel_size: int,
+        dilation: int, dropout: float, activation_name: Optional[str],
+    ) -> None:
+        super().__init__()
+        self.conv1 = _CausalConv1d(in_channels, out_channels, kernel_size, dilation)
+        self.act1 = _resolve_act_module(activation_name) or nn.Identity()
+        self.drop1 = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
+
+        self.conv2 = _CausalConv1d(out_channels, out_channels, kernel_size, dilation)
+        self.act2 = _resolve_act_module(activation_name) or nn.Identity()
+        self.drop2 = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
+
+        self.residual = (
+            nn.Conv1d(in_channels, out_channels, 1)
+            if in_channels != out_channels
+            else nn.Identity()
+        )
+        self.act_out = _resolve_act_module(activation_name) or nn.Identity()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        out = self.drop1(self.act1(self.conv1(x)))
+        out = self.drop2(self.act2(self.conv2(out)))
+        return self.act_out(out + self.residual(x))
+
+
 class RnnBlock(nn.Module):
     """
-    Stack of L recurrent layers (LSTM, BiLSTM, or GRU) for temporal P&L compression.
+    Stack of L recurrent layers (LSTM, BiLSTM, GRU) or L dilated causal
+    convolution blocks (TCN) for temporal P&L compression.
 
     PyTorch LSTM/GRU supports stacking natively via the ``num_layers`` parameter, so
     no manual loop is needed. The final hidden state is extracted from ``h_n`` and
     returned as the fixed-length temporal embedding.
 
+    Supported layer types:
+        - ``lstm``    : uni-directional LSTM
+        - ``bilstm``  : bi-directional LSTM (output dim = 2 × units)
+        - ``gru``     : gated recurrent unit
+        - ``tcn``     : temporal convolutional network (dilated causal convolutions)
+        - ``dense``   : feed-forward baseline (last timestep only)
+
     For BiLSTM the output dimension is doubled (forward + backward concat).
+    For TCN, each layer uses dilation 2^i giving a receptive field of
+    1 + (kernel_size − 1) · (2^L − 1) timesteps.
     For a 'dense' layer type, an ``nn.Sequential`` stack of Linear layers is used,
     with the configured ``activation`` applied between layers.
 
@@ -87,6 +173,7 @@ class RnnBlock(nn.Module):
         self._built: bool = False
         self.rnn: nn.Module | None = None
         self.dense: nn.Module | None = None
+        self.tcn: nn.Module | None = None
 
     # ------------------------------------------------------------------
     # Layer construction (lazy, triggered on first forward)
@@ -126,6 +213,27 @@ class RnnBlock(nn.Module):
                 batch_first=True,
                 dropout=dropout,
             )
+        elif layer_type == "tcn":
+            kernel_size = getattr(self, "kernel_size", 3)
+            blocks = []
+            in_ch = input_size
+            for i in range(self.num_layers):
+                blocks.append(_TemporalBlock(
+                    in_channels=in_ch,
+                    out_channels=self.units,
+                    kernel_size=kernel_size,
+                    dilation=2 ** i,
+                    dropout=self.dropout_rate or 0.0,
+                    activation_name=self.activation,
+                ))
+                in_ch = self.units
+            self.tcn = nn.Sequential(*blocks)
+            receptive_field = 1 + (kernel_size - 1) * (2 ** self.num_layers - 1)
+            logger.info(
+                f"TCN built: {self.num_layers} blocks, kernel_size={kernel_size}, "
+                f"receptive_field={receptive_field} timesteps"
+            )
+
         elif layer_type == "dense":
             act_mod = _resolve_act_module(self.activation)
             layers = []
@@ -139,14 +247,16 @@ class RnnBlock(nn.Module):
                 layers.pop()
             self.dense = nn.Sequential(*layers)
         else:
-            raise ValueError(f"Undefined layer type, got {layer_type}")
+            raise ValueError(
+                f"Undefined RNN layer type: {layer_type!r}. "
+                f"Choose from: lstm, bilstm, gru, tcn, dense"
+            )
 
         self._built = True
 
-        if self.rnn is not None:
-            self.rnn.train(self.training)
-        if self.dense is not None:
-            self.dense.train(self.training)
+        for module in (self.rnn, self.dense, self.tcn):
+            if module is not None:
+                module.train(self.training)
 
     # ------------------------------------------------------------------
     # Forward pass
@@ -181,11 +291,20 @@ class RnnBlock(nn.Module):
             else:
                 x = h_n[-1]  # [B, units]
 
+        elif layer_type == "tcn":
+            # Conv1d expects [B, C, S]; input is [B, S, C].
+            x = inputs.transpose(1, 2)      # [B, C_in, S]
+            x = self.tcn(x)                 # [B, units, S]
+            x = x[:, :, -1]                 # [B, units]  — last (most recent) timestep
+
         elif layer_type == "dense":
             x = self.dense(inputs[:, -1, :])  # [B, units]
 
         else:
-            raise ValueError(f"Undefined layer type, got {layer_type}")
+            raise ValueError(
+                f"Undefined RNN layer type: {layer_type!r}. "
+                f"Choose from: lstm, bilstm, gru, tcn, dense"
+            )
 
         return x
 

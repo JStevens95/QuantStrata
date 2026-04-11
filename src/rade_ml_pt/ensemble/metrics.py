@@ -121,6 +121,9 @@ def compute_per_member_metrics(
             "mae": float(np.mean(abs_res)),
             "mse": float(np.mean(residuals ** 2)),
             "rmse": float(np.sqrt(np.mean(residuals ** 2))),
+            "max_ae": float(np.max(abs_res)),
+            "p95_ae": float(np.percentile(abs_res, 95)),
+            "p99_ae": float(np.percentile(abs_res, 99)),
             "n_targets": int(preds.shape[-1]) if preds.ndim > 1 else 1,
             "n_scenarios": int(preds.shape[0]),
         }

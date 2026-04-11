@@ -145,9 +145,14 @@ class Trainer:
         """
         if not self._is_compiled:
             self.compile()
+
+        self._sync_device()
+
+        use_amp = self.config.mixed_precision and self.device.type == "cuda"
+        scaler = torch.amp.GradScaler("cuda") if use_amp else None
+
         callbacks = get_standard_callbacks(self.config) + list(self.custom_callbacks)
 
-        # Inject model & optimizer references into callbacks
         for cb in callbacks:
             cb._model = self.model
             if hasattr(cb, "set_optimizer") and self.optimizer is not None:
@@ -161,8 +166,18 @@ class Trainer:
 
         gc.disable()
 
+        _is_rank0 = True
+        try:
+            from src.rade_ml_pt.training.strategy import is_main_process
+            _is_rank0 = is_main_process()
+        except ImportError:
+            pass
+
         for epoch in range(self.config.epochs):
             epoch_start = time.time()
+
+            if hasattr(train_data, "sampler") and hasattr(train_data.sampler, "set_epoch"):
+                train_data.sampler.set_epoch(epoch)
 
             for cb in callbacks:
                 cb.on_epoch_begin(epoch)
@@ -175,13 +190,24 @@ class Trainer:
                 inputs, targets = self._unpack_batch(batch)
 
                 self.optimizer.zero_grad()
-                outputs = self.model(inputs)
 
-                loss = self.loss_fn(outputs, targets) if targets is not None else outputs.mean()
-                loss.backward()
+                if use_amp:
+                    with torch.amp.autocast("cuda"):
+                        outputs = self.model(inputs)
+                        loss = self.loss_fn(outputs, targets) if targets is not None else outputs.mean()
+                    scaler.scale(loss).backward()
+                    if self.config.optimizer.clipnorm:
+                        scaler.unscale_(self.optimizer)
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.optimizer.clipnorm)
+                    scaler.step(self.optimizer)
+                    scaler.update()
+                else:
+                    outputs = self.model(inputs)
+                    loss = self.loss_fn(outputs, targets) if targets is not None else outputs.mean()
+                    loss.backward()
+                    self._clip_gradients()
+                    self.optimizer.step()
 
-                self._clip_gradients()
-                self.optimizer.step()
                 train_losses.append(loss.item())
 
             epoch_train_loss = float(np.mean(train_losses)) if train_losses else 0.0
@@ -204,8 +230,7 @@ class Trainer:
             for cb in callbacks:
                 cb.on_epoch_end(epoch, logs)
 
-            # Built-in epoch progress (mirrors Keras verbose=1)
-            if self.config.verbose:
+            if self.config.verbose and _is_rank0:
                 epoch_t = time.time() - epoch_start
                 n_batches = len(train_losses)
                 ms_per_step = (epoch_t / n_batches * 1000) if n_batches else 0
@@ -258,6 +283,7 @@ class Trainer:
         :param test_data: iterable yielding ``(inputs, targets)`` batches.
         :returns: dict with ``"loss"`` key.
         """
+        self._sync_device()
         self.model.eval()
         losses: List[float] = []
         with torch.no_grad():
@@ -272,13 +298,38 @@ class Trainer:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _unpack_batch(batch: Any):
-        """Extract ``(inputs, targets)`` from a batch that may be a tuple/list."""
+    def _unpack_batch(self, batch: Any):
+        """Extract ``(inputs, targets)`` from a batch and move them to ``self.device``."""
         if isinstance(batch, (list, tuple)) and len(batch) == 2:
-            return batch[0], batch[1]
-        return batch, None
+            inputs, targets = batch[0], batch[1]
+        else:
+            inputs, targets = batch, None
 
+        inputs = self._to_device(inputs)
+        targets = self._to_device(targets)
+        return inputs, targets
+
+    def _to_device(self, obj: Any) -> Any:
+        """Recursively move tensors / dicts / lists of tensors to ``self.device``."""
+        if obj is None:
+            return None
+        if isinstance(obj, torch.Tensor):
+            return obj.to(self.device, non_blocking=True)
+        if isinstance(obj, dict):
+            return {k: self._to_device(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            moved = [self._to_device(v) for v in obj]
+            return type(obj)(moved)
+        return obj
+
+
+    def _sync_device(self) -> None:
+        """Detect the device from the model parameters and store it on ``self.device``."""
+        try:
+            self.device = next(self.model.parameters()).device
+        except StopIteration:
+            self.device = torch.device("cpu")
+        logger.debug("Trainer device synced to %s", self.device)
 
     def _clip_gradients(self) -> None:
         """Apply gradient clipping based on optimizer config."""
