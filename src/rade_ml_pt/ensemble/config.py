@@ -108,18 +108,24 @@ class EnsembleConfig:
         """
         Return ``{cluster_id: {attr_name: value, ...}}`` for TradeRouter.
 
-        If ``cluster_keys`` is set, return it. Otherwise if ``cluster_key`` and
-        ``cluster_key_values`` are set, build the dict from the shared attribute
-        names and per-cluster value lists (same order). E.g. cluster_key =
-        ["ccy", "desk", "product"], cluster_0_keys = ["GBP", "FLOW_RATES", "EUROPEAN"]
-        -> cluster_0 key = {"ccy": "GBP", "desk": "FLOW_RATES", "product": "EUROPEAN"}.
+        Resolution order:
+
+        1. ``cluster_keys`` (top-level, pre-built dict).
+        2. ``cluster_key`` + ``cluster_key_values`` (top-level lists).
+        3. ``metadata['job']['cluster_key']`` + ``metadata['job']['cluster_key_values']``
+           (fallback for configs built by ensemble training pipelines).
         """
-        if self.cluster_keys is not None:
+        if isinstance(self.cluster_keys, dict):
             return self.cluster_keys
-        if self.cluster_key is not None and self.cluster_key_values is not None:
+
+        job = self.metadata.get("job", {})
+        ck = self.cluster_key or self.cluster_keys or job.get("cluster_key")
+        ckv = self.cluster_key_values or job.get("cluster_key_values")
+
+        if ck is not None and ckv is not None:
             return {
-                cid: dict(zip(self.cluster_key, values))
-                for cid, values in self.cluster_key_values.items()
+                cid: dict(zip(ck, values))
+                for cid, values in ckv.items()
             }
         return None
 

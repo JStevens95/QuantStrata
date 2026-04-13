@@ -6,7 +6,7 @@ scatter, trade-level metrics table, and violin overlay.
 """
 from __future__ import annotations
 
-from dash import html
+from dash import dcc, html
 import dash_bootstrap_components as dbc
 
 from src.ui.apps.ensemble_analytics.theme.styles import CARD_STYLE, SECTION_TITLE_STYLE
@@ -15,7 +15,10 @@ from src.ui.apps.ensemble_analytics.theme.styles import CARD_STYLE, SECTION_TITL
 def layout() -> html.Div:
     """Build the By Cluster sub-tab skeleton."""
     return html.Div([
-        html.Div(id="eval-cluster-selector-container"),
+        html.Div(
+            dcc.Dropdown(id="eval-cluster-cluster-dropdown", style={"display": "none"}),
+            id="eval-cluster-selector-container",
+        ),
         html.Div(id="eval-cluster-heatmap", style=CARD_STYLE),
         dbc.Row([
             dbc.Col(html.Div(id="eval-cluster-scatter", style=CARD_STYLE), md=6),

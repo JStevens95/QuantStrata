@@ -74,6 +74,15 @@ TG_SUB_ORDER: List[Tuple[str, str]] = [
 SPLITS: List[str] = ["test", "val", "train"]
 DEFAULT_SPLIT: str = "test"
 
+# ── Evaluation group-by column mapping ────────────────────────────
+# Maps the internal sub-tab concept to the actual catalogue column name.
+# Update these values to match your trade catalogue columns.
+EVAL_GROUP_COLUMNS: Dict[str, str] = {
+    "desk": "AssetClassCode",
+    "product_type": "ProductCode",
+    "ccy": "CurrencyCode",
+}
+
 # ── Display format helpers ────────────────────────────────────────
 METRIC_DISPLAY_NAMES: Dict[str, str] = {
     "mae": "MAE",

@@ -101,9 +101,10 @@ def register(app):
         column_defs = [
             {"field": "cluster_id", "headerName": "Cluster", "pinned": "left"},
         ]
-        attr_cols = ["ccy", "desk", "product"]
+        first_attrs = next(iter(cluster_attrs.values()), {}) if cluster_attrs else {}
+        attr_cols = list(first_attrs.keys())
         for ac in attr_cols:
-            column_defs.append({"field": ac, "headerName": ac.upper()})
+            column_defs.append({"field": ac, "headerName": ac.replace("_", " ").title()})
 
         metric_keys = list(next(iter(pm_metrics.values()), {}).keys()) if pm_metrics else []
         all_metric_vals = {mk: [] for mk in metric_keys}

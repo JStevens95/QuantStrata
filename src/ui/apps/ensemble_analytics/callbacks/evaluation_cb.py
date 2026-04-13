@@ -18,6 +18,7 @@ from src.ui.apps.ensemble_analytics.config import (
     EVAL_SUB_PRODUCT,
     EVAL_SUB_CCY,
     EVAL_SUB_CLUSTER,
+    EVAL_GROUP_COLUMNS,
     METRIC_DISPLAY_NAMES,
 )
 from src.ui.apps.ensemble_analytics.components.filter_bar import filter_bar
@@ -33,29 +34,22 @@ from src.ui.apps.ensemble_analytics.figures.tables import percentile_table_data,
 def register(app):
     """Register Evaluation tab callbacks on *app*."""
 
-    # ── Sub-tab routing ───────────────────────────────────────────
+    # ── Sub-tab routing (toggle visibility) ─────────────────────
+    _eval_panel_ids = [
+        EVAL_SUB_PORTFOLIO, EVAL_SUB_DESK, EVAL_SUB_PRODUCT,
+        EVAL_SUB_CCY, EVAL_SUB_CLUSTER,
+    ]
+
     @app.callback(
-        Output("eval-sub-tab-content", "children"),
+        [Output(f"eval-panel-{tid}", "style") for tid in _eval_panel_ids],
         Input("eval-sub-tabs", "value"),
     )
-    def render_eval_sub_tab(sub_tab: str):
-        """Swap sub-tab content based on selection."""
-        if sub_tab == EVAL_SUB_PORTFOLIO:
-            from src.ui.apps.ensemble_analytics.tabs.evaluation.portfolio import layout
-            return layout()
-        elif sub_tab == EVAL_SUB_DESK:
-            from src.ui.apps.ensemble_analytics.tabs.evaluation.by_desk import layout
-            return layout()
-        elif sub_tab == EVAL_SUB_PRODUCT:
-            from src.ui.apps.ensemble_analytics.tabs.evaluation.by_product import layout
-            return layout()
-        elif sub_tab == EVAL_SUB_CCY:
-            from src.ui.apps.ensemble_analytics.tabs.evaluation.by_ccy import layout
-            return layout()
-        elif sub_tab == EVAL_SUB_CLUSTER:
-            from src.ui.apps.ensemble_analytics.tabs.evaluation.by_cluster import layout
-            return layout()
-        return html.Div("Unknown sub-tab.")
+    def toggle_eval_panels(sub_tab: str):
+        """Show the active sub-tab panel, hide the rest."""
+        return [
+            {"display": "block"} if tid == sub_tab else {"display": "none"}
+            for tid in _eval_panel_ids
+        ]
 
     # ── Portfolio sub-tab ─────────────────────────────────────────
     @app.callback(
@@ -223,7 +217,7 @@ def register(app):
             return no_update
         from src.ui.apps.ensemble_analytics.data.trade_catalogue import get_trade_catalogue
         cat = get_trade_catalogue()
-        return filter_bar(cat, "eval-desk", columns=["desk"])
+        return filter_bar(cat, "eval-desk", columns=["desk"], catalogue_columns=EVAL_GROUP_COLUMNS)
 
     @app.callback(
         Output("eval-desk-timeseries", "children"),
@@ -237,7 +231,7 @@ def register(app):
     def update_desk(split, sub_tab, selected_desks):
         if sub_tab != EVAL_SUB_DESK:
             return no_update, no_update, no_update, no_update
-        return _build_group_view(split, "desk", selected_desks, "eval-desk")
+        return _build_group_view(split, EVAL_GROUP_COLUMNS.get("desk", "desk"), selected_desks, "eval-desk")
 
     # ── By Product ────────────────────────────────────────────────
     @app.callback(
@@ -249,7 +243,7 @@ def register(app):
             return no_update
         from src.ui.apps.ensemble_analytics.data.trade_catalogue import get_trade_catalogue
         cat = get_trade_catalogue()
-        return filter_bar(cat, "eval-product", columns=["product_type"])
+        return filter_bar(cat, "eval-product", columns=["product_type"], catalogue_columns=EVAL_GROUP_COLUMNS)
 
     @app.callback(
         Output("eval-product-timeseries", "children"),
@@ -263,7 +257,7 @@ def register(app):
     def update_product(split, sub_tab, selected_products):
         if sub_tab != EVAL_SUB_PRODUCT:
             return no_update, no_update, no_update, no_update
-        return _build_group_view(split, "product_type", selected_products, "eval-product")
+        return _build_group_view(split, EVAL_GROUP_COLUMNS.get("product_type", "product_type"), selected_products, "eval-product")
 
     # ── By CCY ────────────────────────────────────────────────────
     @app.callback(
@@ -275,7 +269,7 @@ def register(app):
             return no_update
         from src.ui.apps.ensemble_analytics.data.trade_catalogue import get_trade_catalogue
         cat = get_trade_catalogue()
-        return filter_bar(cat, "eval-ccy", columns=["ccy"])
+        return filter_bar(cat, "eval-ccy", columns=["ccy"], catalogue_columns=EVAL_GROUP_COLUMNS)
 
     @app.callback(
         Output("eval-ccy-timeseries", "children"),
@@ -291,7 +285,8 @@ def register(app):
         if sub_tab != EVAL_SUB_CCY:
             return no_update, no_update, no_update, no_update, no_update
 
-        ts_fig, box_fig, scatter_grid, table = _build_group_view(split, "ccy", selected_ccys, "eval-ccy")
+        ccy_col = EVAL_GROUP_COLUMNS.get("ccy", "ccy")
+        ts_fig, box_fig, scatter_grid, table = _build_group_view(split, ccy_col, selected_ccys, "eval-ccy")
 
         # Cross-currency residual correlation heatmap
         import plotly.graph_objects as go
@@ -303,14 +298,14 @@ def register(app):
         catalogue = get_trade_catalogue()
         corr_fig = html.Div("Insufficient data for correlation.")
 
-        if store is not None and "ccy" in catalogue.columns:
-            ccys = sorted(catalogue["ccy"].dropna().unique().tolist())
+        if store is not None and ccy_col in catalogue.columns:
+            ccys = sorted(catalogue[ccy_col].dropna().unique().tolist())
             if selected_ccys:
                 ccys = [c for c in ccys if c in selected_ccys]
 
             residual_matrix = {}
             for c in ccys:
-                mask = catalogue["ccy"] == c
+                mask = catalogue[ccy_col] == c
                 idx = np.where(mask.values)[0]
                 if len(idx) > 0:
                     p = store.predictions[:, idx].sum(axis=1)
