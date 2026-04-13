@@ -21,8 +21,6 @@ from src.ui.apps.ensemble_analytics.config import (
     EVAL_GROUP_COLUMNS,
     METRIC_DISPLAY_NAMES,
 )
-from src.ui.apps.ensemble_analytics.components.filter_bar import filter_bar
-from src.ui.apps.ensemble_analytics.components.cluster_selector import cluster_selector
 from src.ui.apps.ensemble_analytics.components.metric_table import metric_table
 from src.ui.apps.ensemble_analytics.figures.scatter import pred_vs_target_scatter
 from src.ui.apps.ensemble_analytics.figures.timeseries import pnl_timeseries, overlaid_group_timeseries
@@ -34,22 +32,85 @@ from src.ui.apps.ensemble_analytics.figures.tables import percentile_table_data,
 def register(app):
     """Register Evaluation tab callbacks on *app*."""
 
-    # ── Sub-tab routing (toggle visibility) ─────────────────────
-    _eval_panel_ids = [
-        EVAL_SUB_PORTFOLIO, EVAL_SUB_DESK, EVAL_SUB_PRODUCT,
-        EVAL_SUB_CCY, EVAL_SUB_CLUSTER,
-    ]
-
+    # ── Sub-tab routing ───────────────────────────────────────────
     @app.callback(
-        [Output(f"eval-panel-{tid}", "style") for tid in _eval_panel_ids],
+        Output("eval-sub-tab-content", "children"),
         Input("eval-sub-tabs", "value"),
     )
-    def toggle_eval_panels(sub_tab: str):
-        """Show the active sub-tab panel, hide the rest."""
-        return [
-            {"display": "block"} if tid == sub_tab else {"display": "none"}
-            for tid in _eval_panel_ids
-        ]
+    def render_eval_sub_tab(sub_tab: str):
+        """Swap sub-tab content based on selection."""
+        if sub_tab == EVAL_SUB_PORTFOLIO:
+            from src.ui.apps.ensemble_analytics.tabs.evaluation.portfolio import layout
+            return layout()
+        elif sub_tab == EVAL_SUB_DESK:
+            from src.ui.apps.ensemble_analytics.tabs.evaluation.by_desk import layout
+            return layout()
+        elif sub_tab == EVAL_SUB_PRODUCT:
+            from src.ui.apps.ensemble_analytics.tabs.evaluation.by_product import layout
+            return layout()
+        elif sub_tab == EVAL_SUB_CCY:
+            from src.ui.apps.ensemble_analytics.tabs.evaluation.by_ccy import layout
+            return layout()
+        elif sub_tab == EVAL_SUB_CLUSTER:
+            from src.ui.apps.ensemble_analytics.tabs.evaluation.by_cluster import layout
+            return layout()
+        return html.Div("Unknown sub-tab.")
+
+    # ── Filter visibility & options ─────────────────────────────
+    _FILTER_ROW = {"display": "flex", "alignItems": "center", "marginRight": "20px"}
+    _HIDDEN = {"display": "none"}
+
+    @app.callback(
+        Output("eval-filter-desk", "style"),
+        Output("eval-filter-product", "style"),
+        Output("eval-filter-ccy", "style"),
+        Output("eval-filter-cluster", "style"),
+        Input("eval-sub-tabs", "value"),
+    )
+    def toggle_filter_visibility(sub_tab):
+        return (
+            _FILTER_ROW if sub_tab == EVAL_SUB_DESK else _HIDDEN,
+            _FILTER_ROW if sub_tab == EVAL_SUB_PRODUCT else _HIDDEN,
+            _FILTER_ROW if sub_tab == EVAL_SUB_CCY else _HIDDEN,
+            _FILTER_ROW if sub_tab == EVAL_SUB_CLUSTER else _HIDDEN,
+        )
+
+    @app.callback(
+        Output("eval-desk-filter-desk", "options"),
+        Output("eval-product-filter-product_type", "options"),
+        Output("eval-ccy-filter-ccy", "options"),
+        Output("eval-cluster-cluster-dropdown", "options"),
+        Output("eval-cluster-cluster-dropdown", "value"),
+        Input("eval-sub-tabs", "value"),
+    )
+    def populate_filter_options(_sub_tab):
+        """Populate all filter dropdown options from the trade catalogue."""
+        from src.ui.apps.ensemble_analytics.data.trade_catalogue import get_trade_catalogue
+        from src.ui.apps.ensemble_analytics.data.session_manager import get_session
+
+        catalogue = get_trade_catalogue()
+        session = get_session()
+
+        def _opts(logical_col):
+            actual = EVAL_GROUP_COLUMNS.get(logical_col, logical_col)
+            if catalogue is not None and actual in catalogue.columns:
+                vals = sorted(catalogue[actual].dropna().unique().tolist())
+                return [{"label": v, "value": v} for v in vals]
+            return []
+
+        cluster_opts, default_cluster = [], None
+        if session and session.config:
+            attrs = session.cluster_attributes
+            for cid in session.config.cluster_ids:
+                if attrs and cid in attrs:
+                    parts = [f"{k}={v}" for k, v in attrs[cid].items() if v is not None]
+                    label = f"{cid}  ({', '.join(parts)})" if parts else cid
+                else:
+                    label = cid
+                cluster_opts.append({"label": label, "value": cid})
+            default_cluster = session.config.cluster_ids[0] if session.config.cluster_ids else None
+
+        return _opts("desk"), _opts("product_type"), _opts("ccy"), cluster_opts, default_cluster
 
     # ── Portfolio sub-tab ─────────────────────────────────────────
     @app.callback(
@@ -209,17 +270,6 @@ def register(app):
 
     # ── By Desk ───────────────────────────────────────────────────
     @app.callback(
-        Output("eval-desk-filter-bar", "children"),
-        Input("eval-sub-tabs", "value"),
-    )
-    def render_desk_filter(sub_tab):
-        if sub_tab != EVAL_SUB_DESK:
-            return no_update
-        from src.ui.apps.ensemble_analytics.data.trade_catalogue import get_trade_catalogue
-        cat = get_trade_catalogue()
-        return filter_bar(cat, "eval-desk", columns=["desk"], catalogue_columns=EVAL_GROUP_COLUMNS)
-
-    @app.callback(
         Output("eval-desk-timeseries", "children"),
         Output("eval-desk-boxplot", "children"),
         Output("eval-desk-scatter-grid", "children"),
@@ -235,17 +285,6 @@ def register(app):
 
     # ── By Product ────────────────────────────────────────────────
     @app.callback(
-        Output("eval-product-filter-bar", "children"),
-        Input("eval-sub-tabs", "value"),
-    )
-    def render_product_filter(sub_tab):
-        if sub_tab != EVAL_SUB_PRODUCT:
-            return no_update
-        from src.ui.apps.ensemble_analytics.data.trade_catalogue import get_trade_catalogue
-        cat = get_trade_catalogue()
-        return filter_bar(cat, "eval-product", columns=["product_type"], catalogue_columns=EVAL_GROUP_COLUMNS)
-
-    @app.callback(
         Output("eval-product-timeseries", "children"),
         Output("eval-product-boxplot", "children"),
         Output("eval-product-scatter-grid", "children"),
@@ -260,17 +299,6 @@ def register(app):
         return _build_group_view(split, EVAL_GROUP_COLUMNS.get("product_type", "product_type"), selected_products, "eval-product")
 
     # ── By CCY ────────────────────────────────────────────────────
-    @app.callback(
-        Output("eval-ccy-filter-bar", "children"),
-        Input("eval-sub-tabs", "value"),
-    )
-    def render_ccy_filter(sub_tab):
-        if sub_tab != EVAL_SUB_CCY:
-            return no_update
-        from src.ui.apps.ensemble_analytics.data.trade_catalogue import get_trade_catalogue
-        cat = get_trade_catalogue()
-        return filter_bar(cat, "eval-ccy", columns=["ccy"], catalogue_columns=EVAL_GROUP_COLUMNS)
-
     @app.callback(
         Output("eval-ccy-timeseries", "children"),
         Output("eval-ccy-boxplot", "children"),
@@ -331,21 +359,6 @@ def register(app):
         return ts_fig, box_fig, scatter_grid, corr_fig, table
 
     # ── By Cluster ────────────────────────────────────────────────
-    @app.callback(
-        Output("eval-cluster-selector-container", "children"),
-        Input("eval-sub-tabs", "value"),
-    )
-    def render_cluster_selector(sub_tab):
-        if sub_tab != EVAL_SUB_CLUSTER:
-            return no_update
-        from src.ui.apps.ensemble_analytics.data.session_manager import get_session
-        session = get_session()
-        return cluster_selector(
-            session.config.cluster_ids,
-            session.cluster_attributes,
-            id_prefix="eval-cluster",
-        )
-
     @app.callback(
         Output("eval-cluster-heatmap", "children"),
         Output("eval-cluster-scatter", "children"),

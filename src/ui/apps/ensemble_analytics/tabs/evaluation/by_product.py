@@ -5,7 +5,7 @@ Same pattern as By Desk, grouped by ``product_type`` / ``product_subtype``.
 """
 from __future__ import annotations
 
-from dash import dcc, html
+from dash import html
 import dash_bootstrap_components as dbc
 
 from src.ui.apps.ensemble_analytics.theme.styles import CARD_STYLE, SECTION_TITLE_STYLE
@@ -14,10 +14,6 @@ from src.ui.apps.ensemble_analytics.theme.styles import CARD_STYLE, SECTION_TITL
 def layout() -> html.Div:
     """Build the By Product sub-tab skeleton."""
     return html.Div([
-        html.Div(
-            dcc.Dropdown(id="eval-product-filter-product_type", multi=True, style={"display": "none"}),
-            id="eval-product-filter-bar",
-        ),
         dbc.Row([
             dbc.Col(html.Div(id="eval-product-timeseries", style=CARD_STYLE), md=6),
             dbc.Col(html.Div(id="eval-product-boxplot", style=CARD_STYLE), md=6),

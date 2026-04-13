@@ -6,7 +6,7 @@ cross-currency residual correlation heatmap.
 """
 from __future__ import annotations
 
-from dash import dcc, html
+from dash import html
 import dash_bootstrap_components as dbc
 
 from src.ui.apps.ensemble_analytics.theme.styles import CARD_STYLE, SECTION_TITLE_STYLE
@@ -15,10 +15,6 @@ from src.ui.apps.ensemble_analytics.theme.styles import CARD_STYLE, SECTION_TITL
 def layout() -> html.Div:
     """Build the By CCY sub-tab skeleton."""
     return html.Div([
-        html.Div(
-            dcc.Dropdown(id="eval-ccy-filter-ccy", multi=True, style={"display": "none"}),
-            id="eval-ccy-filter-bar",
-        ),
         dbc.Row([
             dbc.Col(html.Div(id="eval-ccy-timeseries", style=CARD_STYLE), md=6),
             dbc.Col(html.Div(id="eval-ccy-boxplot", style=CARD_STYLE), md=6),

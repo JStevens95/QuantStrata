@@ -6,7 +6,7 @@ time-series, residual box plots, and a metrics table.
 """
 from __future__ import annotations
 
-from dash import dcc, html
+from dash import html
 import dash_bootstrap_components as dbc
 
 from src.ui.apps.ensemble_analytics.theme.styles import CARD_STYLE, SECTION_TITLE_STYLE
@@ -15,10 +15,6 @@ from src.ui.apps.ensemble_analytics.theme.styles import CARD_STYLE, SECTION_TITL
 def layout() -> html.Div:
     """Build the By Desk sub-tab skeleton."""
     return html.Div([
-        html.Div(
-            dcc.Dropdown(id="eval-desk-filter-desk", multi=True, style={"display": "none"}),
-            id="eval-desk-filter-bar",
-        ),
         dbc.Row([
             dbc.Col(html.Div(id="eval-desk-timeseries", style=CARD_STYLE), md=6),
             dbc.Col(html.Div(id="eval-desk-boxplot", style=CARD_STYLE), md=6),
