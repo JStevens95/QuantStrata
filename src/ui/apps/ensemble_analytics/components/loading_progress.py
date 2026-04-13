@@ -50,5 +50,5 @@ def loading_progress(
                 style={"height": "8px"},
             ),
         ],
-        id=f"{id_prefix}-progress-container",
+        id=f"{id_prefix}-progress-inner",
     )

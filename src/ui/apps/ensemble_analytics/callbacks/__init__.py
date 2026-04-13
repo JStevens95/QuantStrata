@@ -73,8 +73,7 @@ def register_all_callbacks(app: dash.Dash) -> None:
         from src.ui.apps.ensemble_analytics.data.trade_catalogue import invalidate
         reload(version)
         invalidate()
-        from src.ui.apps.ensemble_analytics.tabs.overview import layout
-        return layout()
+        return render_tab(TAB_OVERVIEW)
 
     # ── Per-tab callbacks ─────────────────────────────────────────
     from src.ui.apps.ensemble_analytics.callbacks.overview_cb import register as reg_overview

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 def register(app):
     """Register Governance tab callbacks on *app*."""
-    from dash import Input, Output, State, dcc, html, no_update
+    from dash import Input, Output, dcc, html, no_update
 
     @app.callback(
         Output("governance-compare-version", "options"),
@@ -24,7 +24,16 @@ def register(app):
         session = get_session()
         try:
             versions = session._ens_registry.list_versions()
-            return [{"label": v, "value": v} for v in versions]
+            opts = []
+            for v in versions:
+                if isinstance(v, dict):
+                    ver = v.get("version", str(v))
+                    n = v.get("n_members", "?")
+                    t = v.get("n_trades", "?")
+                    opts.append({"label": f"{ver} ({n} clusters, {t} trades)", "value": ver})
+                else:
+                    opts.append({"label": str(v), "value": str(v)})
+            return opts
         except Exception:
             return []
 

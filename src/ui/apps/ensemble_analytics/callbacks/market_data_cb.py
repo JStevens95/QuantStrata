@@ -15,31 +15,69 @@ from src.ui.apps.ensemble_analytics.config import (
     MD_SUB_SCENARIO_HEATMAP,
     MD_SUB_DISTRIBUTION,
 )
-from src.ui.apps.ensemble_analytics.components.cluster_selector import cluster_selector
 from src.ui.apps.ensemble_analytics.components.metric_table import metric_table
 from src.ui.apps.ensemble_analytics.figures.heatmaps import rf_scenario_heatmap
 from src.ui.apps.ensemble_analytics.figures.distributions import violin_overlay, qq_plot
-from src.ui.apps.ensemble_analytics.theme.colors import TEXT_SECONDARY
 
 
 def register(app):
     """Register Market Data tab callbacks on *app*."""
 
-    # ── Cluster selector ──────────────────────────────────────────
+    # ── Persistent control population ────────────────────────────
     @app.callback(
-        Output("md-cluster-selector-container", "children"),
+        Output("md-cluster-dropdown", "options"),
+        Output("md-cluster-dropdown", "value"),
         Input("main-tabs", "value"),
     )
-    def render_md_cluster_selector(tab):
+    def populate_md_cluster(tab):
         if tab != "tab-market-data":
-            return no_update
+            return no_update, no_update
         from src.ui.apps.ensemble_analytics.data.session_manager import get_session
         session = get_session()
-        return cluster_selector(
-            session.config.cluster_ids,
-            session.cluster_attributes,
-            id_prefix="md",
-        )
+        attrs = session.cluster_attributes
+        opts = []
+        for cid in session.config.cluster_ids:
+            if attrs and cid in attrs:
+                parts = [f"{k}={v}" for k, v in attrs[cid].items() if v is not None]
+                label = f"{cid}  ({', '.join(parts)})" if parts else cid
+            else:
+                label = cid
+            opts.append({"label": label, "value": cid})
+        default = session.config.cluster_ids[0] if session.config.cluster_ids else None
+        return opts, default
+
+    _ROW_VISIBLE = {"display": "flex", "alignItems": "center", "marginRight": "20px"}
+    _HIDDEN = {"display": "none"}
+
+    @app.callback(
+        Output("md-shock-asset-wrapper", "style"),
+        Output("md-shock-rf-wrapper", "style"),
+        Input("md-sub-tabs", "value"),
+    )
+    def toggle_md_shock_controls(sub_tab):
+        show = sub_tab == MD_SUB_SHOCK_EXPLORER
+        s = _ROW_VISIBLE if show else _HIDDEN
+        return s, s
+
+    @app.callback(
+        Output("md-shock-asset-dd", "options"),
+        Output("md-shock-asset-dd", "value"),
+        Output("md-shock-rf-dd", "options"),
+        Output("md-shock-rf-dd", "value"),
+        Input("md-cluster-dropdown", "value"),
+        Input("md-sub-tabs", "value"),
+    )
+    def populate_md_shock_selectors(cluster_id, sub_tab):
+        if sub_tab != MD_SUB_SHOCK_EXPLORER or not cluster_id:
+            return no_update, no_update, no_update, no_update
+        from src.ui.apps.ensemble_analytics.data.market_data_loader import get_market_data
+        mdata = get_market_data(cluster_id)
+        asset_names = sorted(mdata.keys())
+        all_rfs = sorted({rf for rfs in mdata.values() for rf in rfs})
+        a_opts = [{"label": a, "value": a} for a in asset_names]
+        r_opts = [{"label": r, "value": r} for r in all_rfs]
+        return (a_opts, asset_names[0] if asset_names else None,
+                r_opts, all_rfs[0] if all_rfs else None)
 
     # ── Sub-tab routing ───────────────────────────────────────────
     @app.callback(
@@ -119,44 +157,6 @@ def register(app):
         return table, heatmap
 
     # ── Shock Explorer ────────────────────────────────────────────
-    @app.callback(
-        Output("md-shock-asset-selector", "children"),
-        Output("md-shock-rf-selector", "children"),
-        Input("md-cluster-dropdown", "value"),
-        Input("md-sub-tabs", "value"),
-    )
-    def render_shock_selectors(cluster_id, sub_tab):
-        if sub_tab != MD_SUB_SHOCK_EXPLORER or not cluster_id:
-            return no_update, no_update
-
-        from src.ui.apps.ensemble_analytics.data.market_data_loader import get_market_data
-
-        mdata = get_market_data(cluster_id)
-        asset_names = sorted(mdata.keys())
-        all_rfs = sorted({rf for rfs in mdata.values() for rf in rfs})
-
-        asset_dd = html.Div([
-            html.Label("Asset:", style={"color": TEXT_SECONDARY, "fontSize": "12px", "marginRight": "6px"}),
-            dcc.Dropdown(
-                id="md-shock-asset-dd",
-                options=[{"label": a, "value": a} for a in asset_names],
-                value=asset_names[0] if asset_names else None,
-                clearable=False, style={"width": "300px", "fontSize": "13px"},
-            ),
-        ], style={"display": "flex", "alignItems": "center", "marginBottom": "8px"})
-
-        rf_dd = html.Div([
-            html.Label("RF:", style={"color": TEXT_SECONDARY, "fontSize": "12px", "marginRight": "6px"}),
-            dcc.Dropdown(
-                id="md-shock-rf-dd",
-                options=[{"label": r, "value": r} for r in all_rfs],
-                value=all_rfs[0] if all_rfs else None,
-                clearable=False, style={"width": "300px", "fontSize": "13px"},
-            ),
-        ], style={"display": "flex", "alignItems": "center", "marginBottom": "16px"})
-
-        return asset_dd, rf_dd
-
     @app.callback(
         Output("md-shock-timeseries", "children"),
         Output("md-shock-distribution", "children"),

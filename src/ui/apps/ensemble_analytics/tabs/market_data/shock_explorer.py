@@ -15,8 +15,6 @@ from src.ui.apps.ensemble_analytics.theme.styles import CARD_STYLE
 def layout() -> html.Div:
     """Build the Shock Explorer sub-tab skeleton."""
     return html.Div([
-        html.Div(id="md-shock-asset-selector"),
-        html.Div(id="md-shock-rf-selector"),
         dbc.Row([
             dbc.Col(html.Div(id="md-shock-timeseries", style=CARD_STYLE), md=6),
             dbc.Col(html.Div(id="md-shock-distribution", style=CARD_STYLE), md=6),

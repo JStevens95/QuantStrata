@@ -10,31 +10,36 @@ import numpy as np
 from dash import Input, Output, dcc, html, no_update
 
 from src.ui.apps.ensemble_analytics.config import METRIC_DISPLAY_NAMES
-from src.ui.apps.ensemble_analytics.components.cluster_selector import cluster_selector
 from src.ui.apps.ensemble_analytics.components.metric_table import metric_table
 from src.ui.apps.ensemble_analytics.figures.scatter import pred_vs_target_scatter
 from src.ui.apps.ensemble_analytics.figures.distributions import residual_histogram
 from src.ui.apps.ensemble_analytics.theme.colors import TEXT_SECONDARY
-from src.ui.apps.ensemble_analytics.theme.styles import CARD_HEADER_STYLE
 
 
 def register(app):
     """Register Cluster Deep Dive callbacks on *app*."""
 
     @app.callback(
-        Output("deep-dive-cluster-selector", "children"),
+        Output("deep-dive-cluster-dropdown", "options"),
+        Output("deep-dive-cluster-dropdown", "value"),
         Input("main-tabs", "value"),
     )
-    def render_selector(tab):
+    def populate_dd_cluster(tab):
         if tab != "tab-cluster-deep-dive":
-            return no_update
+            return no_update, no_update
         from src.ui.apps.ensemble_analytics.data.session_manager import get_session
         session = get_session()
-        return cluster_selector(
-            session.config.cluster_ids,
-            session.cluster_attributes,
-            id_prefix="deep-dive",
-        )
+        attrs = session.cluster_attributes
+        opts = []
+        for cid in session.config.cluster_ids:
+            if attrs and cid in attrs:
+                parts = [f"{k}={v}" for k, v in attrs[cid].items() if v is not None]
+                label = f"{cid}  ({', '.join(parts)})" if parts else cid
+            else:
+                label = cid
+            opts.append({"label": label, "value": cid})
+        default = session.config.cluster_ids[0] if session.config.cluster_ids else None
+        return opts, default
 
     @app.callback(
         Output("deep-dive-header", "children"),

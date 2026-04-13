@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import numpy as np
 from dash import Input, Output, dcc, html, no_update
-import dash_bootstrap_components as dbc
 import dash_cytoscape as cyto
 
 from src.ui.apps.ensemble_analytics.config import (
@@ -17,7 +16,6 @@ from src.ui.apps.ensemble_analytics.config import (
     TG_SUB_NODE_ANALYTICS,
     TG_SUB_CROSS_CLUSTER,
 )
-from src.ui.apps.ensemble_analytics.components.cluster_selector import cluster_selector
 from src.ui.apps.ensemble_analytics.components.metric_table import metric_table
 from src.ui.apps.ensemble_analytics.figures.network import build_cytoscape_elements
 from src.ui.apps.ensemble_analytics.figures.heatmaps import adjacency_spy
@@ -27,20 +25,42 @@ from src.ui.apps.ensemble_analytics.theme.colors import ACCENT_BLUE, BG_CARD, TE
 def register(app):
     """Register Trade Graph tab callbacks on *app*."""
 
-    # ── Cluster selector ──────────────────────────────────────────
+    # ── Persistent control population ────────────────────────────
     @app.callback(
-        Output("tg-cluster-selector-container", "children"),
+        Output("tg-cluster-dropdown", "options"),
+        Output("tg-cluster-dropdown", "value"),
         Input("main-tabs", "value"),
     )
-    def render_tg_selector(tab):
+    def populate_tg_cluster(tab):
         if tab != "tab-trade-graph":
-            return no_update
+            return no_update, no_update
         from src.ui.apps.ensemble_analytics.data.session_manager import get_session
         session = get_session()
-        return cluster_selector(
-            session.config.cluster_ids,
-            session.cluster_attributes,
-            id_prefix="tg",
+        attrs = session.cluster_attributes
+        opts = []
+        for cid in session.config.cluster_ids:
+            if attrs and cid in attrs:
+                parts = [f"{k}={v}" for k, v in attrs[cid].items() if v is not None]
+                label = f"{cid}  ({', '.join(parts)})" if parts else cid
+            else:
+                label = cid
+            opts.append({"label": label, "value": cid})
+        default = session.config.cluster_ids[0] if session.config.cluster_ids else None
+        return opts, default
+
+    _ROW_VISIBLE = {"display": "flex", "alignItems": "center", "marginRight": "20px"}
+    _HIDDEN = {"display": "none"}
+
+    @app.callback(
+        Output("tg-graph-controls-layout", "style"),
+        Output("tg-graph-controls-threshold", "style"),
+        Input("tg-sub-tabs", "value"),
+    )
+    def toggle_tg_graph_controls(sub_tab):
+        show = sub_tab == TG_SUB_GRAPH_VIEW
+        return (
+            _ROW_VISIBLE if show else _HIDDEN,
+            {"width": "300px"} if show else _HIDDEN,
         )
 
     # ── Sub-tab routing ───────────────────────────────────────────
