@@ -44,7 +44,7 @@ PLOTLY_TEMPLATE = go.layout.Template(
             font=dict(color=TEXT_SECONDARY, size=11),
         ),
         colorway=CHART_COLORS,
-        margin=dict(l=50, r=20, t=40, b=40),
+        margin=dict(l=50, r=20, t=60, b=40),
     ),
     data=_base.data,
 )

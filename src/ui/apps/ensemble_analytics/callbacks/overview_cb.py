@@ -74,17 +74,30 @@ def register(app):
         # ── Member comparison bar ─────────────────────────────────
         pm_metrics = ens_display.per_member_metrics.get(split, {})
         cluster_ids = session.config.cluster_ids
+        cluster_attrs = session.cluster_attributes
         mae_by_cluster = {
             cid: pm_metrics.get(cid, {}).get("mae", 0.0)
             for cid in cluster_ids
         }
-        bar_fig = dcc.Graph(
-            figure=member_comparison_bar(
-                cluster_ids, mae_by_cluster,
-                metric_name="MAE",
-                title=f"MAE by Cluster — {split.capitalize()}",
+        hover_text = {}
+        for cid in cluster_ids:
+            ca = cluster_attrs.get(cid, {}) if cluster_attrs else {}
+            if ca:
+                hover_text[cid] = ", ".join(f"{k}={v}" for k, v in ca.items() if v is not None)
+            else:
+                hover_text[cid] = ""
+
+        bar_fig = html.Div(
+            dcc.Graph(
+                figure=member_comparison_bar(
+                    cluster_ids, mae_by_cluster,
+                    metric_name="MAE",
+                    title=f"MAE by Cluster — {split.capitalize()}",
+                    hover_text=hover_text,
+                ),
+                config={"displayModeBar": False},
             ),
-            config={"displayModeBar": False},
+            style={"maxHeight": "450px", "overflowY": "auto"},
         )
 
         # ── Multi-metric cluster heatmap (G3) ─────────────────────

@@ -81,7 +81,11 @@ def layout() -> html.Div:
     )
 
     # ── Config inspector (collapsible JSON tree) ──────────────────
-    config_json = json.dumps(config.to_dict(), indent=2, default=str)
+    summary = {
+        k: v for k, v in config.to_dict().items()
+        if k not in ("metadata", "member_configs")
+    }
+    config_json = json.dumps(summary, indent=2, default=str)
     config_card = html.Div(
         [
             html.Div("Configuration", style=CARD_HEADER_STYLE),

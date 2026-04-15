@@ -41,6 +41,7 @@ def pred_vs_target_scatter(
         idx = np.random.default_rng(42).choice(len(predictions), max_points, replace=False)
         predictions, targets = predictions[idx], targets[idx]
 
+    residuals = predictions - targets
     vmin = min(predictions.min(), targets.min())
     vmax = max(predictions.max(), targets.max())
 
@@ -51,6 +52,13 @@ def pred_vs_target_scatter(
         mode="markers",
         marker=dict(size=3, color=ACCENT_BLUE, opacity=0.5),
         name="Predicted",
+        customdata=residuals,
+        hovertemplate=(
+            "Target: %{x:.4f}<br>"
+            "Prediction: %{y:.4f}<br>"
+            "Residual: %{customdata:.4f}"
+            "<extra></extra>"
+        ),
     ))
     fig.add_trace(go.Scattergl(
         x=[vmin, vmax],

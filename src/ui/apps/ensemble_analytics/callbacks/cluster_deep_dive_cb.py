@@ -7,11 +7,12 @@ when the cluster or split changes.
 from __future__ import annotations
 
 import numpy as np
-from dash import Input, Output, dcc, html, no_update
+from dash import Input, Output, State, dcc, html, no_update
 
 from src.ui.apps.ensemble_analytics.config import METRIC_DISPLAY_NAMES
 from src.ui.apps.ensemble_analytics.components.metric_table import metric_table
 from src.ui.apps.ensemble_analytics.figures.scatter import pred_vs_target_scatter
+from src.ui.apps.ensemble_analytics.figures.timeseries import pnl_timeseries
 from src.ui.apps.ensemble_analytics.figures.distributions import residual_histogram
 from src.ui.apps.ensemble_analytics.theme.colors import TEXT_SECONDARY
 
@@ -41,30 +42,33 @@ def register(app):
         default = session.config.cluster_ids[0] if session.config.cluster_ids else None
         return opts, default
 
+    # ── Main content callback ─────────────────────────────────────
     @app.callback(
         Output("deep-dive-header", "children"),
         Output("deep-dive-split-table", "children"),
         Output("deep-dive-convergence", "children"),
         Output("deep-dive-scatter", "children"),
+        Output("deep-dive-timeseries", "children"),
         Output("deep-dive-residual", "children"),
-        Output("deep-dive-scatter-matrix", "children"),
+        Output("deep-dive-trade-dropdown", "options"),
+        Output("deep-dive-trade-dropdown", "value"),
         Output("deep-dive-elementary", "children"),
+        Output("deep-dive-model-config", "children"),
         Output("deep-dive-config", "children"),
         Input("deep-dive-cluster-dropdown", "value"),
         Input("deep-dive-split-toggle", "value"),
     )
     def update_deep_dive(cluster_id, split):
-        n_out = 8
+        n_out = 11
         if not cluster_id:
             return (no_update,) * n_out
 
-        import plotly.graph_objects as go
-        from plotly.subplots import make_subplots
+        import json as _json
+        from pathlib import Path
+        import base64
         from src.ui.apps.ensemble_analytics.data.session_manager import get_session
         from src.ui.apps.ensemble_analytics.data.prediction_store import get_prediction_store
         from src.ui.apps.ensemble_analytics.data.trade_catalogue import get_trade_catalogue
-        from src.ui.apps.ensemble_analytics.theme.colors import ACCENT_BLUE, ACCENT_AMBER, CHART_COLORS
-        from src.ui.apps.ensemble_analytics.figures.bar_charts import grouped_split_bar
 
         session = get_session()
         display = session.load_cluster_display(cluster_id)
@@ -72,7 +76,7 @@ def register(app):
         tu = display.trade_universe
         dc = display.eval_metrics.get("data_config", {})
 
-        # ── Header card (G8-enriched) ────────────────────────────
+        # ── Header ────────────────────────────────────────────────
         attr_str = ", ".join(f"{k}={v}" for k, v in attrs.items() if v)
         n_elem = len(tu.get("elementary_ids", []))
         n_target = len(tu.get("target_ids", session.config.cluster_mapping.get(cluster_id, [])))
@@ -88,7 +92,7 @@ def register(app):
             ),
         ])
 
-        # ── Split comparison table + grouped bar ─────────────────
+        # ── Split comparison table ────────────────────────────────
         ens_display = session.ensemble_display
         split_rows = []
         if ens_display:
@@ -110,42 +114,50 @@ def register(app):
                     })
         split_table = metric_table(split_col_defs, split_rows, "deep-dive-split-comp-table", height="180px")
 
-        # ── Training convergence (G8): load from saved plot PNGs ─
+        # ── Training convergence PNG ──────────────────────────────
         convergence_content = html.Div("No convergence plot available.", style={"color": TEXT_SECONDARY})
-        for plot_key, path_str in display.plot_paths.items():
-            if "loss" in plot_key.lower() or "convergence" in plot_key.lower():
-                from pathlib import Path
-                if Path(path_str).exists():
-                    import base64
-                    with open(path_str, "rb") as f:
-                        encoded = base64.b64encode(f.read()).decode()
-                    convergence_content = html.Img(
-                        src=f"data:image/png;base64,{encoded}",
-                        style={"width": "100%", "maxHeight": "400px", "objectFit": "contain"},
-                    )
-                break
+        if session.artifacts_dir:
+            plot_path = Path(session.artifacts_dir) / "training" / display.version / "training_plots.png"
+            if plot_path.exists():
+                with open(plot_path, "rb") as f:
+                    encoded = base64.b64encode(f.read()).decode()
+                convergence_content = html.Img(
+                    src=f"data:image/png;base64,{encoded}",
+                    style={"width": "100%", "maxHeight": "400px", "objectFit": "contain"},
+                )
 
-        # ── Scatter + residual ───────────────────────────────────
+        # ── Predictions: scatter, timeseries, residual ────────────
         store = get_prediction_store(split)
         catalogue = get_trade_catalogue()
         scatter_content = html.Div("No predictions available.")
+        ts_content = html.Div("No predictions available.")
         residual_content = html.Div("No predictions available.")
-        scatter_matrix_content = html.Div("No predictions available.")
+        trade_opts = []
+        trade_default = []
         elementary_content = html.Div("Elementary PnL data not available.", style={"color": TEXT_SECONDARY})
 
-        if store is not None and not catalogue.empty:
-            mask = catalogue["cluster_id"] == cluster_id
+        if store is not None and catalogue is not None and not catalogue.empty:
+            mask = catalogue["cluster_id"] == str(cluster_id)
             col_idx = np.where(mask.values)[0]
+
             if len(col_idx) > 0:
                 preds = store.predictions[:, col_idx]
                 targets = store.targets[:, col_idx]
-                trade_ids = [store.trade_ids[i] for i in col_idx]
+                if preds.ndim == 1:
+                    preds = preds.reshape(-1, 1)
+                    targets = targets.reshape(-1, 1)
+                trade_ids = [str(store.trade_ids[int(i)]) for i in col_idx]
                 cluster_pred = preds.sum(axis=1)
                 cluster_target = targets.sum(axis=1)
 
                 scatter_content = dcc.Graph(
                     figure=pred_vs_target_scatter(cluster_pred, cluster_target,
-                                                  title=f"{cluster_id} — {split.capitalize()}"),
+                                                  title=f"Pred vs Target — {split.capitalize()}"),
+                    config={"displayModeBar": False},
+                )
+                ts_content = dcc.Graph(
+                    figure=pnl_timeseries(cluster_pred, cluster_target,
+                                          title=f"PnL Timeseries — {split.capitalize()}"),
                     config={"displayModeBar": False},
                 )
                 residual_content = dcc.Graph(
@@ -154,35 +166,119 @@ def register(app):
                     config={"displayModeBar": False},
                 )
 
-                # Per-Trade Scatter Matrix (G9): up to 6 trades
-                n_show = min(6, len(trade_ids))
-                if n_show > 0:
-                    ncols = min(n_show, 3)
-                    nrows = (n_show + ncols - 1) // ncols
-                    fig = make_subplots(rows=nrows, cols=ncols,
-                                        subplot_titles=trade_ids[:n_show])
-                    for j in range(n_show):
-                        r, c = j // ncols + 1, j % ncols + 1
-                        fig.add_trace(go.Scattergl(
-                            x=targets[:, j], y=preds[:, j], mode="markers",
-                            marker=dict(size=2, color=CHART_COLORS[j % len(CHART_COLORS)], opacity=0.5),
-                            showlegend=False,
-                        ), row=r, col=c)
-                    fig.update_layout(height=280 * nrows, title="Per-Trade Scatter (first 6)")
-                    scatter_matrix_content = dcc.Graph(figure=fig, config={"displayModeBar": False})
+                trade_opts = [{"label": tid, "value": tid} for tid in trade_ids]
+                trade_default = trade_ids[:6]
 
-        # ── Data config summary as structured table (G11) ────────
-        if dc:
-            config_rows = [{"parameter": k, "value": str(v)} for k, v in dc.items()]
-            config_col_defs = [
-                {"field": "parameter", "headerName": "Parameter"},
-                {"field": "value", "headerName": "Value"},
-            ]
-            config_content = metric_table(config_col_defs, config_rows,
-                                          "deep-dive-config-table", height="300px")
+        # ── Model configuration (collapsible JSON, closed) ────────
+        member_cfg = session.config.member_configs.get(cluster_id, {})
+        if member_cfg:
+            filtered = {
+                k: v for k, v in member_cfg.items()
+                if k not in ("metadata", "data_config")
+            }
+            cfg_json = _json.dumps(filtered, indent=2, default=str)
+            model_config_content = html.Details([
+                html.Summary(
+                    "Expand Model / Training Config",
+                    style={"cursor": "pointer", "color": TEXT_SECONDARY, "fontSize": "13px"},
+                ),
+                dcc.Markdown(
+                    f"```json\n{cfg_json}\n```",
+                    style={"fontSize": "12px", "maxHeight": "500px", "overflow": "auto"},
+                ),
+            ])
         else:
-            config_content = html.Div("No data config available.", style={"color": TEXT_SECONDARY})
+            model_config_content = html.Div("No member config available.", style={"color": TEXT_SECONDARY})
+
+        # ── Data configuration (collapsible JSON, closed) ─────────
+        if dc:
+            dc_json = _json.dumps(dc, indent=2, default=str)
+            data_config_content = html.Details([
+                html.Summary(
+                    "Expand Data Config",
+                    style={"cursor": "pointer", "color": TEXT_SECONDARY, "fontSize": "13px"},
+                ),
+                dcc.Markdown(
+                    f"```json\n{dc_json}\n```",
+                    style={"fontSize": "12px", "maxHeight": "500px", "overflow": "auto"},
+                ),
+            ])
+        else:
+            data_config_content = html.Div("No data config available.", style={"color": TEXT_SECONDARY})
 
         return (header, split_table, convergence_content, scatter_content,
-                residual_content, scatter_matrix_content, elementary_content,
-                config_content)
+                ts_content, residual_content,
+                trade_opts, trade_default,
+                elementary_content, model_config_content, data_config_content)
+
+    # ── Per-trade scatter (driven by trade dropdown) ──────────────
+    @app.callback(
+        Output("deep-dive-scatter-matrix", "children"),
+        Input("deep-dive-trade-dropdown", "value"),
+        State("deep-dive-cluster-dropdown", "value"),
+        State("deep-dive-split-toggle", "value"),
+    )
+    def update_trade_scatter(selected_trades, cluster_id, split):
+        if not selected_trades or not cluster_id:
+            return html.Div("Select trades above.", style={"color": TEXT_SECONDARY})
+
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+        from src.ui.apps.ensemble_analytics.data.prediction_store import get_prediction_store
+        from src.ui.apps.ensemble_analytics.data.trade_catalogue import get_trade_catalogue
+        from src.ui.apps.ensemble_analytics.theme.colors import CHART_COLORS, TEXT_SECONDARY as TS
+
+        store = get_prediction_store(split)
+        catalogue = get_trade_catalogue()
+        if store is None or catalogue is None or catalogue.empty:
+            return html.Div("No prediction data.")
+
+        mask = catalogue["cluster_id"] == str(cluster_id)
+        col_idx = np.where(mask.values)[0]
+        if len(col_idx) == 0:
+            return html.Div("No trades found.")
+
+        preds = store.predictions[:, col_idx]
+        targets = store.targets[:, col_idx]
+        if preds.ndim == 1:
+            preds = preds.reshape(-1, 1)
+            targets = targets.reshape(-1, 1)
+        trade_ids = [str(store.trade_ids[int(i)]) for i in col_idx]
+
+        show = [t for t in selected_trades if t in trade_ids][:6]
+        if not show:
+            return html.Div("Selected trades not found in this cluster.")
+
+        n_show = len(show)
+        ncols = min(n_show, 3)
+        nrows = (n_show + ncols - 1) // ncols
+        titles = [t[:20] + "…" if len(t) > 20 else t for t in show]
+        fig = make_subplots(
+            rows=nrows, cols=ncols,
+            subplot_titles=titles,
+            vertical_spacing=0.15,
+            horizontal_spacing=0.10,
+        )
+        for j, tid in enumerate(show):
+            idx = trade_ids.index(tid)
+            r, c = j // ncols + 1, j % ncols + 1
+            t = targets[:, idx]
+            p = preds[:, idx]
+            residuals = p - t
+            fig.add_trace(go.Scattergl(
+                x=t, y=p, mode="markers",
+                marker=dict(size=3, color=CHART_COLORS[j % len(CHART_COLORS)], opacity=0.5),
+                customdata=residuals,
+                hovertemplate="Target: %{x:.4f}<br>Pred: %{y:.4f}<br>Residual: %{customdata:.4f}<extra></extra>",
+                showlegend=False,
+            ), row=r, col=c)
+            vmin, vmax = min(t.min(), p.min()), max(t.max(), p.max())
+            fig.add_trace(go.Scattergl(
+                x=[vmin, vmax], y=[vmin, vmax], mode="lines",
+                line=dict(color=TS, dash="dash", width=1),
+                showlegend=False,
+            ), row=r, col=c)
+
+        fig.update_layout(height=300 * nrows, title="Per-Trade Pred vs Target")
+        fig.update_annotations(font_size=11)
+        return dcc.Graph(figure=fig, config={"displayModeBar": False})

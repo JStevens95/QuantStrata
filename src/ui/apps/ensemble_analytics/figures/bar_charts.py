@@ -15,6 +15,7 @@ def member_comparison_bar(
     metric_values: Dict[str, float],
     metric_name: str = "MAE",
     title: str = "Member Comparison",
+    hover_text: Optional[Dict[str, str]] = None,
 ) -> go.Figure:
     """
     Horizontal bar chart comparing one metric across cluster members.
@@ -29,21 +30,34 @@ def member_comparison_bar(
         Metric display name.
     title : str
         Figure title.
+    hover_text : dict, optional
+        ``{cluster_id: description}`` shown on hover.
 
     Returns
     -------
     go.Figure
     """
     values = [metric_values.get(cid, 0.0) for cid in cluster_ids]
+    custom = [hover_text.get(cid, "") for cid in cluster_ids] if hover_text else None
 
-    fig = go.Figure(go.Bar(
+    bar_kwargs: dict = dict(
         x=values,
         y=cluster_ids,
         orientation="h",
         marker_color=ACCENT_BLUE,
         text=[f"{v:.4f}" for v in values],
         textposition="auto",
-    ))
+    )
+    if custom:
+        bar_kwargs["customdata"] = custom
+        bar_kwargs["hovertemplate"] = (
+            "<b>%{y}</b><br>"
+            + f"{metric_name}: " + "%{x:.4f}<br>"
+            + "%{customdata}"
+            + "<extra></extra>"
+        )
+
+    fig = go.Figure(go.Bar(**bar_kwargs))
     fig.update_layout(
         title=title,
         xaxis_title=metric_name,

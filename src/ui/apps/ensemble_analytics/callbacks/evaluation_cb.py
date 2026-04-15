@@ -239,8 +239,11 @@ def register(app):
             import plotly.graph_objects as go
             ncols = min(n_groups, 4)
             nrows = (n_groups + ncols - 1) // ncols
+            titles = [t[:25] + "..." if len(t) > 25 else t for t in group_preds_dict.keys()]
             fig = make_subplots(rows=nrows, cols=ncols,
-                                subplot_titles=list(group_preds_dict.keys()))
+                                subplot_titles=titles,
+                                vertical_spacing=0.12,
+                                horizontal_spacing=0.08)
             for i, (grp, p) in enumerate(group_preds_dict.items()):
                 t = group_targets_dict[grp]
                 r, c = i // ncols + 1, i % ncols + 1
@@ -360,17 +363,24 @@ def register(app):
 
     # ── By Cluster ────────────────────────────────────────────────
     @app.callback(
-        Output("eval-cluster-heatmap", "children"),
         Output("eval-cluster-scatter", "children"),
+        Output("eval-cluster-timeseries", "children"),
         Output("eval-cluster-violin", "children"),
+        Output("eval-cluster-heatmap", "children"),
         Output("eval-cluster-trade-table", "children"),
         Input("eval-split-toggle", "value"),
         Input("eval-sub-tabs", "value"),
         Input("eval-cluster-cluster-dropdown", "value"),
     )
     def update_by_cluster(split, sub_tab, cluster_id):
-        if sub_tab != EVAL_SUB_CLUSTER or not cluster_id:
-            return no_update, no_update, no_update, no_update
+        _nu5 = (no_update,) * 5
+        if sub_tab != EVAL_SUB_CLUSTER:
+            return _nu5
+
+        if isinstance(cluster_id, list):
+            cluster_id = cluster_id[0] if cluster_id else None
+        if not cluster_id and cluster_id != 0:
+            return _nu5
 
         import plotly.graph_objects as go
         from src.ui.apps.ensemble_analytics.data.prediction_store import get_prediction_store
@@ -378,21 +388,49 @@ def register(app):
 
         store = get_prediction_store(split)
         catalogue = get_trade_catalogue()
-        if store is None:
+        if store is None or catalogue is None or catalogue.empty:
             msg = html.Div("No prediction data.")
-            return msg, msg, msg, msg
+            return msg, msg, msg, msg, msg
 
-        mask = catalogue["cluster_id"] == cluster_id
+        cluster_id_str = str(cluster_id)
+        mask = catalogue["cluster_id"] == cluster_id_str
         col_idx = np.where(mask.values)[0]
         if len(col_idx) == 0:
             msg = html.Div(f"No trades found for cluster {cluster_id}.")
-            return msg, msg, msg, msg
+            return msg, msg, msg, msg, msg
 
         preds = store.predictions[:, col_idx]
         targets = store.targets[:, col_idx]
-        trade_ids = [store.trade_ids[i] for i in col_idx]
+        if preds.ndim == 1:
+            preds = preds.reshape(-1, 1)
+            targets = targets.reshape(-1, 1)
+        trade_ids = [str(store.trade_ids[int(i)]) for i in col_idx]
 
-        # Per-Trade PnL Heatmap (G7): rows=scenarios, cols=trades, colour=residual
+        cluster_pred = preds.sum(axis=1)
+        cluster_target = targets.sum(axis=1)
+
+        scatter = dcc.Graph(
+            figure=pred_vs_target_scatter(
+                cluster_pred, cluster_target,
+                title=f"Pred vs Target — {cluster_id} ({split.capitalize()})",
+            ),
+            config={"displayModeBar": False},
+        )
+
+        ts = dcc.Graph(
+            figure=pnl_timeseries(
+                cluster_pred, cluster_target,
+                title=f"PnL Timeseries — {cluster_id} ({split.capitalize()})",
+            ),
+            config={"displayModeBar": False},
+        )
+
+        trade_residuals = {}
+        for j, tid in enumerate(trade_ids):
+            trade_residuals[tid] = preds[:, j] - targets[:, j]
+        violin_fig = violin_overlay(trade_residuals, title="Per-Trade Residual Distribution")
+        violin = dcc.Graph(figure=violin_fig, config={"displayModeBar": False})
+
         residuals = preds - targets
         max_scenarios = 500
         heatmap_data = residuals[:max_scenarios] if residuals.shape[0] > max_scenarios else residuals
@@ -409,27 +447,6 @@ def register(app):
         )
         heatmap = dcc.Graph(figure=hm_fig, config={"displayModeBar": False})
 
-        # Scatter: sum across trades in this cluster
-        cluster_pred = preds.sum(axis=1)
-        cluster_target = targets.sum(axis=1)
-        scatter = dcc.Graph(
-            figure=pred_vs_target_scatter(
-                cluster_pred, cluster_target,
-                title=f"Cluster {cluster_id} — {split.capitalize()}",
-            ),
-            config={"displayModeBar": False},
-        )
-
-        # Violin: per-trade residuals
-        trade_residuals = {}
-        for j, tid in enumerate(trade_ids):
-            trade_residuals[tid] = preds[:, j] - targets[:, j]
-        violin = dcc.Graph(
-            figure=violin_overlay(trade_residuals, title="Per-Trade Residual Distribution"),
-            config={"displayModeBar": False},
-        )
-
-        # Trade-level metrics table
         col_defs = [
             {"field": "trade_id", "headerName": "Trade ID"},
             {"field": "mae", "headerName": "MAE", "valueFormatter": {"function": "d3.format('.4f')(params.value)"}},
@@ -447,4 +464,4 @@ def register(app):
             })
         table = metric_table(col_defs, rows, "eval-cluster-trade-metrics-table", height="350px")
 
-        return heatmap, scatter, violin, table
+        return scatter, ts, violin, heatmap, table

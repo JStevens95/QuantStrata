@@ -41,16 +41,18 @@ def pnl_timeseries(
     fig.add_trace(go.Scattergl(
         x=x, y=targets, mode="lines",
         name="Target", line=dict(color=ACCENT_GREEN, width=1.5),
+        hovertemplate="Scenario %{x}<br>Target: %{y:.4f}<extra></extra>",
     ))
     fig.add_trace(go.Scattergl(
         x=x, y=predictions, mode="lines",
         name="Prediction", line=dict(color=ACCENT_BLUE, width=1.5),
+        hovertemplate="Scenario %{x}<br>Prediction: %{y:.4f}<extra></extra>",
     ))
     fig.update_layout(
         title=title,
         xaxis_title="Scenario",
         yaxis_title="PnL",
-        height=400,
+        height=450,
         legend=dict(orientation="h", yanchor="bottom", y=1.02),
     )
     return fig

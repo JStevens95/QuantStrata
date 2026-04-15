@@ -58,7 +58,7 @@ def layout() -> html.Div:
             html.Div(
                 [html.Label("Cluster:", style=_label),
                  dcc.Dropdown(id="eval-cluster-cluster-dropdown", clearable=False,
-                              style={**_dd, "width": "400px"})],
+                              style={**_dd, "width": "600px"})],
                 id="eval-filter-cluster", style={**_row, "display": "none"},
             ),
         ],

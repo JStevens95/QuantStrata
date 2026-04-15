@@ -188,6 +188,7 @@ def adjacency_spy(
     else:
         rows, cols = indices[0], indices[1]
 
+    n = shape[0]
     fig = go.Figure(go.Scattergl(
         x=cols,
         y=rows,
@@ -196,8 +197,8 @@ def adjacency_spy(
     ))
     fig.update_layout(
         title=title,
-        xaxis=dict(range=[0, shape[1]], title="Column"),
-        yaxis=dict(range=[shape[0], 0], title="Row", scaleanchor="x"),
+        xaxis=dict(title="Column", range=[0, n], autorange=False),
+        yaxis=dict(title="Row", range=[n, 0], autorange=False),
         height=500,
     )
     return fig

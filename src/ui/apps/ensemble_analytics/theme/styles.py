@@ -63,3 +63,4 @@ SECTION_TITLE_STYLE: dict = {
     "marginBottom": "12px",
     "marginTop": "24px",
 }
+
