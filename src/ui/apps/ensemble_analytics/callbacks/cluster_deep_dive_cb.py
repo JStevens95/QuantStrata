@@ -169,6 +169,63 @@ def register(app):
                 trade_opts = [{"label": tid, "value": tid} for tid in trade_ids]
                 trade_default = trade_ids[:6]
 
+        # ── Elementary PnL Explorer ───────────────────────────────
+        version_dir = Path(session.registry_dir) / display.version
+        elem_pnl_path = version_dir / "elementary_pnl.parquet"
+        if elem_pnl_path.exists():
+            import pandas as pd
+            import plotly.graph_objects as go
+            from src.ui.apps.ensemble_analytics.theme.colors import CHART_COLORS
+
+            elem_df = pd.read_parquet(elem_pnl_path)
+            n_elem = elem_df.shape[1]
+            n_scenarios = elem_df.shape[0]
+
+            stats_row = html.Div(
+                f"{n_elem} elementary trades × {n_scenarios} scenarios",
+                style={"color": TEXT_SECONDARY, "fontSize": "13px", "marginBottom": "8px"},
+            )
+
+            show_cols = elem_df.columns[:10]
+            fig = go.Figure()
+            for i, col in enumerate(show_cols):
+                fig.add_trace(go.Scattergl(
+                    x=np.arange(n_scenarios), y=elem_df[col].values,
+                    mode="lines", name=str(col)[:20],
+                    line=dict(color=CHART_COLORS[i % len(CHART_COLORS)], width=1),
+                ))
+            fig.update_layout(
+                title="Elementary PnL (first 10 trades)",
+                xaxis_title="Scenario", yaxis_title="PnL",
+                height=350,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, font=dict(size=10)),
+            )
+
+            summary_data = []
+            for col in elem_df.columns:
+                vals = elem_df[col].values
+                summary_data.append({
+                    "trade_id": str(col),
+                    "mean": round(float(np.mean(vals)), 6),
+                    "std": round(float(np.std(vals)), 6),
+                    "min": round(float(np.min(vals)), 6),
+                    "max": round(float(np.max(vals)), 6),
+                })
+            sum_col_defs = [
+                {"field": "trade_id", "headerName": "Elementary Trade"},
+                {"field": "mean", "headerName": "Mean"},
+                {"field": "std", "headerName": "Std"},
+                {"field": "min", "headerName": "Min"},
+                {"field": "max", "headerName": "Max"},
+            ]
+            sum_table = metric_table(sum_col_defs, summary_data, "deep-dive-elem-table", height="300px")
+
+            elementary_content = html.Div([
+                stats_row,
+                dcc.Graph(figure=fig, config={"displayModeBar": False}),
+                sum_table,
+            ])
+
         # ── Model configuration (collapsible JSON, closed) ────────
         member_cfg = session.config.member_configs.get(cluster_id, {})
         if member_cfg:

@@ -130,7 +130,7 @@ def layout() -> html.Div:
             dcc.Dropdown(
                 id="governance-compare-version",
                 options=[], placeholder="Select version to compare...",
-                style={"width": "340px", "fontSize": "13px"},
+                style={"width": "400px", "fontSize": "13px"},
             ),
         ], style={"display": "flex", "alignItems": "center", "marginBottom": "12px"}),
         html.Div(id="governance-comparison-content"),
