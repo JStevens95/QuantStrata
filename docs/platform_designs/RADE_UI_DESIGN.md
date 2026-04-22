@@ -254,22 +254,208 @@ No mock, no merge.
 
 ---
 
-## Appendix A — `layouts/splash.py` (temporary)
+## Appendix A — `assets/logo.svg` (temporary)
 
-Paste this verbatim into `src/ui/apps/rade_analytics/layouts/splash.py`, replacing the current contents. This appendix will be removed once verified on the work env.
+Full replace. Drops the rounded-square tile in favour of a stylised 3D R with three gradient faces (violet stem + bowl + cyan leg).
 
-Line count: 221.
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Rade Analytics - primary brand mark (v2).
+
+  Stylised 3D R composed of three gradient-shaded planes:
+
+    * Stem     - vertical left face,  violet-300 -> violet-800 (top-down).
+    * Bowl     - closed top loop,     violet-400 -> violet-900 (angled),
+                 with an evenodd hole cut out to form the R counter.
+    * Leg      - diagonal accent,     cyan-300  -> cyan-700.
+
+  The viewBox is 120x160 so the mark has a tall aspect that suits the
+  splash hero while still scaling down cleanly to the sidebar / topbar
+  via width/height.  Self-contained (no external fonts or references).
+
+  Designed to read well against slate-950 / slate-900 backgrounds;
+  replace with a designer-made asset any time - just keep the file
+  name and id-namespace (rade-*) so CSS and components don't need to
+  change.
+-->
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 120 160"
+     fill="none"
+     role="img"
+     aria-label="Rade logo">
+  <title>Rade</title>
+  <defs>
+    <linearGradient id="rade-stem" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0%"   stop-color="#c4b5fd"/>
+      <stop offset="55%"  stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#4c1d95"/>
+    </linearGradient>
+    <linearGradient id="rade-bowl" x1="0.2" y1="0" x2="1" y2="1">
+      <stop offset="0%"   stop-color="#a78bfa"/>
+      <stop offset="60%"  stop-color="#7c3aed"/>
+      <stop offset="100%" stop-color="#4c1d95"/>
+    </linearGradient>
+    <linearGradient id="rade-leg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"   stop-color="#67e8f9"/>
+      <stop offset="60%"  stop-color="#22d3ee"/>
+      <stop offset="100%" stop-color="#0e7490"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Stem: tall vertical face on the left -->
+  <polygon points="12,10 46,10 46,150 12,150"
+           fill="url(#rade-stem)"/>
+
+  <!-- Bowl: top loop of the R with an evenodd hole for the counter -->
+  <path d="M 42 10 L 82 10 Q 108 10 108 40 Q 108 68 82 78 L 42 78 Z
+           M 54 28 L 78 28 Q 90 28 90 42 Q 90 58 78 58 L 54 58 Z"
+        fill="url(#rade-bowl)"
+        fill-rule="evenodd"/>
+
+  <!-- Leg: cyan diagonal descending from middle to bottom-right -->
+  <polygon points="58,76 88,76 116,150 80,150"
+           fill="url(#rade-leg)"/>
+</svg>
+```
+
+---
+
+## Appendix B — `assets/rade.css` (append only)
+
+**Do not replace the whole file** — scroll to the very bottom of `rade.css` (after the `@keyframes rade-status-pulse` block) and **append** the block below. Adds the splash-v2 hero-outside-card classes while leaving the original splash block intact.
+
+File should go from 808 lines to 903 lines after paste.
+
+```css
+
+/* ─────────────────────────────────────────────────────────────────── */
+/* SPLASH PAGE v2 — hero outside card + top-right version pill.        */
+/* Added on top of the original splash block; older classes remain in  */
+/* case any other page reuses them.                                    */
+/* ─────────────────────────────────────────────────────────────────── */
+
+.rade-splash-layout {
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  max-width: 72rem;
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 1.5rem 2rem 2rem 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.rade-splash-topbar {
+  width: 100%;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  min-height: 2rem;
+}
+
+.rade-splash-version-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.75rem;
+  color: #cbd5e1;
+  background-color: rgb(30 41 59 / 0.6);
+  border: 1px solid #334155;
+  backdrop-filter: blur(4px);
+}
+
+.rade-splash-center {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3rem;
+  width: 100%;
+}
+
+.rade-splash-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  text-align: center;
+}
+
+.rade-splash-hero-logo {
+  width: 9rem;
+  height: 12rem;
+  filter: drop-shadow(0 14px 28px rgb(139 92 246 / 0.35));
+}
+
+.rade-splash-hero-title {
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-size: 5rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: #f8fafc;
+  margin: 0;
+}
+
+.rade-splash-hero-subtitle {
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: #64748b;
+  margin: 0;
+}
+
+.rade-splash-copyright {
+  position: absolute;
+  bottom: 1.25rem;
+  left: 2rem;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.7rem;
+  color: #475569;
+  letter-spacing: 0.05em;
+  z-index: 10;
+}
+```
+
+---
+
+## Appendix C — `layouts/splash.py` (temporary)
+
+Full replace.
+
+Line count:      254.
 
 ```python
 """Splash page — the "front door" before users enter the main app.
 
+Layout
+------
+Full-viewport flex column:
+
+    top-right          : active-version pill
+    centre (flex-grow) : hero (logo + RADE + tagline) stacked over card
+    bottom-left        : small copyright / build line
+
+Only interactive elements live in the card (status strip, version
+Select, Enter CTA, error banner); the identity block (logo +
+wordmark + tagline) deliberately sits above the card so it reads
+against the gradient backdrop rather than being boxed in.
+
 Purpose
 -------
-* Announce the product identity (logo + wordmark + tagline).
+* Announce the product identity.
 * Show API liveness at a glance (status dot + URL).
 * Let the user confirm / switch which ensemble version they want to
   browse before landing on the overview.
-* One CTA: "Enter Rade" → writes the chosen version into the session
+* One CTA: "Enter Rade" -> writes the chosen version into the session
   store and navigates to ``/`` (overview).
 
 This module only owns layout.  Data-fetching and navigation are wired
@@ -279,17 +465,17 @@ by :mod:`..callbacks.splash_cb`, which targets the DOM ids exported in
 Styling contract
 ----------------
 All visual treatment comes from the ``rade-splash-*`` classes defined
-at the bottom of ``assets/rade.css``.  The layout deliberately avoids
-Tailwind arbitrary values (``min-h-[calc(...)]``, ``w-[28rem]``, etc.)
-because the repository ships a pre-compiled ``rade.css`` — new
-arbitrary values would silently no-op without a Tailwind rebuild.  The
-custom classes give us stable visuals with zero build step.
+in ``assets/rade.css``.  The layout deliberately avoids Tailwind
+arbitrary values because the repository ships a pre-compiled
+``rade.css`` — new arbitrary values would silently no-op without a
+Tailwind rebuild.  The custom classes give us stable visuals with
+zero build step.
 
 Design spec anchors
 -------------------
 * §2 Palette — gradient glows mirror the logo gradient
-  (violet-500 → cyan-400).
-* §3 Typography — Inter tagline, JetBrains Mono for version ids.
+  (violet-500 -> cyan-400).
+* §3 Typography — Inter wordmark, JetBrains Mono for version ids.
 * §6 Components — DMC Select + Button.
 """
 
@@ -299,12 +485,13 @@ import dash_mantine_components as dmc
 from dash import html
 from dash_iconify import DashIconify
 
-from ..components.brand import Brand
-
 
 # Every dynamic id on the splash lives here so callbacks in
 # splash_cb.py never hardcode strings.  Also used by tests to target
 # individual elements.
+#
+# ``active_version`` now targets the top-right pill; the in-card
+# headline has been removed since it duplicated the same value.
 SPLASH_IDS = {
     "root":              "splash-root",
     "status_dot":        "splash-status-dot",
@@ -318,29 +505,31 @@ SPLASH_IDS = {
 
 
 def build_splash() -> html.Div:
-    """Build the splash page layout.
-
-    The layout renders in an "empty" state (no version data, no
-    confirmed API liveness) — the bootstrap callback in
-    :mod:`..callbacks.splash_cb` populates all dynamic pieces on mount.
-    """
+    """Build the splash page layout."""
     return html.Div(
         id=SPLASH_IDS["root"],
         className="rade-splash-root",
         children=[
             _backdrop(),
-            _card(),
+            html.Div(
+                className="rade-splash-layout",
+                children=[
+                    _topbar(),
+                    _center(),
+                ],
+            ),
+            _copyright(),
         ],
     )
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Backdrop — soft gradient glow behind the card
+# Backdrop — soft gradient glow behind everything
 # ─────────────────────────────────────────────────────────────────────
 
 
 def _backdrop() -> html.Div:
-    """Decorative blurred gradient so the card reads against depth."""
+    """Decorative blurred gradient so the page reads against depth."""
     return html.Div(
         className="rade-splash-backdrop",
         children=[
@@ -351,7 +540,59 @@ def _backdrop() -> html.Div:
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Card — the interactive surface (brand, status, picker, CTA)
+# Top bar — active version pill (flush right)
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _topbar() -> html.Div:
+    return html.Div(
+        className="rade-splash-topbar",
+        children=[
+            html.Span(
+                "-",
+                id=SPLASH_IDS["active_version"],
+                className="rade-splash-version-pill",
+            ),
+        ],
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Centre column — hero stacked on top of interactive card
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _center() -> html.Div:
+    return html.Div(
+        className="rade-splash-center",
+        children=[
+            _hero(),
+            _card(),
+        ],
+    )
+
+
+def _hero() -> html.Div:
+    """Identity block: logo + RADE wordmark + small uppercase tagline."""
+    return html.Div(
+        className="rade-splash-hero",
+        children=[
+            html.Img(
+                src="/assets/logo.svg",
+                className="rade-splash-hero-logo",
+                alt="Rade logo",
+            ),
+            html.H1("RADE", className="rade-splash-hero-title"),
+            html.P(
+                "Quantitative Model Intelligence",
+                className="rade-splash-hero-subtitle",
+            ),
+        ],
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Card — interactive surface (status, version switcher, CTA)
 # ─────────────────────────────────────────────────────────────────────
 
 
@@ -359,35 +600,15 @@ def _card() -> html.Div:
     return html.Div(
         className="rade-splash-card",
         children=[
-            _brand_block(),
             _status_strip(),
-            _version_block(),
+            _version_switcher(),
             _cta_block(),
-            _footer(),
-        ],
-    )
-
-
-def _brand_block() -> html.Div:
-    return html.Div(
-        className="rade-splash-brand-block",
-        children=[
-            Brand(size="xl", show_wordmark=True),
-            html.Div(
-                "Ensemble analytics for institutional trading.",
-                className="rade-splash-tagline",
-            ),
         ],
     )
 
 
 def _status_strip() -> html.Div:
-    """Live / offline indicator + the API URL the app is pointed at.
-
-    Rendered in a neutral ("Connecting...") state; the bootstrap
-    callback flips the dot colour and label once ``backend.health()``
-    resolves.
-    """
+    """Live / offline indicator + the API URL the app is pointed at."""
     return html.Div(
         className="rade-splash-status-strip",
         children=[
@@ -406,7 +627,7 @@ def _status_strip() -> html.Div:
                 ],
             ),
             html.Span(
-                "—",
+                "-",
                 id=SPLASH_IDS["api_url"],
                 className="rade-splash-api-url",
             ),
@@ -414,38 +635,19 @@ def _status_strip() -> html.Div:
     )
 
 
-def _version_block() -> html.Div:
-    """Active-version headline + Select to switch before entering."""
-    return html.Div(
-        className="rade-splash-version-block",
-        children=[
-            html.Div(
-                className="rade-splash-version-inner",
-                children=[
-                    html.Div(
-                        "ACTIVE VERSION",
-                        className="rade-section-label",
-                    ),
-                    html.Div(
-                        "—",
-                        id=SPLASH_IDS["active_version"],
-                        className="rade-splash-version-headline",
-                    ),
-                ],
-            ),
-            dmc.Select(
-                id=SPLASH_IDS["version_select"],
-                label="Switch version",
-                placeholder="Loading available versions...",
-                data=[],
-                value=None,
-                clearable=False,
-                searchable=True,
-                w="100%",
-                leftSection=DashIconify(icon="tabler:git-branch", width=14),
-                disabled=True,
-            ),
-        ],
+def _version_switcher() -> dmc.Select:
+    """Version picker so users can browse an older ensemble before entering."""
+    return dmc.Select(
+        id=SPLASH_IDS["version_select"],
+        label="Switch version",
+        placeholder="Loading available versions...",
+        data=[],
+        value=None,
+        clearable=False,
+        searchable=True,
+        w="100%",
+        leftSection=DashIconify(icon="tabler:git-branch", width=14),
+        disabled=True,
     )
 
 
@@ -473,10 +675,15 @@ def _cta_block() -> html.Div:
     )
 
 
-def _footer() -> html.Div:
+# ─────────────────────────────────────────────────────────────────────
+# Footer — bottom-left build / copyright line
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _copyright() -> html.Div:
     return html.Div(
-        "Rade UI · v0.1",
-        className="rade-splash-footer",
+        "(c) Rade Platform - v0.1",
+        className="rade-splash-copyright",
     )
 
 
