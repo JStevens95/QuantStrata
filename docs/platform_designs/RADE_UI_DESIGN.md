@@ -963,3 +963,606 @@ __all__ = ["SPLASH_IDS", "build_splash"]
   flex-wrap: wrap;
 }
 ```
+
+
+---
+
+## Appendix E — Evaluation page, **live-first** foundations (temporary)
+
+> **Context.** After E.0 (shell + filter-bar skeleton) shipped, we pivoted
+> away from writing Python-mock layouts for E.1–E.4.  The backend
+> contract is stable and every sub-tab except the Cytoscape Trade-Graph
+> can be fully wired today with zero new server work (see §E.0 audit
+> below).  This appendix lands the **foundations** — metadata hydration
+> for the filter bar dropdowns and a pure pandas filter helper — so
+> subsequent sub-tab PRs (Appendix F) can plug in without re-solving
+> those two problems.
+>
+> Strip this appendix once E.M and E.F are merged and smoke-tested.
+
+### E.0 — Audit findings (reference)
+
+| Sub-tab | Endpoints needed | All live today? |
+|---|---|---|
+| Filter bar | `/clusters` (attribute bag) + `/portfolio?split=test` (date range) | ✅ |
+| E.1 Portfolio | `/metrics/ensemble`, `/portfolio?split=X`, `/clusters` | ✅ |
+| E.2 Cross-Cluster | `/group-correlations?split=X`, `/clusters` | ✅ |
+| E.3a Trade-Graph stats | `/graph-stats?cluster_id=X`, `/clusters`, `/trades?split=X&cluster_id=X` | ✅ |
+| E.3b Trade-Graph Cytoscape | E.3a + **new** `/prism/v1/graph-adjacency?cluster_id=X` | ⏳ |
+| E.4 Cluster Deep-Dive | `/clusters`, `/metrics/per-member`, `/cluster-timeseries`, `/graph-stats`, `/trades` | ✅ |
+
+The filter bar intentionally filters **client-side** via pandas on
+DataFrames returned by the existing endpoints — no per-dimension
+server-side WHERE clauses are needed because:
+
+* The filterable dimensions (`asset_class`, `currency`, `desk`,
+  `product`) are per-**cluster** attributes, not per-scenario, so we
+  resolve them to a list of `cluster_id`s once, then reuse the existing
+  `cluster_id` filter on every downstream endpoint.
+* `date_from` / `date_to` is a per-scenario mask on `scenario_label`;
+  every timeseries endpoint already returns the full label column, so a
+  pandas `[df.scenario_label >= date_from]` is sufficient.
+
+
+### E.M — Metadata hydration
+
+Adds (a) an `EvaluationMetadata` dataclass + `evaluation_metadata()`
+method on `RadeBackend`, and (b) a hydration callback that pushes the
+resulting values into the filter-bar dropdowns whenever the user lands
+on any `/evaluation/*` route from another top-level page.
+
+#### E.M.1 — Patch `src/ui/apps/rade_analytics/data/backend.py`
+
+> **How to apply.**  Three small additions (imports + dataclass +
+> method + cache binding).  Each is a `replace_all`-safe unique snippet;
+> apply in the order listed.
+
+**(a)** Add the `filters` import.  Find this block near the top of the
+file:
+
+```python
+from src.rade_ml_pt.ensemble.api.client import RadeApiClient, RadeApiError
+from src.rade_ml_pt.ensemble.api.models.clusters import ClustersResponse
+from src.rade_ml_pt.ensemble.api.models.meta import HealthResponse, VersionsResponse
+from src.rade_ml_pt.ensemble.api.models.overview import OverviewResponse
+```
+
+and replace with:
+
+```python
+from src.rade_ml_pt.ensemble.api.client import RadeApiClient, RadeApiError
+from src.rade_ml_pt.ensemble.api.models.clusters import ClustersResponse
+from src.rade_ml_pt.ensemble.api.models.meta import HealthResponse, VersionsResponse
+from src.rade_ml_pt.ensemble.api.models.overview import OverviewResponse
+
+from .filters import FILTER_DIM_TO_CLUSTER_COL
+```
+
+**(b)** Add the `EvaluationMetadata` dataclass immediately *after* the
+`BackendResult` class and *before* the `CacheLike` protocol:
+
+```python
+# ── Evaluation-page metadata payload ──────────────────────────────────
+
+@dataclass(frozen=True)
+class EvaluationMetadata:
+    """Filter-bar metadata for the Evaluation page.
+
+    Derived from ``/clusters`` (for per-cluster attributes) and
+    ``/portfolio?split=test`` (for the scenario date range).  No new
+    endpoint is required; the expensive work happens in
+    :meth:`RadeBackend._fetch_evaluation_metadata`.
+
+    Attributes
+    ----------
+    asset_class, currency, desk, product
+        Distinct values present in the ensemble for each filter-bar
+        dimension.  Populated in sort-order so the dropdowns render
+        deterministically across renders / refreshes.
+    date_min, date_max
+        ISO-8601 ``scenario_label`` bounds on the test split — powers
+        the DatePickerInput's ``minDate`` / ``maxDate`` props.  ``None``
+        when the split isn't available yet (keeps the picker open).
+    all_attribute_names
+        Full sorted list of cluster attribute keys present in the
+        parquet — useful for diagnostics and for future filter-bar
+        dimensions beyond the canonical four.
+    """
+
+    asset_class: List[str]
+    currency:    List[str]
+    desk:        List[str]
+    product:     List[str]
+    date_min:    Optional[str]
+    date_max:    Optional[str]
+    all_attribute_names: List[str]
+```
+
+**(c)** Add the raw fetcher.  Find this block (the last `_fetch_*`
+method):
+
+```python
+    def _fetch_feature_summary(
+        self,
+        split: str,
+        cluster_id: Optional[str],
+    ) -> pd.DataFrame:
+        resp = self._client.feature_summary(split, cluster_id=cluster_id)
+        return pd.DataFrame([r.model_dump() for r in resp.rows])
+```
+
+and append **immediately after it** (still inside the class, before the
+`# ═══` banner that introduces the public UI methods):
+
+```python
+    def _fetch_evaluation_metadata(self) -> EvaluationMetadata:
+        """Aggregate filter-bar metadata from two existing endpoints.
+
+        * ``/clusters``                   → distinct attribute values.
+        * ``/portfolio?split=test``       → scenario date range.
+
+        The scenario range comes from ``test`` because it's the default
+        split on :class:`Session` — swapping the split later is a
+        cheap, idempotent refresh.
+        """
+        clusters_resp = self._client.clusters()
+
+        # Accumulate unique values per filter dimension, preserving
+        # insertion order so stable sorts are possible downstream.
+        seen: Dict[str, set] = {dim: set() for dim in FILTER_DIM_TO_CLUSTER_COL}
+        for info in clusters_resp.clusters:
+            for dim, col in FILTER_DIM_TO_CLUSTER_COL.items():
+                v = info.attributes.get(col)
+                if v is not None:
+                    seen[dim].add(v)
+
+        sorted_values = {
+            dim: sorted(values) for dim, values in seen.items()
+        }
+
+        # Date range from the test split — one extra HTTP round-trip;
+        # acceptable because the whole metadata call is cached.
+        date_min: Optional[str] = None
+        date_max: Optional[str] = None
+        try:
+            portfolio = self._client.portfolio("test")
+            if portfolio.scenario_label:
+                labels = sorted(portfolio.scenario_label)
+                date_min, date_max = labels[0], labels[-1]
+        except RadeApiError:
+            # Test split not published yet; leave the date picker open.
+            logger.info("evaluation_metadata: test split unavailable, "
+                        "leaving date range unbounded")
+
+        return EvaluationMetadata(
+            asset_class=sorted_values["asset_class"],
+            currency=sorted_values["currency"],
+            desk=sorted_values["desk"],
+            product=sorted_values["product"],
+            date_min=date_min,
+            date_max=date_max,
+            all_attribute_names=clusters_resp.attribute_names,
+        )
+```
+
+**(d)** Bind the cache.  Find this block in `_bind_cached_methods`:
+
+```python
+        self._feature_summary_cached = cache.memoize(timeout=ttl)(
+            self._fetch_feature_summary
+        )
+        # Predictions are intentionally NOT cached — NPZs can be tens of MB
+```
+
+and replace with:
+
+```python
+        self._feature_summary_cached = cache.memoize(timeout=ttl)(
+            self._fetch_feature_summary
+        )
+        self._evaluation_metadata_cached = cache.memoize(timeout=ttl)(
+            self._fetch_evaluation_metadata
+        )
+        # Predictions are intentionally NOT cached — NPZs can be tens of MB
+```
+
+**(e)** Add the public method.  Find the **last** public method in the
+file:
+
+```python
+    # ── Predictions (binary, uncached) ────────────────────────────
+
+    def predictions(
+        self,
+        *,
+        cluster_id: str,
+        split: str,
+    ) -> BackendResult[Dict[str, np.ndarray]]:
+```
+
+and insert **immediately before** it (still inside the class):
+
+```python
+    # ── Evaluation metadata ───────────────────────────────────────
+
+    def evaluation_metadata(self) -> BackendResult[EvaluationMetadata]:
+        """Cached filter-bar metadata for the Evaluation page.
+
+        Every Evaluation sub-tab reads the same metadata — cache TTL
+        matches the default so the filter-bar hydration is effectively
+        free after the first tab render.
+        """
+        return self._wrap(self._evaluation_metadata_cached)
+
+```
+
+#### E.M.2 — Patch `src/ui/apps/rade_analytics/callbacks/evaluation_cb.py`
+
+> **How to apply.**  Stop `del backend` on entry (we need it now) and
+> register one extra callback module function.
+
+**(a)** Find this block:
+
+```python
+def register(app: "Dash", backend: "RadeBackend") -> None:
+    """Attach every Evaluation callback to ``app``.
+
+    ``backend`` is unused at the E.0 skeleton stage but threaded through
+    so later phases can fetch metadata / data without introducing a new
+    parameter slot on this module.
+    """
+    del backend  # reserved — hydration callbacks land in E.1+
+
+    _register_routing(app)
+    _register_filter_bar(app)
+    _register_hydration(app)
+```
+
+and replace with:
+
+```python
+def register(app: "Dash", backend: "RadeBackend") -> None:
+    """Attach every Evaluation callback to ``app``.
+
+    ``backend`` is captured by closure in the data-hydration callbacks
+    (metadata in E.M; per-sub-tab fetches in E.1+).  Router and filter
+    state machinery stays backend-agnostic.
+    """
+    _register_routing(app)
+    _register_filter_bar(app)
+    _register_hydration(app)
+    _register_metadata_hydration(app, backend)
+```
+
+**(b)** Append the new `_register_metadata_hydration` function **at the
+end of the file**, immediately before the `__all__ = ["register"]`
+line.  Find:
+
+```python
+def _parse_date_range(
+    value: Optional[List[Optional[str]]],
+) -> Tuple[Optional[str], Optional[str]]:
+    """Normalise ``dmc.DatePickerInput(type='range').value`` into (from, to).
+
+    DMC returns ``[None, None]`` on a fresh / cleared picker, ``[iso]``
+    on a first-date-only partial selection and ``[iso_from, iso_to]``
+    on a full range.  Normalise each of those into a tidy 2-tuple.
+    """
+    if not value or not isinstance(value, (list, tuple)):
+        return None, None
+    df = value[0] if len(value) > 0 else None
+    dt = value[1] if len(value) > 1 else None
+    return (df or None), (dt or None)
+
+
+__all__ = ["register"]
+```
+
+and replace with:
+
+```python
+def _parse_date_range(
+    value: Optional[List[Optional[str]]],
+) -> Tuple[Optional[str], Optional[str]]:
+    """Normalise ``dmc.DatePickerInput(type='range').value`` into (from, to).
+
+    DMC returns ``[None, None]`` on a fresh / cleared picker, ``[iso]``
+    on a first-date-only partial selection and ``[iso_from, iso_to]``
+    on a full range.  Normalise each of those into a tidy 2-tuple.
+    """
+    if not value or not isinstance(value, (list, tuple)):
+        return None, None
+    df = value[0] if len(value) > 0 else None
+    dt = value[1] if len(value) > 1 else None
+    return (df or None), (dt or None)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# 4. Metadata hydration — populate filter-bar dropdowns from backend
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _options(values: List[str]) -> List[Dict[str, str]]:
+    """Format a list of raw strings as ``dmc.MultiSelect`` data items."""
+    return [{"value": v, "label": v} for v in values]
+
+
+def _register_metadata_hydration(app: "Dash", backend: "RadeBackend") -> None:
+    """Populate filter-bar dropdowns from :meth:`RadeBackend.evaluation_metadata`.
+
+    Fires on the same transition as :func:`_register_hydration` (entry
+    into ``/evaluation`` from another top-level page).  The existing
+    value-sync callback takes over afterwards — nothing here writes to
+    ``MultiSelect.value``.
+
+    Kept as a separate callback from ``_hydrate_filter_bar`` because the
+    outputs target different props (``data`` vs ``value``) and mixing
+    them forces ``allow_duplicate=True`` unnecessarily on every value
+    Output in the module.
+    """
+
+    @app.callback(
+        Output(EVAL_FILTER_IDS["asset_class"], "data"),
+        Output(EVAL_FILTER_IDS["currency"],    "data"),
+        Output(EVAL_FILTER_IDS["desk"],        "data"),
+        Output(EVAL_FILTER_IDS["product"],     "data"),
+        Output(EVAL_FILTER_IDS["date_range"],  "minDate"),
+        Output(EVAL_FILTER_IDS["date_range"],  "maxDate"),
+        Input(SHELL_IDS["url"],             "pathname"),
+        State(SHELL_IDS["top_level_store"], "data"),
+    )
+    def _load_metadata(
+        pathname:       Optional[str],
+        prev_top_level: Optional[str],
+    ) -> Tuple[
+        List[Dict[str, str]],
+        List[Dict[str, str]],
+        List[Dict[str, str]],
+        List[Dict[str, str]],
+        Any,
+        Any,
+    ]:
+        if not pathname or not pathname.startswith("/evaluation"):
+            raise PreventUpdate
+        if prev_top_level == "/evaluation":
+            # Within-page sub-tab nav — dropdown data is still hot.
+            raise PreventUpdate
+
+        result = backend.evaluation_metadata()
+        if not result.ok:
+            # Leave dropdowns empty + date picker open.  The filter bar
+            # degrades gracefully — the user just can't pick yet.
+            return [], [], [], [], no_update, no_update
+
+        meta = result.data
+        return (
+            _options(meta.asset_class),
+            _options(meta.currency),
+            _options(meta.desk),
+            _options(meta.product),
+            meta.date_min or no_update,
+            meta.date_max or no_update,
+        )
+
+
+__all__ = ["register"]
+```
+
+
+### E.F — Pure filter helper
+
+Brand-new module — drop in wholesale.
+
+#### E.F.1 — Create `src/ui/apps/rade_analytics/data/filters.py`
+
+```python
+"""Pure helpers for applying :class:`EvaluationFilters` to DataFrames.
+
+The Evaluation filter bar deliberately resolves to client-side pandas
+masks rather than per-dimension API query params — see Appendix E.0 in
+``docs/platform_designs/RADE_UI_DESIGN.md`` for the rationale.  These
+helpers are the single definition of "how a filter dimension maps to a
+DataFrame column".
+
+Functions
+---------
+* :func:`filter_cluster_ids`      — :class:`EvaluationFilters` → list of
+  matching cluster IDs (``None`` = "all clusters").
+* :func:`filter_rows_by_cluster_ids` — prune a DataFrame to one cluster
+  subset.
+* :func:`filter_timeseries_by_date`  — prune a timeseries DataFrame to a
+  ``scenario_label`` window.
+
+Everything is a pure function — no HTTP calls, no side effects — so
+unit tests can exercise every branch without mocking the backend.
+"""
+from __future__ import annotations
+
+from typing import List, Optional
+
+import pandas as pd
+
+from .session import EvaluationFilters
+
+
+# Convention map: filter-bar dimension → column name in
+# ``ClustersResponse.attributes``.  The right-hand side mirrors the
+# typical trade-asset master export; when an ensemble ships a
+# non-standard attribute name, update this map in one place — every
+# filter-aware callback inherits the change.
+FILTER_DIM_TO_CLUSTER_COL: dict[str, str] = {
+    "asset_class": "asset_class",
+    "currency":    "currency_code",
+    "desk":        "desk",
+    "product":     "product_code",
+}
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Cluster-id resolution
+# ─────────────────────────────────────────────────────────────────────
+
+
+def filter_cluster_ids(
+    filters: EvaluationFilters,
+    clusters_df: pd.DataFrame,
+) -> Optional[List[str]]:
+    """Return cluster IDs matching the attribute filters, or ``None`` for "all".
+
+    ``None`` is semantically "no filter applied" — callers pass this
+    through unchanged to any endpoint/``DataFrame`` that already defaults
+    to "all clusters when unspecified", avoiding a round-trip through a
+    materialised list of every cluster in the ensemble.
+
+    ``[]`` is semantically "filter applied but no cluster matched" —
+    callers should render an :class:`Empty` state rather than fetch.
+
+    Parameters
+    ----------
+    filters
+        Live :class:`EvaluationFilters` snapshot from the session store.
+    clusters_df
+        Output of :meth:`RadeBackend.clusters_df` — must contain a
+        ``cluster_id`` column plus the attribute columns named in
+        :data:`FILTER_DIM_TO_CLUSTER_COL`.
+
+    Returns
+    -------
+    ``None`` | ``list[str]``
+        See semantics above.
+    """
+    if not any(
+        (filters.asset_class, filters.currency, filters.desk, filters.product)
+    ):
+        return None
+
+    if clusters_df.empty or "cluster_id" not in clusters_df.columns:
+        return []
+
+    mask = pd.Series(True, index=clusters_df.index)
+    for dim, col in FILTER_DIM_TO_CLUSTER_COL.items():
+        selected: List[str] = getattr(filters, dim)
+        if not selected:
+            continue
+        if col not in clusters_df.columns:
+            # Attribute missing from this ensemble's parquet — treat as
+            # "no match" rather than silently ignoring the user's intent.
+            return []
+        mask &= clusters_df[col].isin(selected)
+
+    return clusters_df.loc[mask, "cluster_id"].astype(str).tolist()
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Row-level filters
+# ─────────────────────────────────────────────────────────────────────
+
+
+def filter_rows_by_cluster_ids(
+    df: pd.DataFrame,
+    cluster_ids: Optional[List[str]],
+) -> pd.DataFrame:
+    """Slice rows whose ``cluster_id`` is not in the allowed set.
+
+    ``cluster_ids=None`` is a pass-through (matching the "all clusters"
+    semantic of :func:`filter_cluster_ids`).
+
+    ``cluster_ids=[]`` returns an empty DataFrame with the same columns
+    as ``df`` — handy for rendering consistent "no data" states without
+    branching at every call site.
+    """
+    if cluster_ids is None:
+        return df
+    if "cluster_id" not in df.columns:
+        return df
+    if not cluster_ids:
+        return df.iloc[0:0]
+    return df[df["cluster_id"].isin(cluster_ids)]
+
+
+def filter_timeseries_by_date(
+    df: pd.DataFrame,
+    filters: EvaluationFilters,
+) -> pd.DataFrame:
+    """Slice rows whose ``scenario_label`` falls outside the date window.
+
+    Silently no-ops when the DataFrame lacks ``scenario_label`` or when
+    both date bounds are unset — keeps sub-tab callbacks unconditional.
+    """
+    if not (filters.date_from or filters.date_to):
+        return df
+    if "scenario_label" not in df.columns:
+        return df
+
+    mask = pd.Series(True, index=df.index)
+    if filters.date_from:
+        mask &= df["scenario_label"] >= filters.date_from
+    if filters.date_to:
+        mask &= df["scenario_label"] <= filters.date_to
+    return df.loc[mask]
+
+
+__all__ = [
+    "FILTER_DIM_TO_CLUSTER_COL",
+    "filter_cluster_ids",
+    "filter_rows_by_cluster_ids",
+    "filter_timeseries_by_date",
+]
+```
+
+
+### E.M / E.F — verification checklist
+
+Once applied:
+
+1. **Static checks.**  From the repo root:
+
+   ```bash
+   python -m py_compile \
+     src/ui/apps/rade_analytics/data/backend.py \
+     src/ui/apps/rade_analytics/data/filters.py \
+     src/ui/apps/rade_analytics/callbacks/evaluation_cb.py
+   ```
+
+2. **Lint.**  Your IDE's Python inspection should show no new warnings
+   in any of the three files.  Expected import order in `backend.py`:
+   `RadeApiClient` / `RadeApiError` → clusters / meta / overview models
+   → `.filters` (local) — everything above comes from the API package
+   so the one-blank-line separator rule is preserved.
+
+3. **Smoke (requires `httpx` + a running API).**
+
+   ```python
+   from src.ui.apps.rade_analytics.data.backend import RadeBackend, NoOpCache
+   from src.rade_ml_pt.ensemble.api.client import RadeApiClient
+
+   with RadeApiClient("http://localhost:8000") as c:
+       backend = RadeBackend(c, NoOpCache())
+       r = backend.evaluation_metadata()
+       assert r.ok, r.error
+       print(r.data.asset_class, r.data.currency, r.data.date_min, r.data.date_max)
+   ```
+
+4. **Preview.**  Launch `examples/rade_analytics/04_evaluation_preview.py`
+   — the filter bar should continue to open / close / clear as in E.0,
+   with the dropdowns still empty (the preview script stubs its own
+   data, it's not wired to the backend).  Real dropdown hydration
+   requires the main app factory (Phase F smoke).
+
+### What lands in Appendix F (next)
+
+Once you've confirmed E.M and E.F apply cleanly, I'll append:
+
+* **E.1** — full `layouts/evaluation/portfolio.py` (KPI strip + residual
+  timeseries + density + QQ + histogram + group-by leaderboard) and the
+  matching `callbacks/evaluation_portfolio_cb.py`.
+* **E.2** — full `layouts/evaluation/cross_cluster.py` (correlation
+  heatmap + top-pairs grid) + `evaluation_cross_cluster_cb.py`.
+* **E.3a** — full `layouts/evaluation/trade_graph.py` (topology stats
+  card + per-cluster summary + trades grid — Cytoscape deferred) +
+  callback.
+* **E.4** — full `layouts/evaluation/cluster_deep_dive.py` (cluster
+  picker + KPI strip + 3 charts + trades grid) + callback.
+* **E.5** — version picker wiring in the topbar (populate from
+  `/versions`, persist to ``session.active_version``).
+
