@@ -256,66 +256,90 @@ No mock, no merge.
 
 ## Appendix A — `assets/logo.svg` (temporary)
 
-Full replace. Drops the rounded-square tile in favour of a stylised 3D R with three gradient faces (violet stem + bowl + cyan leg).
+Full replace. Final "Sliced R" mark chosen from round-one logo review — bold geometric R with a violet→cyan diagonal gradient fill and a single diagonal slice through the lower leg. The slice is cut via an SVG mask, so the gap reveals whatever sits behind the logo — works equally well on slate-950, on light surfaces, or on the gradient backdrop itself.
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Rade Analytics - primary brand mark (v2).
+  Rade Analytics - primary brand mark ("Sliced R").
 
-  Stylised 3D R composed of three gradient-shaded planes:
+  Bold geometric capital R filled with a violet -> cyan diagonal
+  linear gradient, with a single thin diagonal slice cutting through
+  the lower leg.
 
-    * Stem     - vertical left face,  violet-300 -> violet-800 (top-down).
-    * Bowl     - closed top loop,     violet-400 -> violet-900 (angled),
-                 with an evenodd hole cut out to form the R counter.
-    * Leg      - diagonal accent,     cyan-300  -> cyan-700.
+  The slice is rendered as an SVG mask (not a hard-coded coloured
+  polygon on top) so the mark stays background-agnostic: the gap
+  reveals whatever sits behind the logo.  Works on slate-950, on
+  light surfaces, on the violet-to-cyan gradient itself - the cut
+  always reads correctly.
 
-  The viewBox is 120x160 so the mark has a tall aspect that suits the
-  splash hero while still scaling down cleanly to the sidebar / topbar
-  via width/height.  Self-contained (no external fonts or references).
+  viewBox 0 0 100 120 is the native aspect for the capital R; the
+  mark scales crisply from 16 x 19 px (favicon) to 144 x 173 px
+  (splash hero) without hinting artefacts.
 
-  Designed to read well against slate-950 / slate-900 backgrounds;
-  replace with a designer-made asset any time - just keep the file
-  name and id-namespace (rade-*) so CSS and components don't need to
-  change.
+  Colour tokens mirror RADE_UI_DESIGN.md section 2:
+    - violet-500 (#8b5cf6)  gradient stop 0%
+    - cyan-400   (#22d3ee)  gradient stop 100%
 -->
 <svg xmlns="http://www.w3.org/2000/svg"
-     viewBox="0 0 120 160"
+     viewBox="0 0 100 120"
      fill="none"
      role="img"
      aria-label="Rade logo">
   <title>Rade</title>
+
   <defs>
-    <linearGradient id="rade-stem" x1="0" y1="0" x2="0.4" y2="1">
-      <stop offset="0%"   stop-color="#c4b5fd"/>
-      <stop offset="55%"  stop-color="#8b5cf6"/>
-      <stop offset="100%" stop-color="#4c1d95"/>
+    <linearGradient id="rade-body-gradient"
+                    x1="0" y1="0" x2="100" y2="120"
+                    gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#22d3ee"/>
     </linearGradient>
-    <linearGradient id="rade-bowl" x1="0.2" y1="0" x2="1" y2="1">
-      <stop offset="0%"   stop-color="#a78bfa"/>
-      <stop offset="60%"  stop-color="#7c3aed"/>
-      <stop offset="100%" stop-color="#4c1d95"/>
-    </linearGradient>
-    <linearGradient id="rade-leg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%"   stop-color="#67e8f9"/>
-      <stop offset="60%"  stop-color="#22d3ee"/>
-      <stop offset="100%" stop-color="#0e7490"/>
-    </linearGradient>
+
+    <!--
+      Diagonal slice, 4 px thick, angled ~16 degrees above horizontal.
+      Everything inside the black polygon is cut away from the R; the
+      white rect is the "kept" region.  Extends slightly past the
+      right edge so the cut exits cleanly through the leg's outer
+      edge.
+    -->
+    <mask id="rade-slice-mask"
+          maskUnits="userSpaceOnUse"
+          x="0" y="0" width="100" height="120">
+      <rect x="0" y="0" width="100" height="120" fill="white"/>
+      <polygon points="20,92 96,70 96,74 20,96" fill="black"/>
+    </mask>
   </defs>
 
-  <!-- Stem: tall vertical face on the left -->
-  <polygon points="12,10 46,10 46,150 12,150"
-           fill="url(#rade-stem)"/>
-
-  <!-- Bowl: top loop of the R with an evenodd hole for the counter -->
-  <path d="M 42 10 L 82 10 Q 108 10 108 40 Q 108 68 82 78 L 42 78 Z
-           M 54 28 L 78 28 Q 90 28 90 42 Q 90 58 78 58 L 54 58 Z"
-        fill="url(#rade-bowl)"
-        fill-rule="evenodd"/>
-
-  <!-- Leg: cyan diagonal descending from middle to bottom-right -->
-  <polygon points="58,76 88,76 116,150 80,150"
-           fill="url(#rade-leg)"/>
+  <!--
+    Single path for the whole R letterform:
+      * Outer sub-path (clockwise):
+          stem top -> bowl top -> bowl outer curve ->
+          leg outer diagonal -> leg bottom ->
+          leg inner diagonal (up-left to the stem/leg junction) ->
+          stem right edge (down) -> stem bottom -> close
+      * Inner sub-path: rounded counter inside the bowl, cut out via
+        the evenodd fill-rule.
+  -->
+  <path d="M 10 10
+           L 60 10
+           Q 82 10 82 32
+           Q 82 54 60 54
+           L 90 108
+           L 58 108
+           L 34 54
+           L 34 108
+           L 10 108
+           Z
+           M 40 22
+           L 56 22
+           Q 68 22 68 32
+           Q 68 42 56 42
+           L 40 42
+           Z"
+        fill="url(#rade-body-gradient)"
+        fill-rule="evenodd"
+        mask="url(#rade-slice-mask)"/>
 </svg>
 ```
 
@@ -688,4 +712,254 @@ def _copyright() -> html.Div:
 
 
 __all__ = ["SPLASH_IDS", "build_splash"]
+```
+
+
+## Appendix D — `assets/rade.css` Phase-D append (temporary)
+
+> **How to apply:** paste this block at the **end** of your work-env
+> `src/ui/apps/rade_analytics/assets/rade.css`.  Nothing above it
+> changes — this is 100% additive.  After confirming the overview page
+> renders correctly, strip this appendix from `RADE_UI_DESIGN.md`.
+
+```css
+
+/* ==================================================================
+ * OVERVIEW PAGE + TOPBAR v1  (Phase D)
+ *
+ * Classes referenced by:
+ *   - components/topbar.py    (breadcrumb row)
+ *   - layouts/overview.py     (page container, cluster heatmap,
+ *                              feed/attention cards, quick actions)
+ *
+ * Kept in this single append-only block so the hand-authored rules
+ * never collide with the pre-compiled Tailwind utilities above.
+ * ================================================================== */
+
+/* ── Topbar breadcrumb ─────────────────────────────────────────── */
+
+.rade-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.rade-breadcrumb-item {
+  color: #94a3b8;                     /* slate-400 */
+  font-weight: 500;
+  transition: color 120ms ease;
+}
+
+.rade-breadcrumb-item--active {
+  color: #e2e8f0;                     /* slate-200 */
+  font-weight: 600;
+}
+
+.rade-breadcrumb-separator {
+  color: #475569;                     /* slate-600 */
+}
+
+/* ── Overview page container ───────────────────────────────────── */
+
+.rade-page {
+  padding: 1.5rem 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.rade-page-row {
+  display: grid;
+  gap: 1rem;
+}
+
+/* ── Cluster health heatmap (5x4 grid of coloured cells) ───────── */
+
+.rade-cluster-heatmap {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+}
+
+.rade-heatmap-cell {
+  aspect-ratio: 1 / 1;
+  border-radius: 0.375rem;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+  cursor: pointer;
+  min-height: 40px;
+}
+
+.rade-heatmap-cell:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.35);
+}
+
+.rade-heatmap-cell--ok {
+  background-color: #10b981;          /* emerald-500 */
+}
+
+.rade-heatmap-cell--warn {
+  background-color: #f59e0b;          /* amber-500 */
+}
+
+.rade-heatmap-cell--err {
+  background-color: #f43f5e;          /* rose-500 */
+}
+
+.rade-heatmap-cell--muted {
+  background-color: #334155;          /* slate-700 — "no data" */
+}
+
+/* ── Feed / attention list rows (inside rade-card) ─────────────── */
+
+.rade-list-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #e2e8f0;                     /* slate-200 */
+  margin-bottom: 0.5rem;
+}
+
+.rade-list-header {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #64748b;                     /* slate-500 */
+  border-bottom: 1px solid #1e293b;   /* slate-800 */
+}
+
+.rade-list-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.625rem 0;
+  font-size: 0.8125rem;
+  color: #cbd5e1;                     /* slate-300 */
+  border-bottom: 1px solid rgba(30, 41, 59, 0.5);
+}
+
+.rade-list-row:last-child {
+  border-bottom: 0;
+}
+
+.rade-list-row-label {
+  color: #e2e8f0;                     /* slate-200 */
+  font-weight: 500;
+}
+
+.rade-list-row-sub {
+  color: #94a3b8;                     /* slate-400 */
+  font-size: 0.75rem;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* Emerald / rose text for +ve / -ve deltas in list rows. */
+.rade-delta-pos { color: #34d399; font-family: "JetBrains Mono", ui-monospace, monospace; }
+.rade-delta-neg { color: #fb7185; font-family: "JetBrains Mono", ui-monospace, monospace; }
+
+/* Status chip used by "Attention Required" rows. */
+.rade-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.rade-chip--amber {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;                     /* amber-400 */
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.rade-chip--flagged {
+  background-color: rgba(244, 63, 94, 0.15);
+  color: #fb7185;                     /* rose-400 */
+  border: 1px solid rgba(244, 63, 94, 0.35);
+}
+
+.rade-chip--ok {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #34d399;                     /* emerald-400 */
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+/* ── Recent activity feed (timestamped events) ─────────────────── */
+
+.rade-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.rade-feed-row {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  align-items: baseline;
+  column-gap: 0.75rem;
+}
+
+.rade-feed-time {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.7rem;
+  color: #64748b;                     /* slate-500 */
+}
+
+.rade-feed-body {
+  font-size: 0.8125rem;
+  color: #cbd5e1;                     /* slate-300 */
+}
+
+.rade-feed-body-meta {
+  margin-left: 0.5rem;
+  color: #64748b;                     /* slate-500 */
+  font-size: 0.75rem;
+}
+
+/* Small leading bullet before each feed row. */
+.rade-feed-row::before {
+  content: "";
+  grid-column: 1;
+  grid-row: 1;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background-color: #8b5cf6;          /* violet-500 */
+  align-self: center;
+  transform: translateX(-16px);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.18);
+}
+
+/* ── Quick actions footer strip ────────────────────────────────── */
+
+.rade-quick-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 0.875rem 1.25rem;
+  background-color: #0f172a;          /* slate-900 */
+  border: 1px solid #1e293b;          /* slate-800 */
+  border-radius: 0.75rem;
+}
+
+.rade-quick-actions-label {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #e2e8f0;                     /* slate-200 */
+}
+
+.rade-quick-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
 ```
