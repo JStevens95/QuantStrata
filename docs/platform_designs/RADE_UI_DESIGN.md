@@ -1442,169 +1442,392 @@ If it compiles and your IDE shows no new warnings, Step 3 is done.
 
 ---
 
-## Appendix F — Phase D.3 Overview live-wiring (copy/paste)
+## Appendix F — Phase E.1 Portfolio live-wiring (copy/paste)
 
-> **Usage.**  Four files: **1 new**, **3 edits**.  Each block below is
-> a full copy/paste drop-in for one file.  Apply in order — the final
-> smoke test (`05_overview_preview_live.py`) depends on every earlier
-> step being in place.
+> **Usage.**  Twelve paste-blocks total: **9 new files** + **3 edits**
+> to existing files.  Apply them top-to-bottom — every block is a full
+> drop-in for one file so you can copy/paste without thinking about
+> diffs.
 >
-> Strip this appendix once the overview page renders live data (or
+> **Why these files?**  Phase E.1 wires the Evaluation → Portfolio
+> sub-tab end-to-end:
+>
+> * a new `figures/` package holds every chart builder (violin,
+>   scatter, PnL, error-over-time);
+> * the Portfolio layout gets replaced with the real 5-row structure
+>   (KPI strip · PnL · error-over-time · error-analysis divider ·
+>   faceted charts · leaderboard);
+> * a single callback module drives render, group-by, and click-to-
+>   focus behaviour;
+> * a shared `_mock_backend.py` + per-page preview script provide a
+>   smoke test with no running backend.
+>
+> Strip this appendix once the Portfolio tab renders live data (or
 > mock data via the preview script) end-to-end.
 
 ### File table
 
-| # | Action     | Path                                                                     | Purpose |
-|---|------------|--------------------------------------------------------------------------|---------|
-| 1 | **CREATE** | `src/ui/apps/rade_analytics/callbacks/overview_cb.py`                    | Render callback + split-toggle sync |
-| 2 | **EDIT**   | `src/ui/apps/rade_analytics/callbacks/__init__.py`                       | Register the new module |
-| 3 | **EDIT**   | `src/ui/apps/rade_analytics/router.py`                                   | Swap `/` placeholder for `build_overview` |
-| 4 | **EDIT**   | `src/ui/apps/rade_analytics/layouts/overview.py`                         | Add DOM id to top-performers card |
-| 5 | **CREATE** | `examples/rade_analytics/05_overview_preview_live.py`                    | Mock-backend smoke script (no API required) |
-
-### Why only these four slots are live-wired
-
-User-approved option (i): **KPIs (MAE / RMSE / active clusters / total
-trades)**, **portfolio chart**, **cluster-health heatmap**, and the
-**top-performers card** all have a backend source shipped in Phase 7.
-**Inference latency**, **Attention Required** and **Recent Activity**
-stay as the baked-in placeholder data — they need governance /
-event-feed endpoints that don't exist yet.
+| # | Action      | Path                                                                           | Purpose |
+|---|-------------|--------------------------------------------------------------------------------|---------|
+| 1 | **EDIT**    | `src/ui/apps/rade_analytics/data/session.py`                                   | Bump schema to v3 + add `portfolio_scatter_focus` |
+| 2 | **CREATE**  | `src/ui/apps/rade_analytics/figures/_theme.py`                                 | Shared Plotly layout, palette, `rgba()` helper |
+| 3 | **CREATE**  | `src/ui/apps/rade_analytics/figures/distributions.py`                          | Residual violin (aggregate + grouped) |
+| 4 | **CREATE**  | `src/ui/apps/rade_analytics/figures/scatter.py`                                | Predicted-vs-actual scatter (aggregate / grouped / focus) |
+| 5 | **CREATE**  | `src/ui/apps/rade_analytics/figures/timeseries.py`                             | Portfolio PnL + rolling-error band |
+| 6 | **CREATE**  | `src/ui/apps/rade_analytics/figures/__init__.py`                               | Package init — re-exports every builder |
+| 7 | **REPLACE** | `src/ui/apps/rade_analytics/layouts/evaluation/portfolio.py`                   | Full 5-row Portfolio layout |
+| 8 | **CREATE**  | `src/ui/apps/rade_analytics/callbacks/portfolio_cb.py`                         | Render + group-by + click-to-focus callbacks |
+| 9 | **EDIT**    | `src/ui/apps/rade_analytics/callbacks/__init__.py`                             | Register `portfolio_cb` alongside the others |
+| 10 | **CREATE** | `examples/rade_analytics/_mock_backend.py`                                     | Shared mock backend (no API required) |
+| 11 | **REPLACE**| `examples/rade_analytics/05_overview_preview_live.py`                          | Re-aim at the shared mock backend |
+| 12 | **CREATE** | `examples/rade_analytics/06_portfolio_preview_live.py`                         | Portfolio smoke test on port 8053 |
 
 ### Smoke testing without a running backend
 
-Once all five files are in place, run:
+After every paste-block is in place:
 
 ```bash
-python examples/rade_analytics/05_overview_preview_live.py
+python examples/rade_analytics/06_portfolio_preview_live.py
 ```
 
-Open http://localhost:8052 — the full app runs against a
-`MockRadeBackend` that synthesises deterministic KPIs, per-cluster
-metrics, portfolio PnL, and cluster metadata.  Click the split toggle
-(Train / Val / Test) to verify every slot re-renders.  When the real
-API is up tomorrow, swap over with:
+Open <http://localhost:8053/evaluation/portfolio>:
 
-```bash
-python -m src.ui.apps.rade_analytics.app
-```
+* Rows 1-3 should populate with KPI numbers, a purple PnL line + dashed
+  actual, and a red rolling-error band.
+* Pick a break-down dimension (Desk, Product, Currency, Asset class,
+  Cluster) — the violin, scatter, and leaderboard should redraw with
+  per-group colours.
+* Click a point in the grouped scatter → the scatter filters to that
+  group and a "Focused: X [× Show all]" chip appears in the card
+  header.  Double-click the plot (or click the chip's ×) to clear.
+* Toggle the topbar split control — every slot, including the
+  leaderboard, must redraw.
 
-— that factory builds a real `RadeApiClient` from `RADE_UI_API_URL`.
-No code changes needed.
+The previous overview preview still runs via
+`python examples/rade_analytics/05_overview_preview_live.py` on
+port 8052 — it now shares the same `MockRadeBackend` instance shape so
+numbers are consistent across the two pages.
 
 ---
 
-### Step 1 · CREATE `src/ui/apps/rade_analytics/callbacks/overview_cb.py`
+### Step 1 · EDIT `src/ui/apps/rade_analytics/data/session.py`
 
-> **Action.**  Create the file with the full content below.
+> **Action.**  Replace the entire file contents with the block below.
+> Schema version bumps from 2 → 3; any old session payloads in the
+> browser's `sessionStorage` get dropped defensively by `from_store`.
 
 ```python
-"""Overview page callbacks — live-wiring for the ``/`` route.
+"""Typed per-user session state for the Rade Analytics UI.
 
-Phase D.3 of the Rade UI build.  Replaces the placeholder constants
-baked into :mod:`..layouts.overview` with real data fetched through
-:class:`RadeBackend` whenever:
+Persisted to a ``dcc.Store(storage_type="session")`` as plain JSON.  The
+contract here is:
 
-* the user lands on ``/`` (first route resolution or any URL change
-  back to the overview),
-* the split toggle in the topbar flips (e.g. test → val),
-* the active ensemble version changes in session.
+* callbacks write a :class:`Session` instance, serialised via
+  :meth:`Session.to_store`, into the store component;
+* callbacks read the store via :meth:`Session.from_store`, which is
+  defensive against partial / missing / stale payloads so the UI never
+  crashes on a schema bump.
 
-Wiring scope (user-approved option (i))
----------------------------------------
+Adding a new field?  Bump :data:`SESSION_SCHEMA_VERSION` and leave the
+field optional on :class:`Session`.  :meth:`from_store` will drop old
+payloads whose version doesn't match.
 
-Everything that has a concrete backend source is live-wired:
-
-* KPI cards — MAE, RMSE, active clusters, total trades
-  (from ``ensemble_metrics`` and ``clusters`` endpoints).
-* Portfolio PnL figure — predicted vs actual line chart for the
-  active split (from ``portfolio`` endpoint).
-* Cluster-health heatmap — per-cluster p95 absolute-error terciles
-  mapped to ``ok / warn / err`` (from ``per-member-metrics`` endpoint).
-* Top-performers card — 3 clusters with the lowest MAE on the
-  active split (also ``per-member-metrics``).
-
-Intentionally **not wired** (placeholder text retained in the layout,
-future phase):
-
-* Inference-latency KPI — no backend source today.
-* Attention-required + Recent-activity cards — governance / event-feed
-  endpoints don't exist yet.
-
-Failure behaviour
------------------
-
-Every fetch is wrapped in :class:`BackendResult`.  On error the
-callback falls back to ``"—"`` for scalar values, an empty figure for
-the chart, and empty cell/row lists for the tables — never a
-stack-trace — and logs a warning.  The user still sees a usable
-page with the parts that did succeed.
+Schema versions
+---------------
+* ``1`` — Phase A baseline (active_version, split, cluster_id, theme).
+* ``2`` — Phase E.0 adds :class:`EvaluationState` under ``evaluation``.
+* ``3`` — Phase E.1 adds ``portfolio_scatter_focus`` to
+  :class:`EvaluationState` for the click-to-focus scatter behaviour.
 """
 from __future__ import annotations
 
-import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from dataclasses import asdict, dataclass, field
+from typing import Any, Dict, List, Literal, Optional
 
-import pandas as pd
+SESSION_SCHEMA_VERSION = 3
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Evaluation sub-state (Phase E.0)
+# ─────────────────────────────────────────────────────────────────────
+
+EVALUATION_SUBTABS = ("portfolio", "cross-cluster", "trade-graph", "cluster")
+DEFAULT_EVALUATION_SUBTAB: str = "portfolio"
+
+EVALUATION_PORTFOLIO_GROUP_BY = (
+    "desk", "product", "currency", "asset_class", "cluster",
+)
+
+
+@dataclass
+class EvaluationFilters:
+    """The global WHERE clause applied across every Evaluation sub-tab."""
+
+    asset_class: List[str] = field(default_factory=list)
+    currency:    List[str] = field(default_factory=list)
+    desk:        List[str] = field(default_factory=list)
+    product:     List[str] = field(default_factory=list)
+    date_from:   Optional[str] = None
+    date_to:     Optional[str] = None
+
+    def active_chip_count(self) -> int:
+        return sum(
+            bool(x) for x in (
+                self.asset_class,
+                self.currency,
+                self.desk,
+                self.product,
+                self.date_from or self.date_to,
+            )
+        )
+
+    def is_empty(self) -> bool:
+        return self.active_chip_count() == 0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "EvaluationFilters":
+        if not isinstance(data, dict):
+            return cls()
+        known = {f_.name for f_ in cls.__dataclass_fields__.values()}  # type: ignore[attr-defined]
+        filtered = {k: v for k, v in data.items() if k in known}
+        return cls(**filtered)
+
+
+@dataclass
+class EvaluationState:
+    """Everything the Evaluation page needs between sub-tab switches."""
+
+    filters:                   EvaluationFilters = field(default_factory=EvaluationFilters)
+    filter_bar_open:           bool = False
+    active_subtab:             str = DEFAULT_EVALUATION_SUBTAB
+    portfolio_group_by:        Optional[str] = None
+    portfolio_scatter_focus:   Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "filters":                 self.filters.to_dict(),
+            "filter_bar_open":         self.filter_bar_open,
+            "active_subtab":           self.active_subtab,
+            "portfolio_group_by":      self.portfolio_group_by,
+            "portfolio_scatter_focus": self.portfolio_scatter_focus,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "EvaluationState":
+        if not isinstance(data, dict):
+            return cls()
+
+        subtab = data.get("active_subtab", DEFAULT_EVALUATION_SUBTAB)
+        if subtab not in EVALUATION_SUBTABS:
+            subtab = DEFAULT_EVALUATION_SUBTAB
+
+        group_by = data.get("portfolio_group_by")
+        if group_by is not None and group_by not in EVALUATION_PORTFOLIO_GROUP_BY:
+            group_by = None
+
+        scatter_focus = data.get("portfolio_scatter_focus")
+        if group_by is None:
+            scatter_focus = None
+        if scatter_focus is not None and not isinstance(scatter_focus, str):
+            scatter_focus = None
+
+        return cls(
+            filters=EvaluationFilters.from_dict(data.get("filters")),
+            filter_bar_open=bool(data.get("filter_bar_open", False)),
+            active_subtab=subtab,
+            portfolio_group_by=group_by,
+            portfolio_scatter_focus=scatter_focus,
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Top-level session
+# ─────────────────────────────────────────────────────────────────────
+
+
+@dataclass
+class Session:
+    """User session state.  Every field must be JSON-serialisable."""
+
+    active_version: Optional[str] = None
+
+    split: Literal["train", "val", "test"] = "test"
+    cluster_id: Optional[str] = None
+
+    theme: Literal["dark", "light"] = "dark"
+
+    evaluation: EvaluationState = field(default_factory=EvaluationState)
+
+    schema_version: int = field(default=SESSION_SCHEMA_VERSION, repr=False)
+
+    def to_store(self) -> Dict[str, Any]:
+        return {
+            "active_version": self.active_version,
+            "split":          self.split,
+            "cluster_id":     self.cluster_id,
+            "theme":          self.theme,
+            "evaluation":     self.evaluation.to_dict(),
+            "schema_version": self.schema_version,
+        }
+
+    @classmethod
+    def from_store(cls, data: Optional[Dict[str, Any]]) -> "Session":
+        if not data or not isinstance(data, dict):
+            return cls()
+        if data.get("schema_version") != SESSION_SCHEMA_VERSION:
+            return cls()
+        split = data.get("split", "test")
+        if split not in ("train", "val", "test"):
+            split = "test"
+        theme = data.get("theme", "dark")
+        if theme not in ("dark", "light"):
+            theme = "dark"
+        return cls(
+            active_version=data.get("active_version"),
+            split=split,                                      # type: ignore[arg-type]
+            cluster_id=data.get("cluster_id"),
+            theme=theme,                                      # type: ignore[arg-type]
+            evaluation=EvaluationState.from_dict(data.get("evaluation")),
+        )
+
+    def with_version(self, version: str) -> "Session":
+        payload = self.to_store()
+        payload["active_version"] = version
+        return Session.from_store(payload)
+
+    def with_split(self, split: str) -> "Session":
+        payload = self.to_store()
+        payload["split"] = split
+        return Session.from_store(payload)
+
+    def with_cluster(self, cluster_id: Optional[str]) -> "Session":
+        payload = self.to_store()
+        payload["cluster_id"] = cluster_id
+        return Session.from_store(payload)
+
+    def with_evaluation(self, evaluation: EvaluationState) -> "Session":
+        payload = self.to_store()
+        payload["evaluation"] = evaluation.to_dict()
+        return Session.from_store(payload)
+
+
+__all__ = [
+    "DEFAULT_EVALUATION_SUBTAB",
+    "EVALUATION_PORTFOLIO_GROUP_BY",
+    "EVALUATION_SUBTABS",
+    "EvaluationFilters",
+    "EvaluationState",
+    "SESSION_SCHEMA_VERSION",
+    "Session",
+]
+```
+
+---
+
+### Step 2 · CREATE `src/ui/apps/rade_analytics/figures/_theme.py`
+
+> **Action.**  Create a new `figures/` directory under
+> `src/ui/apps/rade_analytics/` and drop this file inside.
+
+```python
+"""Shared plotly layout defaults for every Rade figure."""
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
+
 import plotly.graph_objects as go
-from dash import Input, Output, State, html
-from dash.exceptions import PreventUpdate
-
-from ..components.topbar import TOPBAR_IDS
-from ..data.session import Session
-from ..layouts.overview import OVERVIEW_IDS
-from ..layouts.shell import SHELL_IDS
-
-if TYPE_CHECKING:
-    from dash import Dash
-
-    from ..data.backend import RadeBackend
 
 
-logger = logging.getLogger(__name__)
+_FONT_FAMILY = "Inter, system-ui, sans-serif"
+_FONT_COLOR = "#cbd5e1"
+_TICK_COLOR = "#64748b"
+_GRID_COLOR = "rgba(30, 41, 59, 0.6)"
 
 
-# ─────────────────────────────────────────────────────────────────────
-# Styling + helpers
-# ─────────────────────────────────────────────────────────────────────
-
-_PLACEHOLDER = "—"
-
-
-def _fmt_num(x: Any, *, digits: int = 2) -> str:
-    """Pretty-print a numeric value, ``—`` when missing / NaN."""
-    if x is None:
-        return _PLACEHOLDER
-    try:
-        val = float(x)
-    except (TypeError, ValueError):
-        return _PLACEHOLDER
-    if pd.isna(val):
-        return _PLACEHOLDER
-    return f"{val:,.{digits}f}"
+CATEGORY_PALETTE: tuple[str, ...] = (
+    "#8b5cf6",  # violet (primary)
+    "#10b981",  # emerald
+    "#f59e0b",  # amber
+    "#f43f5e",  # rose
+    "#38bdf8",  # sky
+    "#06b6d4",  # cyan
+    "#d946ef",  # fuchsia
+    "#84cc16",  # lime
+)
 
 
-def _fmt_int(x: Any) -> str:
-    if x is None:
-        return _PLACEHOLDER
-    try:
-        val = int(x)
-    except (TypeError, ValueError):
-        return _PLACEHOLDER
-    return f"{val:,}"
+def color_for_index(i: int) -> str:
+    return CATEGORY_PALETTE[i % len(CATEGORY_PALETTE)]
 
 
-def _empty_portfolio_figure(message: str) -> go.Figure:
-    """Figure shown when the portfolio endpoint yields no data."""
+def rgba(hex_color: str, alpha: float) -> str:
+    """Convert a 6-digit hex string to rgba notation.
+
+    Plotly's violin / scatter validators refuse 8-digit hex alphas, so
+    every fillcolor in this package goes through here.
+    """
+    h = hex_color.lstrip("#")
+    if len(h) != 6:
+        raise ValueError(f"rgba() expects a 6-digit hex colour, got {hex_color!r}")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    a = max(0.0, min(1.0, float(alpha)))
+    return f"rgba({r}, {g}, {b}, {a:.3f})"
+
+
+def rade_layout(
+    *,
+    show_legend: bool = False,
+    hovermode: str = "closest",
+    margin: Optional[Dict[str, int]] = None,
+    xaxis: Optional[Dict[str, Any]] = None,
+    yaxis: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    base_xaxis = {
+        "showgrid":       False,
+        "zeroline":       False,
+        "showticklabels": True,
+        "tickfont":       {"color": _TICK_COLOR},
+    }
+    base_yaxis = {
+        "gridcolor": _GRID_COLOR,
+        "zeroline":  False,
+        "tickfont":  {"color": _TICK_COLOR},
+    }
+    if xaxis:
+        base_xaxis.update(xaxis)
+    if yaxis:
+        base_yaxis.update(yaxis)
+
+    return {
+        "template":     "plotly_dark",
+        "plot_bgcolor": "rgba(0, 0, 0, 0)",
+        "paper_bgcolor": "rgba(0, 0, 0, 0)",
+        "margin":       margin or {"l": 40, "r": 16, "t": 8, "b": 36},
+        "font":         {"family": _FONT_FAMILY, "color": _FONT_COLOR, "size": 11},
+        "xaxis":        base_xaxis,
+        "yaxis":        base_yaxis,
+        "hovermode":    hovermode,
+        "showlegend":   show_legend,
+        "legend": {
+            "orientation": "h",
+            "y": 1.1, "x": 1, "xanchor": "right",
+            "bgcolor": "rgba(0, 0, 0, 0)",
+            "font": {"color": "#94a3b8", "size": 11},
+        },
+    }
+
+
+def empty_figure(message: str) -> go.Figure:
     fig = go.Figure()
     fig.update_layout(
-        template="plotly_dark",
-        plot_bgcolor="rgba(0, 0, 0, 0)",
-        paper_bgcolor="rgba(0, 0, 0, 0)",
-        margin={"l": 32, "r": 16, "t": 8, "b": 32},
-        font={"family": "Inter, system-ui, sans-serif", "color": "#cbd5e1", "size": 11},
-        xaxis={"visible": False},
-        yaxis={"visible": False},
+        **rade_layout(
+            margin={"l": 32, "r": 16, "t": 8, "b": 32},
+            xaxis={"visible": False},
+            yaxis={"visible": False},
+        ),
         annotations=[
             {
                 "text":      message,
@@ -1620,354 +1843,1674 @@ def _empty_portfolio_figure(message: str) -> go.Figure:
     return fig
 
 
-# ─────────────────────────────────────────────────────────────────────
-# Public entry point
-# ─────────────────────────────────────────────────────────────────────
+__all__ = [
+    "CATEGORY_PALETTE",
+    "color_for_index",
+    "empty_figure",
+    "rade_layout",
+    "rgba",
+]
+```
+
+---
+
+### Step 3 · CREATE `src/ui/apps/rade_analytics/figures/distributions.py`
+
+> **Action.**  Create the file.  Uses `rgba()` from `_theme` for every
+> fillcolor — required for Plotly's validator compatibility.
+
+```python
+"""Residual distribution figures — violin plots (aggregate + grouped)."""
+from __future__ import annotations
+
+from typing import Iterable, Optional, Sequence
+
+import numpy as np
+import plotly.graph_objects as go
+
+from ._theme import color_for_index, empty_figure, rade_layout, rgba
 
 
-def register(app: "Dash", backend: "RadeBackend") -> None:
-    """Attach every overview callback to ``app``.
-
-    Parameters
-    ----------
-    app
-        The Dash app returned by :func:`rade_analytics.app.create_app`.
-    backend
-        Shared :class:`RadeBackend` — all data fetches go through here.
-    """
-    _register_overview_render(app, backend)
-    _register_split_sync(app)
-
-
-# ─────────────────────────────────────────────────────────────────────
-# 1. Render — url/session → KPI values + chart + heatmap + top-performers
-# ─────────────────────────────────────────────────────────────────────
-
-
-def _register_overview_render(app: "Dash", backend: "RadeBackend") -> None:
-    """Main overview render callback.
-
-    Fires on URL changes and session-store writes.  We guard inside
-    the callback so re-routes away from ``/`` don't waste API calls.
-    """
-
-    @app.callback(
-        Output(OVERVIEW_IDS["kpi_mae_value"],      "children"),
-        Output(OVERVIEW_IDS["kpi_rmse_value"],     "children"),
-        Output(OVERVIEW_IDS["kpi_clusters_value"], "children"),
-        Output(OVERVIEW_IDS["kpi_trades_value"],   "children"),
-        Output(OVERVIEW_IDS["portfolio_chart"],    "figure"),
-        Output(OVERVIEW_IDS["cluster_heatmap"],    "children"),
-        Output(OVERVIEW_IDS["top_performers"],     "children"),
-        Input(SHELL_IDS["url"],                    "pathname"),
-        Input(SHELL_IDS["session_store"],          "data"),
-    )
-    def _render(
-        pathname:     Optional[str],
-        session_data: Optional[Dict[str, Any]],
-    ) -> Tuple[str, str, str, str, go.Figure, List[Any], List[Any]]:
-        # Only spend API budget when the user is looking at /.  When
-        # session_store fires from e.g. the evaluation filter bar we
-        # bail without fetching anything.
-        if pathname != "/":
-            raise PreventUpdate
-
-        session = Session.from_store(session_data)
-        split = session.split
-
-        mae_txt, rmse_txt = _compute_kpi_metrics(backend, split)
-        cluster_count_txt, trade_count_txt = _compute_cluster_kpis(backend)
-        portfolio_fig = _compute_portfolio_figure(backend, split)
-        heatmap_children = _compute_heatmap_children(backend, split)
-        top_perf_children = _compute_top_performers_children(backend, split)
-
-        return (
-            mae_txt,
-            rmse_txt,
-            cluster_count_txt,
-            trade_count_txt,
-            portfolio_fig,
-            heatmap_children,
-            top_perf_children,
-        )
-
-
-# ─────────────────────────────────────────────────────────────────────
-# 2. Split toggle → session store
-# ─────────────────────────────────────────────────────────────────────
-
-
-def _register_split_sync(app: "Dash") -> None:
-    """Persist the topbar split toggle into ``session.split``.
-
-    Every split-scoped page (overview, evaluation, monitoring, …)
-    reads from the session store, so writing here is enough — we
-    don't need per-page wiring.  Kept colocated with the overview
-    callbacks because overview is the first consumer shipped.
-    """
-
-    @app.callback(
-        Output(SHELL_IDS["session_store"], "data", allow_duplicate=True),
-        Input(TOPBAR_IDS["split_toggle"],  "value"),
-        State(SHELL_IDS["session_store"],  "data"),
-        prevent_initial_call=True,
-    )
-    def _sync_split(
-        value:        Optional[str],
-        session_data: Optional[Dict[str, Any]],
-    ) -> Dict[str, Any]:
-        if not value or value not in ("train", "val", "test"):
-            raise PreventUpdate
-        session = Session.from_store(session_data)
-        if session.split == value:
-            # No-op write would still fire every downstream Input(store).
-            raise PreventUpdate
-        return session.with_split(value).to_store()
-
-
-# ═════════════════════════════════════════════════════════════════════
-# Fetch helpers — each returns a ready-to-render output slot.
-# Keeping the backend access split into small functions makes the main
-# callback readable and lets tests drive each slot independently.
-# ═════════════════════════════════════════════════════════════════════
-
-
-def _compute_kpi_metrics(
-    backend: "RadeBackend",
-    split: str,
-) -> Tuple[str, str]:
-    """Return (mae, rmse) display strings for the KPI strip."""
-    res = backend.ensemble_metrics_df()
-    if not res.ok or res.data is None or res.data.empty:
-        if not res.ok:
-            logger.warning("ensemble_metrics fetch failed: %s", res.error)
-        return _PLACEHOLDER, _PLACEHOLDER
-
-    df = res.data
-    row = df[df["split"] == split]
-    if row.empty:
-        return _PLACEHOLDER, _PLACEHOLDER
-    mae = row.iloc[0].get("mae")
-    rmse = row.iloc[0].get("rmse")
-    return _fmt_num(mae, digits=3), _fmt_num(rmse, digits=3)
-
-
-def _compute_cluster_kpis(
-    backend: "RadeBackend",
-) -> Tuple[str, str]:
-    """Return (active_clusters, total_trades) display strings."""
-    res = backend.clusters_df()
-    if not res.ok or res.data is None or res.data.empty:
-        if not res.ok:
-            logger.warning("clusters fetch failed: %s", res.error)
-        return _PLACEHOLDER, _PLACEHOLDER
-
-    df = res.data
-    n_clusters = len(df)
-    total_trades = int(df["n_trades"].fillna(0).sum()) if "n_trades" in df.columns else None
-    return _fmt_int(n_clusters), _fmt_int(total_trades)
-
-
-def _compute_portfolio_figure(
-    backend: "RadeBackend",
-    split: str,
+def residual_violin(
+    residuals:     Sequence[float],
+    *,
+    group_values:  Optional[Sequence[str]] = None,
+    group_order:   Optional[Iterable[str]] = None,
+    group_label:   Optional[str] = None,
+    y_axis_title:  str = "Residual (pred − actual)",
 ) -> go.Figure:
-    """Predicted-vs-actual portfolio PnL for the active split."""
-    res = backend.portfolio_df(split)
-    if not res.ok or res.data is None or res.data.empty:
-        if not res.ok:
-            logger.warning("portfolio fetch failed: %s", res.error)
-            return _empty_portfolio_figure(f"Portfolio unavailable: {res.error}")
-        return _empty_portfolio_figure(f"No portfolio data for split={split}")
+    """Residual distribution violin.  Aggregate when ``group_values`` is ``None``."""
+    arr = np.asarray(list(residuals), dtype=float)
+    if arr.size == 0:
+        return empty_figure("No residuals to plot.")
 
-    df = res.data.sort_values("scenario_idx") if "scenario_idx" in res.data.columns else res.data
-    x_vals = df["scenario_label"] if "scenario_label" in df.columns else list(range(len(df)))
+    grouped = group_values is not None and len(group_values) == arr.size
 
+    if not grouped:
+        return _aggregate_violin(arr, y_axis_title=y_axis_title)
+
+    groups = _resolve_group_order(group_values, group_order)
+    if not groups:
+        return _aggregate_violin(arr, y_axis_title=y_axis_title)
+
+    group_arr = np.asarray(group_values, dtype=object)
     fig = go.Figure()
-    if "predicted" in df.columns:
+    for idx, group in enumerate(groups):
+        mask = group_arr == group
+        values = arr[mask]
+        if values.size == 0:
+            continue
         fig.add_trace(
-            go.Scatter(
-                x=x_vals,
-                y=df["predicted"],
-                mode="lines",
-                name="Predicted PnL",
-                line={"color": "#8b5cf6", "width": 2.5},
-                fill="tozeroy",
-                fillcolor="rgba(139, 92, 246, 0.18)",
-                hovertemplate="%{y:.4f}<extra></extra>",
+            go.Violin(
+                y=values,
+                name=str(group),
+                x=[str(group)] * values.size,
+                line_color=color_for_index(idx),
+                fillcolor=rgba(color_for_index(idx), 0.2),
+                box_visible=True,
+                meanline_visible=True,
+                points="outliers",
+                hoveron="violins",
+                hovertemplate=(
+                    f"<b>{group}</b><br>"
+                    "median: %{median:.4f}<br>"
+                    "Q1: %{q1:.4f} / Q3: %{q3:.4f}<br>"
+                    "min: %{lowerfence:.4f} / max: %{upperfence:.4f}"
+                    "<extra></extra>"
+                ),
+                showlegend=False,
             )
         )
-    if "actual" in df.columns:
-        fig.add_trace(
-            go.Scatter(
-                x=x_vals,
-                y=df["actual"],
-                mode="lines",
-                name="Actual PnL",
-                line={"color": "#cbd5e1", "width": 1.5, "dash": "dash"},
-                hovertemplate="%{y:.4f}<extra></extra>",
-            )
-        )
+
     fig.update_layout(
-        template="plotly_dark",
-        plot_bgcolor="rgba(0, 0, 0, 0)",
-        paper_bgcolor="rgba(0, 0, 0, 0)",
-        margin={"l": 32, "r": 16, "t": 8, "b": 32},
-        font={"family": "Inter, system-ui, sans-serif", "color": "#cbd5e1", "size": 11},
-        xaxis={
-            "showgrid":        False,
-            "zeroline":        False,
-            "showticklabels":  True,
-            "tickfont":        {"color": "#64748b"},
-        },
-        yaxis={
-            "gridcolor": "rgba(30, 41, 59, 0.6)",
-            "zeroline":  False,
-            "tickfont":  {"color": "#64748b"},
-        },
-        legend={
-            "orientation": "h",
-            "y": 1.08, "x": 1, "xanchor": "right",
-            "bgcolor": "rgba(0, 0, 0, 0)",
-            "font": {"color": "#94a3b8", "size": 11},
-        },
-        hovermode="x unified",
+        **rade_layout(
+            show_legend=False,
+            xaxis={
+                "title": {
+                    "text": group_label or "",
+                    "font": {"color": "#94a3b8", "size": 11},
+                },
+                "showgrid": False,
+            },
+            yaxis={"title": {"text": y_axis_title, "font": {"color": "#94a3b8"}}},
+        ),
+    )
+    fig.add_hline(
+        y=0,
+        line_dash="dash",
+        line_color="rgba(148, 163, 184, 0.4)",
+        line_width=1,
     )
     return fig
 
 
-def _compute_heatmap_children(
-    backend: "RadeBackend",
-    split: str,
-) -> List[Any]:
-    """Children list for the cluster-health card (title + cell grid)."""
-    title = html.Div(
-        "Cluster Health",
-        className="text-sm font-semibold text-slate-200",
+def _aggregate_violin(
+    residuals: np.ndarray,
+    *,
+    y_axis_title: str,
+) -> go.Figure:
+    mu    = float(residuals.mean())
+    sigma = float(residuals.std())
+    if sigma > 0:
+        pct_1s = float(np.mean(np.abs(residuals - mu) <= sigma) * 100)
+        pct_2s = float(np.mean(np.abs(residuals - mu) <= 2 * sigma) * 100)
+        skew, kurt = _skew_kurt(residuals)
+    else:
+        pct_1s = pct_2s = 100.0
+        skew = kurt = 0.0
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Violin(
+            y=residuals,
+            x=[""] * residuals.size,
+            name="Residuals",
+            line_color=color_for_index(0),
+            fillcolor=rgba(color_for_index(0), 0.2),
+            box_visible=True,
+            meanline_visible=True,
+            points="outliers",
+            hoveron="violins",
+            showlegend=False,
+        )
+    )
+    fig.add_hline(
+        y=0,
+        line_dash="dash",
+        line_color="rgba(148, 163, 184, 0.4)",
+        line_width=1,
     )
 
-    res = backend.per_member_metrics_df(split=split)
-    if not res.ok or res.data is None or res.data.empty:
-        if not res.ok:
-            logger.warning("per-member-metrics fetch failed: %s", res.error)
-        return [title, _heatmap_empty()]
+    annotation_text = (
+        f"μ={mu:.4f}  σ={sigma:.4f}<br>"
+        f"skew={skew:.2f}  kurt={kurt:.2f}<br>"
+        f"±1σ: {pct_1s:.1f}%  ±2σ: {pct_2s:.1f}%  "
+        f"n={residuals.size:,}"
+    )
 
-    df = res.data
-    if "p95_ae" not in df.columns or "cluster_id" not in df.columns:
-        return [title, _heatmap_empty()]
+    fig.update_layout(
+        **rade_layout(
+            xaxis={"visible": False},
+            yaxis={"title": {"text": y_axis_title, "font": {"color": "#94a3b8"}}},
+        ),
+        annotations=[
+            {
+                "text":      annotation_text,
+                "showarrow": False,
+                "xref":      "paper",
+                "yref":      "paper",
+                "x":         0.98,
+                "y":         0.98,
+                "xanchor":   "right",
+                "yanchor":   "top",
+                "bgcolor":   "rgba(15, 23, 42, 0.85)",
+                "bordercolor": "rgba(148, 163, 184, 0.3)",
+                "borderwidth": 1,
+                "borderpad":   6,
+                "font": {"size": 11, "color": "#cbd5e1", "family": "Inter, system-ui"},
+                "align":     "right",
+            }
+        ],
+    )
+    return fig
 
-    # Tercile-by-p95 classification — cheap and schema-free.  Future
-    # phase can replace this with a governance-defined status column.
-    df = df.dropna(subset=["p95_ae"]).sort_values("p95_ae").reset_index(drop=True)
-    if df.empty:
-        return [title, _heatmap_empty()]
 
-    n = len(df)
-    lo = n // 3
-    hi = (2 * n) // 3
-    cells: List[Any] = []
-    for i, row in df.iterrows():
-        if i < lo:
-            status = "ok"
-        elif i < hi:
-            status = "warn"
-        else:
-            status = "err"
-        cells.append(
-            html.Div(
-                className=f"rade-heatmap-cell rade-heatmap-cell--{status}",
-                title=f"{row['cluster_id']} — p95 AE {_fmt_num(row['p95_ae'], digits=4)}",
-            )
+def _skew_kurt(residuals: np.ndarray) -> tuple[float, float]:
+    try:
+        from scipy import stats as _stats  # noqa: WPS433 — lazy import by design
+        return float(_stats.skew(residuals)), float(_stats.kurtosis(residuals))
+    except Exception:  # noqa: BLE001
+        mu = residuals.mean()
+        sigma = residuals.std()
+        if sigma <= 0:
+            return 0.0, 0.0
+        z = (residuals - mu) / sigma
+        return float((z ** 3).mean()), float((z ** 4).mean() - 3.0)
+
+
+def _resolve_group_order(
+    group_values: Optional[Sequence[str]],
+    group_order:  Optional[Iterable[str]],
+) -> list[str]:
+    if not group_values:
+        return []
+    uniq = sorted({str(g) for g in group_values if g is not None})
+    if group_order is None:
+        return uniq
+
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for g in group_order:
+        key = str(g)
+        if key in uniq and key not in seen:
+            ordered.append(key)
+            seen.add(key)
+    for key in uniq:
+        if key not in seen:
+            ordered.append(key)
+    return ordered
+
+
+__all__ = ["residual_violin"]
+```
+
+---
+
+### Step 4 · CREATE `src/ui/apps/rade_analytics/figures/scatter.py`
+
+> **Action.**  Create the file.
+
+```python
+"""Predicted-vs-actual scatter figure (aggregate / grouped / focus)."""
+from __future__ import annotations
+
+from typing import Iterable, Optional, Sequence
+
+import numpy as np
+import plotly.graph_objects as go
+
+from ._theme import color_for_index, empty_figure, rade_layout
+
+
+def pred_actual_scatter(
+    predicted:     Sequence[float],
+    actual:        Sequence[float],
+    *,
+    group_values:  Optional[Sequence[str]] = None,
+    group_order:   Optional[Iterable[str]] = None,
+    focus_group:   Optional[str] = None,
+    hover_labels:  Optional[Sequence[str]] = None,
+    x_axis_title:  str = "Predicted",
+    y_axis_title:  str = "Actual",
+) -> go.Figure:
+    pred = np.asarray(list(predicted), dtype=float)
+    act  = np.asarray(list(actual),    dtype=float)
+    if pred.size == 0 or pred.shape != act.shape:
+        return empty_figure("No prediction-actual pairs to plot.")
+
+    all_vals = np.concatenate([pred, act])
+    lo, hi = float(np.min(all_vals)), float(np.max(all_vals))
+    pad = (hi - lo) * 0.05 if hi > lo else 1.0
+    span = (lo - pad, hi + pad)
+
+    grouped = group_values is not None and len(group_values) == pred.size
+
+    fig = go.Figure()
+
+    if not grouped:
+        _trace_aggregate(
+            fig, pred, act,
+            hover_labels=hover_labels,
+            color=color_for_index(0),
         )
+    else:
+        groups = _resolve_group_order(group_values, group_order)
+        group_arr = np.asarray(group_values, dtype=object)
 
+        for idx, group in enumerate(groups):
+            if focus_group is not None and group != focus_group:
+                continue
+            mask = group_arr == group
+            if not mask.any():
+                continue
+            labels_here = (
+                [hover_labels[i] for i in np.flatnonzero(mask)]
+                if hover_labels is not None
+                else None
+            )
+            _trace_one_group(
+                fig,
+                pred[mask], act[mask],
+                group=str(group),
+                color=color_for_index(idx),
+                hover_labels=labels_here,
+            )
+
+    _add_identity_line(fig, span)
+
+    fig.update_layout(
+        **rade_layout(
+            show_legend=grouped and focus_group is None,
+            xaxis={
+                "title": {"text": x_axis_title, "font": {"color": "#94a3b8"}},
+                "range": list(span),
+            },
+            yaxis={
+                "title": {"text": y_axis_title, "font": {"color": "#94a3b8"}},
+                "range": list(span),
+            },
+        ),
+    )
+    fig.update_yaxes(scaleanchor="x", scaleratio=1)
+    return fig
+
+
+def _trace_aggregate(
+    fig: go.Figure,
+    pred: np.ndarray,
+    act: np.ndarray,
+    *,
+    hover_labels: Optional[Sequence[str]],
+    color: str,
+) -> None:
+    customdata = _build_customdata(group="", labels=hover_labels, n=pred.size)
+    hovertemplate = (
+        "pred: %{x:.4f}<br>actual: %{y:.4f}"
+        "<br>%{customdata[1]}<extra></extra>"
+        if hover_labels is not None else
+        "pred: %{x:.4f}<br>actual: %{y:.4f}<extra></extra>"
+    )
+    fig.add_trace(
+        go.Scattergl(
+            x=pred, y=act,
+            mode="markers",
+            marker={
+                "size":    6,
+                "color":   color,
+                "opacity": 0.7,
+                "line":    {"width": 0},
+            },
+            customdata=customdata,
+            hovertemplate=hovertemplate,
+            name="All",
+            showlegend=False,
+        )
+    )
+
+
+def _trace_one_group(
+    fig: go.Figure,
+    pred: np.ndarray,
+    act: np.ndarray,
+    *,
+    group: str,
+    color: str,
+    hover_labels: Optional[Sequence[str]],
+) -> None:
+    customdata = _build_customdata(group=group, labels=hover_labels, n=pred.size)
+    if hover_labels is not None:
+        hovertemplate = (
+            f"<b>{group}</b><br>"
+            "pred: %{x:.4f}<br>actual: %{y:.4f}<br>"
+            "%{customdata[1]}"
+            "<extra>Click to focus</extra>"
+        )
+    else:
+        hovertemplate = (
+            f"<b>{group}</b><br>"
+            "pred: %{x:.4f}<br>actual: %{y:.4f}"
+            "<extra>Click to focus</extra>"
+        )
+    fig.add_trace(
+        go.Scattergl(
+            x=pred, y=act,
+            mode="markers",
+            marker={
+                "size":    6,
+                "color":   color,
+                "opacity": 0.75,
+                "line":    {"width": 0},
+            },
+            name=group,
+            customdata=customdata,
+            hovertemplate=hovertemplate,
+        )
+    )
+
+
+def _add_identity_line(fig: go.Figure, span: tuple[float, float]) -> None:
+    fig.add_trace(
+        go.Scatter(
+            x=list(span), y=list(span),
+            mode="lines",
+            line={"color": "rgba(148, 163, 184, 0.55)", "dash": "dash", "width": 1},
+            hoverinfo="skip",
+            showlegend=False,
+            name="Identity",
+        )
+    )
+
+
+def _build_customdata(
+    *,
+    group: str,
+    labels: Optional[Sequence[str]],
+    n: int,
+) -> list[list[str]]:
+    if labels is None:
+        return [[group, ""] for _ in range(n)]
+    return [[group, str(labels[i]) if labels[i] is not None else ""] for i in range(n)]
+
+
+def _resolve_group_order(
+    group_values: Optional[Sequence[str]],
+    group_order:  Optional[Iterable[str]],
+) -> list[str]:
+    if not group_values:
+        return []
+    uniq = sorted({str(g) for g in group_values if g is not None})
+    if group_order is None:
+        return uniq
+
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for g in group_order:
+        key = str(g)
+        if key in uniq and key not in seen:
+            ordered.append(key)
+            seen.add(key)
+    for key in uniq:
+        if key not in seen:
+            ordered.append(key)
+    return ordered
+
+
+__all__ = ["pred_actual_scatter"]
+```
+
+---
+
+### Step 5 · CREATE `src/ui/apps/rade_analytics/figures/timeseries.py`
+
+> **Action.**  Create the file.
+
+```python
+"""Portfolio-level time-series figures."""
+from __future__ import annotations
+
+from typing import Optional
+
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+
+from ._theme import color_for_index, empty_figure, rade_layout, rgba
+
+
+def portfolio_pnl(df: pd.DataFrame) -> go.Figure:
+    if df is None or df.empty or "predicted" not in df.columns or "actual" not in df.columns:
+        return empty_figure("No portfolio data for the active filter set.")
+
+    df_sorted = df.sort_values("scenario_idx") if "scenario_idx" in df.columns else df
+    x_vals = (
+        df_sorted["scenario_label"]
+        if "scenario_label" in df_sorted.columns
+        else list(range(len(df_sorted)))
+    )
+
+    pred_color = color_for_index(0)
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x_vals,
+            y=df_sorted["predicted"],
+            mode="lines",
+            name="Predicted PnL",
+            line={"color": pred_color, "width": 2.5},
+            fill="tozeroy",
+            fillcolor=rgba(pred_color, 0.18),
+            hovertemplate="%{y:.4f}<extra>Predicted</extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x_vals,
+            y=df_sorted["actual"],
+            mode="lines",
+            name="Actual PnL",
+            line={"color": "#cbd5e1", "width": 1.5, "dash": "dash"},
+            hovertemplate="%{y:.4f}<extra>Actual</extra>",
+        )
+    )
+    fig.update_layout(
+        **rade_layout(
+            show_legend=True,
+            hovermode="x unified",
+            xaxis={"showticklabels": True},
+            yaxis={"title": {"text": "PnL", "font": {"color": "#94a3b8"}}},
+        ),
+    )
+    return fig
+
+
+def error_over_time(
+    df:       pd.DataFrame,
+    *,
+    window:   Optional[int] = None,
+    band_std: float = 1.0,
+) -> go.Figure:
+    if df is None or df.empty:
+        return empty_figure("No error-over-time data for the active filter set.")
+
+    if "abs_error" in df.columns:
+        abs_err = df["abs_error"].astype(float)
+    elif {"predicted", "actual"}.issubset(df.columns):
+        abs_err = (df["predicted"] - df["actual"]).abs().astype(float)
+    else:
+        return empty_figure("Error-over-time requires predicted + actual columns.")
+
+    df_sorted = df.assign(_abs_error=abs_err)
+    if "scenario_idx" in df_sorted.columns:
+        df_sorted = df_sorted.sort_values("scenario_idx")
+    x_vals = (
+        df_sorted["scenario_label"]
+        if "scenario_label" in df_sorted.columns
+        else list(range(len(df_sorted)))
+    )
+
+    n = len(df_sorted)
+    win = int(window) if window else max(3, n // 10)
+    win = min(max(win, 3), n)
+
+    rolling_mean = df_sorted["_abs_error"].rolling(win, min_periods=1).mean()
+    rolling_std  = df_sorted["_abs_error"].rolling(win, min_periods=1).std().fillna(0.0)
+    upper = rolling_mean + band_std * rolling_std
+    lower = (rolling_mean - band_std * rolling_std).clip(lower=0)
+
+    err_color = color_for_index(3)  # rose
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x_vals, y=upper,
+            mode="lines",
+            line={"color": "rgba(244, 63, 94, 0)", "width": 0},
+            hoverinfo="skip",
+            showlegend=False,
+            name="upper",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x_vals, y=lower,
+            mode="lines",
+            line={"color": "rgba(244, 63, 94, 0)", "width": 0},
+            fill="tonexty",
+            fillcolor="rgba(244, 63, 94, 0.18)",
+            hoverinfo="skip",
+            showlegend=False,
+            name="lower",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x_vals, y=df_sorted["_abs_error"],
+            mode="lines",
+            line={"color": "rgba(244, 63, 94, 0.35)", "width": 1},
+            name="abs error",
+            hovertemplate="%{y:.4f}<extra>abs error</extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x_vals, y=rolling_mean,
+            mode="lines",
+            line={"color": err_color, "width": 2.5},
+            name=f"rolling mean (w={win})",
+            hovertemplate="%{y:.4f}<extra>rolling mean</extra>",
+        )
+    )
+
+    fig.update_layout(
+        **rade_layout(
+            show_legend=True,
+            hovermode="x unified",
+            xaxis={"showticklabels": True},
+            yaxis={"title": {"text": "Absolute error", "font": {"color": "#94a3b8"}}},
+        ),
+    )
+    return fig
+
+
+def _safe_std(values: np.ndarray) -> float:
+    if values.size == 0:
+        return 0.0
+    return float(np.std(values))
+
+
+__all__ = ["error_over_time", "portfolio_pnl"]
+```
+
+---
+
+### Step 6 · CREATE `src/ui/apps/rade_analytics/figures/__init__.py`
+
+> **Action.**  Create the file — this makes `figures/` a proper Python
+> package and exposes every builder from a single import.
+
+```python
+"""Figure builders for the Rade Analytics Dash UI."""
+from __future__ import annotations
+
+from ._theme import (
+    CATEGORY_PALETTE,
+    color_for_index,
+    empty_figure,
+    rade_layout,
+    rgba,
+)
+from .distributions import residual_violin
+from .scatter import pred_actual_scatter
+from .timeseries import error_over_time, portfolio_pnl
+
+__all__ = [
+    "CATEGORY_PALETTE",
+    "color_for_index",
+    "empty_figure",
+    "error_over_time",
+    "portfolio_pnl",
+    "pred_actual_scatter",
+    "rade_layout",
+    "residual_violin",
+    "rgba",
+]
+```
+
+---
+
+### Step 7 · REPLACE `src/ui/apps/rade_analytics/layouts/evaluation/portfolio.py`
+
+> **Action.**  Replace the entire file.  The old stub is gone; this is
+> the real 5-row Portfolio layout.
+
+```python
+"""Evaluation → Portfolio sub-tab layout."""
+from __future__ import annotations
+
+from typing import Any, Dict, List
+
+import dash_mantine_components as dmc
+from dash import html
+from dash_iconify import DashIconify
+
+from ...components.ag_grid_table import AgGridTable
+from ...components.chart_container import ChartContainer
+from ...components.kpi_card import KpiCard
+from ...data.session import EVALUATION_PORTFOLIO_GROUP_BY
+
+
+PORTFOLIO_IDS: Dict[str, str] = {
+    "root":                 "eval-portfolio-root",
+
+    "kpi_mae_card":         "eval-portfolio-kpi-mae-card",
+    "kpi_mae_value":        "eval-portfolio-kpi-mae-value",
+    "kpi_rmse_card":        "eval-portfolio-kpi-rmse-card",
+    "kpi_rmse_value":       "eval-portfolio-kpi-rmse-value",
+    "kpi_hit_rate_card":    "eval-portfolio-kpi-hit-rate-card",
+    "kpi_hit_rate_value":   "eval-portfolio-kpi-hit-rate-value",
+    "kpi_coverage_card":    "eval-portfolio-kpi-coverage-card",
+    "kpi_coverage_value":   "eval-portfolio-kpi-coverage-value",
+
+    "pnl_chart":            "eval-portfolio-pnl-chart",
+    "error_ts_chart":       "eval-portfolio-error-ts-chart",
+
+    "analysis_divider":     "eval-portfolio-analysis-divider",
+    "groupby_select":       "eval-portfolio-groupby-select",
+    "groupby_clear_btn":    "eval-portfolio-groupby-clear-btn",
+    "groupby_count_label":  "eval-portfolio-groupby-count-label",
+
+    "residual_violin":      "eval-portfolio-residual-violin",
+    "pred_actual_scatter":  "eval-portfolio-pred-actual-scatter",
+
+    "focus_chip_container": "eval-portfolio-focus-chip-container",
+    "focus_chip_label":     "eval-portfolio-focus-chip-label",
+    "focus_chip_clear_btn": "eval-portfolio-focus-chip-clear-btn",
+
+    "leaderboard_card":      "eval-portfolio-leaderboard-card",
+    "leaderboard_grid":      "eval-portfolio-leaderboard-grid",
+    "leaderboard_grid_wrap": "eval-portfolio-leaderboard-grid-wrap",
+    "leaderboard_empty":     "eval-portfolio-leaderboard-empty",
+    "leaderboard_header":    "eval-portfolio-leaderboard-header",
+}
+
+
+_GROUP_BY_LABELS: Dict[str, str] = {
+    "desk":        "Desk",
+    "product":     "Product",
+    "currency":    "Currency",
+    "asset_class": "Asset class",
+    "cluster":     "Cluster",
+}
+
+assert set(_GROUP_BY_LABELS.keys()) == set(EVALUATION_PORTFOLIO_GROUP_BY), (
+    "Portfolio group-by labels out of sync with session whitelist"
+)
+
+
+def _groupby_options() -> List[Dict[str, str]]:
     return [
-        title,
-        html.Div(className="rade-cluster-heatmap", children=cells),
+        {"value": key, "label": _GROUP_BY_LABELS[key]}
+        for key in EVALUATION_PORTFOLIO_GROUP_BY
     ]
 
 
-def _heatmap_empty() -> html.Div:
+def build_portfolio() -> html.Div:
     return html.Div(
-        "No per-cluster metrics available.",
-        className="text-xs text-slate-500",
+        id=PORTFOLIO_IDS["root"],
+        className="rade-evaluation-subtab flex flex-col gap-4",
+        children=[
+            _row_kpis(),
+            _row_pnl_chart(),
+            _row_error_timeseries(),
+            _row_analysis_divider(),
+            _row_faceted_charts(),
+            _row_leaderboard(),
+        ],
     )
 
 
-def _compute_top_performers_children(
+def _row_kpis() -> html.Div:
+    return html.Div(
+        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3",
+        children=[
+            KpiCard(
+                label="MAE",
+                value="—",
+                card_id=PORTFOLIO_IDS["kpi_mae_card"],
+                value_id=PORTFOLIO_IDS["kpi_mae_value"],
+                icon="tabler:arrow-narrow-down",
+            ),
+            KpiCard(
+                label="RMSE",
+                value="—",
+                card_id=PORTFOLIO_IDS["kpi_rmse_card"],
+                value_id=PORTFOLIO_IDS["kpi_rmse_value"],
+                icon="tabler:square-root",
+            ),
+            KpiCard(
+                label="Hit rate",
+                value="—",
+                card_id=PORTFOLIO_IDS["kpi_hit_rate_card"],
+                value_id=PORTFOLIO_IDS["kpi_hit_rate_value"],
+                icon="tabler:target",
+            ),
+            KpiCard(
+                label="Coverage",
+                value="—",
+                card_id=PORTFOLIO_IDS["kpi_coverage_card"],
+                value_id=PORTFOLIO_IDS["kpi_coverage_value"],
+                icon="tabler:chart-bar",
+            ),
+        ],
+    )
+
+
+def _row_pnl_chart() -> html.Div:
+    return ChartContainer(
+        title="Portfolio PnL",
+        subtitle="Predicted vs actual across the active split",
+        graph_id=PORTFOLIO_IDS["pnl_chart"],
+        height=300,
+    )
+
+
+def _row_error_timeseries() -> html.Div:
+    return ChartContainer(
+        title="Error over time",
+        subtitle="Rolling absolute error with ±1σ band",
+        graph_id=PORTFOLIO_IDS["error_ts_chart"],
+        height=260,
+    )
+
+
+def _row_analysis_divider() -> html.Div:
+    return html.Div(
+        id=PORTFOLIO_IDS["analysis_divider"],
+        className="rade-section-divider flex items-center gap-3",
+        children=[
+            html.Div(
+                className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-400",
+                children=[
+                    DashIconify(icon="tabler:chart-dots-2", width=14),
+                    html.Span("Error analysis"),
+                ],
+            ),
+            html.Div(className="flex-1 h-px bg-slate-800"),
+            html.Div(
+                className="flex items-center gap-2",
+                children=[
+                    html.Span(
+                        "Break down by",
+                        className="text-xs text-slate-400",
+                    ),
+                    dmc.Select(
+                        id=PORTFOLIO_IDS["groupby_select"],
+                        placeholder="None",
+                        data=_groupby_options(),
+                        value=None,
+                        clearable=True,
+                        searchable=False,
+                        size="xs",
+                        radius="sm",
+                        className="rade-portfolio-groupby-select",
+                        style={"minWidth": "160px"},
+                    ),
+                    html.Span(
+                        id=PORTFOLIO_IDS["groupby_count_label"],
+                        className="text-xs text-slate-500",
+                        children="",
+                    ),
+                    dmc.Button(
+                        id=PORTFOLIO_IDS["groupby_clear_btn"],
+                        children="Clear",
+                        leftSection=DashIconify(icon="tabler:x", width=12),
+                        size="xs",
+                        variant="subtle",
+                        color="gray",
+                        style={"display": "none"},
+                    ),
+                ],
+            ),
+        ],
+    )
+
+
+def _row_faceted_charts() -> html.Div:
+    return html.Div(
+        className="grid grid-cols-1 lg:grid-cols-2 gap-3",
+        children=[
+            ChartContainer(
+                title="Residual distribution",
+                subtitle="Pred − actual",
+                graph_id=PORTFOLIO_IDS["residual_violin"],
+                height=360,
+            ),
+            ChartContainer(
+                title="Predicted vs actual",
+                subtitle="Dashed line is the identity",
+                graph_id=PORTFOLIO_IDS["pred_actual_scatter"],
+                height=360,
+                actions=[_focus_chip()],
+                config={"doubleClick": "reset"},
+            ),
+        ],
+    )
+
+
+def _focus_chip() -> html.Div:
+    return html.Div(
+        id=PORTFOLIO_IDS["focus_chip_container"],
+        className="rade-focus-chip flex items-center gap-1",
+        style={"display": "none"},
+        children=[
+            DashIconify(icon="tabler:focus-2", width=12, className="text-violet-400"),
+            html.Span(
+                "Focused: —",
+                id=PORTFOLIO_IDS["focus_chip_label"],
+                className="text-xs text-slate-300",
+            ),
+            html.Button(
+                "× Show all",
+                id=PORTFOLIO_IDS["focus_chip_clear_btn"],
+                className="rade-focus-chip-close",
+                **{"aria-label": "Clear scatter focus"},
+            ),
+        ],
+    )
+
+
+def _row_leaderboard() -> html.Div:
+    header = html.Div(
+        id=PORTFOLIO_IDS["leaderboard_header"],
+        className="flex items-center justify-between",
+        children=[
+            html.Div(
+                className="flex flex-col",
+                children=[
+                    html.Div("Leaderboard", className="text-sm font-semibold text-slate-200"),
+                    html.Div(
+                        "Pick a break-down dimension to compare contributors.",
+                        className="text-xs text-slate-500",
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    empty_state = html.Div(
+        id=PORTFOLIO_IDS["leaderboard_empty"],
+        className="rade-list-empty flex flex-col items-center justify-center gap-2 py-8",
+        children=[
+            DashIconify(icon="tabler:table-off", width=22, className="text-slate-600"),
+            html.Div(
+                "Pick a break-down dimension above to compare contributors "
+                "by desk, product, currency, asset class or cluster.",
+                className="text-xs text-slate-500 text-center max-w-sm",
+            ),
+        ],
+    )
+
+    grid = AgGridTable(
+        grid_id=PORTFOLIO_IDS["leaderboard_grid"],
+        column_defs=_initial_column_defs(),
+        row_data=[],
+        height=320,
+        className="rade-portfolio-leaderboard",
+    )
+
+    grid_wrapper = html.Div(
+        id=PORTFOLIO_IDS["leaderboard_grid_wrap"],
+        className="rade-portfolio-leaderboard-grid-wrap",
+        style={"display": "none"},
+        children=grid,
+    )
+
+    return html.Div(
+        id=PORTFOLIO_IDS["leaderboard_card"],
+        className="rade-card flex flex-col gap-3",
+        children=[header, empty_state, grid_wrapper],
+    )
+
+
+def _initial_column_defs() -> List[Dict[str, Any]]:
+    return [
+        {"field": "group_label", "headerName": "Break-down", "flex": 2, "minWidth": 140},
+        {"field": "mae",         "headerName": "MAE",        "flex": 1, "type": "numericColumn"},
+        {"field": "rmse",        "headerName": "RMSE",       "flex": 1, "type": "numericColumn"},
+        {"field": "hit_rate",    "headerName": "Hit %",      "flex": 1, "type": "numericColumn"},
+        {"field": "contribution", "headerName": "Contribution", "flex": 1, "type": "numericColumn"},
+        {"field": "n_clusters",  "headerName": "Clusters",   "flex": 1, "type": "numericColumn"},
+    ]
+
+
+__all__ = ["PORTFOLIO_IDS", "build_portfolio"]
+```
+
+---
+
+### Step 8 · CREATE `src/ui/apps/rade_analytics/callbacks/portfolio_cb.py`
+
+> **Action.**  Create the file.  This is the biggest single paste in
+> the appendix — six callbacks + helpers.
+
+```python
+"""Evaluation → Portfolio sub-tab callbacks (Phase E.1)."""
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+from dash import Input, Output, State, ctx, no_update
+from dash.exceptions import PreventUpdate
+
+from ..data.session import EvaluationFilters, Session
+from ..figures import (
+    empty_figure,
+    error_over_time,
+    pred_actual_scatter,
+    portfolio_pnl,
+    residual_violin,
+)
+from ..layouts.evaluation.portfolio import PORTFOLIO_IDS
+from ..layouts.shell import SHELL_IDS
+
+if TYPE_CHECKING:
+    from dash import Dash
+
+    from ..data.backend import BackendResult, RadeBackend
+
+
+logger = logging.getLogger(__name__)
+
+
+_PORTFOLIO_PATH = "/evaluation/portfolio"
+_EVALUATION_PREFIX = "/evaluation"
+_PLACEHOLDER = "—"
+
+_GROUP_BY_COLUMN: Dict[str, str] = {
+    "desk":        "desk",
+    "product":     "product_code",
+    "currency":    "currency_code",
+    "asset_class": "asset_class",
+    "cluster":     "cluster_id",
+}
+
+_GROUP_BY_LABEL: Dict[str, str] = {
+    "desk":        "Desk",
+    "product":     "Product",
+    "currency":    "Currency",
+    "asset_class": "Asset class",
+    "cluster":     "Cluster",
+}
+
+_CLEAR_BTN_VISIBLE = {}
+_CLEAR_BTN_HIDDEN = {"display": "none"}
+
+_FOCUS_CHIP_VISIBLE_STYLE: Dict[str, Any] = {"display": "inline-flex"}
+_FOCUS_CHIP_HIDDEN_STYLE:  Dict[str, Any] = {"display": "none"}
+
+
+def register(app: "Dash", backend: "RadeBackend") -> None:
+    _register_sync_groupby(app)
+    _register_sync_scatter_focus(app)
+    _register_render_aggregate(app, backend)
+    _register_render_grouped(app, backend)
+    _register_hydrate_groupby(app)
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 1. Group-by Select + Clear → session
+# ══════════════════════════════════════════════════════════════════════
+
+
+def _register_sync_groupby(app: "Dash") -> None:
+    @app.callback(
+        Output(SHELL_IDS["session_store"],         "data", allow_duplicate=True),
+        Input(PORTFOLIO_IDS["groupby_select"],     "value"),
+        Input(PORTFOLIO_IDS["groupby_clear_btn"],  "n_clicks"),
+        State(SHELL_IDS["session_store"],          "data"),
+        prevent_initial_call=True,
+    )
+    def _sync_groupby(
+        selected_value: Optional[str],
+        clear_clicks:   Optional[int],
+        session_data:   Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        trigger = ctx.triggered_id
+        if trigger is None:
+            raise PreventUpdate
+
+        session = Session.from_store(session_data)
+        current = session.evaluation.portfolio_group_by
+
+        if trigger == PORTFOLIO_IDS["groupby_clear_btn"]:
+            if not clear_clicks:
+                raise PreventUpdate
+            new_value: Optional[str] = None
+        else:
+            new_value = selected_value if selected_value else None
+
+        if new_value == current and session.evaluation.portfolio_scatter_focus is None:
+            raise PreventUpdate
+
+        session.evaluation.portfolio_group_by = new_value
+        session.evaluation.portfolio_scatter_focus = None
+        return session.to_store()
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 2. Scatter clickData / dblclick / chip-close → session focus value
+# ══════════════════════════════════════════════════════════════════════
+
+
+def _register_sync_scatter_focus(app: "Dash") -> None:
+    @app.callback(
+        Output(SHELL_IDS["session_store"],                    "data", allow_duplicate=True),
+        Input(PORTFOLIO_IDS["pred_actual_scatter"],           "clickData"),
+        Input(PORTFOLIO_IDS["pred_actual_scatter"],           "relayoutData"),
+        Input(PORTFOLIO_IDS["focus_chip_clear_btn"],          "n_clicks"),
+        State(SHELL_IDS["session_store"],                     "data"),
+        prevent_initial_call=True,
+    )
+    def _sync_scatter_focus(
+        click_data:    Optional[Dict[str, Any]],
+        relayout_data: Optional[Dict[str, Any]],
+        clear_clicks:  Optional[int],
+        session_data:  Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        trigger = ctx.triggered_id
+        if trigger is None:
+            raise PreventUpdate
+
+        session = Session.from_store(session_data)
+        current = session.evaluation.portfolio_scatter_focus
+
+        if session.evaluation.portfolio_group_by is None:
+            if current is None:
+                raise PreventUpdate
+            session.evaluation.portfolio_scatter_focus = None
+            return session.to_store()
+
+        new_focus: Optional[str] = current
+
+        if trigger == PORTFOLIO_IDS["focus_chip_clear_btn"]:
+            if not clear_clicks:
+                raise PreventUpdate
+            new_focus = None
+
+        elif trigger == PORTFOLIO_IDS["pred_actual_scatter"]:
+            trigger_prop = ctx.triggered[0]["prop_id"].split(".")[-1] if ctx.triggered else ""
+            if trigger_prop == "clickData":
+                new_focus = _extract_group_from_click(click_data)
+                if new_focus is None:
+                    raise PreventUpdate
+            elif trigger_prop == "relayoutData":
+                if not _is_autorange_reset(relayout_data):
+                    raise PreventUpdate
+                new_focus = None
+            else:
+                raise PreventUpdate
+
+        if new_focus == current:
+            raise PreventUpdate
+
+        session.evaluation.portfolio_scatter_focus = new_focus
+        return session.to_store()
+
+
+def _extract_group_from_click(
+    click_data: Optional[Dict[str, Any]],
+) -> Optional[str]:
+    if not click_data:
+        return None
+    points = click_data.get("points") or []
+    if not points:
+        return None
+    cd = points[0].get("customdata")
+    if not cd or not isinstance(cd, (list, tuple)) or not cd:
+        return None
+    value = cd[0]
+    if not isinstance(value, str) or not value:
+        return None
+    return value
+
+
+def _is_autorange_reset(relayout_data: Optional[Dict[str, Any]]) -> bool:
+    if not relayout_data:
+        return False
+    return any(
+        key.endswith(".autorange") and value is True
+        for key, value in relayout_data.items()
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 3. Aggregate render — KPIs + PnL + error over time
+# ══════════════════════════════════════════════════════════════════════
+
+
+def _register_render_aggregate(app: "Dash", backend: "RadeBackend") -> None:
+    @app.callback(
+        Output(PORTFOLIO_IDS["kpi_mae_value"],      "children"),
+        Output(PORTFOLIO_IDS["kpi_rmse_value"],     "children"),
+        Output(PORTFOLIO_IDS["kpi_hit_rate_value"], "children"),
+        Output(PORTFOLIO_IDS["kpi_coverage_value"], "children"),
+        Output(PORTFOLIO_IDS["pnl_chart"],          "figure"),
+        Output(PORTFOLIO_IDS["error_ts_chart"],     "figure"),
+        Input(SHELL_IDS["url"],                     "pathname"),
+        Input(SHELL_IDS["session_store"],           "data"),
+    )
+    def _render_aggregate(
+        pathname:     Optional[str],
+        session_data: Optional[Dict[str, Any]],
+    ) -> Tuple[str, str, str, str, go.Figure, go.Figure]:
+        if pathname != _PORTFOLIO_PATH:
+            raise PreventUpdate
+
+        session = Session.from_store(session_data)
+        split = session.split
+        filters = session.evaluation.filters
+
+        portfolio_df = _aggregate_portfolio_frame(backend, split, filters)
+        if portfolio_df is None or portfolio_df.empty:
+            empty_fig = empty_figure("No portfolio data for the active filter set.")
+            return (
+                _PLACEHOLDER, _PLACEHOLDER, _PLACEHOLDER, _PLACEHOLDER,
+                empty_fig,
+                empty_figure("No error-over-time data for the active filter set."),
+            )
+
+        mae_txt, rmse_txt, hit_txt, cov_txt = _kpi_strings(portfolio_df)
+        pnl_fig = portfolio_pnl(portfolio_df)
+        err_fig = error_over_time(portfolio_df)
+
+        return mae_txt, rmse_txt, hit_txt, cov_txt, pnl_fig, err_fig
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 4. Grouped render — violin + scatter + leaderboard + focus chip
+# ══════════════════════════════════════════════════════════════════════
+
+
+def _register_render_grouped(app: "Dash", backend: "RadeBackend") -> None:
+    @app.callback(
+        Output(PORTFOLIO_IDS["residual_violin"],         "figure"),
+        Output(PORTFOLIO_IDS["pred_actual_scatter"],     "figure"),
+        Output(PORTFOLIO_IDS["leaderboard_grid"],        "rowData"),
+        Output(PORTFOLIO_IDS["leaderboard_grid"],        "columnDefs"),
+        Output(PORTFOLIO_IDS["leaderboard_empty"],       "style"),
+        Output(PORTFOLIO_IDS["leaderboard_grid_wrap"],   "style"),
+        Output(PORTFOLIO_IDS["leaderboard_header"],      "children"),
+        Output(PORTFOLIO_IDS["focus_chip_container"],    "style"),
+        Output(PORTFOLIO_IDS["focus_chip_label"],        "children"),
+        Output(PORTFOLIO_IDS["groupby_clear_btn"],       "style"),
+        Output(PORTFOLIO_IDS["groupby_count_label"],     "children"),
+        Input(SHELL_IDS["url"],                          "pathname"),
+        Input(SHELL_IDS["session_store"],                "data"),
+    )
+    def _render_grouped(
+        pathname:     Optional[str],
+        session_data: Optional[Dict[str, Any]],
+    ) -> Tuple[Any, ...]:
+        if pathname != _PORTFOLIO_PATH:
+            raise PreventUpdate
+
+        session = Session.from_store(session_data)
+        split = session.split
+        filters = session.evaluation.filters
+        group_by = session.evaluation.portfolio_group_by
+        focus_group = session.evaluation.portfolio_scatter_focus
+
+        per_cluster = _per_cluster_frame(backend, split, filters)
+        available_groups: List[str] = []
+        group_column_name: Optional[str] = None
+        if group_by is not None:
+            group_column_name = _GROUP_BY_COLUMN.get(group_by)
+            if group_column_name and per_cluster is not None and group_column_name in per_cluster.columns:
+                available_groups = sorted(
+                    {str(v) for v in per_cluster[group_column_name].dropna().unique()}
+                )
+
+        effective_focus = (
+            focus_group if focus_group in available_groups else None
+        )
+
+        # ── Violin + scatter ────────────────────────────────────────
+        if per_cluster is None or per_cluster.empty:
+            violin_fig = empty_figure("No per-cluster residuals for this filter set.")
+            scatter_fig = empty_figure("No per-cluster pairs for this filter set.")
+        else:
+            residuals = (
+                per_cluster["predicted"] - per_cluster["actual"]
+            ).to_numpy(dtype=float)
+            hover_labels = per_cluster.get(
+                "cluster_id",
+                pd.Series([""] * len(per_cluster)),
+            ).astype(str).tolist()
+
+            if group_by is None or group_column_name is None or group_column_name not in per_cluster.columns:
+                violin_fig = residual_violin(residuals)
+                scatter_fig = pred_actual_scatter(
+                    per_cluster["predicted"].to_numpy(dtype=float),
+                    per_cluster["actual"].to_numpy(dtype=float),
+                    hover_labels=hover_labels,
+                )
+            else:
+                group_vals = per_cluster[group_column_name].astype(str).tolist()
+                violin_fig = residual_violin(
+                    residuals,
+                    group_values=group_vals,
+                    group_order=available_groups,
+                    group_label=_GROUP_BY_LABEL.get(group_by, group_by),
+                )
+                scatter_fig = pred_actual_scatter(
+                    per_cluster["predicted"].to_numpy(dtype=float),
+                    per_cluster["actual"].to_numpy(dtype=float),
+                    group_values=group_vals,
+                    group_order=available_groups,
+                    focus_group=effective_focus,
+                    hover_labels=hover_labels,
+                )
+
+        # ── Leaderboard ─────────────────────────────────────────────
+        if group_by is None:
+            leaderboard_rows: List[Dict[str, Any]] = []
+            column_defs = _leaderboard_column_defs(group_by=None)
+            empty_state_style: Dict[str, Any] = {}
+            grid_wrap_style:   Dict[str, Any] = {"display": "none"}
+        elif per_cluster is None or per_cluster.empty or group_column_name not in (per_cluster.columns if per_cluster is not None else []):
+            leaderboard_rows = []
+            column_defs = _leaderboard_column_defs(group_by=group_by)
+            empty_state_style = {}
+            grid_wrap_style = {"display": "none"}
+        else:
+            leaderboard_rows = _leaderboard_rows(
+                per_cluster,
+                group_column=group_column_name,
+            )
+            column_defs = _leaderboard_column_defs(group_by=group_by)
+            empty_state_style = {"display": "none"}
+            grid_wrap_style = {}
+
+        header_children = _leaderboard_header_children(
+            group_by=group_by,
+            n_groups=len(available_groups),
+            n_clusters=0 if per_cluster is None else len(per_cluster.drop_duplicates("cluster_id")) if "cluster_id" in (per_cluster.columns if per_cluster is not None else []) else 0,
+        )
+        focus_chip_style = (
+            _FOCUS_CHIP_VISIBLE_STYLE if effective_focus is not None
+            else _FOCUS_CHIP_HIDDEN_STYLE
+        )
+        focus_chip_label = f"Focused: {effective_focus}" if effective_focus else "Focused: —"
+
+        clear_btn_style = (
+            _CLEAR_BTN_VISIBLE if group_by is not None else _CLEAR_BTN_HIDDEN
+        )
+        if group_by is None:
+            count_label = ""
+        elif not available_groups:
+            count_label = "no groups"
+        else:
+            count_label = f"{len(available_groups)} group{'' if len(available_groups) == 1 else 's'}"
+
+        return (
+            violin_fig,
+            scatter_fig,
+            leaderboard_rows,
+            column_defs,
+            empty_state_style,
+            grid_wrap_style,
+            header_children,
+            focus_chip_style,
+            focus_chip_label,
+            clear_btn_style,
+            count_label,
+        )
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 5. Hydrate Select on entry to /evaluation/portfolio
+# ══════════════════════════════════════════════════════════════════════
+
+
+def _register_hydrate_groupby(app: "Dash") -> None:
+    @app.callback(
+        Output(PORTFOLIO_IDS["groupby_select"], "value", allow_duplicate=True),
+        Input(SHELL_IDS["url"],                 "pathname"),
+        State(SHELL_IDS["session_store"],       "data"),
+        prevent_initial_call="initial_duplicate",
+    )
+    def _hydrate_groupby(
+        pathname:     Optional[str],
+        session_data: Optional[Dict[str, Any]],
+    ) -> Any:
+        if pathname != _PORTFOLIO_PATH:
+            raise PreventUpdate
+        session = Session.from_store(session_data)
+        return session.evaluation.portfolio_group_by
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Data plumbing helpers
+# ══════════════════════════════════════════════════════════════════════
+
+
+def _aggregate_portfolio_frame(
     backend: "RadeBackend",
-    split: str,
+    split:   str,
+    filters: EvaluationFilters,
+) -> Optional[pd.DataFrame]:
+    df: Optional[pd.DataFrame]
+
+    if filters.is_empty() or _only_date_filter(filters):
+        res = backend.portfolio_df(split)
+        if not _ok(res):
+            logger.warning("portfolio_df(%s) failed: %s", split, res.error)  # type: ignore[union-attr]
+            return None
+        df = res.data.copy()  # type: ignore[union-attr]
+    else:
+        per_cluster = _per_cluster_frame(backend, split, filters)
+        if per_cluster is None or per_cluster.empty:
+            return None
+        df = _aggregate_clusters_to_portfolio(per_cluster)
+
+    if df is None or df.empty:
+        return None
+    return _apply_date_filter(df, filters)
+
+
+def _per_cluster_frame(
+    backend: "RadeBackend",
+    split:   str,
+    filters: EvaluationFilters,
+) -> Optional[pd.DataFrame]:
+    res_clusters = backend.clusters_df()
+    if not _ok(res_clusters):
+        logger.warning("clusters_df failed: %s", res_clusters.error)  # type: ignore[union-attr]
+        return None
+    clusters = res_clusters.data  # type: ignore[union-attr]
+    if clusters is None or clusters.empty:
+        return None
+
+    masked = _apply_attribute_filters(clusters, filters)
+    if masked.empty:
+        return masked
+
+    res_ts = backend.cluster_timeseries_df(split)
+    if not _ok(res_ts):
+        logger.warning("cluster_timeseries_df(%s) failed: %s", split, res_ts.error)  # type: ignore[union-attr]
+        return None
+    ts = res_ts.data  # type: ignore[union-attr]
+    if ts is None or ts.empty:
+        return ts
+
+    allowed_ids = set(masked["cluster_id"].astype(str))
+    ts_filtered = ts[ts["cluster_id"].astype(str).isin(allowed_ids)].copy()
+
+    attr_cols = [
+        c for c in ("desk", "product_code", "currency_code", "asset_class")
+        if c in masked.columns
+    ]
+    if attr_cols:
+        ts_filtered = ts_filtered.merge(
+            masked[["cluster_id", *attr_cols]],
+            on="cluster_id",
+            how="left",
+        )
+
+    return _apply_date_filter(ts_filtered, filters)
+
+
+def _aggregate_clusters_to_portfolio(per_cluster: pd.DataFrame) -> pd.DataFrame:
+    if per_cluster.empty:
+        return per_cluster
+
+    group_keys = [c for c in ("scenario_idx", "scenario_label") if c in per_cluster.columns]
+    if not group_keys:
+        group_keys = ["scenario_idx"] if "scenario_idx" in per_cluster.columns else ["scenario_label"]
+
+    agg = (
+        per_cluster.groupby(group_keys, as_index=False)
+        .agg(
+            predicted=("predicted", "sum"),
+            actual=("actual", "sum"),
+        )
+    )
+    agg["error"] = agg["predicted"] - agg["actual"]
+    agg["abs_error"] = agg["error"].abs()
+    agg["squared_error"] = agg["error"] ** 2
+    return agg
+
+
+def _apply_attribute_filters(
+    clusters: pd.DataFrame,
+    filters:  EvaluationFilters,
+) -> pd.DataFrame:
+    df = clusters
+    if filters.asset_class and "asset_class" in df.columns:
+        df = df[df["asset_class"].astype(str).isin(filters.asset_class)]
+    if filters.currency and "currency_code" in df.columns:
+        df = df[df["currency_code"].astype(str).isin(filters.currency)]
+    if filters.desk and "desk" in df.columns:
+        df = df[df["desk"].astype(str).isin(filters.desk)]
+    if filters.product and "product_code" in df.columns:
+        df = df[df["product_code"].astype(str).isin(filters.product)]
+    return df
+
+
+def _apply_date_filter(
+    df:       pd.DataFrame,
+    filters:  EvaluationFilters,
+) -> pd.DataFrame:
+    if "scenario_label" not in df.columns:
+        return df
+    out = df
+    if filters.date_from:
+        out = out[out["scenario_label"].astype(str) >= str(filters.date_from)]
+    if filters.date_to:
+        out = out[out["scenario_label"].astype(str) <= str(filters.date_to)]
+    return out
+
+
+def _only_date_filter(filters: EvaluationFilters) -> bool:
+    return (
+        not filters.asset_class
+        and not filters.currency
+        and not filters.desk
+        and not filters.product
+        and (filters.date_from is not None or filters.date_to is not None)
+    )
+
+
+def _ok(res: "BackendResult[Any]") -> bool:
+    return bool(getattr(res, "ok", False)) and getattr(res, "data", None) is not None
+
+
+# ══════════════════════════════════════════════════════════════════════
+# KPI + leaderboard computations
+# ══════════════════════════════════════════════════════════════════════
+
+
+def _kpi_strings(portfolio_df: pd.DataFrame) -> Tuple[str, str, str, str]:
+    if portfolio_df is None or portfolio_df.empty:
+        return _PLACEHOLDER, _PLACEHOLDER, _PLACEHOLDER, _PLACEHOLDER
+
+    abs_err = (
+        portfolio_df["abs_error"]
+        if "abs_error" in portfolio_df.columns
+        else (portfolio_df["predicted"] - portfolio_df["actual"]).abs()
+    ).astype(float)
+    sq_err = (
+        portfolio_df["squared_error"]
+        if "squared_error" in portfolio_df.columns
+        else (portfolio_df["predicted"] - portfolio_df["actual"]) ** 2
+    ).astype(float)
+
+    mae_val = float(abs_err.mean()) if not abs_err.empty else float("nan")
+    rmse_val = float(np.sqrt(sq_err.mean())) if not sq_err.empty else float("nan")
+
+    hit_mask = np.sign(portfolio_df["predicted"]) == np.sign(portfolio_df["actual"])
+    n_total = int(hit_mask.size)
+    hit_pct = float(hit_mask.mean() * 100.0) if n_total > 0 else float("nan")
+
+    finite_mask = (
+        portfolio_df["predicted"].notna()
+        & portfolio_df["actual"].notna()
+        & np.isfinite(portfolio_df["predicted"])
+        & np.isfinite(portfolio_df["actual"])
+    )
+    coverage_pct = float(finite_mask.mean() * 100.0) if n_total > 0 else float("nan")
+
+    return (
+        _fmt_num(mae_val, digits=4),
+        _fmt_num(rmse_val, digits=4),
+        _fmt_pct(hit_pct),
+        _fmt_pct(coverage_pct),
+    )
+
+
+def _leaderboard_rows(
+    per_cluster:   pd.DataFrame,
     *,
-    top_n: int = 3,
+    group_column:  str,
+) -> List[Dict[str, Any]]:
+    if per_cluster is None or per_cluster.empty or group_column not in per_cluster.columns:
+        return []
+
+    df = per_cluster.copy()
+    df["_abs_err"] = (df["predicted"] - df["actual"]).abs()
+    df["_sq_err"]  = (df["predicted"] - df["actual"]) ** 2
+    df["_hit"]     = (np.sign(df["predicted"]) == np.sign(df["actual"])).astype(float)
+
+    agg = df.groupby(group_column, dropna=False).agg(
+        mae=("_abs_err", "mean"),
+        rmse_sq=("_sq_err", "mean"),
+        hit_rate=("_hit", "mean"),
+        contribution_total=("_abs_err", "sum"),
+        n_clusters=("cluster_id", "nunique"),
+    ).reset_index()
+
+    total_abs = float(agg["contribution_total"].sum())
+    if total_abs <= 0:
+        agg["contribution"] = 0.0
+    else:
+        agg["contribution"] = agg["contribution_total"] / total_abs * 100.0
+
+    agg["rmse"] = np.sqrt(agg["rmse_sq"].astype(float))
+    agg["hit_rate"] = agg["hit_rate"].astype(float) * 100.0
+
+    agg = agg.sort_values("contribution", ascending=False)
+
+    rows: List[Dict[str, Any]] = []
+    for _, r in agg.iterrows():
+        rows.append(
+            {
+                "group_label":   "" if pd.isna(r[group_column]) else str(r[group_column]),
+                "mae":           _round(r["mae"], 4),
+                "rmse":          _round(r["rmse"], 4),
+                "hit_rate":      _round(r["hit_rate"], 1),
+                "contribution":  _round(r["contribution"], 1),
+                "n_clusters":    int(r["n_clusters"]),
+            }
+        )
+    return rows
+
+
+def _leaderboard_column_defs(*, group_by: Optional[str]) -> List[Dict[str, Any]]:
+    first_label = _GROUP_BY_LABEL.get(group_by or "", "Break-down") if group_by else "Break-down"
+    return [
+        {"field": "group_label", "headerName": first_label, "flex": 2, "minWidth": 140},
+        {
+            "field": "mae",
+            "headerName": "MAE",
+            "flex": 1,
+            "type": "numericColumn",
+            "valueFormatter": {"function": "d3.format(',.4f')(params.value)"},
+        },
+        {
+            "field": "rmse",
+            "headerName": "RMSE",
+            "flex": 1,
+            "type": "numericColumn",
+            "valueFormatter": {"function": "d3.format(',.4f')(params.value)"},
+        },
+        {
+            "field": "hit_rate",
+            "headerName": "Hit %",
+            "flex": 1,
+            "type": "numericColumn",
+            "valueFormatter": {"function": "d3.format(',.1f')(params.value)"},
+        },
+        {
+            "field": "contribution",
+            "headerName": "Contribution %",
+            "flex": 1,
+            "type": "numericColumn",
+            "valueFormatter": {"function": "d3.format(',.1f')(params.value)"},
+        },
+        {"field": "n_clusters", "headerName": "Clusters", "flex": 1, "type": "numericColumn"},
+    ]
+
+
+def _leaderboard_header_children(
+    *,
+    group_by:   Optional[str],
+    n_groups:   int,
+    n_clusters: int,
 ) -> List[Any]:
-    """Children list for the top-performers card (title + rows)."""
-    header = [
-        html.Div("Top Performers", className="rade-list-title"),
+    from dash import html
+
+    if group_by is None:
+        title = "Leaderboard"
+        subtitle = "Pick a break-down dimension to compare contributors."
+    else:
+        title = f"Leaderboard — by {_GROUP_BY_LABEL.get(group_by, group_by)}"
+        subtitle = (
+            f"{n_groups} group{'' if n_groups == 1 else 's'} "
+            f"covering {n_clusters} cluster{'' if n_clusters == 1 else 's'} "
+            "under the active filter set."
+        )
+
+    return [
         html.Div(
-            className="rade-list-header",
+            className="flex flex-col",
             children=[
-                html.Span("Cluster"),
-                html.Span("MAE / Scenarios"),
+                html.Div(title,    className="text-sm font-semibold text-slate-200"),
+                html.Div(subtitle, className="text-xs text-slate-500"),
             ],
         ),
     ]
 
-    res = backend.per_member_metrics_df(split=split)
-    if not res.ok or res.data is None or res.data.empty:
-        if not res.ok:
-            logger.warning("per-member-metrics fetch failed: %s", res.error)
-        return [
-            *header,
-            html.Div(
-                "No per-cluster metrics available.",
-                className="text-xs text-slate-500 py-2",
-            ),
-        ]
 
-    df = res.data
-    if "mae" not in df.columns or "cluster_id" not in df.columns:
-        return [
-            *header,
-            html.Div(
-                "Per-cluster metrics schema missing mae/cluster_id.",
-                className="text-xs text-slate-500 py-2",
-            ),
-        ]
+def _fmt_num(value: Any, *, digits: int = 2) -> str:
+    if value is None:
+        return _PLACEHOLDER
+    try:
+        val = float(value)
+    except (TypeError, ValueError):
+        return _PLACEHOLDER
+    if pd.isna(val) or not np.isfinite(val):
+        return _PLACEHOLDER
+    return f"{val:,.{digits}f}"
 
-    df = df.dropna(subset=["mae"]).sort_values("mae").head(top_n)
-    if df.empty:
-        return [
-            *header,
-            html.Div(
-                "No clusters with finite MAE.",
-                className="text-xs text-slate-500 py-2",
-            ),
-        ]
 
-    rows: List[Any] = []
-    for _, row in df.iterrows():
-        mae_txt = _fmt_num(row.get("mae"), digits=4)
-        n_scen = row.get("n_scenarios")
-        n_scen_txt = _fmt_int(n_scen) if n_scen is not None else _PLACEHOLDER
-        rows.append(
-            html.Div(
-                className="rade-list-row",
-                children=[
-                    html.Span(str(row["cluster_id"]), className="rade-list-row-label"),
-                    html.Span(
-                        children=[
-                            html.Span(mae_txt, className="rade-delta-pos"),
-                            html.Span(" "),
-                            html.Span(
-                                f"n={n_scen_txt}",
-                                className="text-xs text-slate-500",
-                            ),
-                        ],
-                    ),
-                ],
-            )
-        )
+def _fmt_pct(value: Any) -> str:
+    if value is None:
+        return _PLACEHOLDER
+    try:
+        val = float(value)
+    except (TypeError, ValueError):
+        return _PLACEHOLDER
+    if pd.isna(val) or not np.isfinite(val):
+        return _PLACEHOLDER
+    return f"{val:,.1f}%"
 
-    return [*header, *rows]
+
+def _round(value: Any, digits: int) -> Optional[float]:
+    try:
+        val = float(value)
+    except (TypeError, ValueError):
+        return None
+    if pd.isna(val) or not np.isfinite(val):
+        return None
+    return round(val, digits)
+
+
+_ = no_update  # preserved for future callbacks in this module
 
 
 __all__ = ["register"]
@@ -1975,30 +3518,19 @@ __all__ = ["register"]
 
 ---
 
-### Step 2 · EDIT `src/ui/apps/rade_analytics/callbacks/__init__.py`
+### Step 9 · EDIT `src/ui/apps/rade_analytics/callbacks/__init__.py`
 
-> **Action.**  Replace the entire contents with the block below.
-> The only changes vs. the existing file are the new
-> `overview_cb` import and its `register(...)` call.
+> **Action.**  Two-line edit — import `portfolio_cb` and call its
+> `register()` from `register_all`.  Safe to paste the whole file.
 
 ```python
-"""Callback orchestration — one public entry point: :func:`register_all`.
-
-The app factory calls :func:`register_all` exactly once, which in turn
-registers every callback the app needs.  Subsequent phases add
-page-local callback modules here (``splash_cb`` in Phase C,
-``overview_cb`` in Phase D.3, ``evaluation_cb`` in Phase E, etc.).
-
-Keeping registration centralised means the factory stays small and
-dependency wiring (``app`` + ``backend``) happens in one place.
-"""
-
+"""Callback orchestration — one public entry point: :func:`register_all`."""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 from ..router import register_router
-from . import evaluation_cb, overview_cb, splash_cb
+from . import evaluation_cb, overview_cb, portfolio_cb, splash_cb
 
 if TYPE_CHECKING:
     from dash import Dash
@@ -2007,20 +3539,11 @@ if TYPE_CHECKING:
 
 
 def register_all(app: "Dash", backend: "RadeBackend") -> None:
-    """Register every callback on ``app``.
-
-    Parameters
-    ----------
-    app
-        The Dash app returned by :func:`rade_analytics.app.create_app`.
-    backend
-        Shared :class:`RadeBackend` instance so callbacks can fetch
-        data without rebuilding the HTTP client each tick.
-    """
     register_router(app, backend)
     splash_cb.register(app, backend)
     overview_cb.register(app, backend)
     evaluation_cb.register(app, backend)
+    portfolio_cb.register(app, backend)
 
 
 __all__ = ["register_all"]
@@ -2028,193 +3551,51 @@ __all__ = ["register_all"]
 
 ---
 
-### Step 3 · EDIT `src/ui/apps/rade_analytics/router.py`
+### Step 10 · CREATE `examples/rade_analytics/_mock_backend.py`
 
-Two surgical edits — **don't** replace the whole file.
-
-**Edit 3a — import `build_overview` at the top.**  Find:
-
-```python
-from .layouts.evaluation import build_evaluation
-from .layouts.shell import SHELL_IDS
-from .layouts.splash import build_splash
-```
-
-Replace with:
+> **Action.**  Create a new shared helper file under
+> `examples/rade_analytics/`.  Both the Overview (05) and Portfolio
+> (06) preview scripts import from here so the synthetic dataset stays
+> consistent between pages.
 
 ```python
-from .layouts.evaluation import build_evaluation
-from .layouts.overview import build_overview
-from .layouts.shell import SHELL_IDS
-from .layouts.splash import build_splash
-```
-
-**Edit 3b — plug `build_overview` into the `/` route.**  Find (inside
-the `ROUTES = {...}` dict):
-
-```python
-    "/": PageSpec(
-        path="/",
-        title="Overview",
-        build=_placeholder("Overview", "Phase D"),
-    ),
-```
-
-Replace with:
-
-```python
-    "/": PageSpec(
-        path="/",
-        title="Overview",
-        build=build_overview,
-    ),
-```
-
----
-
-### Step 4 · EDIT `src/ui/apps/rade_analytics/layouts/overview.py`
-
-One surgical edit — the top-performers card needs a DOM id so the
-callback can target its `children`.  Find:
-
-```python
-def _top_performers_grid() -> html.Div:
-    """Bottom-left card — top-N cluster leaderboard."""
-    return html.Div(
-        className="rade-card flex flex-col gap-3",
-        children=[
-```
-
-Replace with:
-
-```python
-def _top_performers_grid() -> html.Div:
-    """Bottom-left card — top-N cluster leaderboard."""
-    return html.Div(
-        id=OVERVIEW_IDS["top_performers"],
-        className="rade-card flex flex-col gap-3",
-        children=[
-```
-
-Everything else in `layouts/overview.py` stays untouched — the
-placeholder constants (`_KPI_PLACEHOLDER`, `_HEATMAP_PLACEHOLDER`,
-`_TOP_PERFORMERS`, `_ATTENTION_ITEMS`, `_ACTIVITY_FEED`) remain as
-the initial render payload.  The D.3 callback overwrites everything
-bar Attention / Activity as soon as `/` resolves.
-
----
-
-### Step 5 · CREATE `examples/rade_analytics/05_overview_preview_live.py`
-
-> **Action.**  Create the file with the full content below.  This is
-> the smoke-test entry point — run it to verify the full D.3 stack
-> without any backend server.
-
-```python
-"""End-to-end smoke test for the Overview page with *no* real backend.
-
-Phase D.3 ships the live callback that wires the overview to
-:class:`RadeBackend`.  This script runs the **full** Rade app (router,
-shell, callbacks, session store, split toggle) against a
-:class:`MockRadeBackend` that returns hand-rolled synthetic data — so
-you can click around the overview page, toggle splits, and verify
-every slot re-renders without the FastAPI server running.
-
-When to use it
---------------
-* **Today**, while the training run is in flight and ``/prism/v1/*``
-  has nothing to serve.
-* **Anytime** you want to regression-test the Overview wiring against
-  deterministic data (e.g. before shipping a layout change).
-
-Swapping to the real API
-------------------------
-Just ``python -m src.ui.apps.rade_analytics.app`` — that factory
-builds a real :class:`RadeApiClient` from ``RADE_UI_API_URL`` (default
-``http://localhost:8000``).  Nothing else to change.
-
-Run from the project root::
-
-    python examples/rade_analytics/05_overview_preview_live.py
-
-Then open http://localhost:8052 (different port to 02/03/04 so they
-can all run in parallel).
-"""
+"""Shared synthetic :class:`RadeBackend` for every preview script."""
 from __future__ import annotations
 
-import logging
 import random
-from pathlib import Path
+from functools import lru_cache
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 
-# ── React 18 pin ────────────────────────────────────────────────────
-# Must happen *before* ``dash.Dash`` is imported.
-import dash._dash_renderer  # noqa: E402
-dash._dash_renderer._set_react_version("18.2.0")
-
-from dash import Dash  # noqa: E402
-
-from src.rade_ml_pt.ensemble.api.models.clusters import (  # noqa: E402
+from src.rade_ml_pt.ensemble.api.models.clusters import (
     ClusterInfo,
     ClustersResponse,
 )
-from src.rade_ml_pt.ensemble.api.models.meta import (  # noqa: E402
+from src.rade_ml_pt.ensemble.api.models.meta import (
     HealthResponse,
     VersionsResponse,
 )
-from src.ui.apps.rade_analytics.callbacks import register_all  # noqa: E402
-from src.ui.apps.rade_analytics.config import RadeUiSettings, set_settings  # noqa: E402
-from src.ui.apps.rade_analytics.data.backend import (  # noqa: E402
-    BackendResult,
-    RadeBackend,
-)
-from src.ui.apps.rade_analytics.layouts import (  # noqa: E402
-    INDEX_STRING,
-    META_TAGS,
-    build_shell,
-)
+from src.ui.apps.rade_analytics.data.backend import BackendResult, RadeBackend
 
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
-log = logging.getLogger("rade.preview.overview_live")
-
-
-# ═════════════════════════════════════════════════════════════════════
-# MockRadeBackend — duck-typed stand-in, deterministic synthetic data
-# ═════════════════════════════════════════════════════════════════════
+_ASSET_CLASSES = ("rates", "fx", "credit", "equity")
+_CURRENCIES    = ("USD", "EUR", "GBP", "JPY")
+_DESKS         = ("Alpha", "Beta", "Gamma")
+_PRODUCTS      = ("swap", "option", "forward", "bond")
+_N_SCENARIOS   = 48
 
 
 class MockRadeBackend(RadeBackend):
-    """In-memory backend that returns fabricated :class:`BackendResult`s.
-
-    Inherits from :class:`RadeBackend` for type compatibility (the
-    router and callbacks annotate ``backend: RadeBackend``) but
-    deliberately **skips** the parent ``__init__`` — we have no client
-    and no cache, every public method is overridden below.
-
-    Design
-    ------
-    * Every override returns ``BackendResult.success(...)``; failure
-      paths are exercised by flipping ``always_fail`` if you want to
-      debug the degraded UI.
-    * Data is seeded from a single RNG so sessions are reproducible.
-    * Pydantic models (:class:`ClustersResponse`) are constructed from
-      real model classes so any schema drift surfaces at import time
-      instead of silently shipping a bad mock.
-    """
+    """Deterministic in-memory backend for Dash UI preview scripts."""
 
     def __init__(self, *, n_clusters: int = 12, seed: int = 42) -> None:
-        # NOT calling ``super().__init__`` on purpose — the parent
-        # constructor requires a client and cache.  We don't need
-        # either: every public method below is overridden.
+        # NOT calling super().__init__ on purpose — the parent
+        # constructor requires a client and cache which we don't have.
         self._rng = random.Random(seed)
         self._np_rng = np.random.default_rng(seed)
+        self._seed = seed
         self._n_clusters = n_clusters
         self._cluster_ids: List[str] = [
             f"cluster_{i + 1:02d}" for i in range(n_clusters)
@@ -2224,8 +3605,21 @@ class MockRadeBackend(RadeBackend):
             "v2026.04.10-f3e4d7",
             "v2026.04.03-9876a2",
         ]
+        self._cluster_attrs: Dict[str, Dict[str, Any]] = {
+            cid: {
+                "asset_class":   self._rng.choice(_ASSET_CLASSES),
+                "currency_code": self._rng.choice(_CURRENCIES),
+                "desk":          self._rng.choice(_DESKS),
+                "product_code":  self._rng.choice(_PRODUCTS),
+            }
+            for cid in self._cluster_ids
+        }
+        raw_weights = self._np_rng.uniform(0.2, 1.8, size=n_clusters)
+        self._cluster_weights: Dict[str, float] = dict(
+            zip(self._cluster_ids, raw_weights / raw_weights.sum() * n_clusters)
+        )
 
-    # ── Meta ──────────────────────────────────────────────────────
+    # ─── Meta endpoints ─────────────────────────────────────────────
 
     def health(self) -> BackendResult[HealthResponse]:
         return BackendResult.success(
@@ -2244,7 +3638,7 @@ class MockRadeBackend(RadeBackend):
             )
         )
 
-    # ── Overview / metrics ────────────────────────────────────────
+    # ─── Metrics endpoints ──────────────────────────────────────────
 
     def ensemble_metrics_df(self) -> BackendResult[pd.DataFrame]:
         rows: List[Dict[str, Any]] = []
@@ -2268,66 +3662,70 @@ class MockRadeBackend(RadeBackend):
     def per_member_metrics_df(
         self,
         *,
-        split: Optional[str] = None,
+        split:      Optional[str] = None,
         cluster_id: Optional[str] = None,
     ) -> BackendResult[pd.DataFrame]:
-        # Generate per-cluster metrics whose mae spread covers the
-        # tercile buckets so the heatmap shows all three colours.
         splits = [split] if split else ["train", "val", "test"]
-        rows: List[Dict[str, Any]] = []
+        frames: List[pd.DataFrame] = []
         for s in splits:
-            split_scale = {"train": 0.85, "val": 1.0, "test": 1.15}[s]
-            for cid in self._cluster_ids:
-                if cluster_id and cid != cluster_id:
-                    continue
-                base = self._np_rng.uniform(0.0006, 0.003)
-                rows.append(
-                    {
-                        "cluster_id":  cid,
-                        "split":       s,
-                        "mae":         base * split_scale,
-                        "mse":         (base * split_scale) ** 2 * 1.4,
-                        "rmse":        float((base * split_scale) ** 2 * 1.4) ** 0.5,
-                        "max_ae":      base * split_scale * 15.0,
-                        "p95_ae":      base * split_scale * 4.2,
-                        "p99_ae":      base * split_scale * 8.5,
-                        "n_targets":   int(self._rng.randint(120, 480)),
-                        "n_scenarios": int(self._rng.randint(40, 96)),
-                    }
+            ts = self._cluster_timeseries(s)
+            if cluster_id:
+                ts = ts[ts["cluster_id"] == cluster_id]
+            grouped = (
+                ts.assign(
+                    _abs_err=ts["abs_error"],
+                    _sq_err=ts["squared_error"],
                 )
-        return BackendResult.success(pd.DataFrame(rows))
+                .groupby("cluster_id", as_index=False)
+                .agg(
+                    mae=("_abs_err", "mean"),
+                    rmse_sq=("_sq_err", "mean"),
+                    max_ae=("_abs_err", "max"),
+                    p95_ae=("_abs_err", lambda x: float(np.quantile(x, 0.95))),
+                    p99_ae=("_abs_err", lambda x: float(np.quantile(x, 0.99))),
+                    n_scenarios=("scenario_idx", "nunique"),
+                )
+            )
+            grouped["rmse"] = np.sqrt(grouped["rmse_sq"].astype(float))
+            grouped["mse"] = grouped["rmse"] ** 2
+            grouped["split"] = s
+            grouped["n_targets"] = [
+                self._rng.randint(120, 480) for _ in range(len(grouped))
+            ]
+            frames.append(
+                grouped[
+                    [
+                        "cluster_id", "split", "mae", "mse", "rmse",
+                        "max_ae", "p95_ae", "p99_ae",
+                        "n_targets", "n_scenarios",
+                    ]
+                ]
+            )
+        if not frames:
+            return BackendResult.success(pd.DataFrame())
+        return BackendResult.success(pd.concat(frames, ignore_index=True))
 
-    # ── Clusters ──────────────────────────────────────────────────
+    # ─── Cluster endpoints ──────────────────────────────────────────
 
     def clusters(
         self, *, cluster_id: Optional[str] = None,
     ) -> BackendResult[ClustersResponse]:
         entries: List[ClusterInfo] = []
-        attribute_names = ["asset_class", "currency_code", "desk", "product_code"]
-        asset_classes = ["rates", "fx", "credit", "equity"]
-        currencies = ["USD", "EUR", "GBP", "JPY"]
-        desks = ["Alpha", "Beta", "Gamma"]
-        products = ["swap", "option", "forward", "bond"]
-
         for cid in self._cluster_ids:
             if cluster_id and cid != cluster_id:
                 continue
+            n_trades = 80 + int(self._cluster_weights[cid] * 180)
             entries.append(
                 ClusterInfo(
                     cluster_id=cid,
-                    n_trades=self._rng.randint(80, 360),
-                    attributes={
-                        "asset_class":   self._rng.choice(asset_classes),
-                        "currency_code": self._rng.choice(currencies),
-                        "desk":          self._rng.choice(desks),
-                        "product_code":  self._rng.choice(products),
-                    },
+                    n_trades=n_trades,
+                    attributes=dict(self._cluster_attrs[cid]),
                 )
             )
         return BackendResult.success(
             ClustersResponse(
                 clusters=entries,
-                attribute_names=attribute_names,
+                attribute_names=["asset_class", "currency_code", "desk", "product_code"],
             )
         )
 
@@ -2346,42 +3744,136 @@ class MockRadeBackend(RadeBackend):
         ]
         return BackendResult.success(pd.DataFrame(rows))
 
-    # ── Portfolio ─────────────────────────────────────────────────
+    # ─── Portfolio + cluster timeseries ────────────────────────────
 
     def portfolio_df(self, split: str) -> BackendResult[pd.DataFrame]:
-        n = 48
-        # Target: upward-trending random walk.  Predicted: target +
-        # small noise so the split toggle visibly changes the curve.
-        noise_scale = {"train": 0.008, "val": 0.012, "test": 0.018}.get(split, 0.012)
-        actual = np.cumsum(self._np_rng.normal(0.015, 0.01, size=n)) + 1.0
-        predicted = actual + self._np_rng.normal(0, noise_scale, size=n)
-
-        labels = pd.date_range("2025-11-01", periods=n, freq="D").strftime("%Y-%m-%d")
-
-        df = pd.DataFrame(
-            {
-                "scenario_idx":   list(range(n)),
-                "scenario_label": labels,
-                "predicted":      predicted,
-                "actual":         actual,
-                "error":          predicted - actual,
-                "abs_error":      np.abs(predicted - actual),
-                "squared_error":  (predicted - actual) ** 2,
-            }
+        ts = self._cluster_timeseries(split)
+        if ts.empty:
+            return BackendResult.success(ts)
+        agg = (
+            ts.groupby(["scenario_idx", "scenario_label"], as_index=False)
+            .agg(
+                predicted=("predicted", "sum"),
+                actual=("actual", "sum"),
+            )
         )
-        return BackendResult.success(df)
+        agg["error"] = agg["predicted"] - agg["actual"]
+        agg["abs_error"] = agg["error"].abs()
+        agg["squared_error"] = agg["error"] ** 2
+        return BackendResult.success(agg)
+
+    def cluster_timeseries_df(
+        self,
+        split: str,
+        *,
+        cluster_id: Optional[str] = None,
+    ) -> BackendResult[pd.DataFrame]:
+        df = self._cluster_timeseries(split)
+        if cluster_id:
+            df = df[df["cluster_id"] == cluster_id]
+        return BackendResult.success(df.reset_index(drop=True))
+
+    # ─── Internal — seeded synthetic data generators ────────────────
+
+    def _cluster_timeseries(self, split: str) -> pd.DataFrame:
+        return _cluster_timeseries_cached(
+            mock_id=id(self),
+            split=split,
+            seed=self._seed,
+            cluster_ids=tuple(self._cluster_ids),
+            cluster_weights=tuple(
+                (cid, self._cluster_weights[cid]) for cid in self._cluster_ids
+            ),
+        )
 
 
-# ═════════════════════════════════════════════════════════════════════
-# App factory — mirrors ``create_app`` but injects the mock backend
-# ═════════════════════════════════════════════════════════════════════
+@lru_cache(maxsize=64)
+def _cluster_timeseries_cached(
+    *,
+    mock_id:          int,
+    split:            str,
+    seed:             int,
+    cluster_ids:      tuple[str, ...],
+    cluster_weights:  tuple[tuple[str, float], ...],
+) -> pd.DataFrame:
+    del mock_id  # cache key only
+    rng = np.random.default_rng(seed + hash(split) % 10_000)
+    labels = pd.date_range("2025-11-01", periods=_N_SCENARIOS, freq="D").strftime(
+        "%Y-%m-%d"
+    )
+    noise_scale = {"train": 0.008, "val": 0.012, "test": 0.018}.get(split, 0.012)
+
+    weights = dict(cluster_weights)
+    frames: List[pd.DataFrame] = []
+    for cid in cluster_ids:
+        w = float(weights[cid])
+        actual_inc = rng.normal(0.003 * w, 0.004 * max(w, 0.3), _N_SCENARIOS)
+        actual = np.cumsum(actual_inc) + 0.08 * w
+        pred = actual + rng.normal(0, noise_scale * max(w, 0.3), _N_SCENARIOS)
+        error = pred - actual
+        frames.append(
+            pd.DataFrame(
+                {
+                    "cluster_id":     cid,
+                    "scenario_idx":   list(range(_N_SCENARIOS)),
+                    "scenario_label": labels,
+                    "predicted":      pred,
+                    "actual":         actual,
+                    "error":          error,
+                    "abs_error":      np.abs(error),
+                    "squared_error":  error ** 2,
+                }
+            )
+        )
+    return pd.concat(frames, ignore_index=True)
+
+
+__all__ = ["MockRadeBackend"]
+```
+
+---
+
+### Step 11 · REPLACE `examples/rade_analytics/05_overview_preview_live.py`
+
+> **Action.**  Replace the existing file — the old version defined its
+> own mock inline; this one imports the shared one from Step 10.
+
+```python
+"""End-to-end smoke test for the Overview page with *no* real backend."""
+from __future__ import annotations
+
+import logging
+import sys
+from pathlib import Path
+
+import dash._dash_renderer  # noqa: E402
+dash._dash_renderer._set_react_version("18.2.0")
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from dash import Dash  # noqa: E402
+
+from _mock_backend import MockRadeBackend  # noqa: E402  (sibling import)
+from src.ui.apps.rade_analytics.callbacks import register_all  # noqa: E402
+from src.ui.apps.rade_analytics.config import RadeUiSettings, set_settings  # noqa: E402
+from src.ui.apps.rade_analytics.layouts import (  # noqa: E402
+    INDEX_STRING,
+    META_TAGS,
+    build_shell,
+)
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+log = logging.getLogger("rade.preview.overview_live")
 
 
 def build_preview_app() -> Dash:
-    """Compose a fully-wired Rade app against :class:`MockRadeBackend`."""
     settings = RadeUiSettings(
         api_url="http://mock",
-        cache_type="NullCache",  # NoOpCache — synthetic data is already deterministic
+        cache_type="NullCache",
         debug=True,
     )
     set_settings(settings)
@@ -2421,39 +3913,112 @@ if __name__ == "__main__":
     )
 ```
 
-### Verify
+---
 
-```bash
-python -m py_compile \
-  src/ui/apps/rade_analytics/callbacks/overview_cb.py \
-  src/ui/apps/rade_analytics/callbacks/__init__.py \
-  src/ui/apps/rade_analytics/router.py \
-  src/ui/apps/rade_analytics/layouts/overview.py \
-  examples/rade_analytics/05_overview_preview_live.py
+### Step 12 · CREATE `examples/rade_analytics/06_portfolio_preview_live.py`
+
+> **Action.**  Create the file — the Portfolio smoke-test twin of 05,
+> pointing at port 8053 so both previews can coexist.
+
+```python
+"""End-to-end smoke test for the Evaluation → Portfolio sub-tab."""
+from __future__ import annotations
+
+import logging
+import sys
+from pathlib import Path
+
+import dash._dash_renderer  # noqa: E402
+dash._dash_renderer._set_react_version("18.2.0")
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from dash import Dash  # noqa: E402
+
+from _mock_backend import MockRadeBackend  # noqa: E402  (sibling import)
+from src.ui.apps.rade_analytics.callbacks import register_all  # noqa: E402
+from src.ui.apps.rade_analytics.config import RadeUiSettings, set_settings  # noqa: E402
+from src.ui.apps.rade_analytics.layouts import (  # noqa: E402
+    INDEX_STRING,
+    META_TAGS,
+    build_shell,
+)
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+log = logging.getLogger("rade.preview.portfolio_live")
+
+
+def build_preview_app() -> Dash:
+    settings = RadeUiSettings(
+        api_url="http://mock",
+        cache_type="NullCache",
+        debug=True,
+    )
+    set_settings(settings)
+
+    assets_dir = (
+        Path(__file__).resolve().parent.parent.parent
+        / "src" / "ui" / "apps" / "rade_analytics" / "assets"
+    )
+
+    app = Dash(
+        __name__,
+        title="Rade — Portfolio live preview (mock)",
+        update_title=None,
+        index_string=INDEX_STRING,
+        meta_tags=META_TAGS,
+        assets_folder=str(assets_dir),
+        assets_ignore=r"tailwind\.(config\.js|input\.css)|README\.md",
+        suppress_callback_exceptions=True,
+    )
+
+    backend = MockRadeBackend()
+    app.server.config["rade_backend"] = backend
+    app.server.config["rade_settings"] = settings
+
+    app.layout = build_shell()
+    register_all(app, backend)
+
+    log.info(
+        "Preview ready — open http://localhost:8053/evaluation/portfolio"
+    )
+    return app
+
+
+if __name__ == "__main__":
+    build_preview_app().run(
+        debug=True,
+        host="0.0.0.0",
+        port=8053,
+    )
 ```
 
-Then run the smoke test:
+---
 
-```bash
-python examples/rade_analytics/05_overview_preview_live.py
-# → open http://localhost:8052
-```
+### Done — verification checklist
 
-Expected behaviour on first load:
+- [ ] `python -m py_compile src/ui/apps/rade_analytics/data/session.py src/ui/apps/rade_analytics/figures/*.py src/ui/apps/rade_analytics/layouts/evaluation/portfolio.py src/ui/apps/rade_analytics/callbacks/portfolio_cb.py src/ui/apps/rade_analytics/callbacks/__init__.py examples/rade_analytics/_mock_backend.py examples/rade_analytics/05_overview_preview_live.py examples/rade_analytics/06_portfolio_preview_live.py` prints nothing (no syntax errors).
+- [ ] `python examples/rade_analytics/06_portfolio_preview_live.py` starts and logs the ready line.
+- [ ] Browser at `http://localhost:8053/evaluation/portfolio` shows:
+      * 4 KPI cards filled with numbers,
+      * a purple predicted / dashed actual line chart,
+      * a rose rolling-error band,
+      * empty violin + scatter + leaderboard placeholders until you
+        pick a break-down dimension.
+- [ ] Pick "Desk" — violin fills with 3 side-by-side violins, scatter
+      colours points per desk, leaderboard lists one row per desk.
+- [ ] Click a point in the scatter — chip appears ("Focused: Alpha
+      [× Show all]"), scatter narrows to that desk only, violin &
+      leaderboard stay at full coverage.
+- [ ] Double-click the scatter plot → focus clears, all groups come
+      back.
+- [ ] Click "× Show all" on the chip → same, focus clears.
+- [ ] Toggle topbar split (Train / Val / Test) → every slot redraws.
 
-* MAE / RMSE / active-clusters / total-trades KPI values all change
-  from placeholders to computed mock numbers.
-* Portfolio chart shows a predicted (solid purple) vs actual (dashed
-  slate) line over 48 daily scenarios.
-* Cluster-health heatmap shows 12 cells in roughly tercile-colored
-  proportions (ok / warn / err).
-* Top-performers list shows 3 clusters sorted by lowest MAE.
-
-Toggling the topbar split control (Train / Val / Test) updates every
-value / figure / cell / row — that confirms both the split-sync
-callback and the render callback are live.
-
-If anything stays on its placeholder after the split toggles, the
-browser console and the terminal running the preview will have
-matching log lines starting with `rade.preview.overview_live` or
-`src.ui.apps.rade_analytics.callbacks.overview_cb`.
+If any step misbehaves, the terminal running the preview logs warnings
+starting with `rade_analytics.callbacks.portfolio_cb` — they're the
+first place to look.
