@@ -250,812 +250,12 @@ When a new tab or card is proposed:
 
 No mock, no merge.
 
-
-
 ---
 
+## Appendix A — `src/ui/apps/rade_analytics/callbacks/trade_graph_cb.py`
 
-## Appendix A — Phase E.1 Portfolio polish (`assets/rade.css` append)
-
-> **Usage.**  Four tiny component classes the Portfolio sub-tab
-> references that aren't in `rade.css` yet:
->
-> * `rade-section-divider` — the "Error analysis" divider row.
-> * `rade-focus-chip` + `rade-focus-chip-close` — the "Focused: …
->   [× Show all]" chip in the scatter card header.
-> * `rade-portfolio-groupby-select` — `Break down by` dropdown tint.
-> * `rade-portfolio-leaderboard-grid-wrap` / `rade-portfolio-leaderboard`
->   — leaderboard layout hooks + AgGrid theme overrides.
->
-> **Action.**  Append the block below to the end of
-> `src/ui/apps/rade_analytics/assets/rade.css`.  Safe to paste as-is —
-> every rule is scoped under a `rade-*` class and won't collide with
-> anything existing.  Reuses the design tokens already in the file:
-> slate-950 `#0f172a`, slate-800 `#1e293b`, violet `#8b5cf6`,
-> slate-400 `#94a3b8`, slate-500 `#64748b`.
->
-> Strip this appendix once the classes are in `rade.css` (same
-> convention as B / D / E).
-
-```css
-/* ─────────────────────────────────────────────────────────────────── */
-/* PHASE E.1 — Portfolio sub-tab (evaluation)                          */
-/* ─────────────────────────────────────────────────────────────────── */
-
-/* "Error analysis" divider row — section caption + horizontal rule + */
-/* break-down control on one line.  Tailwind utility classes provide  */
-/* the flex layout; this file adds the subtle top / bottom spacing    */
-/* and the uppercase caption polish.                                   */
-.rade-section-divider {
-  padding-top:    0.5rem;
-  padding-bottom: 0.25rem;
-  margin-top:     0.5rem;
-  margin-bottom:  0.25rem;
-}
-.rade-section-divider .rade-section-divider-caption {
-  font-size: 11px;
-  line-height: 1.4;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: #94a3b8;
-}
-
-/* Focus chip — surfaced inside ChartContainer's `actions` slot when   */
-/* a point is clicked on the grouped scatter.                          */
-.rade-focus-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.1875rem 0.5rem;
-  border-radius: 9999px;
-  background-color: rgba(139, 92, 246, 0.12);   /* violet @ 12% */
-  border: 1px solid rgba(139, 92, 246, 0.35);
-  color: #cbd5e1;
-  font-size: 11px;
-  line-height: 1.4;
-  font-weight: 500;
-  transition: background-color 150ms, border-color 150ms;
-}
-.rade-focus-chip:hover {
-  background-color: rgba(139, 92, 246, 0.18);
-  border-color:     rgba(139, 92, 246, 0.5);
-}
-
-/* The "× Show all" button inside the chip.  Styled as a link so it    */
-/* reads as an action without competing visually with the chip label.  */
-.rade-focus-chip-close {
-  appearance: none;
-  background: transparent;
-  border: 0;
-  padding: 0 0 0 0.25rem;
-  margin-left: 0.125rem;
-  color: #94a3b8;
-  font-size: 11px;
-  line-height: 1;
-  cursor: pointer;
-  transition: color 120ms;
-}
-.rade-focus-chip-close:hover {
-  color: #f1f5f9;
-}
-.rade-focus-chip-close:focus-visible {
-  outline: 2px solid #8b5cf6;
-  outline-offset: 2px;
-  border-radius: 0.25rem;
-}
-
-/* Break-down Select — nudges DMC's base tint into the slate palette   */
-/* the rest of the page already uses.                                  */
-.rade-portfolio-groupby-select input {
-  background-color: #0f172a;
-  border-color: #1e293b;
-  color: #e2e8f0;
-}
-.rade-portfolio-groupby-select input::placeholder {
-  color: #64748b;
-}
-.rade-portfolio-groupby-select input:focus-visible {
-  border-color: #8b5cf6;
-  box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.35);
-}
-
-/* Leaderboard AgGrid — the grid itself is styled by AgGrid's          */
-/* alpine-dark theme; these rules just give the wrapper a consistent   */
-/* border + radius so it reads as part of the leaderboard card.        */
-.rade-portfolio-leaderboard-grid-wrap {
-  border-radius: 0.5rem;
-  overflow: hidden;
-  border: 1px solid #1e293b;
-}
-.rade-portfolio-leaderboard {
-  --ag-background-color:          #0f172a;
-  --ag-odd-row-background-color:  #0b1220;
-  --ag-header-background-color:   #111c2e;
-  --ag-border-color:              #1e293b;
-  --ag-row-border-color:          #1e293b;
-  --ag-foreground-color:          #e2e8f0;
-  --ag-header-foreground-color:   #94a3b8;
-  --ag-secondary-foreground-color: #64748b;
-  --ag-selected-row-background-color: rgba(139, 92, 246, 0.12);
-  --ag-range-selection-background-color: rgba(139, 92, 246, 0.18);
-  --ag-font-family: "Inter", system-ui, sans-serif;
-  --ag-font-size: 12px;
-}
-```
-
-After pasting, hard-reload the browser (`Cmd+Shift+R`) so the updated
-`rade.css` is fetched — Flask's dev server hands out a new `ETag` every
-time the file changes, but the browser can cling to the cached copy
-between sub-tab switches.
-
----
-
-## Appendix B — Phase E.3 Trade-Graph paste blocks
-
-Phase E.3 ships the Evaluation → Trade-Graph sub-tab:
-
-* New `/prism/v1/trade-graph` endpoint (cluster-scoped Cytoscape payload).
-* Eval pipeline stages `graph_results.joblib` + `trade_universe.json`
-  into `evaluation/members/{cluster_id}/` so the bundle is shippable.
-* New Cytoscape-based layout with 4 side-panel cards (Selected trade,
-  Legend, Cluster stats, Ensemble summary) and two secondary charts
-  (density histogram, edges vs nodes scatter).
-
-### B.1 File actions
-
-| File | Action |
-|---|---|
-| `src/rade_ml_pt/pipelines/ensemble/eval.py` | MODIFY — add `_copy_member_graph_artifacts` helper + call site |
-| `src/rade_ml_pt/ensemble/api/services/paths.py` | MODIFY — add `member_graph_results` / `member_trade_universe` |
-| `src/rade_ml_pt/ensemble/api/models/trade_graph.py` | CREATE |
-| `src/rade_ml_pt/ensemble/api/services/reader.py` | MODIFY — `_load_joblib` + `trade_graph` method |
-| `src/rade_ml_pt/ensemble/api/routers/trade_graph.py` | CREATE |
-| `src/rade_ml_pt/ensemble/api/app.py` | MODIFY — register `trade_graph_router` |
-| `src/rade_ml_pt/ensemble/api/client.py` | MODIFY — `trade_graph` method |
-| `src/ui/apps/rade_analytics/data/backend.py` | MODIFY — cached `trade_graph` method |
-| `src/ui/apps/rade_analytics/data/session.py` | MODIFY — bump `SESSION_SCHEMA_VERSION` → 4, extend `EvaluationState` |
-| `src/ui/apps/rade_analytics/figures/graph_charts.py` | CREATE |
-| `src/ui/apps/rade_analytics/figures/__init__.py` | MODIFY — re-export `density_distribution` / `edges_vs_nodes_scatter` |
-| `src/ui/apps/rade_analytics/layouts/evaluation/trade_graph.py` | REPLACE stub |
-| `src/ui/apps/rade_analytics/callbacks/trade_graph_cb.py` | CREATE |
-| `src/ui/apps/rade_analytics/callbacks/__init__.py` | MODIFY — register `trade_graph_cb` |
-| `examples/rade_analytics/_mock_backend.py` | MODIFY — synthetic `trade_graph` + `graph_stats_df` |
-| `examples/rade_analytics/08_trade_graph_preview_live.py` | CREATE |
-| `requirements-rade-ui.txt` | already lists `dash-cytoscape>=1.0.0` — run `pip install -r requirements-rade-ui.txt` |
-
-### B.2 `src/rade_ml_pt/pipelines/ensemble/eval.py` — modify
-
-Add `import shutil` near the other stdlib imports, then in
-`_save_all_artifacts` append a new call after `_save_graph_stats_parquet`:
-
-```python
-_copy_member_graph_artifacts(
-    eval_dir=eval_dir,
-    config=config,
-    member_versions=member_versions,
-)
-```
-
-Then add this helper module-local (after `_save_graph_stats_parquet`):
-
-```python
-def _copy_member_graph_artifacts(
-    eval_dir: Path,
-    config: EnsembleConfig,
-    member_versions: Optional[Dict[str, str]] = None,
-) -> None:
-    """Stage per-member graph artefacts into the eval directory.
-
-    For each cluster, copies ``graph_results.joblib`` and
-    ``trade_universe.json`` from ``{registry_dir}/{member_version}/``
-    into ``{eval_dir}/members/{cluster_id}/``.  Makes the evaluation
-    bundle self-contained so the API can read everything it needs
-    without touching the training registry.
-    """
-    if not member_versions:
-        member_versions = config.metadata.get("job", {}).get("member_versions", {})
-
-    if not isinstance(member_versions, dict) or not member_versions:
-        logger.info("  skipping graph-artefact staging (no member versions)")
-        return
-
-    files_to_copy = ("graph_results.joblib", "trade_universe.json")
-    n_clusters_staged = 0
-    n_files_staged = 0
-
-    for cid in config.cluster_ids:
-        member_version = member_versions.get(cid)
-        if not member_version:
-            continue
-
-        src_dir = Path(config.registry_dir) / member_version
-        dst_dir = eval_dir / "members" / cid
-        dst_dir.mkdir(parents=True, exist_ok=True)
-
-        cluster_files_staged = 0
-        for filename in files_to_copy:
-            src = src_dir / filename
-            if not src.exists():
-                logger.debug(
-                    "  member graph artefact missing: %s (cluster=%s)",
-                    src, cid,
-                )
-                continue
-            try:
-                shutil.copy2(src, dst_dir / filename)
-                cluster_files_staged += 1
-            except Exception as exc:
-                logger.warning(
-                    "  could not stage %s for cluster '%s': %s",
-                    filename, cid, exc,
-                )
-
-        if cluster_files_staged > 0:
-            n_clusters_staged += 1
-            n_files_staged += cluster_files_staged
-
-    logger.info(
-        "  staged member graph artefacts: %d files across %d clusters",
-        n_files_staged, n_clusters_staged,
-    )
-```
-
-### B.3 `src/rade_ml_pt/ensemble/api/services/paths.py` — modify
-
-Inside the `ArtifactPaths` class, add two properties next to the other
-`member_*` path builders:
-
-```python
-def member_graph_results(self, cluster_id: str) -> Path:
-    """Sparse adjacency joblib staged from the training registry."""
-    return self.eval_dir / "members" / cluster_id / "graph_results.joblib"
-
-def member_trade_universe(self, cluster_id: str) -> Path:
-    """Trade-universe JSON staged from the training registry."""
-    return self.eval_dir / "members" / cluster_id / "trade_universe.json"
-```
-
-### B.4 `src/rade_ml_pt/ensemble/api/models/trade_graph.py` — CREATE
-
-```python
-"""Pydantic response schemas for the ``/prism/v1/trade-graph`` endpoint.
-
-Serves one cluster's full trade-level graph — the sparse adjacency
-recorded in ``graph_results.joblib`` plus the ``target`` / ``elementary``
-trade split from ``trade_universe.json`` (both staged into the eval
-artefact bundle by :mod:`rade_ml_pt.pipelines.ensemble.eval`).
-"""
-from __future__ import annotations
-
-from typing import List, Optional
-
-from pydantic import BaseModel, Field
-
-
-class TradeGraphNode(BaseModel):
-    trade_id: str = Field(..., description="Trade identifier (string).")
-    cluster_id: str = Field(..., description="Parent cluster identifier.")
-    trade_type: str = Field(
-        ...,
-        description=(
-            "``target`` or ``elementary`` — classifies the trade for the "
-            "UI's node colouring and the Selected-Trade card."
-        ),
-    )
-
-
-class TradeGraphEdge(BaseModel):
-    source: str = Field(..., description="Source trade_id.")
-    target: str = Field(..., description="Target trade_id.")
-    weight: float = Field(
-        ...,
-        description="Adjacency entry from ``sparse_values`` — graph-builder units.",
-    )
-
-
-class TradeGraphStats(BaseModel):
-    n_nodes: int
-    n_edges: int
-    density: float
-    mean_weight: float
-
-
-class TradeGraphResponse(BaseModel):
-    cluster_id: str
-    n_target_trades: int
-    n_elementary_trades: int
-    stats: TradeGraphStats
-    nodes: List[TradeGraphNode]
-    edges: List[TradeGraphEdge]
-    warnings: Optional[List[str]] = None
-
-
-__all__ = [
-    "TradeGraphEdge",
-    "TradeGraphNode",
-    "TradeGraphResponse",
-    "TradeGraphStats",
-]
-```
-
-### B.5 `src/rade_ml_pt/ensemble/api/services/reader.py` — modify
-
-Add these imports at the top with the others:
-
-```python
-import numpy as np
-from src.rade_ml_pt.ensemble.api.models.trade_graph import (
-    TradeGraphEdge,
-    TradeGraphNode,
-    TradeGraphResponse,
-    TradeGraphStats,
-)
-```
-
-Add this module-level helper (near `_load_json`):
-
-```python
-def _load_joblib(path: Path) -> Any:
-    """Load a joblib file — deferred import to keep ``joblib`` optional."""
-    import joblib
-    return joblib.load(path)
-```
-
-Then add this method inside `ArtifactReader` (after `graph_stats_df`):
-
-```python
-def trade_graph(self, cluster_id: str) -> TradeGraphResponse:
-    """Build the full trade-graph payload for one cluster.
-
-    Reads ``members/{cluster_id}/graph_results.joblib`` and the
-    adjacent ``trade_universe.json``; both are staged by the eval
-    pipeline (``_copy_member_graph_artifacts``).
-
-    Raises
-    ------
-    FileNotFoundError
-        If ``graph_results.joblib`` is missing for the cluster.
-    """
-    graph_path = self.paths.member_graph_results(cluster_id)
-    tu_path = self.paths.member_trade_universe(cluster_id)
-
-    if not graph_path.exists():
-        raise FileNotFoundError(
-            f"graph_results.joblib missing for cluster '{cluster_id}' "
-            f"(looked for {graph_path}). Re-run the eval pipeline to "
-            f"stage member graph artefacts."
-        )
-
-    gr = read_with_mtime_cache(graph_path, _load_joblib)
-
-    indices = np.asarray(gr.get("sparse_indices", []), dtype=int)
-    values = np.asarray(gr.get("sparse_values", []), dtype=float)
-    shape = gr.get("sparse_shape", [0, 0])
-    n = int(shape[0]) if shape and shape[0] > 0 else 0
-
-    warnings: List[str] = []
-
-    target_ids: List[str] = []
-    elementary_ids: List[str] = []
-    if tu_path.exists():
-        try:
-            tu = read_with_mtime_cache(tu_path, _load_json)
-            target_ids = [str(x) for x in (tu.get("target_ids") or [])]
-            elementary_ids = [str(x) for x in (tu.get("elementary_ids") or [])]
-        except Exception as exc:
-            warnings.append(f"Could not read trade_universe.json: {exc!r}")
-    else:
-        warnings.append(
-            "trade_universe.json missing — all nodes classified as "
-            "'elementary'. Re-run the eval pipeline to stage this file."
-        )
-
-    node_ordering = target_ids + elementary_ids
-    target_set = set(target_ids)
-
-    nodes: List[TradeGraphNode] = []
-    for i in range(n):
-        if i < len(node_ordering):
-            tid = node_ordering[i]
-            ttype = "target" if tid in target_set else "elementary"
-        else:
-            tid = f"{cluster_id}_trade_{i}"
-            ttype = "elementary"
-            warnings.append(
-                f"Node index {i} out of trade-universe range "
-                f"({len(node_ordering)}); synthetic id assigned."
-            )
-        nodes.append(
-            TradeGraphNode(
-                trade_id=tid, cluster_id=cluster_id, trade_type=ttype,
-            )
-        )
-
-    edges: List[TradeGraphEdge] = []
-    if indices.size > 0 and indices.ndim == 2 and indices.shape[0] == 2:
-        src_arr = indices[0]
-        dst_arr = indices[1]
-        for k in range(src_arr.shape[0]):
-            i, j = int(src_arr[k]), int(dst_arr[k])
-            if i == j:
-                continue
-            if i >= n or j >= n:
-                continue
-            edges.append(
-                TradeGraphEdge(
-                    source=nodes[i].trade_id,
-                    target=nodes[j].trade_id,
-                    weight=float(values[k]),
-                )
-            )
-
-    n_edges_total = int(values.size)
-    density = float(n_edges_total / (n * n)) if n > 0 else 0.0
-    mean_w = float(np.mean(values)) if values.size > 0 else 0.0
-
-    n_target = sum(1 for node in nodes if node.trade_type == "target")
-    n_elem = len(nodes) - n_target
-
-    dedup_warnings = sorted(set(warnings)) if warnings else None
-
-    return TradeGraphResponse(
-        cluster_id=cluster_id,
-        n_target_trades=n_target,
-        n_elementary_trades=n_elem,
-        stats=TradeGraphStats(
-            n_nodes=n,
-            n_edges=n_edges_total,
-            density=density,
-            mean_weight=mean_w,
-        ),
-        nodes=nodes,
-        edges=edges,
-        warnings=dedup_warnings,
-    )
-```
-
-### B.6 `src/rade_ml_pt/ensemble/api/routers/trade_graph.py` — CREATE
-
-```python
-"""``/prism/v1/trade-graph`` — per-cluster trade graph (nodes + edges)."""
-from __future__ import annotations
-
-from fastapi import APIRouter, Depends, HTTPException, Query
-
-from src.rade_ml_pt.ensemble.api.dependencies import get_reader
-from src.rade_ml_pt.ensemble.api.models.trade_graph import TradeGraphResponse
-from src.rade_ml_pt.ensemble.api.services.reader import ArtifactReader
-
-router = APIRouter(prefix="/prism/v1", tags=["trade-graph"])
-
-
-@router.get("/trade-graph", response_model=TradeGraphResponse)
-def get_trade_graph(
-    cluster_id: str = Query(
-        ...,
-        description="Cluster to render. Required — the endpoint is cluster-scoped.",
-    ),
-    reader: ArtifactReader = Depends(get_reader),
-) -> TradeGraphResponse:
-    try:
-        return reader.trade_graph(cluster_id=cluster_id)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-```
-
-### B.7 `src/rade_ml_pt/ensemble/api/app.py` — modify
-
-Add the import next to the other router imports:
-
-```python
-from src.rade_ml_pt.ensemble.api.routers.trade_graph import (
-    router as trade_graph_router,
-)
-```
-
-Register it alongside the others:
-
-```python
-app.include_router(graph_stats_router)
-app.include_router(trade_graph_router)     # ← new
-app.include_router(quality_router)
-app.include_router(predictions_router)
-```
-
-### B.8 `src/rade_ml_pt/ensemble/api/client.py` — modify
-
-Add the import:
-
-```python
-from src.rade_ml_pt.ensemble.api.models.trade_graph import TradeGraphResponse
-```
-
-Add this method to `RadeApiClient` (next to `graph_stats`):
-
-```python
-def trade_graph(self, *, cluster_id: str) -> TradeGraphResponse:
-    """Nodes + edges for one cluster's trade graph."""
-    return TradeGraphResponse(
-        **self._get_json(
-            "/prism/v1/trade-graph",
-            {"cluster_id": cluster_id},
-        )
-    )
-```
-
-### B.9 `src/ui/apps/rade_analytics/data/backend.py` — modify
-
-Add the import:
-
-```python
-from src.rade_ml_pt.ensemble.api.models.trade_graph import TradeGraphResponse
-```
-
-In `_bind_cached_methods` add the cache binding next to the others:
-
-```python
-self._trade_graph_cached = cache.memoize(timeout=ttl)(
-    self._fetch_trade_graph
-)
-```
-
-Add the private fetcher and public wrapper (near the other methods):
-
-```python
-def _fetch_trade_graph(self, cluster_id: str) -> TradeGraphResponse:
-    return self._client.trade_graph(cluster_id=cluster_id)
-
-def trade_graph(
-    self, *, cluster_id: str,
-) -> BackendResult[TradeGraphResponse]:
-    """Full per-cluster trade graph (nodes + edges + summary stats)."""
-    return self._wrap(self._trade_graph_cached, cluster_id)
-```
-
-### B.10 `src/ui/apps/rade_analytics/data/session.py` — modify
-
-Bump the schema version:
-
-```python
-SESSION_SCHEMA_VERSION = 4
-```
-
-Add module-level constants next to the other evaluation defaults:
-
-```python
-EVALUATION_TRADE_GRAPH_LAYOUTS = ("cose", "concentric", "circle", "grid", "breadthfirst")
-DEFAULT_TRADE_GRAPH_LAYOUT = "cose"
-DEFAULT_TRADE_GRAPH_WEIGHT_THRESHOLD = 0.0
-```
-
-Extend the `EvaluationState` dataclass with these fields:
-
-```python
-trade_graph_cluster_id:        Optional[str] = None
-trade_graph_layout:            str = DEFAULT_TRADE_GRAPH_LAYOUT
-trade_graph_weight_threshold:  float = DEFAULT_TRADE_GRAPH_WEIGHT_THRESHOLD
-trade_graph_selected_trade_id: Optional[str] = None
-```
-
-Update `EvaluationState.to_dict` / `from_dict` to round-trip the new
-fields (guard the threshold with a `float()` cast so stale stores with
-missing / non-numeric values still deserialise), and add the new
-constants to the module `__all__`.
-
-### B.11 `src/ui/apps/rade_analytics/figures/graph_charts.py` — CREATE
-
-```python
-"""Figures supporting the Evaluation → Trade-Graph sub-tab."""
-from __future__ import annotations
-
-from typing import Optional
-
-import numpy as np
-import pandas as pd
-import plotly.graph_objects as go
-
-from ._theme import empty_figure, rade_layout, rgba
-
-
-_PRIMARY = "#8b5cf6"
-_MUTED = "#475569"
-_POSITIVE = "#10b981"
-
-
-def density_distribution(
-    graph_stats: pd.DataFrame,
-    *,
-    selected_cluster_id: Optional[str] = None,
-    nbins: int = 18,
-) -> go.Figure:
-    """Histogram of per-cluster graph density."""
-    if graph_stats is None or graph_stats.empty or "density" not in graph_stats:
-        return empty_figure("No graph stats available.")
-
-    densities = graph_stats["density"].astype(float).to_numpy()
-    if densities.size == 0:
-        return empty_figure("No graph stats available.")
-
-    fig = go.Figure()
-    fig.add_trace(
-        go.Histogram(
-            x=densities,
-            nbinsx=nbins,
-            marker={
-                "color":  rgba(_PRIMARY, 0.45),
-                "line":   {"color": _PRIMARY, "width": 1},
-            },
-            hovertemplate="Density ≈ %{x:.3g}<br>Clusters: %{y}<extra></extra>",
-            name="Clusters",
-        )
-    )
-
-    if selected_cluster_id and "cluster_id" in graph_stats.columns:
-        row = graph_stats[graph_stats["cluster_id"] == selected_cluster_id]
-        if not row.empty:
-            sel_density = float(row.iloc[0]["density"])
-            fig.add_vline(
-                x=sel_density,
-                line_color=_POSITIVE,
-                line_width=2,
-                annotation_text=f"{selected_cluster_id}<br>{sel_density:.3g}",
-                annotation_position="top right",
-                annotation_font={"color": _POSITIVE, "size": 10},
-            )
-
-    fig.update_layout(
-        **rade_layout(
-            show_legend=False,
-            margin={"l": 44, "r": 16, "t": 16, "b": 40},
-            xaxis={"title": {"text": "Density", "standoff": 10}},
-            yaxis={"title": {"text": "Clusters", "standoff": 10}},
-        ),
-        bargap=0.08,
-    )
-    return fig
-
-
-def edges_vs_nodes_scatter(
-    graph_stats: pd.DataFrame,
-    *,
-    selected_cluster_id: Optional[str] = None,
-) -> go.Figure:
-    """Per-cluster scatter of node-count vs edge-count."""
-    required = {"cluster_id", "n_nodes", "n_edges", "density", "mean_weight"}
-    if (
-        graph_stats is None
-        or graph_stats.empty
-        or not required.issubset(graph_stats.columns)
-    ):
-        return empty_figure("No graph stats available.")
-
-    df = graph_stats.copy()
-    df["n_nodes"] = df["n_nodes"].astype(float)
-    df["n_edges"] = df["n_edges"].astype(float)
-    df["density"] = df["density"].astype(float)
-    df["mean_weight"] = df["mean_weight"].astype(float)
-
-    d_min, d_max = df["density"].min(), df["density"].max()
-    if np.isclose(d_max, d_min):
-        sizes = np.full(len(df), 18.0)
-    else:
-        sizes = 10.0 + (df["density"] - d_min) / (d_max - d_min) * 22.0
-
-    hover_text = [
-        (
-            f"<b>{row.cluster_id}</b><br>"
-            f"Nodes: {int(row.n_nodes)}<br>"
-            f"Edges: {int(row.n_edges)}<br>"
-            f"Density: {row.density:.3g}<br>"
-            f"Mean weight: {row.mean_weight:.3g}"
-        )
-        for row in df.itertuples()
-    ]
-
-    line_widths = [
-        3 if cid == selected_cluster_id else 1
-        for cid in df["cluster_id"]
-    ]
-    line_colors = [
-        _POSITIVE if cid == selected_cluster_id else "rgba(15, 23, 42, 0.8)"
-        for cid in df["cluster_id"]
-    ]
-
-    fig = go.Figure(
-        data=go.Scatter(
-            x=df["n_nodes"],
-            y=df["n_edges"],
-            mode="markers",
-            marker={
-                "size":      sizes,
-                "color":     df["mean_weight"],
-                "colorscale": "Viridis",
-                "showscale": True,
-                "colorbar": {
-                    "title":      {"text": "Mean weight", "side": "right"},
-                    "thickness":  10,
-                    "len":        0.9,
-                    "tickfont":   {"color": "#94a3b8", "size": 10},
-                    "title_font": {"color": "#94a3b8", "size": 11},
-                },
-                "line": {
-                    "color": line_colors,
-                    "width": line_widths,
-                },
-            },
-            text=hover_text,
-            hovertemplate="%{text}<extra></extra>",
-            customdata=df["cluster_id"],
-        )
-    )
-
-    fig.update_layout(
-        **rade_layout(
-            show_legend=False,
-            margin={"l": 48, "r": 72, "t": 16, "b": 40},
-            xaxis={"title": {"text": "Nodes (n)", "standoff": 10}},
-            yaxis={"title": {"text": "Edges (n)", "standoff": 10}},
-        ),
-    )
-    return fig
-
-
-__all__ = ["density_distribution", "edges_vs_nodes_scatter"]
-```
-
-### B.12 `src/ui/apps/rade_analytics/figures/__init__.py` — modify
-
-Add the import and extend `__all__`:
-
-```python
-from .graph_charts import density_distribution, edges_vs_nodes_scatter
-```
-
-```python
-__all__ = [
-    # … existing entries …
-    "density_distribution",
-    "edges_vs_nodes_scatter",
-]
-```
-
-### B.13 `src/ui/apps/rade_analytics/layouts/evaluation/trade_graph.py` — REPLACE
-
-Replace the stub's entire contents with the file at
-`src/ui/apps/rade_analytics/layouts/evaluation/trade_graph.py` in this
-repo (see the working copy for the full module).  Key attachment points
-the callbacks module depends on:
-
-* `TRADE_GRAPH_IDS` dict — every id the callbacks reference.
-* `CYTOSCAPE_STYLESHEET` — violet elementary / amber target node styling.
-* `build_trade_graph()` — public builder returning the full sub-tab div
-  with the sticky header band, Cytoscape pane + side-panel cards, and
-  the secondary-chart row.
-
-### B.14 `src/ui/apps/rade_analytics/callbacks/trade_graph_cb.py` — CREATE
-
-Copy the full contents of `src/ui/apps/rade_analytics/callbacks/trade_graph_cb.py`
-from the working tree.  The module exposes a single `register(app, backend)`
-entry point and is wired by Appendix B.15.
-
-Six callbacks are registered:
-
-1. `_hydrate` — on `/evaluation/trade-graph` entry, populate the cluster
-   `Select`, initialise layout radio + threshold slider from the session.
-2. `_sync` — cluster picker / layout radio / threshold slider →
-   `session.evaluation.trade_graph_*`.  Changing the cluster clears the
-   selected-trade id.
-3. `_render_graph` — fetches the trade-graph payload once per cluster,
-   stashes nodes / edges in a memory store, writes cluster-stats card +
-   pane status.
-4. `_apply` — threshold slider re-filters stored edges on the client side
-   (sub-60 ms even on thousands of edges) and updates the threshold label.
-5. `_on_tap` — `tapNodeData` → Selected-Trade card + session write;
-   attribute rows come from `clusters_df(cluster_id=…)`.
-6. `_render` (ensemble) — builds the Ensemble-summary KPIs and both
-   secondary charts from `graph_stats_df()`.
-
-### B.15 `src/ui/apps/rade_analytics/callbacks/__init__.py` — modify
+CREATE this file (full contents below) and register it in
+`src/ui/apps/rade_analytics/callbacks/__init__.py`:
 
 ```python
 from . import (
@@ -1067,173 +267,591 @@ from . import (
 )
 ```
 
-And in `register_all`, append:
-
 ```python
+# …
+register_router(app, backend)
+splash_cb.register(app, backend)
+overview_cb.register(app, backend)
+evaluation_cb.register(app, backend)
+portfolio_cb.register(app, backend)
 trade_graph_cb.register(app, backend)
 ```
 
-### B.16 `examples/rade_analytics/_mock_backend.py` — modify
-
-Add imports:
+Then paste the full module:
 
 ```python
-from src.rade_ml_pt.ensemble.api.models.trade_graph import (
-    TradeGraphEdge,
-    TradeGraphNode,
-    TradeGraphResponse,
-    TradeGraphStats,
+"""Evaluation → Trade-Graph sub-tab callbacks (Phase E.3).
+
+Six callbacks drive the tab:
+
+1. ``_hydrate_cluster_options``   — on entry to ``/evaluation/trade-graph``
+   populate the cluster ``Select`` from ``RadeBackend.clusters_df``.
+2. ``_sync_header_to_session``    — cluster picker / layout radio /
+   threshold slider → ``session.evaluation.trade_graph_*``.  Clearing
+   the cluster also wipes the selected-trade id.
+3. ``_render_graph``              — session change → Cytoscape elements,
+   pane status, cluster-stats card.  Fetches the trade-graph payload
+   once per cluster and stashes nodes / edges in a memory store so
+   threshold changes can re-filter without another API hit.
+4. ``_apply_threshold``           — threshold slider drags the stored
+   nodes / edges through a ``weight >= threshold`` filter.  Pure
+   client-side, so the interaction stays sub-60ms even on thousands
+   of edges.
+5. ``_render_node_tap``           — Cytoscape ``tapNodeData`` →
+   Selected-Trade card + session's ``trade_graph_selected_trade_id``.
+6. ``_render_ensemble_context``   — graph_stats DataFrame feeds the
+   Ensemble-summary KPIs and the two secondary charts.
+
+Every fetch goes through :class:`RadeBackend`.  When the cluster has no
+graph staged (older runs without ``graph_results.joblib``) we degrade
+gracefully to empty states — the rest of the UI keeps working.
+"""
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+
+import pandas as pd
+from dash import Input, Output, State, ctx, html, no_update
+from dash.exceptions import PreventUpdate
+
+from ..data.session import (
+    DEFAULT_TRADE_GRAPH_LAYOUT,
+    EVALUATION_TRADE_GRAPH_LAYOUTS,
+    Session,
 )
-```
+from ..figures import density_distribution, edges_vs_nodes_scatter
+from ..layouts.evaluation.trade_graph import TRADE_GRAPH_IDS
+from ..layouts.shell import SHELL_IDS
 
-Add these two methods inside `MockRadeBackend` (after
-`cluster_timeseries_df`):
+if TYPE_CHECKING:
+    from dash import Dash
 
-```python
-def graph_stats_df(
-    self, *, cluster_id: Optional[str] = None,
-) -> BackendResult[pd.DataFrame]:
-    rows: List[Dict[str, Any]] = []
-    for cid in self._cluster_ids:
-        payload = self._trade_graph_payload(cid)
-        rows.append(
+    from ..data.backend import RadeBackend
+
+
+logger = logging.getLogger(__name__)
+
+
+_TRADE_GRAPH_PATH = "/evaluation/trade-graph"
+_PLACEHOLDER = "—"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Formatters — kept small so the callback bodies stay readable.
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _fmt_int(x: Optional[float]) -> str:
+    if x is None:
+        return _PLACEHOLDER
+    try:
+        return f"{int(x):,}"
+    except (TypeError, ValueError):
+        return _PLACEHOLDER
+
+
+def _fmt_float(x: Optional[float], *, precision: int = 3) -> str:
+    if x is None:
+        return _PLACEHOLDER
+    try:
+        return f"{float(x):.{precision}g}"
+    except (TypeError, ValueError):
+        return _PLACEHOLDER
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Entry point
+# ─────────────────────────────────────────────────────────────────────
+
+
+def register(app: "Dash", backend: "RadeBackend") -> None:
+    """Attach every Trade-Graph-sub-tab callback to ``app``."""
+    _register_hydrate_cluster_options(app, backend)
+    _register_sync_header_to_session(app)
+    _register_render_graph(app, backend)
+    _register_apply_threshold(app)
+    _register_render_node_tap(app, backend)
+    _register_render_ensemble_context(app, backend)
+
+
+# ═════════════════════════════════════════════════════════════════════
+# 1. Hydrate cluster Select options on URL entry
+# ═════════════════════════════════════════════════════════════════════
+
+
+def _register_hydrate_cluster_options(
+    app: "Dash", backend: "RadeBackend",
+) -> None:
+    @app.callback(
+        Output(TRADE_GRAPH_IDS["cluster_select"], "data"),
+        Output(TRADE_GRAPH_IDS["cluster_select"], "value"),
+        Output(TRADE_GRAPH_IDS["layout_radio"],   "value"),
+        Output(TRADE_GRAPH_IDS["threshold_slider"], "value"),
+        Input(SHELL_IDS["url"],                   "pathname"),
+        State(SHELL_IDS["session_store"],         "data"),
+    )
+    def _hydrate(
+        pathname:     Optional[str],
+        session_data: Optional[Dict[str, Any]],
+    ) -> Tuple[List[Dict[str, str]], Optional[str], str, float]:
+        if pathname != _TRADE_GRAPH_PATH:
+            raise PreventUpdate
+
+        session = Session.from_store(session_data)
+        res = backend.clusters_df()
+        if not res.ok or res.data is None or res.data.empty:
+            return [], None, session.evaluation.trade_graph_layout, session.evaluation.trade_graph_weight_threshold
+
+        df = res.data
+        options = [
+            {"value": cid, "label": cid} for cid in sorted(df["cluster_id"].unique())
+        ]
+
+        # Prefer the session override, fall back to the top-bar cluster,
+        # then the first cluster in the list.  Never return ``None`` when
+        # we have clusters — the graph pane is useless without one.
+        session_cluster = (
+            session.evaluation.trade_graph_cluster_id
+            or session.cluster_id
+            or (options[0]["value"] if options else None)
+        )
+        if session_cluster not in {o["value"] for o in options}:
+            session_cluster = options[0]["value"] if options else None
+
+        return (
+            options,
+            session_cluster,
+            session.evaluation.trade_graph_layout,
+            session.evaluation.trade_graph_weight_threshold,
+        )
+
+
+# ═════════════════════════════════════════════════════════════════════
+# 2. Header band → session
+# ═════════════════════════════════════════════════════════════════════
+
+
+def _register_sync_header_to_session(app: "Dash") -> None:
+    @app.callback(
+        Output(SHELL_IDS["session_store"],             "data", allow_duplicate=True),
+        Input(TRADE_GRAPH_IDS["cluster_select"],       "value"),
+        Input(TRADE_GRAPH_IDS["layout_radio"],         "value"),
+        Input(TRADE_GRAPH_IDS["threshold_slider"],     "value"),
+        State(SHELL_IDS["session_store"],              "data"),
+        prevent_initial_call=True,
+    )
+    def _sync(
+        cluster:     Optional[str],
+        layout_name: Optional[str],
+        threshold:   Optional[float],
+        session_data: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        trigger = ctx.triggered_id
+        if trigger is None:
+            raise PreventUpdate
+
+        session = Session.from_store(session_data)
+        ev = session.evaluation
+        changed = False
+
+        if trigger == TRADE_GRAPH_IDS["cluster_select"]:
+            new_cluster = cluster if cluster else None
+            if ev.trade_graph_cluster_id != new_cluster:
+                ev.trade_graph_cluster_id = new_cluster
+                # Changing the cluster invalidates the selected trade.
+                ev.trade_graph_selected_trade_id = None
+                changed = True
+
+        elif trigger == TRADE_GRAPH_IDS["layout_radio"]:
+            if layout_name in EVALUATION_TRADE_GRAPH_LAYOUTS and ev.trade_graph_layout != layout_name:
+                ev.trade_graph_layout = layout_name
+                changed = True
+
+        elif trigger == TRADE_GRAPH_IDS["threshold_slider"]:
+            try:
+                new_threshold = max(0.0, float(threshold))
+            except (TypeError, ValueError):
+                raise PreventUpdate
+            if abs(ev.trade_graph_weight_threshold - new_threshold) > 1e-9:
+                ev.trade_graph_weight_threshold = new_threshold
+                changed = True
+
+        if not changed:
+            raise PreventUpdate
+        return session.to_store()
+
+
+# ═════════════════════════════════════════════════════════════════════
+# 3. Render graph — elements + cluster-stats card
+# ═════════════════════════════════════════════════════════════════════
+
+
+def _register_render_graph(
+    app: "Dash", backend: "RadeBackend",
+) -> None:
+    @app.callback(
+        Output(TRADE_GRAPH_IDS["store_nodes_edges"],   "data"),
+        Output(TRADE_GRAPH_IDS["cytoscape"],           "layout"),
+        Output(TRADE_GRAPH_IDS["pane_status"],         "children"),
+        Output(TRADE_GRAPH_IDS["cluster_stats"],       "children"),
+        Input(SHELL_IDS["url"],                        "pathname"),
+        Input(SHELL_IDS["session_store"],              "data"),
+    )
+    def _render(
+        pathname:     Optional[str],
+        session_data: Optional[Dict[str, Any]],
+    ) -> Tuple[Dict[str, Any], Dict[str, Any], str, List[Any]]:
+        if pathname != _TRADE_GRAPH_PATH:
+            raise PreventUpdate
+
+        session = Session.from_store(session_data)
+        ev = session.evaluation
+        layout_cfg = {
+            "name":    ev.trade_graph_layout or DEFAULT_TRADE_GRAPH_LAYOUT,
+            "animate": False,
+        }
+        cluster_id = ev.trade_graph_cluster_id or session.cluster_id
+
+        empty_stats = _cluster_stats_children(None)
+        if not cluster_id:
+            return (
+                {},
+                layout_cfg,
+                "No cluster selected.",
+                empty_stats,
+            )
+
+        res = backend.trade_graph(cluster_id=cluster_id)
+        if not res.ok or res.data is None:
+            logger.info(
+                "trade-graph fetch failed for cluster '%s': %s",
+                cluster_id, res.error,
+            )
+            return (
+                {},
+                layout_cfg,
+                f"Graph unavailable for {cluster_id}.",
+                empty_stats,
+            )
+
+        payload = res.data
+        # Serialise to plain dicts for the dcc.Store and the later
+        # threshold filter.  Keeping the shape Cytoscape-ready avoids a
+        # second transform at render time.
+        nodes_payload = [
             {
-                "cluster_id":  cid,
-                "n_nodes":     int(payload.stats.n_nodes),
-                "n_edges":     int(payload.stats.n_edges),
-                "density":     float(payload.stats.density),
-                "mean_weight": float(payload.stats.mean_weight),
+                "data": {
+                    "id":         n.trade_id,
+                    "trade_type": n.trade_type,
+                    "cluster_id": n.cluster_id,
+                },
+            }
+            for n in payload.nodes
+        ]
+        edges_payload = [
+            {
+                "data": {
+                    "source": e.source,
+                    "target": e.target,
+                    "weight": float(e.weight),
+                },
+            }
+            for e in payload.edges
+        ]
+
+        status = (
+            f"{payload.cluster_id} · "
+            f"{payload.stats.n_nodes:,} nodes · "
+            f"{payload.stats.n_edges:,} edges "
+            f"({payload.n_target_trades} target / "
+            f"{payload.n_elementary_trades} elementary)"
+        )
+        stats_children = _cluster_stats_children(
+            {
+                "n_nodes":     payload.stats.n_nodes,
+                "n_edges":     payload.stats.n_edges,
+                "density":     payload.stats.density,
+                "mean_weight": payload.stats.mean_weight,
             }
         )
-    df = pd.DataFrame(rows)
-    if cluster_id:
-        df = df[df["cluster_id"] == cluster_id].reset_index(drop=True)
-    return BackendResult.success(df)
 
-def trade_graph(
-    self, *, cluster_id: str,
-) -> BackendResult[TradeGraphResponse]:
-    if cluster_id not in self._cluster_ids:
-        return BackendResult.failure(
-            error=f"unknown cluster '{cluster_id}'",
-            status_code=404,
+        return (
+            {"nodes": nodes_payload, "edges": edges_payload},
+            layout_cfg,
+            status,
+            stats_children,
         )
-    return BackendResult.success(self._trade_graph_payload(cluster_id))
 
-def _trade_graph_payload(self, cluster_id: str) -> TradeGraphResponse:
-    return _trade_graph_cached(
-        mock_id=id(self),
-        cluster_id=cluster_id,
-        seed=self._seed,
+
+def _cluster_stats_children(stats: Optional[Dict[str, Any]]) -> List[Any]:
+    """Rebuild the cluster-stats card children with fresh numbers.
+
+    Imported lazily to avoid a cyclic import between callbacks and the
+    layout module (layouts import components; callbacks import layouts).
+    """
+    from ..components.kpi_card import KpiCard   # local to avoid cycle
+
+    caption = html.Span(
+        "Cluster stats",
+        className="text-xs uppercase tracking-wider text-slate-400",
     )
-```
-
-And add the module-level seeded generator at the bottom of the file,
-**above** the `__all__` assignment:
-
-```python
-_TRADE_NODE_MIN = 40
-_TRADE_NODE_MAX = 90
-_TARGET_FRACTION = 0.2
-
-
-@lru_cache(maxsize=256)
-def _trade_graph_cached(
-    *,
-    mock_id:    int,
-    cluster_id: str,
-    seed:       int,
-) -> TradeGraphResponse:
-    del mock_id
-    rng = np.random.default_rng(seed + (abs(hash(cluster_id)) % 10_000))
-
-    n = int(rng.integers(_TRADE_NODE_MIN, _TRADE_NODE_MAX + 1))
-    n_target = max(1, int(round(n * _TARGET_FRACTION)))
-    n_elem = n - n_target
-
-    target_ids = [f"{cluster_id}_T{i:03d}" for i in range(n_target)]
-    elem_ids = [f"{cluster_id}_E{i:03d}" for i in range(n_elem)]
-
-    nodes: List[TradeGraphNode] = []
-    for tid in target_ids:
-        nodes.append(TradeGraphNode(trade_id=tid, cluster_id=cluster_id, trade_type="target"))
-    for tid in elem_ids:
-        nodes.append(TradeGraphNode(trade_id=tid, cluster_id=cluster_id, trade_type="elementary"))
-
-    n_edges_target = max(n, 2 * n)
-    edges: List[TradeGraphEdge] = []
-    seen: set[tuple[int, int]] = set()
-    tries = 0
-    while len(edges) < n_edges_target and tries < n_edges_target * 4:
-        tries += 1
-        i = int(rng.integers(0, n))
-        j = int(rng.integers(0, n))
-        if i == j:
-            continue
-        key = (min(i, j), max(i, j))
-        if key in seen:
-            continue
-        seen.add(key)
-        weight = float(rng.uniform(0.05, 1.0))
-        edges.append(
-            TradeGraphEdge(
-                source=nodes[i].trade_id,
-                target=nodes[j].trade_id,
-                weight=weight,
-            )
-        )
-
-    density = float(len(edges) / (n * n)) if n > 0 else 0.0
-    mean_w = float(np.mean([e.weight for e in edges])) if edges else 0.0
-
-    return TradeGraphResponse(
-        cluster_id=cluster_id,
-        n_target_trades=n_target,
-        n_elementary_trades=n_elem,
-        stats=TradeGraphStats(
-            n_nodes=n,
-            n_edges=len(edges),
-            density=density,
-            mean_weight=mean_w,
+    if stats is None:
+        grid_children = [
+            KpiCard(label="Nodes",       value=_PLACEHOLDER),
+            KpiCard(label="Edges",       value=_PLACEHOLDER),
+            KpiCard(label="Density",     value=_PLACEHOLDER),
+            KpiCard(label="Mean weight", value=_PLACEHOLDER),
+        ]
+    else:
+        grid_children = [
+            KpiCard(label="Nodes",       value=_fmt_int(stats.get("n_nodes"))),
+            KpiCard(label="Edges",       value=_fmt_int(stats.get("n_edges"))),
+            KpiCard(
+                label="Density",
+                value=_fmt_float(stats.get("density")),
+            ),
+            KpiCard(
+                label="Mean weight",
+                value=_fmt_float(stats.get("mean_weight")),
+            ),
+        ]
+    return [
+        caption,
+        html.Div(
+            className="grid grid-cols-2 gap-2",
+            children=grid_children,
         ),
-        nodes=nodes,
-        edges=edges,
-        warnings=None,
+    ]
+
+
+# ═════════════════════════════════════════════════════════════════════
+# 4. Threshold filter — stored nodes / edges → Cytoscape elements
+# ═════════════════════════════════════════════════════════════════════
+
+
+def _register_apply_threshold(app: "Dash") -> None:
+    @app.callback(
+        Output(TRADE_GRAPH_IDS["cytoscape"],        "elements"),
+        Output(TRADE_GRAPH_IDS["threshold_value_label"], "children"),
+        Input(TRADE_GRAPH_IDS["store_nodes_edges"], "data"),
+        Input(TRADE_GRAPH_IDS["threshold_slider"],  "value"),
     )
+    def _apply(
+        store_data: Optional[Dict[str, Any]],
+        threshold:  Optional[float],
+    ) -> Tuple[List[Dict[str, Any]], str]:
+        try:
+            thr = max(0.0, float(threshold)) if threshold is not None else 0.0
+        except (TypeError, ValueError):
+            thr = 0.0
+
+        label = f"{thr:.2f}"
+
+        if not store_data:
+            return [], label
+
+        nodes = store_data.get("nodes") or []
+        edges = store_data.get("edges") or []
+
+        if thr > 0.0:
+            edges = [
+                e for e in edges
+                if float(e.get("data", {}).get("weight", 0.0)) >= thr
+            ]
+
+        return [*nodes, *edges], label
+
+
+# ═════════════════════════════════════════════════════════════════════
+# 5. Node-tap → Selected-Trade card + session
+# ═════════════════════════════════════════════════════════════════════
+
+
+def _register_render_node_tap(
+    app: "Dash", backend: "RadeBackend",
+) -> None:
+    @app.callback(
+        Output(TRADE_GRAPH_IDS["selected_trade_id"],   "children"),
+        Output(TRADE_GRAPH_IDS["selected_cluster_chip"], "children"),
+        Output(TRADE_GRAPH_IDS["selected_attrs"],       "children"),
+        Output(TRADE_GRAPH_IDS["selected_deep_dive_btn"], "disabled"),
+        Output(SHELL_IDS["session_store"],             "data", allow_duplicate=True),
+        Input(TRADE_GRAPH_IDS["cytoscape"],            "tapNodeData"),
+        State(SHELL_IDS["session_store"],              "data"),
+        prevent_initial_call=True,
+    )
+    def _on_tap(
+        node_data:    Optional[Dict[str, Any]],
+        session_data: Optional[Dict[str, Any]],
+    ) -> Tuple[Any, Any, Any, bool, Any]:
+        if not node_data:
+            raise PreventUpdate
+
+        trade_id = node_data.get("id")
+        cluster_id = node_data.get("cluster_id")
+        trade_type = node_data.get("trade_type", "elementary")
+
+        if not trade_id or not cluster_id:
+            raise PreventUpdate
+
+        session = Session.from_store(session_data)
+        if session.evaluation.trade_graph_selected_trade_id == trade_id:
+            # Re-tap is a no-op — no need to write the store.
+            session_out: Any = no_update
+        else:
+            session.evaluation.trade_graph_selected_trade_id = trade_id
+            session_out = session.to_store()
+
+        # Attribute lookup — clusters_df carries the attributes we need
+        # (asset_class, currency, desk, product).  One cached call, so
+        # repeated node taps pay nothing extra.
+        attrs_children = _build_attrs_children(backend, cluster_id, trade_type)
+
+        return (
+            trade_id,
+            cluster_id,
+            attrs_children,
+            False,
+            session_out,
+        )
+
+
+def _build_attrs_children(
+    backend: "RadeBackend", cluster_id: str, trade_type: str,
+) -> Any:
+    """Render the attribute list inside the Selected-Trade card."""
+    res = backend.clusters_df(cluster_id=cluster_id)
+    rows: List[Tuple[str, str]] = [("Trade type", trade_type.capitalize())]
+
+    if res.ok and res.data is not None and not res.data.empty:
+        row = res.data.iloc[0]
+        for label, column in (
+            ("Asset class", "asset_class"),
+            ("Currency",    "currency_code"),
+            ("Desk",        "desk"),
+            ("Product",     "product_code"),
+        ):
+            if column in res.data.columns:
+                value = row.get(column)
+                if value is not None and not pd.isna(value):
+                    rows.append((label, str(value)))
+
+    return html.Div(
+        className="flex flex-col gap-1 mt-2",
+        children=[
+            html.Div(
+                className="flex items-center justify-between text-xs",
+                children=[
+                    html.Span(label, className="text-slate-500"),
+                    html.Span(value, className="text-slate-200"),
+                ],
+            )
+            for label, value in rows
+        ],
+    )
+
+
+# ═════════════════════════════════════════════════════════════════════
+# 6. Ensemble context — summary KPIs + two secondary charts
+# ═════════════════════════════════════════════════════════════════════
+
+
+def _register_render_ensemble_context(
+    app: "Dash", backend: "RadeBackend",
+) -> None:
+    @app.callback(
+        Output(TRADE_GRAPH_IDS["ensemble_stats"],       "children"),
+        Output(TRADE_GRAPH_IDS["density_chart"],        "figure"),
+        Output(TRADE_GRAPH_IDS["edges_vs_nodes_chart"], "figure"),
+        Input(SHELL_IDS["url"],                         "pathname"),
+        Input(SHELL_IDS["session_store"],               "data"),
+    )
+    def _render(
+        pathname:     Optional[str],
+        session_data: Optional[Dict[str, Any]],
+    ) -> Tuple[List[Any], Any, Any]:
+        if pathname != _TRADE_GRAPH_PATH:
+            raise PreventUpdate
+
+        session = Session.from_store(session_data)
+        selected_cluster = (
+            session.evaluation.trade_graph_cluster_id or session.cluster_id
+        )
+
+        res = backend.graph_stats_df()
+        if not res.ok or res.data is None or res.data.empty:
+            return (
+                _ensemble_stats_children(None),
+                density_distribution(pd.DataFrame(),
+                                     selected_cluster_id=selected_cluster),
+                edges_vs_nodes_scatter(pd.DataFrame(),
+                                       selected_cluster_id=selected_cluster),
+            )
+
+        df = res.data.copy()
+        # Guard against any row where the cluster has no graph (n_nodes
+        # == 0).  We include those in the histogram (user should see the
+        # zero bar) but exclude them from the avg-density / mean-weight
+        # averages so they don't drag the summary to zero.
+        has_graph = df["n_nodes"] > 0
+        n_clusters = int(len(df))
+        total_edges = int(df["n_edges"].sum())
+        avg_density = (
+            float(df.loc[has_graph, "density"].mean()) if has_graph.any() else 0.0
+        )
+        avg_mean_weight = (
+            float(df.loc[has_graph, "mean_weight"].mean()) if has_graph.any() else 0.0
+        )
+
+        stats_payload = {
+            "n_clusters":      n_clusters,
+            "total_edges":     total_edges,
+            "avg_density":     avg_density,
+            "avg_mean_weight": avg_mean_weight,
+        }
+
+        return (
+            _ensemble_stats_children(stats_payload),
+            density_distribution(df, selected_cluster_id=selected_cluster),
+            edges_vs_nodes_scatter(df, selected_cluster_id=selected_cluster),
+        )
+
+
+def _ensemble_stats_children(stats: Optional[Dict[str, Any]]) -> List[Any]:
+    """Rebuild the Ensemble-summary card children with fresh numbers."""
+    from ..components.kpi_card import KpiCard   # local to avoid cycle
+
+    caption = html.Span(
+        "Ensemble summary",
+        className="text-xs uppercase tracking-wider text-slate-400",
+    )
+    if stats is None:
+        grid_children = [
+            KpiCard(label="Total clusters",  value=_PLACEHOLDER),
+            KpiCard(label="Total edges",     value=_PLACEHOLDER),
+            KpiCard(label="Avg density",     value=_PLACEHOLDER),
+            KpiCard(label="Avg mean weight", value=_PLACEHOLDER),
+        ]
+    else:
+        grid_children = [
+            KpiCard(label="Total clusters",
+                    value=_fmt_int(stats.get("n_clusters"))),
+            KpiCard(label="Total edges",
+                    value=_fmt_int(stats.get("total_edges"))),
+            KpiCard(label="Avg density",
+                    value=_fmt_float(stats.get("avg_density"))),
+            KpiCard(label="Avg mean weight",
+                    value=_fmt_float(stats.get("avg_mean_weight"))),
+        ]
+    return [
+        caption,
+        html.Div(
+            className="grid grid-cols-2 gap-2",
+            children=grid_children,
+        ),
+    ]
+
+
+__all__ = ["register"]
 ```
-
-### B.17 `examples/rade_analytics/08_trade_graph_preview_live.py` — CREATE
-
-Mirrors `06_portfolio_preview_live.py` but on port **8054** with
-`title="Rade — Trade-Graph live preview (mock)"`.  Open
-[http://localhost:8054/evaluation/trade-graph](http://localhost:8054/evaluation/trade-graph)
-after launch.
-
-### B.18 Smoke test
-
-From the project root, with the venv active:
-
-```bash
-pip install -r requirements-rade-ui.txt
-python examples/rade_analytics/08_trade_graph_preview_live.py
-```
-
-Visit `http://localhost:8054/evaluation/trade-graph`.  Expected:
-
-* Cluster `Select` populated with 12 synthetic clusters.
-* Graph renders ~50-90 nodes, a mix of amber (target) and violet
-  (elementary) dots.
-* Dragging "Min weight" above 0 thins out edges without a server hit.
-* Switching layout (`cose` → `concentric` → …) re-runs Cytoscape's
-  client-side layout.
-* Tapping any node fills the Selected-Trade card with the trade id,
-  cluster badge, trade type + asset / currency / desk / product rows;
-  the "Open in Cluster Deep Dive" button becomes enabled.
-* Right-hand Cluster stats and Ensemble summary reflect the fetched
-  payload and the full `graph_stats` frame respectively.
-* Density histogram + Edges-vs-nodes scatter both highlight the
-  selected cluster (emerald vline / thicker ring).
-
-Once live data is available, rerun the eval pipeline (picks up
-`_copy_member_graph_artifacts`) and swap `MockRadeBackend` for the real
-`RadeBackend` — no other code changes required.
