@@ -252,485 +252,436 @@ No mock, no merge.
 
 ---
 
-## Appendix A — `layouts/evaluation/cluster_deep_dive.py`
+## Appendix A — `figures/cluster_deep_dive_charts.py`
 
-Full verbatim body of the Cluster Deep-Dive sub-tab layout. Paste into
-`src/ui/apps/rade_analytics/layouts/evaluation/cluster_deep_dive.py`.
+Full verbatim body of the Cluster Deep-Dive sub-tab figure builders.
+Paste into `src/ui/apps/rade_analytics/figures/cluster_deep_dive_charts.py`.
 
-Five-row page scoped to a single cluster (no Evaluation filter bar,
-split inherits from the topbar):
+Three builders, each tuned to a single-cluster diagnostic view:
 
-| Row | Purpose |
-|----|---------|
-| 1 | Header band · cluster picker · attribute chips · "Trade-Graph" link |
-| 2 | 2×2 KPI grid (MAE / RMSE / R² / Coverage) + training-curves chart with overlay chip filter |
-| 3 | Residual over time · predicted vs target PnL (shaded error band) |
-| 4 | Per-trade residual violin (target / elementary) · per-trade scatter (click to highlight) |
-| 5 | Trades AgGrid — per-trade MAE / RMSE / p95 / mean_residual; row click ↔ Row 4 scatter |
+| Function | Used by | Purpose |
+|----|----|----|
+| `predicted_vs_actual_band` | Row 3 right | Predicted + actual PnL lines with the residual zone shaded rose between them. |
+| `per_trade_residual_violin` | Row 4 left | Per-trade residual distribution, split by `trade_type` (target / elementary). Falls back to a single aggregate violin when the trade-graph payload is missing. |
+| `per_trade_scatter` | Row 4 right | Per-trade scatter `mean_residual × mae`, coloured by `trade_type`. The optional `selected_trade_id` renders an emerald-ring highlight marker so cross-highlighting from the Row 5 AgGrid is visible at a glance. |
+
+All three share the same data contract: callers pass a pandas frame
+with the columns listed in each docstring and a `trade_type_map`
+(`{trade_id: "target" | "elementary"}`) derived from the trade-graph
+payload. Missing columns / empty frames gracefully return an
+`empty_figure` — the UI never shows a broken axis.
 
 ```python
-"""Evaluation → Cluster Deep-Dive sub-tab layout (Phase E.4).
+"""Cluster Deep-Dive specific figure builders (Phase E.4).
 
-Five-row layout laser-focused on a single cluster:
+Three builders land here, all tuned to single-cluster diagnostic views:
 
-    Row 1 · Header band       (cluster picker · attribute chips ·
-                               open Trade-Graph link)
-    Row 2 · Training          (KPI grid 2×2: MAE/RMSE/R²/Coverage  |
-                               training curves with a metric chip
-                               filter for optional overlays)
-    Row 3 · Time-series       (residual over time  |  predicted vs
-                               target PnL with error band)
-    Row 4 · Per-trade charts  (residual violin target/elementary  |
-                               per-trade scatter target/elementary,
-                               with click-to-highlight into Row 5)
-    Row 5 · Trades grid       (AgGrid — per-trade MAE / RMSE / p95 /
-                               mean_residual; row click ↔ Row 4
-                               scatter)
+* :func:`predicted_vs_actual_band` — Row 3 right.  Predicted + actual
+  PnL lines for one cluster with the residual zone between them shaded
+  (rose) so the user can *see* where the model is over- or
+  under-predicting.  Distinct from :func:`figures.portfolio_pnl`, which
+  has no error shading and is used on the Portfolio tab.
+* :func:`per_trade_residual_violin` — Row 4 left.  Distribution of
+  per-trade metrics (mean_residual or mae), split by ``trade_type``
+  (target / elementary).  Uses :class:`plotly.graph_objects.Violin` so
+  the visual language matches the Portfolio residual violin.
+* :func:`per_trade_scatter` — Row 4 right.  Per-trade scatter:
+  ``mean_residual`` (x) vs ``mae`` (y), coloured by ``trade_type``.
+  A ``selected_trade_id`` gets a larger, emerald-bordered marker so
+  cross-highlighting from the trades AgGrid is visible at a glance.
 
-The page deliberately has no filter bar — Cluster Deep-Dive scopes
-everything to the single selected cluster, so the top-level Evaluation
-filter chrome is redundant here.  Split inherits from the topbar as
-everywhere else.
-
-All dynamic ids live in :data:`CLUSTER_DEEP_DIVE_IDS` so callbacks
-never hardcode strings.  Callbacks live in
-:mod:`..callbacks.cluster_deep_dive_cb`.
+All three share the same data contract: callers pass a pandas frame
+with the columns listed in each function's docstring, and a
+``trade_type_map`` (``{trade_id: "target" | "elementary"}``) derived
+from the trade-graph payload.  Missing columns / empty frames gracefully
+return an :func:`empty_figure` — the UI never shows a broken axis.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Mapping, Optional, Sequence
 
-import dash_mantine_components as dmc
-from dash import dcc, html
-from dash_iconify import DashIconify
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
 
-from ...components.ag_grid_table import AgGridTable
-from ...components.chart_container import ChartContainer
-from ...components.kpi_card import KpiCard
+from ._theme import color_for_index, empty_figure, rade_layout, rgba
 
-
-CLUSTER_DEEP_DIVE_IDS: Dict[str, str] = {
-    "root":                "eval-cluster-root",
-
-    # Header band
-    "cluster_select":      "eval-cluster-cluster-select",
-    "attribute_chips":     "eval-cluster-attribute-chips",
-    "open_trade_graph_btn": "eval-cluster-open-trade-graph-btn",
-
-    # Row 2 — KPI grid
-    "kpi_mae_card":        "eval-cluster-kpi-mae-card",
-    "kpi_mae_value":       "eval-cluster-kpi-mae-value",
-    "kpi_rmse_card":       "eval-cluster-kpi-rmse-card",
-    "kpi_rmse_value":      "eval-cluster-kpi-rmse-value",
-    "kpi_r2_card":         "eval-cluster-kpi-r2-card",
-    "kpi_r2_value":        "eval-cluster-kpi-r2-value",
-    "kpi_coverage_card":   "eval-cluster-kpi-coverage-card",
-    "kpi_coverage_value":  "eval-cluster-kpi-coverage-value",
-
-    # Row 2 — training curves
-    "curves_chart":        "eval-cluster-curves-chart",
-    "curves_chip_group":   "eval-cluster-curves-chip-group",
-    "curves_chip_empty":   "eval-cluster-curves-chip-empty",
-
-    # Row 3 — timeseries
-    "residual_ts_chart":   "eval-cluster-residual-ts-chart",
-    "pnl_band_chart":      "eval-cluster-pnl-band-chart",
-
-    # Row 4 — per-trade
-    "per_trade_violin":    "eval-cluster-per-trade-violin",
-    "per_trade_scatter":   "eval-cluster-per-trade-scatter",
-    "selected_trade_chip": "eval-cluster-selected-trade-chip",
-    "selected_trade_label": "eval-cluster-selected-trade-label",
-    "selected_trade_clear_btn": "eval-cluster-selected-trade-clear-btn",
-
-    # Row 5 — trades grid
-    "trades_grid":         "eval-cluster-trades-grid",
-    "trades_grid_card":    "eval-cluster-trades-grid-card",
-    "trades_grid_empty":   "eval-cluster-trades-grid-empty",
-    "trades_grid_wrap":    "eval-cluster-trades-grid-wrap",
-
-    # Ephemeral stores
-    "store_trade_types":   "eval-cluster-trade-types-store",
-    "store_curve_metrics": "eval-cluster-curve-metrics-store",
+# Fixed colours for the two trade types so violin + scatter + Cytoscape
+# legend always match.  Must stay in sync with the Cytoscape stylesheet
+# in ``layouts/evaluation/trade_graph.py``.
+_TRADE_TYPE_COLOR = {
+    "target":     "#f59e0b",   # amber
+    "elementary": "#8b5cf6",   # violet
 }
+_TRADE_TYPE_ORDER: tuple[str, ...] = ("target", "elementary")
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Row 1 — Header band
+# Row 3 right — predicted vs actual with shaded error band
 # ─────────────────────────────────────────────────────────────────────
 
 
-def _header_band() -> html.Div:
-    """Sticky header with cluster picker + attribute chips.
+def predicted_vs_actual_band(df: pd.DataFrame) -> go.Figure:
+    """Two-line PnL chart with the residual zone shaded rose.
 
-    KPIs used to live here but Phase E.4 (Row 2 revision) moved them
-    alongside the training-curves chart so the header stays a thin
-    navigation / context band.
+    Parameters
+    ----------
+    df
+        Single-cluster timeseries frame.  Required columns:
+        ``predicted``, ``actual``.  Optional but preferred:
+        ``scenario_idx`` (drives sort order) and ``scenario_label``
+        (drives the x-axis tick labels).  Extra columns are ignored.
+
+    Notes
+    -----
+    The shaded band is built as ``predicted`` fill-to-zero *minus*
+    ``actual`` fill-to-zero — i.e. two scatter traces with
+    ``fill='tonexty'`` form the envelope between the two lines.  Using
+    ``rgba(0.18)`` for the fill keeps the band visible against the
+    dark theme without drowning the line strokes.
     """
-    cluster_picker = html.Div(
-        className="flex flex-col gap-1 min-w-[220px]",
-        children=[
-            html.Span(
-                "Cluster",
-                className="text-[11px] uppercase tracking-wider text-slate-400",
-            ),
-            dmc.Select(
-                id=CLUSTER_DEEP_DIVE_IDS["cluster_select"],
-                data=[],
-                placeholder="Select a cluster…",
-                searchable=True,
-                clearable=False,
-                size="sm",
-            ),
-        ],
+    if (
+        df is None
+        or df.empty
+        or "predicted" not in df.columns
+        or "actual" not in df.columns
+    ):
+        return empty_figure("No cluster timeseries for this selection.")
+
+    df_sorted = df.sort_values("scenario_idx") if "scenario_idx" in df.columns else df
+    x_vals: Sequence
+    if "scenario_label" in df_sorted.columns:
+        x_vals = df_sorted["scenario_label"].tolist()
+    else:
+        x_vals = list(range(len(df_sorted)))
+
+    pred_color = color_for_index(0)       # violet
+    actual_color = "#cbd5e1"              # slate-300 — neutral reference
+    band_color = color_for_index(3)       # rose — "error zone"
+
+    fig = go.Figure()
+
+    # Baseline trace — predicted.  Rendered first so the "actual" trace
+    # below can fill-to-next and produce the between-lines band.
+    fig.add_trace(
+        go.Scatter(
+            x=x_vals,
+            y=df_sorted["predicted"],
+            mode="lines",
+            name="Predicted PnL",
+            line={"color": pred_color, "width": 2.5},
+            hovertemplate="%{y:.4f}<extra>Predicted</extra>",
+        )
+    )
+    # Error band — actual with fill='tonexty' fills the area between
+    # the two traces.
+    fig.add_trace(
+        go.Scatter(
+            x=x_vals,
+            y=df_sorted["actual"],
+            mode="lines",
+            name="Actual PnL",
+            line={"color": actual_color, "width": 1.5, "dash": "dash"},
+            fill="tonexty",
+            fillcolor=rgba(band_color, 0.18),
+            hovertemplate="%{y:.4f}<extra>Actual</extra>",
+        )
     )
 
-    attribute_chips = html.Div(
-        id=CLUSTER_DEEP_DIVE_IDS["attribute_chips"],
-        className="flex items-center gap-1 flex-wrap min-h-[32px]",
+    fig.update_layout(
+        **rade_layout(
+            show_legend=True,
+            hovermode="x unified",
+            xaxis={"showticklabels": True},
+            yaxis={"title": {"text": "PnL", "font": {"color": "#94a3b8"}}},
+        ),
     )
-
-    open_trade_graph_btn = dmc.Button(
-        "Trade-Graph",
-        id=CLUSTER_DEEP_DIVE_IDS["open_trade_graph_btn"],
-        variant="light",
-        color="violet",
-        size="sm",
-        leftSection=DashIconify(icon="tabler:share-2", width=16),
-    )
-
-    top_row = html.Div(
-        className="flex items-end gap-4 flex-wrap",
-        children=[
-            cluster_picker,
-            html.Div(
-                className="flex flex-col gap-1 flex-1 min-w-[240px]",
-                children=[
-                    html.Span(
-                        "Attributes",
-                        className="text-[11px] uppercase tracking-wider text-slate-400",
-                    ),
-                    attribute_chips,
-                ],
-            ),
-            open_trade_graph_btn,
-        ],
-    )
-
-    return html.Div(
-        className="rade-card flex flex-col gap-3 sticky top-0 z-10",
-        children=[top_row],
-    )
+    return fig
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Row 2 — KPI grid + training curves
+# Row 4 left — per-trade residual violin (target vs elementary)
 # ─────────────────────────────────────────────────────────────────────
 
 
-def _kpi_grid() -> html.Div:
-    """2×2 KPI grid — MAE, RMSE, R², Coverage.
+def per_trade_residual_violin(
+    trades_df:      pd.DataFrame,
+    *,
+    trade_type_map: Optional[Mapping[str, str]] = None,
+    value_column:   str = "mean_residual",
+    y_axis_title:   str = "Mean residual per trade",
+) -> go.Figure:
+    """Violin of a per-trade metric, split by ``trade_type``.
 
-    R² and Coverage are derived client-side from the cluster time-series
-    (``rade_analytics.callbacks.cluster_deep_dive_cb``); MAE and RMSE
-    come straight from ``per_member_metrics``.
+    Parameters
+    ----------
+    trades_df
+        ``trades_df``-shaped frame (one row per trade).  Must carry
+        ``trade_id`` and :paramref:`value_column`.
+    trade_type_map
+        ``{trade_id: "target" | "elementary"}``, typically derived from
+        ``trade_graph.nodes``.  Trades with no entry are dropped — the
+        graph payload is the authoritative source for trade type.  When
+        the map is empty / ``None`` the chart falls back to an
+        aggregate single-violin view.
+    value_column
+        Column whose distribution is plotted.  Default
+        ``"mean_residual"`` — callers can swap to ``"mae"`` /
+        ``"rmse"`` without changing anything else.
+    y_axis_title
+        Y-axis caption.
     """
-    return html.Div(
-        className="grid grid-cols-2 gap-3 self-start",
-        children=[
-            KpiCard(
-                label="MAE",
-                value="—",
-                card_id=CLUSTER_DEEP_DIVE_IDS["kpi_mae_card"],
-                value_id=CLUSTER_DEEP_DIVE_IDS["kpi_mae_value"],
-                icon="tabler:arrow-narrow-down",
-            ),
-            KpiCard(
-                label="RMSE",
-                value="—",
-                card_id=CLUSTER_DEEP_DIVE_IDS["kpi_rmse_card"],
-                value_id=CLUSTER_DEEP_DIVE_IDS["kpi_rmse_value"],
-                icon="tabler:square-root",
-            ),
-            KpiCard(
-                label="R²",
-                value="—",
-                card_id=CLUSTER_DEEP_DIVE_IDS["kpi_r2_card"],
-                value_id=CLUSTER_DEEP_DIVE_IDS["kpi_r2_value"],
-                icon="tabler:chart-dots",
-            ),
-            KpiCard(
-                label="Coverage",
-                value="—",
-                card_id=CLUSTER_DEEP_DIVE_IDS["kpi_coverage_card"],
-                value_id=CLUSTER_DEEP_DIVE_IDS["kpi_coverage_value"],
-                icon="tabler:target",
-            ),
-        ],
+    if (
+        trades_df is None
+        or trades_df.empty
+        or value_column not in trades_df.columns
+        or "trade_id" not in trades_df.columns
+    ):
+        return empty_figure("No per-trade metrics for this cluster.")
+
+    values = trades_df[value_column].astype(float).to_numpy()
+    if values.size == 0:
+        return empty_figure("No per-trade metrics for this cluster.")
+
+    if not trade_type_map:
+        return _aggregate_trade_violin(values, y_axis_title=y_axis_title)
+
+    trade_types = (
+        trades_df["trade_id"].map(trade_type_map).fillna("").to_numpy(dtype=object)
     )
+    # Drop any rows we couldn't classify — keeps the violin honest.
+    keep = trade_types != ""
+    if not keep.any():
+        return _aggregate_trade_violin(values, y_axis_title=y_axis_title)
+    values = values[keep]
+    trade_types = trade_types[keep]
 
-
-def _curves_chip_group() -> html.Div:
-    """Multi-select metric chips for the training-curves overlay filter.
-
-    ``train_loss`` is always shown on the chart and so is deliberately
-    absent from the chip group — chips only pick extra series to
-    overlay (``val_loss``, ``mae``, ``val_mae``, …).  The callback
-    populates the chip group based on ``df.attrs["metrics"]``; the
-    empty state message renders while the list is still being fetched
-    or when the trainer emitted only ``train_loss``.
-    """
-    return html.Div(
-        className="flex flex-col gap-2",
-        children=[
-            html.Div(
-                className="flex items-center justify-between",
-                children=[
-                    html.Span(
-                        "Overlay metrics",
-                        className="text-[11px] uppercase tracking-wider text-slate-400",
-                    ),
-                    html.Span(
-                        "train_loss always shown",
-                        className="text-[11px] text-slate-500",
-                    ),
-                ],
-            ),
-            html.Div(
-                className="flex items-center gap-1 flex-wrap min-h-[28px]",
-                children=[
-                    dmc.ChipGroup(
-                        id=CLUSTER_DEEP_DIVE_IDS["curves_chip_group"],
-                        multiple=True,
-                        value=[],
-                        children=[],
-                    ),
-                    html.Span(
-                        "No additional metrics emitted for this cluster.",
-                        id=CLUSTER_DEEP_DIVE_IDS["curves_chip_empty"],
-                        className="text-xs text-slate-500",
-                        style={"display": "none"},
-                    ),
-                ],
-            ),
-        ],
-    )
-
-
-def _row_training() -> html.Div:
-    """Row 2 — KPI grid on the left, training curves chart on the right."""
-    return html.Div(
-        # 2/5 : 3/5 split on wide screens — gives the KPI grid enough
-        # room to breathe without crowding the chart.  Collapses to a
-        # single stack on narrow viewports.
-        className="grid grid-cols-1 lg:grid-cols-5 gap-3 items-stretch",
-        children=[
-            html.Div(
-                className="lg:col-span-2 flex flex-col gap-3",
-                children=[_kpi_grid()],
-            ),
-            html.Div(
-                className="lg:col-span-3 flex flex-col gap-2",
-                children=[
-                    ChartContainer(
-                        title="Training curves",
-                        subtitle="Per-epoch train loss (+ selected overlays)",
-                        graph_id=CLUSTER_DEEP_DIVE_IDS["curves_chart"],
-                        height=300,
-                    ),
-                    _curves_chip_group(),
-                ],
-            ),
-        ],
-    )
-
-
-# ─────────────────────────────────────────────────────────────────────
-# Row 3 — timeseries
-# ─────────────────────────────────────────────────────────────────────
-
-
-def _row_timeseries() -> html.Div:
-    return html.Div(
-        className="grid grid-cols-1 lg:grid-cols-2 gap-3",
-        children=[
-            ChartContainer(
-                title="Residual over time",
-                subtitle="Rolling absolute error with ±1σ band",
-                graph_id=CLUSTER_DEEP_DIVE_IDS["residual_ts_chart"],
-                height=300,
-            ),
-            ChartContainer(
-                title="Predicted vs Target PnL",
-                subtitle="Shaded band = prediction error",
-                graph_id=CLUSTER_DEEP_DIVE_IDS["pnl_band_chart"],
-                height=300,
-            ),
-        ],
-    )
-
-
-# ─────────────────────────────────────────────────────────────────────
-# Row 4 — per-trade charts
-# ─────────────────────────────────────────────────────────────────────
-
-
-def _selected_trade_chip() -> html.Div:
-    """Focus-state chip shown in the per-trade scatter card header."""
-    return html.Div(
-        id=CLUSTER_DEEP_DIVE_IDS["selected_trade_chip"],
-        className="rade-focus-chip flex items-center gap-1",
-        style={"display": "none"},
-        children=[
-            DashIconify(
-                icon="tabler:target",
-                width=12,
-                className="text-emerald-400",
-            ),
-            html.Span(
-                "Trade: —",
-                id=CLUSTER_DEEP_DIVE_IDS["selected_trade_label"],
-                className="text-xs text-slate-300",
-            ),
-            html.Button(
-                "× Clear",
-                id=CLUSTER_DEEP_DIVE_IDS["selected_trade_clear_btn"],
-                className="rade-focus-chip-close",
-                **{"aria-label": "Clear trade selection"},
-            ),
-        ],
-    )
-
-
-def _row_per_trade_charts() -> html.Div:
-    return html.Div(
-        className="grid grid-cols-1 lg:grid-cols-2 gap-3",
-        children=[
-            ChartContainer(
-                title="Per-trade residual distribution",
-                subtitle="Split by target / elementary",
-                graph_id=CLUSTER_DEEP_DIVE_IDS["per_trade_violin"],
-                height=360,
-            ),
-            ChartContainer(
-                title="Per-trade bias vs magnitude",
-                subtitle=(
-                    "x: mean_residual  ·  y: MAE  ·  click a point "
-                    "to highlight in the grid"
+    fig = go.Figure()
+    for group in _TRADE_TYPE_ORDER:
+        mask = trade_types == group
+        if not mask.any():
+            continue
+        color = _TRADE_TYPE_COLOR[group]
+        fig.add_trace(
+            go.Violin(
+                y=values[mask],
+                name=group.capitalize(),
+                x=[group.capitalize()] * int(mask.sum()),
+                line_color=color,
+                fillcolor=rgba(color, 0.2),
+                box_visible=True,
+                meanline_visible=True,
+                points="outliers",
+                hoveron="violins",
+                hovertemplate=(
+                    f"<b>{group.capitalize()}</b><br>"
+                    "median: %{median:.4f}<br>"
+                    "Q1: %{q1:.4f} / Q3: %{q3:.4f}<br>"
+                    "min: %{lowerfence:.4f} / max: %{upperfence:.4f}"
+                    "<extra></extra>"
                 ),
-                graph_id=CLUSTER_DEEP_DIVE_IDS["per_trade_scatter"],
-                height=360,
-                actions=[_selected_trade_chip()],
-                config={"doubleClick": "reset"},
-            ),
-        ],
+                showlegend=False,
+            )
+        )
+
+    fig.update_layout(
+        **rade_layout(
+            show_legend=False,
+            xaxis={
+                "title": {"text": "Trade type", "font": {"color": "#94a3b8", "size": 11}},
+                "showgrid": False,
+            },
+            yaxis={"title": {"text": y_axis_title, "font": {"color": "#94a3b8"}}},
+        ),
     )
+    fig.add_hline(
+        y=0,
+        line_dash="dash",
+        line_color="rgba(148, 163, 184, 0.4)",
+        line_width=1,
+    )
+    return fig
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Row 5 — trades grid
+# Row 4 right — per-trade scatter (mean_residual vs mae, by trade_type)
 # ─────────────────────────────────────────────────────────────────────
 
 
-def _row_trades_grid() -> html.Div:
-    header = html.Div(
-        className="flex items-center justify-between",
-        children=[
-            html.Div(
-                className="flex flex-col",
-                children=[
-                    html.Div(
-                        "Trades in this cluster",
-                        className="text-sm font-semibold text-slate-200",
-                    ),
-                    html.Div(
-                        "Per-trade metrics across the active split.  "
-                        "Click a row to highlight the trade in the scatter above.",
-                        className="text-xs text-slate-500",
-                    ),
-                ],
-            ),
-        ],
+def per_trade_scatter(
+    trades_df:          pd.DataFrame,
+    *,
+    trade_type_map:     Optional[Mapping[str, str]] = None,
+    selected_trade_id:  Optional[str] = None,
+    x_column:           str = "mean_residual",
+    y_column:           str = "mae",
+) -> go.Figure:
+    """Per-trade scatter, coloured by ``trade_type``.
+
+    Parameters
+    ----------
+    trades_df
+        ``trades_df``-shaped frame.  Must carry ``trade_id`` plus
+        :paramref:`x_column` and :paramref:`y_column`.
+    trade_type_map
+        ``{trade_id: "target" | "elementary"}``.  Trades not in the
+        map render as "unknown" in a muted slate colour — we keep them
+        rather than drop them so the user notices when the trade-graph
+        payload is incomplete.
+    selected_trade_id
+        Optional trade id to highlight with an emerald ring + larger
+        marker.  Pass ``None`` for no highlight.
+    x_column, y_column
+        Defaults put ``mean_residual`` on x (bias) and ``mae`` on y
+        (magnitude), which diagnoses both systematic drift and error
+        scale at a glance.
+
+    Notes
+    -----
+    Each point's ``customdata`` is ``[trade_id, trade_type]``.  Callbacks
+    read ``clickData["points"][0]["customdata"][0]`` to sync the grid /
+    session selection.  Hovertemplate uses ``%{customdata[0]}`` for the
+    trade id so every point surfaces an identifier on hover.
+    """
+    required = {"trade_id", x_column, y_column}
+    if trades_df is None or trades_df.empty or not required.issubset(trades_df.columns):
+        return empty_figure("No per-trade scatter data.")
+
+    df = trades_df.copy()
+    if trade_type_map:
+        df["trade_type"] = df["trade_id"].map(trade_type_map).fillna("unknown")
+    else:
+        df["trade_type"] = "unknown"
+
+    fig = go.Figure()
+    order = [*_TRADE_TYPE_ORDER, "unknown"]
+    seen_any = False
+    for group in order:
+        sub = df[df["trade_type"] == group]
+        if sub.empty:
+            continue
+        seen_any = True
+        color = _TRADE_TYPE_COLOR.get(group, "#64748b")
+        fig.add_trace(
+            go.Scattergl(
+                x=sub[x_column],
+                y=sub[y_column],
+                mode="markers",
+                marker={
+                    "size":    7,
+                    "color":   color,
+                    "opacity": 0.78,
+                    "line":    {"width": 0},
+                },
+                name=group.capitalize(),
+                customdata=np.stack(
+                    [sub["trade_id"].astype(str).to_numpy(),
+                     sub["trade_type"].astype(str).to_numpy()],
+                    axis=-1,
+                ),
+                hovertemplate=(
+                    "<b>%{customdata[0]}</b><br>"
+                    f"{x_column}: %{{x:.4f}}<br>"
+                    f"{y_column}: %{{y:.4f}}<br>"
+                    "type: %{customdata[1]}"
+                    "<extra></extra>"
+                ),
+                showlegend=True,
+            )
+        )
+
+    if not seen_any:
+        return empty_figure("No per-trade scatter data.")
+
+    # Highlight the selected trade on top of everything else so it pops.
+    if selected_trade_id:
+        sel = df[df["trade_id"] == selected_trade_id]
+        if not sel.empty:
+            fig.add_trace(
+                go.Scattergl(
+                    x=sel[x_column],
+                    y=sel[y_column],
+                    mode="markers",
+                    marker={
+                        "size":    14,
+                        "color":   "rgba(16, 185, 129, 0)",
+                        "line":    {"color": "#10b981", "width": 2.5},
+                    },
+                    name=f"Selected · {selected_trade_id}",
+                    hoverinfo="skip",
+                    showlegend=False,
+                )
+            )
+
+    fig.update_layout(
+        **rade_layout(
+            show_legend=True,
+            hovermode="closest",
+            xaxis={"title": {"text": x_column, "font": {"color": "#94a3b8"}}},
+            yaxis={"title": {"text": y_column, "font": {"color": "#94a3b8"}}},
+        ),
     )
-
-    empty_state = html.Div(
-        id=CLUSTER_DEEP_DIVE_IDS["trades_grid_empty"],
-        className="rade-list-empty flex flex-col items-center justify-center gap-2 py-8",
-        children=[
-            DashIconify(icon="tabler:table-off", width=22, className="text-slate-600"),
-            html.Div(
-                "Pick a cluster to see its trades.",
-                className="text-xs text-slate-500 text-center max-w-sm",
-            ),
-        ],
+    # x=0 reference line helps read bias at a glance.
+    fig.add_vline(
+        x=0,
+        line_dash="dash",
+        line_color="rgba(148, 163, 184, 0.4)",
+        line_width=1,
     )
-
-    grid = AgGridTable(
-        grid_id=CLUSTER_DEEP_DIVE_IDS["trades_grid"],
-        column_defs=_initial_column_defs(),
-        row_data=[],
-        height=360,
-        className="rade-cluster-trades-grid",
-        grid_options={"rowSelection": "single"},
-        getRowId="params.data.trade_id",
-    )
-
-    grid_wrapper = html.Div(
-        id=CLUSTER_DEEP_DIVE_IDS["trades_grid_wrap"],
-        className="rade-cluster-trades-grid-wrap",
-        style={"display": "none"},
-        children=grid,
-    )
-
-    return html.Div(
-        id=CLUSTER_DEEP_DIVE_IDS["trades_grid_card"],
-        className="rade-card flex flex-col gap-3",
-        children=[header, empty_state, grid_wrapper],
-    )
-
-
-def _initial_column_defs() -> List[Dict[str, Any]]:
-    """Bootstrap columnDefs — the callback rewrites these once data lands."""
-    return [
-        {"field": "trade_id",      "headerName": "Trade",        "flex": 2, "minWidth": 160},
-        {"field": "trade_type",    "headerName": "Type",         "flex": 1, "minWidth": 100},
-        {"field": "mae",           "headerName": "MAE",          "flex": 1, "type": "numericColumn"},
-        {"field": "rmse",          "headerName": "RMSE",         "flex": 1, "type": "numericColumn"},
-        {"field": "p95_ae",        "headerName": "P95 |err|",    "flex": 1, "type": "numericColumn"},
-        {"field": "mean_residual", "headerName": "Mean resid.",  "flex": 1, "type": "numericColumn"},
-        {"field": "n_scenarios",   "headerName": "Scenarios",    "flex": 1, "type": "numericColumn"},
-    ]
+    return fig
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Public builder
+# Helpers
 # ─────────────────────────────────────────────────────────────────────
 
 
-def build_cluster_deep_dive() -> html.Div:
-    """Assemble the Cluster Deep-Dive sub-tab (pure layout, no callbacks)."""
-    return html.Div(
-        id=CLUSTER_DEEP_DIVE_IDS["root"],
-        className="rade-evaluation-subtab flex flex-col gap-4",
-        children=[
-            _header_band(),
-            _row_training(),
-            _row_timeseries(),
-            _row_per_trade_charts(),
-            _row_trades_grid(),
-            dcc.Store(
-                id=CLUSTER_DEEP_DIVE_IDS["store_trade_types"],
-                data={},
-                storage_type="memory",
-            ),
-            dcc.Store(
-                id=CLUSTER_DEEP_DIVE_IDS["store_curve_metrics"],
-                data=[],
-                storage_type="memory",
-            ),
-        ],
+def _aggregate_trade_violin(
+    values:       np.ndarray,
+    *,
+    y_axis_title: str,
+) -> go.Figure:
+    """Single-violin fallback when trade_type classification is missing.
+
+    Kept visually consistent with the grouped variant so the chart
+    shape doesn't flicker when the trade-graph payload arrives and the
+    callback re-renders with a populated map.
+    """
+    color = color_for_index(0)
+    fig = go.Figure()
+    fig.add_trace(
+        go.Violin(
+            y=values,
+            x=[""] * values.size,
+            name="All",
+            line_color=color,
+            fillcolor=rgba(color, 0.2),
+            box_visible=True,
+            meanline_visible=True,
+            points="outliers",
+            hoveron="violins",
+            showlegend=False,
+        )
     )
+    fig.update_layout(
+        **rade_layout(
+            show_legend=False,
+            xaxis={"visible": False},
+            yaxis={"title": {"text": y_axis_title, "font": {"color": "#94a3b8"}}},
+        ),
+    )
+    fig.add_hline(
+        y=0,
+        line_dash="dash",
+        line_color="rgba(148, 163, 184, 0.4)",
+        line_width=1,
+    )
+    return fig
 
 
-__all__ = ["CLUSTER_DEEP_DIVE_IDS", "build_cluster_deep_dive"]
+__all__ = [
+    "per_trade_residual_violin",
+    "per_trade_scatter",
+    "predicted_vs_actual_band",
+]
 ```
