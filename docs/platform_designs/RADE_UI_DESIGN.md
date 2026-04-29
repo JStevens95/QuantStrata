@@ -1641,3 +1641,826 @@ img, video { max-width: 100%; height: auto; }
   margin: 1.5rem auto 0 auto;
 }
 ```
+
+---
+
+## Appendix B — Page Template (v1.1)
+
+A copy-paste-ready scaffold that captures the canonical page shape every
+Rade Analytics page follows.  Lives in the source repo at
+`docs/rade_analytics/page_template/` and pairs with `page_contract.md`.
+
+The scaffold is three files:
+
+| File | Purpose |
+|---|---|
+| `README.md` | 15-minute add-a-page workflow + helper cheat sheet + pre-flight checklist |
+| `template_layout.py` | Canonical layout module with `mount_signal` Store, header band, KPI + chart row, `build_template(*, session)` |
+| `template_cb.py` | Canonical callback module with capture/render split, mount-signal-triggered bootstrap (with URL deep-link + fresh-user override edges), pathname-gated render using `figure_with_fallback` |
+
+Each file is reproduced verbatim below for easy copy-paste into a
+work-env template folder.
+
+### Reusing in a separate work-env template folder — caveats
+
+The user-facing concerns when replicating this scaffold into a separate
+templates folder (outside the source repo) are all manageable, but worth
+calling out so they don't bite later:
+
+| Concern | Severity | Mitigation |
+|---|---|---|
+| **Drift between template and source patterns.**  The template encodes contract rules as of v1.1.  When `page_contract.md` evolves (new rules, refactored helpers, new component primitives), the work-env copy goes stale.  New pages built from a stale template will silently violate current rules. | Medium | Version-tag the template directory (e.g. `page_template_v1_1/`), and re-sync from the source repo when the contract bumps.  The contract's change-log lists each version's diff so you know what to update. |
+| **Relative imports lint as unresolved outside the package.**  The two `.py` files use `from ..data.result_helpers import ...` etc.  These resolve correctly only when the file lives inside `src/ui/apps/rade_analytics/`.  If you put the templates in a generic `templates/` folder (outside the package), your IDE will flag every relative import as red. | Low (cosmetic) | The files are documented "DO NOT IMPORT" — the lint warnings have no runtime impact.  Either live with them, or add `# noqa: F401` / `# pyright: ignore` annotations during the copy-paste phase. |
+| **`page_contract.md` cross-links break.**  The `README.md` links to `../page_contract.md`.  If your work-env folder doesn't ship that file at the relative path, the link is dead. | Low | Either copy `page_contract.md` next to the templates, or rewrite the link in your copy.  The README's helper-cheat-sheet section still functions standalone. |
+| **Per-org component drift.**  If your work-env app uses different component primitives (e.g. a different KPI card, no `ChartContainer`), the template needs adapting.  The same applies to session field names (`session.evaluation.deep_dive_cluster_id` is specific to this app's Session schema). | Low-Medium | Template imports are intentionally narrow (3 components, 1 helper).  Search-replace those four imports to match your work-env's primitives.  The structural pattern (mount_signal, capture/render split, pathname gate) is component-agnostic. |
+| **`figure_with_fallback` / `component_with_fallback` not in the work-env.**  These helpers live in `data/result_helpers.py` in the source repo. | Low | Either copy that module across too (it's ~80 LOC, no external deps beyond `pandas` + `plotly` + `state_wrappers`), or strip the helper imports and inline the tri-state branches manually.  The README's "When the helper doesn't fit" section covers the inline form. |
+
+**Net assessment:** putting these in a reusable templates folder is a
+good idea.  Every concern above is mechanical and one-time at the copy
+boundary.  The structural payoff — every new page starts contract-
+compliant, in 15 minutes — is the same as adopting the source-repo
+scaffold.  Just version-tag the folder and re-sync on contract bumps.
+
+---
+
+### B.1 — `page_template/README.md`
+
+Save as `<template-folder>/README.md`.
+
+````markdown
+# Rade Analytics — Page Template
+
+**Status:** v1 · **Scope:** new pages under `src/ui/apps/rade_analytics/` ·
+**Pairs with:** [`page_contract.md`](../page_contract.md)
+
+## What this is
+
+A pair of copy-paste-ready Python files that capture the canonical shape every
+page in the Rade Analytics UI follows.  Use this when adding a new page —
+**Cross-Cluster, Data Quality, Trade Graph rebuild, AI Assistant, etc.**
+
+The two template files mirror the existing `Cluster Deep-Dive` reference
+implementation, which is the most contract-compliant page in the app:
+
+| Template file | Maps to | Production reference |
+|---|---|---|
+| [`template_layout.py`](./template_layout.py) | `layouts/<your_page>.py` | `layouts/evaluation/cluster_deep_dive.py` |
+| [`template_cb.py`](./template_cb.py) | `callbacks/<your_page>_cb.py` | `callbacks/cluster_deep_dive_cb.py` |
+
+> **These files do not run.**  They are documentation-shaped Python so your
+> editor gives you syntax highlighting / jump-to-definition.  They live under
+> `docs/` so the app never imports them.
+
+---
+
+## 15-minute add-a-page workflow
+
+### 1.  Copy + rename (1 min)
+
+```bash
+cp docs/rade_analytics/page_template/template_layout.py \
+   src/ui/apps/rade_analytics/layouts/<your_page>.py
+cp docs/rade_analytics/page_template/template_cb.py \
+   src/ui/apps/rade_analytics/callbacks/<your_page>_cb.py
+```
+
+### 2.  Search-replace the markers (2 min)
+
+| Marker | Replace with |
+|---|---|
+| `_TEMPLATE_PATH` | `/your-route` (e.g. `/evaluation/cross-cluster`) |
+| `TEMPLATE_IDS` | `<YOUR_PAGE>_IDS` (e.g. `CROSS_CLUSTER_IDS`) |
+| `_template_*` private symbols | renamed to `_<your_page>_*` |
+| `build_template` | `build_<your_page>` |
+| `# TODO:` markers | implementation per the comment above each |
+
+### 3.  Wire into the router + sidebar (3 min)
+
+* Add an entry to the route table in `router.py` (or to the sub-tab spec
+  list in `layouts/evaluation/shell.py` for an Evaluation child).
+* Register the page in `app.py`:
+
+  ```python
+  from .callbacks import your_page_cb
+  your_page_cb.register(app, backend)
+  ```
+
+* Add a navigation link in `components/sidebar.py`.
+
+### 4.  Implement data hooks (5 min — the actual page work)
+
+* Add a backend method to `data/backend.py` that returns
+  `BackendResult[<your DTO>]`.  Follow the cache-key convention used by
+  every other `RadeBackend.*` method.
+* Replace the `# TODO: backend lookup` line in the bootstrap callback.
+* Replace the `# TODO: render <metric>` lines in each render callback.
+
+### 5.  Smoke + ship (4 min)
+
+```bash
+pytest tests/ui/apps/rade_analytics/ -k <your_page> -x
+.venv/bin/python -c "from src.ui.apps.rade_analytics.app import create_app; create_app()"
+```
+
+---
+
+## Helper cheat sheet
+
+These two helpers collapse most of the tri-state boilerplate every render
+callback used to hand-roll.  They live in
+[`src/ui/apps/rade_analytics/data/result_helpers.py`](../../../src/ui/apps/rade_analytics/data/result_helpers.py)
+and are re-exported from `..data` for short imports.
+
+### `figure_with_fallback`
+
+```python
+from ..data import figure_with_fallback
+from ..figures import portfolio_pnl
+
+return figure_with_fallback(
+    backend.portfolio_timeseries_df(split, filters),
+    on_ok=lambda df: portfolio_pnl(df, uirevision_key=split),
+    empty_msg="No portfolio data for the active filter set.",
+)
+```
+
+Tri-state branches:
+
+| State | Result |
+|---|---|
+| `not res.ok` | `empty_figure(error_msg or f"Error: {res.error}")` |
+| `res.ok` but data is empty | `empty_figure(empty_msg)` |
+| `res.ok` and data is populated | `on_ok(res.data)` |
+
+### `component_with_fallback`
+
+```python
+from ..data import component_with_fallback
+from ..components.kpi_card import KpiCard
+
+return component_with_fallback(
+    backend.cluster_kpis(cluster_id=cid),
+    on_ok=lambda kpis: KpiCard(label="MAE", value=f"{kpis.mae:.4f}"),
+    empty_title="No KPIs staged for this cluster",
+    error_title="Couldn't load cluster KPIs",
+    on_retry_id="kpi-retry",
+)
+```
+
+Tri-state branches: same shape as the figure helper, but routes through
+`Empty` / `Error` from `components.state_wrappers` for layout-level outputs.
+
+### When the helper doesn't fit
+
+Render callbacks emitting **multiple Outputs of different types from a
+single BackendResult** still need an explicit branch — the helper covers
+single-output → single-state cases.  Pattern:
+
+```python
+res = backend.cluster_kpis(cluster_id=cid)
+if not res.ok or res.data is None:
+    placeholder = "—"
+    empty_fig = empty_figure("…")
+    return placeholder, placeholder, empty_fig
+
+mae_txt = f"{res.data.mae:.4f}"
+rmse_txt = f"{res.data.rmse:.4f}"
+fig = some_chart(res.data, uirevision_key=cluster_id)
+return mae_txt, rmse_txt, fig
+```
+
+---
+
+## Pre-flight checklist (mirrors page_contract.md §3)
+
+Before raising the PR, verify:
+
+- [ ] Layout is **pure** — `build_<page>(*, session)` returns the layout
+      with all initial values seeded from `session`; no hydration callback
+      after mount.
+- [ ] `mount_signal` Store is in the layout root and is the trigger Input
+      for the bootstrap callback.
+- [ ] Module docstring lists capture and render callbacks under separate
+      banners (`§N. <name>`).
+- [ ] `register()` delegates to `_register_capture(app)` and
+      `_register_render(app, backend)` only.  No callbacks defined directly
+      in `register()`.
+- [ ] Every render callback gates on `pathname != _<PAGE>_PATH`.
+- [ ] Every render callback that consumes a `BackendResult` either uses
+      `figure_with_fallback` / `component_with_fallback`, or branches
+      tri-state explicitly.
+- [ ] Every time-series figure passes `uirevision_key=...` keyed on the
+      data domain (e.g. `split`, `cluster_id`, `f"{split}::{cluster_id}"`).
+- [ ] No `Output` is registered twice without an `allow_duplicate=True`
+      comment justifying it.
+- [ ] No callback uses `Input(other_callback_output)` — collapse it or
+      move the writer logic into the layout.
+- [ ] `prevent_initial_call=False` only on the bootstrap callback +
+      pathname-gated render callbacks; everything else `True`.
+- [ ] Smoke: `from src.ui.apps.rade_analytics.app import create_app;
+      create_app()` boots without warnings.
+- [ ] Lint clean — no unused imports, no orphan helpers.
+
+---
+
+## Updating the template
+
+If a future page introduces a pattern worth canonising — e.g. a different
+shape for "page with no Evaluation filter bar" — update the template files
+*and* `page_contract.md` together.  The two are meant to drift in lock-step;
+the audit checklist in `page_contract.md` is the source of truth, the
+template is the executable form.
+````
+
+---
+
+### B.2 — `page_template/template_layout.py`
+
+Save as `<template-folder>/template_layout.py`.
+
+```python
+"""TEMPLATE — Layout module skeleton for a new Rade Analytics page.
+
+DO NOT IMPORT THIS FILE.  Copy it to
+``src/ui/apps/rade_analytics/layouts/<your_page>.py`` and replace every
+``# TODO:`` marker.  See ``docs/rade_analytics/page_template/README.md``
+for the 15-minute add-a-page workflow.
+
+What this template demonstrates
+-------------------------------
+* **Pure layout** (Page Contract §3 Rule L1) — ``build_template(*, session)``
+  takes a :class:`Session` and bakes initial input values into the layout
+  at build time.  No hydration callback after mount.
+* **Mount tripwire** — a ``dcc.Store(id=mount_signal, data=True)`` mounted
+  at the layout root.  The bootstrap callback in ``template_cb.py``
+  triggers off this Store's ``data`` Input so it fires exactly once per
+  fresh mount of the page (Page Contract §3 Rule L4).
+* **Stable id contract** — every component id lives in :data:`TEMPLATE_IDS`
+  so callbacks never hardcode strings (Page Contract §3 Rule L3).
+* **Tailwind / dmc layout primitives** — header band → KPI card → chart
+  body, matching the rest of the app.
+
+Anatomy
+-------
+::
+
+    Row 0 · mount tripwire (invisible)
+    Row 1 · Header band (context picker · open-related-page link)
+    Row 2 · Single KPI card  ·  Single time-series chart
+"""
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
+
+import dash_mantine_components as dmc
+from dash import dcc, html
+from dash_iconify import DashIconify
+
+from ...components.chart_container import ChartContainer
+from ...components.kpi_card import KpiCard
+from ...data.session import Session
+
+
+# TODO: Rename TEMPLATE_IDS → <YOUR_PAGE>_IDS, and prefix every id value
+# with "your-page-" so the Dash dev-tools error messages tell you which
+# page they came from.
+TEMPLATE_IDS: Dict[str, str] = {
+    "root":                "template-root",
+
+    # Row 1 — Header band
+    "context_select":      "template-context-select",
+    "open_related_btn":    "template-open-related-btn",
+
+    # Row 2 — KPI card
+    "kpi_value":           "template-kpi-value",
+    "kpi_card":            "template-kpi-card",
+
+    # Row 2 — Chart
+    "main_chart":          "template-main-chart",
+
+    # Mount tripwire — Page Contract §3 Rule L4.  A memory-store seeded
+    # with ``data=True`` at build time; the bootstrap callback uses it
+    # as its trigger Input so it fires *exactly once* per fresh mount,
+    # *after* the parent has finished writing the new content tree.
+    # Pathname-as-Input would race with that write; top-level-store
+    # would only fire on cross-top-level navigation.
+    "mount_signal":        "template-mount-signal",
+
+    # Optional ephemeral stores (uncomment if your page needs them)
+    # "store_<thing>":     "template-<thing>-store",
+}
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Row 1 — Header band
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _header_band(
+    *,
+    initial_context_id: Optional[str] = None,
+) -> html.Div:
+    """Sticky header — context picker + cross-link.
+
+    Parameters
+    ----------
+    initial_context_id
+        Seed for the :class:`dmc.Select`'s ``value`` prop.  Sourced
+        from ``session`` at build time (Page Contract §3 Rule L1) —
+        the bootstrap callback will populate the ``data`` (option
+        list) prop after a backend lookup; the seeded ``value`` then
+        reads against that fresh list.  When ``None``, the picker
+        shows its placeholder until the user / bootstrap picks one.
+    """
+    context_picker = html.Div(
+        className="flex flex-col gap-1 min-w-[220px]",
+        children=[
+            html.Span(
+                # TODO: replace with your page's context noun (e.g. "Cluster", "Desk", "Run").
+                "Context",
+                className="text-[11px] uppercase tracking-wider text-slate-400",
+            ),
+            dmc.Select(
+                id=TEMPLATE_IDS["context_select"],
+                # ``data`` is intentionally empty here — the bootstrap
+                # callback populates it after a backend lookup.
+                # Seeding ``value`` from session means the picker
+                # remembers the user's choice across page navigation.
+                data=[],
+                value=initial_context_id,
+                # TODO: replace with a context-appropriate placeholder.
+                placeholder="Select…",
+                searchable=True,
+                clearable=False,
+                size="sm",
+            ),
+        ],
+    )
+
+    open_related_btn = dmc.Button(
+        # TODO: rename + retarget the cross-link, or delete this if your
+        # page doesn't have a partner page.
+        "Related page",
+        id=TEMPLATE_IDS["open_related_btn"],
+        variant="light",
+        color="violet",
+        size="sm",
+        leftSection=DashIconify(icon="tabler:share-2", width=16),
+    )
+
+    return html.Div(
+        className="rade-card flex flex-col gap-3 sticky top-0 z-10",
+        children=[
+            html.Div(
+                className="flex items-end gap-4 flex-wrap",
+                children=[
+                    context_picker,
+                    html.Div(className="flex-1"),  # spacer
+                    open_related_btn,
+                ],
+            ),
+        ],
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Row 2 — KPI + Chart
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _row_kpi_chart() -> html.Div:
+    """Two-column row — KPI card on the left, time-series chart on the right.
+
+    The KPI card and chart both render placeholder content (an em-dash
+    value, an empty figure) so the page never reflows on initial paint;
+    render callbacks replace the placeholders with real values once the
+    backend fetch returns.
+    """
+    return html.Div(
+        # 2/5 : 3/5 split on wide screens; collapses to a single stack
+        # on narrow viewports.
+        className="grid grid-cols-1 lg:grid-cols-5 gap-3 items-stretch",
+        children=[
+            html.Div(
+                className="lg:col-span-2 flex flex-col gap-3",
+                children=[
+                    KpiCard(
+                        # TODO: pick a metric label that matches what
+                        # the render callback computes (e.g. "MAE",
+                        # "Trade count", "Coverage").
+                        label="Headline metric",
+                        value="—",
+                        card_id=TEMPLATE_IDS["kpi_card"],
+                        value_id=TEMPLATE_IDS["kpi_value"],
+                        icon="tabler:chart-dots",
+                    ),
+                ],
+            ),
+            html.Div(
+                className="lg:col-span-3 flex flex-col gap-3",
+                children=[
+                    ChartContainer(
+                        # TODO: pick a title that matches the chart.
+                        title="Time-series",
+                        chart_id=TEMPLATE_IDS["main_chart"],
+                    ),
+                ],
+            ),
+        ],
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Public entrypoint — build_<your_page>
+# ─────────────────────────────────────────────────────────────────────
+
+
+def build_template(*, session: Session) -> html.Div:
+    """Build the page layout, seeded from :class:`Session`.
+
+    Parameters
+    ----------
+    session
+        The active session.  Drives initial values for every input on
+        the page — e.g. ``session.evaluation.<your_page>_context_id``
+        for the context picker.  Page Contract §3 Rule L1 mandates
+        that every input that *can* read from session, *does* —
+        eliminating the need for a hydration callback after mount.
+
+    Notes
+    -----
+    The layout function is **pure** — same session in, same DOM out.
+    All side effects (backend fetches, option-list population) happen
+    in the bootstrap callback in ``<your_page>_cb._register_render``.
+    """
+    # TODO: replace with the actual session field your page reads.
+    # If the field doesn't exist yet, add it to
+    # ``data/session.py::EvaluationFilters`` (or the session root
+    # for non-Evaluation pages) following the existing pattern.
+    initial_context_id: Optional[str] = None  # session.evaluation.<your_field>
+
+    return html.Div(
+        id=TEMPLATE_IDS["root"],
+        className="flex flex-col gap-4 p-4",
+        children=[
+            # Mount tripwire — Page Contract §3 Rule L4.
+            dcc.Store(
+                id=TEMPLATE_IDS["mount_signal"],
+                data=True,
+                storage_type="memory",
+            ),
+            _header_band(initial_context_id=initial_context_id),
+            _row_kpi_chart(),
+        ],
+    )
+
+
+__all__ = [
+    "TEMPLATE_IDS",
+    "build_template",
+]
+```
+
+---
+
+### B.3 — `page_template/template_cb.py`
+
+Save as `<template-folder>/template_cb.py`.
+
+```python
+"""TEMPLATE — Callback module skeleton for a new Rade Analytics page.
+
+DO NOT IMPORT THIS FILE.  Copy it to
+``src/ui/apps/rade_analytics/callbacks/<your_page>_cb.py`` and replace
+every ``# TODO:`` marker.  Pair with ``template_layout.py`` from the
+same folder.  See ``docs/rade_analytics/page_template/README.md`` for
+the 15-minute add-a-page workflow.
+
+Page Contract structure
+-----------------------
+The public surface is a single :func:`register` that delegates to two
+section helpers, matching Page Contract §2 (capture / render split):
+
+* :func:`_register_capture` — user-input gestures → :class:`Session`
+  writes (no UI side-effects, no backend access).
+* :func:`_register_render`  — state → DOM updates (no Session writes,
+  except for the narrow ``_register_bootstrap`` capture-edge that
+  handles URL deep-links + fresh-user defaults).
+
+Capture (1 callback in this template)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+* ``_sync_context`` — context-picker ``value`` → session (the field
+  your page persists, e.g. ``deep_dive_cluster_id``).
+
+Render (2 callbacks in this template)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+* ``_bootstrap`` — mount_signal-triggered fetch of the context picker
+  ``Select.data`` option list (version-keyed metadata that genuinely
+  needs a backend round-trip).  Also handles two narrow override paths
+  in the same return tuple — URL deep-link, fresh-user default — so
+  the bootstrap is the single capture-edge in the render section.
+* ``_render_main`` — session → KPI value + main chart figure.
+
+Initial UI state (no value-side hydration)
+------------------------------------------
+The context picker's ``value`` prop is seeded from session at layout
+build time (Page Contract §3 Rule L1) — see ``template_layout.py``'s
+``build_template(*, session)``.  This module never writes
+``context_select.value`` except in the bootstrap's two narrow override
+cases.  Eliminating value-side hydration means the page paints the
+user's previously-chosen state on first frame rather than after a
+callback round-trip.
+
+Why pathname-gating
+-------------------
+Page Contract §4 Rule C2 — every render callback gates on
+``pathname == _<PAGE>_PATH`` to avoid wasted compute on cross-page
+re-renders.  Cheap, idempotent, prevents stale-DOM warnings.
+"""
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+
+from dash import Input, Output, State, ctx, no_update
+from dash.exceptions import PreventUpdate
+
+# TODO: replace template_layout with the layout module you cp'd from
+# the template (the import path will be ``..layouts.<your_page>``).
+from ..layouts.template_layout import TEMPLATE_IDS
+from ..layouts.shell import SHELL_IDS
+
+from ..data.result_helpers import figure_with_fallback
+from ..data.session import Session
+
+# TODO: import the figure helpers your render callback needs.  Examples:
+#   from ..figures import portfolio_pnl, error_over_time
+# from ..figures import empty_figure  # only if you need it outside the helpers
+
+if TYPE_CHECKING:
+    from dash import Dash
+
+    from ..data.backend import RadeBackend
+
+
+logger = logging.getLogger(__name__)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Constants — page route + initial values
+# ─────────────────────────────────────────────────────────────────────
+
+# TODO: set this to the route the router maps to your page (e.g.
+# ``/evaluation/cross-cluster``, ``/data-quality``).  Every render
+# callback gates on ``pathname == _TEMPLATE_PATH``.
+_TEMPLATE_PATH = "/template"
+
+# TODO: replace with your page's domain-appropriate empty placeholder
+# (e.g. ``"—"`` for KPI values, ``[]`` for AgGrid rowData).
+_PLACEHOLDER = "—"
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Public surface
+# ═════════════════════════════════════════════════════════════════════
+
+
+def register(app: "Dash", backend: "RadeBackend") -> None:
+    """Attach every callback for this page to ``app``.
+
+    The two section helpers are the only top-level symbols a reader
+    should need to scan to understand the page's wiring.
+
+    Parameters
+    ----------
+    app
+        The Dash app returned by :func:`rade_analytics.app.create_app`.
+    backend
+        Shared :class:`RadeBackend` — all data fetches go through here.
+    """
+    _register_capture(app)
+    _register_render(app, backend)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Section dispatchers — capture / render split (Page Contract §2)
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _register_capture(app: "Dash") -> None:
+    """Attach capture-side callbacks: input gestures → session writes.
+
+    Capture callbacks are forbidden from doing UI rendering and from
+    touching ``backend`` (Page Contract §4 Rule C1).  They write only
+    to the session-store; render callbacks pick up the writes via the
+    session-store ``Input``.
+    """
+    _register_sync_context(app)
+
+
+def _register_render(app: "Dash", backend: "RadeBackend") -> None:
+    """Attach render-side callbacks: state → DOM, no session writes.
+
+    Render callbacks consume URL + session-store as Inputs / States,
+    do backend lookups via ``backend``, and emit values + figures into
+    the page's components.  They never write to the session-store
+    (which would cascade into other pages' render callbacks).
+
+    The single exception is the bootstrap callback's two narrow
+    override paths — URL deep-link, fresh-user default — which write
+    both the ``Select.value`` and the session-store in the same return
+    tuple to avoid a second capture round-trip.
+    """
+    _register_bootstrap(app, backend)
+    _register_render_main(app, backend)
+
+
+# ═════════════════════════════════════════════════════════════════════
+# 1. Capture — context picker → session
+# ═════════════════════════════════════════════════════════════════════
+
+
+def _register_sync_context(app: "Dash") -> None:
+    """Persist the context picker's ``value`` into session."""
+
+    @app.callback(
+        Output(SHELL_IDS["session_store"], "data", allow_duplicate=True),
+        Input(TEMPLATE_IDS["context_select"], "value"),
+        State(SHELL_IDS["session_store"], "data"),
+        # Page Contract §4 Rule C5 — capture callbacks default to
+        # prevent_initial_call=True; we only want this to fire on a
+        # genuine user pick, not on the fresh page paint.
+        prevent_initial_call=True,
+    )
+    def _sync(
+        new_context_id: Optional[str],
+        session_data:   Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        # TODO: replace with the field on EvaluationFilters / Session
+        # your page persists.  Example:
+        #   session.evaluation.deep_dive_cluster_id = new_context_id
+        if new_context_id is None:
+            raise PreventUpdate
+
+        session = Session.from_store(session_data)
+        # session.evaluation.<your_field> = new_context_id  # TODO
+        return session.to_store()
+
+
+# ═════════════════════════════════════════════════════════════════════
+# 2. Render — bootstrap (mount_signal → option list + override edges)
+# ═════════════════════════════════════════════════════════════════════
+
+
+def _register_bootstrap(app: "Dash", backend: "RadeBackend") -> None:
+    """Fetch the context picker's option list once per fresh mount.
+
+    The mount tripwire pattern (Page Contract §3 Rule L4) — this
+    callback is the *only* render callback in the module that's
+    allowed to write to the session-store, and only along two narrow
+    edges:
+
+    * **URL deep-link** — when ``?ctx=<id>`` differs from
+      ``session.<field>``, copy URL → session + ``Select.value``.
+    * **Fresh-user default** — when neither URL nor session has a
+      value, pick the first option from the fetched list, write it to
+      both ``Select.value`` and session.
+
+    Both edges are handled in the same return tuple so the bootstrap
+    is the single capture-edge in the render section; we avoid a
+    second round-trip for these initial-state cases.
+    """
+
+    @app.callback(
+        Output(TEMPLATE_IDS["context_select"],   "data"),
+        Output(TEMPLATE_IDS["context_select"],   "value"),
+        Output(SHELL_IDS["session_store"],       "data", allow_duplicate=True),
+        Input(TEMPLATE_IDS["mount_signal"],      "data"),
+        State(SHELL_IDS["url"],                  "search"),
+        State(SHELL_IDS["session_store"],        "data"),
+        # Page Contract §4 Rule C5 — explicit ``initial_duplicate``
+        # because we share an Output with the capture callback.  The
+        # mount_signal Input only fires once per fresh mount, so we
+        # pay this cost exactly when we need the bootstrap to run.
+        prevent_initial_call="initial_duplicate",
+    )
+    def _bootstrap(
+        _trigger:     Any,
+        url_search:   Optional[str],
+        session_data: Optional[Dict[str, Any]],
+    ) -> Tuple[List[Dict[str, str]], Any, Any]:
+        # TODO: backend lookup.  The fetch should be cheap (cache hit
+        # after the first call) and version-keyed if your option list
+        # depends on the active ensemble version.
+        #
+        # Example:
+        #   res = backend.context_options()
+        #   if not res.ok or not res.data:
+        #       return [], no_update, no_update
+        #   options = [{"value": c.id, "label": c.name} for c in res.data]
+        options: List[Dict[str, str]] = []  # TODO
+
+        session = Session.from_store(session_data)
+        # TODO: replace with the field your page persists.
+        session_value: Optional[str] = None  # session.evaluation.<your_field>
+
+        # Override-edge 1 — URL deep-link.  TODO: wire up if your page
+        # supports ``?ctx=<id>`` style deep-links.  Otherwise drop.
+        url_value: Optional[str] = None
+        # if url_search:
+        #     parsed = parse_qs(url_search.lstrip("?"))
+        #     url_value = (parsed.get("ctx") or [None])[0]
+
+        if url_value and url_value != session_value:
+            # session.evaluation.<your_field> = url_value  # TODO
+            return options, url_value, session.to_store()
+
+        # Override-edge 2 — fresh-user default.
+        if not session_value and options:
+            default_value = options[0]["value"]
+            # session.evaluation.<your_field> = default_value  # TODO
+            return options, default_value, session.to_store()
+
+        # Steady state — just publish the option list, leave value +
+        # session alone.
+        return options, no_update, no_update
+
+
+# ═════════════════════════════════════════════════════════════════════
+# 3. Render — main KPI + chart
+# ═════════════════════════════════════════════════════════════════════
+
+
+def _register_render_main(app: "Dash", backend: "RadeBackend") -> None:
+    """Render the headline KPI value + the time-series chart.
+
+    Demonstrates:
+
+    * **Pathname gate** — Page Contract §4 Rule C2.
+    * **Tri-state via ``figure_with_fallback``** — Page Contract §8.
+    * **uirevision keyed on the data domain** — Page Contract §6.
+    """
+
+    @app.callback(
+        Output(TEMPLATE_IDS["kpi_value"],   "children"),
+        Output(TEMPLATE_IDS["main_chart"],  "figure"),
+        Input(SHELL_IDS["url"],             "pathname"),
+        Input(SHELL_IDS["session_store"],   "data"),
+        # Page Contract §4 Rule C5 — explicit opt-in.  Direct entry on
+        # the page route (URL share, refresh) must paint the KPI +
+        # chart on first frame; the layout-time render only has the
+        # ``"—"`` placeholder + the chart container's empty figure.
+        # The pathname guard in the body keeps non-route hits cheap.
+        prevent_initial_call=False,
+    )
+    def _render(
+        pathname:     Optional[str],
+        session_data: Optional[Dict[str, Any]],
+    ) -> Tuple[Any, Any]:
+        if pathname != _TEMPLATE_PATH:
+            raise PreventUpdate
+
+        session = Session.from_store(session_data)
+        split = session.split
+
+        # TODO: read the page's persisted context id from session.
+        context_id: Optional[str] = None  # session.evaluation.<your_field>
+
+        if not context_id:
+            # Pre-fetch guard — no BackendResult to classify yet.
+            from ..figures import empty_figure
+            return _PLACEHOLDER, empty_figure(
+                "Pick a context above to see this page's metrics."
+            )
+
+        # TODO: backend lookup.  Returns a BackendResult[<DataFrame or DTO>].
+        #   res = backend.<your_method>(split, context_id=context_id)
+        from ..data.backend import BackendResult
+        import pandas as pd  # TODO: drop if you don't need the placeholder
+        res: BackendResult[pd.DataFrame] = BackendResult.success(pd.DataFrame())
+
+        # KPI value — demonstrates the manual tri-state branch when
+        # the helper doesn't fit (multiple Outputs of different types).
+        if not res.ok:
+            kpi_text = _PLACEHOLDER
+        elif res.data is None or res.data.empty:
+            kpi_text = _PLACEHOLDER
+        else:
+            # TODO: compute the headline metric from res.data.
+            kpi_text = "0.0000"
+
+        # Figure — uses figure_with_fallback to collapse tri-state.
+        # TODO: replace the on_ok lambda with your figure helper, e.g.
+        #   on_ok=lambda df: portfolio_pnl(df, uirevision_key=split),
+        ui_key = f"{split}::{context_id}"
+        from ..figures import empty_figure  # TODO: drop after you wire on_ok
+        fig = figure_with_fallback(
+            res,
+            on_ok=lambda df: empty_figure(  # TODO: replace
+                "TODO: render your time-series figure here."
+            ).update_layout(uirevision=ui_key) or empty_figure("TODO"),
+            empty_msg="No data for the active selection.",
+        )
+
+        return kpi_text, fig
+```
