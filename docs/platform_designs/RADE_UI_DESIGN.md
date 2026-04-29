@@ -252,599 +252,1100 @@ No mock, no merge.
 
 ---
 
-## Appendix A — `figures/trade_graph_stylesheet.py`
+## Appendix A — `callbacks/trade_graph_cb.py`
 
-Dynamic Cytoscape stylesheet + legend body generators for the
-**Trade-Graph sub-tab** (Phase E.3 rebuild).  Drives the header-band's
-"Color by" select — one helper produces the rule list Cytoscape
-consumes, the other produces the legend card body that explains the
-colours.  Lives at `src/ui/apps/rade_analytics/figures/trade_graph_stylesheet.py`;
-re-exported from `figures/__init__.py` as `build_stylesheet` and
-`build_legend_body`.
+Full callback module for the **Trade-Graph sub-tab** (Phase E.3
+rebuild).  Lives at `src/ui/apps/rade_analytics/callbacks/trade_graph_cb.py`;
+auto-registered via `callbacks/__init__.py::register_all`.
 
-Five colour-by modes are supported:
+### What this module owns
 
-* `trade_type` — target=amber, elementary=violet (default).
-* `residual` — diverging gradient (negative=teal → ~0=slate → positive=magenta), keyed on each node's `residual` data field.
-* `asset_class` / `currency` / `product` — categorical 8-tone palette.
+| Bucket | Callbacks |
+|---|---|
+| **Capture** (input → session) | `_register_sync_header_to_session` · `_register_sync_node_tap_to_session` · `_register_sync_neighbours_k_to_session` · `_register_sync_neighbour_click_to_session` |
+| **Render** (state → DOM) | `_register_bootstrap` · `_register_render_graph` · `_register_render_selected_card` · `_register_render_neighbours_list` · `_register_render_legend` · `_register_render_threshold_label` · `_register_render_density_chart` · `_register_render_edges_vs_nodes_chart` |
+| **Clientside** | `_register_clientside` (wires `fit_view` + `export_png` from `assets/js/trade_graph.js`) |
 
-Both helpers consume the same `nodes_payload` shape that the callback
-module stashes in `store_graph` so the legend and the stylesheet stay
-in lockstep — there's no second source of truth for palettes / labels.
+The single render callback that writes the `store_graph` payload is
+`_register_render_graph` — every other render callback reads from
+that store rather than re-fetching, so toggling color-by, dragging
+the threshold slider or chaining through neighbours never re-hits
+the backend.
 
-Drop the file in place.  Dash auto-discovers it via the
-`figures/__init__.py` re-export; no other plumbing needed.
+The bootstrap callback owns the page's only render-side capture-edges
+(option-list population + fresh-user-default override + stale-cluster
+fallback), per Page Contract §3 Rule L4.  Every other render callback
+gates on `pathname == "/evaluation/trade-graph"` and returns `no_update`
+otherwise.
+
+### Prerequisites already in place
+
+For this module to import cleanly, the following must be present
+(all delivered earlier in the rebuild — listed here as a checklist
+before paste):
+
+| File | Symbol(s) consumed |
+|---|---|
+| `data/session.py` | `Session`, `EVALUATION_TRADE_GRAPH_COLOR_BY`, `EVALUATION_TRADE_GRAPH_LAYOUTS`, `DEFAULT_TRADE_GRAPH_LAYOUT` |
+| `layouts/evaluation/trade_graph.py` | `TRADE_GRAPH_IDS`, `COLOR_BY_LABELS` |
+| `layouts/shell.py` | `SHELL_IDS` (existing) |
+| `figures/__init__.py` | `build_legend_body`, `build_stylesheet`, `density_distribution`, `edges_vs_nodes_scatter`, `empty_figure` |
+| `components/kpi_card.py` | `KpiCard` (existing) |
+| `assets/js/trade_graph.js` | `window.dash_clientside.trade_graph.fit_view` + `export_png` |
+| `data/backend.py` | `RadeBackend` with `clusters_df()`, `trade_graph()`, `trades_df()`, `graph_stats_df()` |
+
+Drop the file in place — `callbacks/__init__.py` already calls
+`trade_graph_cb.register(app, backend)` so no further wiring is
+required.
 
 ```python
-"""Dynamic Cytoscape stylesheet + legend body generators for the
-Trade-Graph sub-tab.
+"""Evaluation → Trade-Graph sub-tab callbacks (Phase E.3 rebuild).
 
-The header-band's "Color by" select drives node colouring.  Five modes
-are supported:
+Page-Contract structure (§2 capture / render split)
+---------------------------------------------------
+:func:`register` delegates to two section helpers.
 
-* ``trade_type``  — target=amber, elementary=violet (the safe default
-  that ships in the layout's static stylesheet).
-* ``residual``    — gradient from sub-zero teal → over-zero magenta,
-  keyed on each node's residual metric.
-* ``asset_class`` — categorical palette mapped from the distinct values
-  observed in the cluster's nodes.
-* ``currency``    — categorical palette.
-* ``product``     — categorical palette.
+Capture callbacks (input gestures → session writes)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+* :func:`_register_sync_header_to_session`     — cluster / layout /
+  color-by / threshold widgets → session.
+* :func:`_register_sync_node_tap_to_session`   — Cytoscape ``tapNodeData``
+  → ``session.trade_graph_selected_trade_id``.
+* :func:`_register_sync_neighbours_k_to_session` — popover NumberInput
+  → ``session.trade_graph_neighbour_k``.
+* :func:`_register_sync_neighbour_click_to_session` — pattern-matching
+  click on a neighbour row → ``session.trade_graph_selected_trade_id``.
+* :func:`_register_sync_deep_dive_button`      — "Open Deep Dive" button
+  → writes deep_dive session fields + URL navigation.
 
-The two helpers in this module produce, for a given (mode, node-list)
-pair:
+Render callbacks (state → DOM, no session writes)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+* :func:`_register_bootstrap`                  — mount tripwire fires
+  once per fresh mount; populates the cluster Select's ``data`` and
+  handles the two narrow capture-edges (URL deep-link, fresh-user
+  default).
+* :func:`_register_render_graph`               — cluster / threshold /
+  color-by / layout → cytoscape ``elements``, mini-map ``elements``,
+  ``stylesheet``, pane status, store_graph, cluster-stats grid.
+  Only render callback that writes the ``store_graph`` payload.
+* :func:`_register_render_selected_card`       — ``store_graph`` +
+  selected_trade_id → trade_id text, chip strip, metrics row,
+  neighbours-button enabled state, deep-dive button enabled state.
+* :func:`_register_render_neighbours_list`     — store_graph + selected
+  + k → popover scroll-list children.
+* :func:`_register_render_legend`              — color-by + store_graph
+  → legend body children.
+* :func:`_register_render_threshold_label`     — slider value → label
+  (kept here so the slider doesn't leak threshold-state to the rest
+  of the app via the session-store on every drag).
+* :func:`_register_render_density_chart`       — ensemble graph_stats →
+  density distribution figure.
+* :func:`_register_render_edges_vs_nodes_chart` — same → edges-vs-nodes
+  scatter figure.
 
-1. :func:`build_stylesheet` — a Cytoscape stylesheet ready to be
-   handed to ``dash_cytoscape.Cytoscape.stylesheet``.  Always
-   includes the four base selectors (``node``, ``node:selected``,
-   ``node[trade_type='target']`` for size, ``edge``) — colour-by
-   modes layer additional selectors on top.
-2. :func:`build_legend_body` — a Dash component tree that the
-   ``_register_render_legend`` callback drops into the legend card's
-   ``legend_body`` slot.  Mirrors the active stylesheet so users
-   never have to guess what a colour means.
+Clientside callbacks
+~~~~~~~~~~~~~~~~~~~~
+* "Fit view" button — clientside ``cy.fit()`` via
+  :data:`_FIT_VIEW_CLIENTSIDE`.
+* "Export PNG" button — clientside download via
+  :data:`_EXPORT_PNG_CLIENTSIDE`.
 
-Why a dedicated module
-----------------------
-The legend body and the stylesheet must agree on every palette,
-threshold and label — keeping them next to each other (one builds
-the visual rules, the other builds the legend that explains them)
-makes drift impossible.  Both consume the same ``nodes_payload``
-shape that the callback module stashes in ``store_graph``.
+Why pathname-gating
+-------------------
+Every render callback returns ``no_update`` (or :class:`PreventUpdate`)
+when ``pathname`` isn't ``/evaluation/trade-graph``.  Page Contract §4
+Rule C2 — cheap, idempotent, prevents render storms when the user
+navigates between sub-tabs.
+
+Why the ``store_graph`` ephemeral store
+---------------------------------------
+``RadeBackend.trade_graph(cluster_id)`` is the heaviest single fetch
+on the page (full node + edge list).  We pay it once per cluster
+selection and cache the deserialised payload in a memory store.
+Threshold filter, color-by toggle, neighbours popover, selected-card
+re-renders all read from the store.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+import logging
+import math
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple
 
-from dash import html
-
-
-# ─────────────────────────────────────────────────────────────────────
-# Palettes
-# ─────────────────────────────────────────────────────────────────────
-
-# Eight-tone categorical palette — colour-blind-friendly tones picked
-# from the Tailwind 400 band so they render evenly on the dark theme.
-# Cycled if the cluster carries more distinct values than this length.
-_CATEGORICAL_PALETTE: Tuple[str, ...] = (
-    "#8b5cf6",   # violet-400
-    "#f59e0b",   # amber-400
-    "#10b981",   # emerald-400
-    "#60a5fa",   # blue-400
-    "#f472b6",   # pink-400
-    "#facc15",   # yellow-400
-    "#22d3ee",   # cyan-400
-    "#a3e635",   # lime-400
+import pandas as pd
+from dash import (
+    ALL,
+    ClientsideFunction,
+    Input,
+    Output,
+    State,
+    ctx,
+    html,
+    no_update,
 )
+from dash.exceptions import PreventUpdate
 
-# Residual gradient endpoints — teal for negative, slate for ~zero,
-# magenta for positive.  Cytoscape supports ``mapData(...)`` linear
-# interpolation between two colours; we lay down two selectors so
-# the gradient pivots through ~zero.
-_RESIDUAL_NEGATIVE_COLOR = "#0ea5e9"   # sky-500
-_RESIDUAL_ZERO_COLOR     = "#475569"   # slate-600
-_RESIDUAL_POSITIVE_COLOR = "#ec4899"   # pink-500
+from ..components.kpi_card import KpiCard
+from ..data.session import (
+    DEFAULT_TRADE_GRAPH_LAYOUT,
+    EVALUATION_TRADE_GRAPH_COLOR_BY,
+    EVALUATION_TRADE_GRAPH_LAYOUTS,
+    Session,
+)
+from ..figures import (
+    build_legend_body,
+    build_stylesheet,
+    density_distribution,
+    edges_vs_nodes_scatter,
+    empty_figure,
+)
+from ..layouts.evaluation.trade_graph import (
+    COLOR_BY_LABELS,
+    TRADE_GRAPH_IDS,
+)
+from ..layouts.shell import SHELL_IDS
+
+if TYPE_CHECKING:
+    from dash import Dash
+
+    from ..data.backend import RadeBackend
 
 
-# Map color-by mode → node-payload column name.  ``None`` for
-# ``trade_type`` because that mode reads the ``trade_type`` selector
-# directly without needing a numeric / categorical column.
-_NODE_COLUMN_FOR_MODE: Dict[str, Optional[str]] = {
-    "trade_type":  None,
-    "residual":    "residual",
-    "asset_class": "asset_class",
-    "currency":    "currency_code",
-    "product":     "product_code",
-}
+logger = logging.getLogger(__name__)
+
+
+_TRADE_GRAPH_PATH = "/evaluation/trade-graph"
+_PLACEHOLDER      = "—"
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Stylesheet builder
+# Public entry point
 # ─────────────────────────────────────────────────────────────────────
 
 
-def _base_stylesheet() -> List[Dict[str, Any]]:
-    """Stylesheet rules that apply regardless of color-by mode.
+def register(app: "Dash", backend: "RadeBackend") -> None:
+    """Attach every Trade-Graph sub-tab callback to ``app``.
 
-    These cover sizing, edge rendering and the selection ring.  Mode-
-    specific colour rules are layered on top by :func:`build_stylesheet`.
+    Mirrors the template_cb.py structure — one capture section, one
+    render section, plus the clientside callbacks at the end.
     """
-    return [
-        {
-            "selector": "node",
-            "style": {
-                "label":            "",
-                "width":            12,
-                "height":           12,
-                "background-color": "#8b5cf6",
-                "border-color":     "#0f172a",
-                "border-width":     1,
-                "transition-property": "background-color, width, height, border-color",
-                "transition-duration": "150ms",
-            },
-        },
-        {
-            "selector": "node[trade_type = 'target']",
-            "style": {"width": 18, "height": 18},
-        },
-        {
-            "selector": "node:selected",
-            "style": {
-                "border-color":  "#10b981",
-                "border-width":  3,
-                "width":         22,
-                "height":        22,
-            },
-        },
-        {
-            "selector": "edge",
-            "style": {
-                "width":           "mapData(weight, 0, 1, 0.5, 3)",
-                "line-color":      "rgba(148, 163, 184, 0.35)",
-                "curve-style":     "haystack",
-                "haystack-radius": 0.5,
-            },
-        },
-    ]
+    _register_capture(app)
+    _register_render(app, backend)
+    _register_clientside(app)
 
 
-def _trade_type_rules() -> List[Dict[str, Any]]:
-    """Restore the legacy amber / violet trade-type colouring."""
-    return [
-        {
-            "selector": "node",
-            "style": {"background-color": "#8b5cf6"},   # elementary
-        },
-        {
-            "selector": "node[trade_type = 'target']",
-            "style": {"background-color": "#f59e0b"},   # target
-        },
-    ]
+# ─────────────────────────────────────────────────────────────────────
+# Section dispatchers
+# ─────────────────────────────────────────────────────────────────────
 
 
-def _residual_rules(values: Sequence[float]) -> List[Dict[str, Any]]:
-    """Two-stop gradient keyed on the per-node ``residual`` data field.
+def _register_capture(app: "Dash") -> None:
+    _register_sync_header_to_session(app)
+    _register_sync_node_tap_to_session(app)
+    _register_sync_neighbours_k_to_session(app)
+    _register_sync_neighbour_click_to_session(app)
+    # Deep-dive button → URL navigation lives in
+    # ``cluster_deep_dive_cb._register_navigate_from_trade_graph`` so
+    # the navigation logic sits next to the page that consumes the
+    # deep-link.  We only own the button's enabled/disabled state
+    # (rendered out of ``_register_render_selected_card`` below).
 
-    Cytoscape's ``mapData(field, min, max, color_lo, color_hi)`` does a
-    linear interpolation; to get a teal → grey → magenta diverging
-    palette we lay down two rules — one for the negative half, one for
-    the positive half — split at zero.
+
+def _register_render(app: "Dash", backend: "RadeBackend") -> None:
+    _register_bootstrap(app, backend)
+    _register_render_graph(app, backend)
+    _register_render_selected_card(app)
+    _register_render_neighbours_list(app)
+    _register_render_legend(app)
+    _register_render_threshold_label(app)
+    _register_render_density_chart(app, backend)
+    _register_render_edges_vs_nodes_chart(app, backend)
+
+
+# ═════════════════════════════════════════════════════════════════════
+# CAPTURE — input gestures → session writes
+# ═════════════════════════════════════════════════════════════════════
+
+
+def _register_sync_header_to_session(app: "Dash") -> None:
+    """Header widgets → session.
+
+    The four header inputs (cluster, layout, color-by, threshold) all
+    converge on a single capture callback.  ``ctx.triggered_id`` tells
+    us which one fired so we mutate the matching session field and
+    leave the others alone.
+
+    Threshold is included here (not in a separate callback) so dragging
+    the slider doesn't write to session on every frame — we already use
+    ``updatemode="mouseup"`` on the slider to throttle to release.
     """
-    if not values:
-        return []
 
-    v_min = float(min(values))
-    v_max = float(max(values))
+    @app.callback(
+        Output(SHELL_IDS["session_store"],            "data", allow_duplicate=True),
+        Input(TRADE_GRAPH_IDS["cluster_select"],      "value"),
+        Input(TRADE_GRAPH_IDS["layout_radio"],        "value"),
+        Input(TRADE_GRAPH_IDS["color_by_select"],     "value"),
+        Input(TRADE_GRAPH_IDS["threshold_slider"],    "value"),
+        State(SHELL_IDS["session_store"],             "data"),
+        prevent_initial_call=True,
+    )
+    def _sync(
+        cluster:     Optional[str],
+        layout_name: Optional[str],
+        color_by:    Optional[str],
+        threshold:   Optional[float],
+        session_data: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        trigger = ctx.triggered_id
+        if trigger is None:
+            raise PreventUpdate
 
-    # If every residual is zero (or NaN-only after filtering), fall
-    # back to the trade-type colouring so we never paint the whole
-    # graph the same flat tone.
-    if v_min == v_max:
-        return _trade_type_rules()
+        session = Session.from_store(session_data)
+        ev = session.evaluation
+        changed = False
 
-    # Anchor the diverging palette at zero so positive and negative
-    # residuals are visually distinct.  When the data is one-sided
-    # (e.g. all positive), the negative selector simply matches no
-    # nodes — Cytoscape silently no-ops.
-    return [
-        {
-            "selector": f"node[residual <= 0]",
-            "style": {
-                "background-color": (
-                    f"mapData(residual, {min(v_min, 0.0)}, 0, "
-                    f"{_RESIDUAL_NEGATIVE_COLOR}, {_RESIDUAL_ZERO_COLOR})"
-                ),
-            },
-        },
-        {
-            "selector": f"node[residual > 0]",
-            "style": {
-                "background-color": (
-                    f"mapData(residual, 0, {max(v_max, 1e-9)}, "
-                    f"{_RESIDUAL_ZERO_COLOR}, {_RESIDUAL_POSITIVE_COLOR})"
-                ),
-            },
-        },
-    ]
+        if trigger == TRADE_GRAPH_IDS["cluster_select"]:
+            new_cluster = cluster if cluster else None
+            if ev.trade_graph_cluster_id != new_cluster:
+                ev.trade_graph_cluster_id = new_cluster
+                # Changing cluster invalidates the selected trade — the
+                # node id would no longer match anything in the new
+                # graph.
+                ev.trade_graph_selected_trade_id = None
+                changed = True
+
+        elif trigger == TRADE_GRAPH_IDS["layout_radio"]:
+            if (
+                layout_name in EVALUATION_TRADE_GRAPH_LAYOUTS
+                and ev.trade_graph_layout != layout_name
+            ):
+                ev.trade_graph_layout = layout_name
+                changed = True
+
+        elif trigger == TRADE_GRAPH_IDS["color_by_select"]:
+            if (
+                color_by in EVALUATION_TRADE_GRAPH_COLOR_BY
+                and ev.trade_graph_color_by != color_by
+            ):
+                ev.trade_graph_color_by = color_by
+                changed = True
+
+        elif trigger == TRADE_GRAPH_IDS["threshold_slider"]:
+            try:
+                new_threshold = max(0.0, min(1.0, float(threshold)))
+            except (TypeError, ValueError):
+                raise PreventUpdate
+            if abs(ev.trade_graph_weight_threshold - new_threshold) > 1e-9:
+                ev.trade_graph_weight_threshold = new_threshold
+                changed = True
+
+        if not changed:
+            raise PreventUpdate
+        return session.to_store()
 
 
-def _categorical_rules(
-    values: Sequence[str],
-    *,
-    column_name: str,
-) -> Tuple[List[Dict[str, Any]], List[Tuple[str, str]]]:
-    """Per-distinct-value selector → palette colour.
+def _register_sync_node_tap_to_session(app: "Dash") -> None:
+    """Cytoscape node tap → ``session.trade_graph_selected_trade_id``."""
 
-    Returns the rules **and** the (value, colour) pairs the legend
-    builder needs — so we walk the unique values once.
+    @app.callback(
+        Output(SHELL_IDS["session_store"],     "data", allow_duplicate=True),
+        Input(TRADE_GRAPH_IDS["cytoscape"],    "tapNodeData"),
+        State(SHELL_IDS["session_store"],      "data"),
+        prevent_initial_call=True,
+    )
+    def _on_tap(
+        node_data:    Optional[Dict[str, Any]],
+        session_data: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        if not node_data:
+            raise PreventUpdate
+        trade_id = node_data.get("id")
+        if not trade_id:
+            raise PreventUpdate
+
+        session = Session.from_store(session_data)
+        if session.evaluation.trade_graph_selected_trade_id == trade_id:
+            # Re-tap on the same node is a no-op — saves a session round
+            # trip + the cascade of render callbacks that would follow.
+            raise PreventUpdate
+
+        session.evaluation.trade_graph_selected_trade_id = trade_id
+        return session.to_store()
+
+
+def _register_sync_neighbours_k_to_session(app: "Dash") -> None:
+    """Popover NumberInput → ``session.trade_graph_neighbour_k``."""
+
+    @app.callback(
+        Output(SHELL_IDS["session_store"], "data", allow_duplicate=True),
+        Input(TRADE_GRAPH_IDS["selected_neighbours_k_input"], "value"),
+        State(SHELL_IDS["session_store"], "data"),
+        prevent_initial_call=True,
+    )
+    def _sync_k(
+        new_k:        Any,
+        session_data: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        try:
+            new_k_int = int(new_k)
+        except (TypeError, ValueError):
+            raise PreventUpdate
+        new_k_int = max(1, min(20, new_k_int))
+
+        session = Session.from_store(session_data)
+        if session.evaluation.trade_graph_neighbour_k == new_k_int:
+            raise PreventUpdate
+        session.evaluation.trade_graph_neighbour_k = new_k_int
+        return session.to_store()
+
+
+def _register_sync_neighbour_click_to_session(app: "Dash") -> None:
+    """Click on a neighbour row inside the popover → drill to that trade.
+
+    Each row's id is a pattern-matching dict
+    (``{"type": "tg-neighbour-row", "trade_id": <id>}``); a single
+    callback handles every row's click via the ``ALL`` wildcard.
     """
-    distinct = sorted({v for v in values if v is not None and v != ""})
-    pairs: List[Tuple[str, str]] = []
-    rules: List[Dict[str, Any]] = []
 
-    for idx, value in enumerate(distinct):
-        colour = _CATEGORICAL_PALETTE[idx % len(_CATEGORICAL_PALETTE)]
-        pairs.append((value, colour))
-        # Cytoscape selectors need single-quoted string values; we
-        # escape any embedded apostrophes defensively.
-        safe = str(value).replace("'", "\\'")
-        rules.append(
+    @app.callback(
+        Output(SHELL_IDS["session_store"], "data", allow_duplicate=True),
+        Input(
+            {"type": "tg-neighbour-row", "trade_id": ALL},
+            "n_clicks",
+        ),
+        State(SHELL_IDS["session_store"], "data"),
+        prevent_initial_call=True,
+    )
+    def _on_click(
+        n_clicks_list: Sequence[Optional[int]],
+        session_data:  Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        # The ``ALL`` pattern fires this callback on initial render
+        # too (every n_clicks=None).  Filter to genuine clicks.
+        if not n_clicks_list or not any(n_clicks_list):
+            raise PreventUpdate
+
+        triggered = ctx.triggered_id
+        if not isinstance(triggered, dict) or "trade_id" not in triggered:
+            raise PreventUpdate
+
+        target_trade = triggered["trade_id"]
+        session = Session.from_store(session_data)
+        if session.evaluation.trade_graph_selected_trade_id == target_trade:
+            raise PreventUpdate
+
+        session.evaluation.trade_graph_selected_trade_id = target_trade
+        return session.to_store()
+
+
+# ═════════════════════════════════════════════════════════════════════
+# RENDER — bootstrap (mount tripwire)
+# ═════════════════════════════════════════════════════════════════════
+
+
+def _register_bootstrap(app: "Dash", backend: "RadeBackend") -> None:
+    """Populate the cluster Select on fresh mount of the page.
+
+    The ``mount_signal`` Store fires this callback once per fresh
+    mount (Page Contract §3 Rule L4).  We fetch the cluster list from
+    the backend and write the option set to the Select.
+
+    Override edges
+    ~~~~~~~~~~~~~~
+    * **Fresh-user default** — if ``session.trade_graph_cluster_id``
+      is unset and we have clusters, we pick the first one and write
+      both ``Select.value`` and ``session`` in the same return tuple.
+    * **Stale session id** — if the session-stored cluster id no
+      longer exists in the backend (e.g. version flipped), we fall
+      back to the first option and overwrite session.
+
+    URL deep-link (``?cluster=<id>``) is intentionally *not* wired
+    yet — falls under the broader "deep-link the eval sub-tabs"
+    Stage 4.x effort.  The callback structure leaves a clean seam for
+    that follow-up.
+    """
+
+    @app.callback(
+        Output(TRADE_GRAPH_IDS["cluster_select"], "data"),
+        Output(TRADE_GRAPH_IDS["cluster_select"], "value", allow_duplicate=True),
+        Output(SHELL_IDS["session_store"],        "data", allow_duplicate=True),
+        Input(TRADE_GRAPH_IDS["mount_signal"],    "data"),
+        State(SHELL_IDS["session_store"],         "data"),
+        prevent_initial_call="initial_duplicate",
+    )
+    def _bootstrap(
+        _trigger:     Any,
+        session_data: Optional[Dict[str, Any]],
+    ) -> Tuple[List[Dict[str, str]], Any, Any]:
+        res = backend.clusters_df()
+        if not res.ok or res.data is None or res.data.empty:
+            return [], no_update, no_update
+
+        df = res.data
+        options = [
+            {"value": cid, "label": cid}
+            for cid in sorted(df["cluster_id"].unique())
+        ]
+
+        session = Session.from_store(session_data)
+        ev = session.evaluation
+        valid_ids = {o["value"] for o in options}
+
+        # Fresh-user default — neither the trade-graph nor the global
+        # cluster_id is set.
+        if not ev.trade_graph_cluster_id and not session.cluster_id:
+            default_value = options[0]["value"]
+            ev.trade_graph_cluster_id = default_value
+            return options, default_value, session.to_store()
+
+        # Stale session id — fall back to first option.
+        active = ev.trade_graph_cluster_id or session.cluster_id
+        if active not in valid_ids:
+            default_value = options[0]["value"]
+            ev.trade_graph_cluster_id = default_value
+            return options, default_value, session.to_store()
+
+        # Steady state — option list only; the layout-time seeded
+        # value already matches session, no value-side write needed.
+        return options, no_update, no_update
+
+
+# ═════════════════════════════════════════════════════════════════════
+# RENDER — graph elements + stylesheet + cluster-stats card
+# ═════════════════════════════════════════════════════════════════════
+
+
+def _register_render_graph(app: "Dash", backend: "RadeBackend") -> None:
+    """Cluster / threshold / color-by → graph elements + stylesheet.
+
+    Single fetch per cluster — node + edge lists are stashed in
+    ``store_graph`` for downstream callbacks (selected-card,
+    neighbours popover, legend).  Color-by changes don't re-fetch;
+    they just rebuild the stylesheet from the cached payload.
+
+    Trade attributes (residual gradient, asset_class / currency /
+    product categorical modes) are **enriched** here from
+    :meth:`RadeBackend.trades_df` so the stylesheet helper can
+    paint nodes by the chosen mode.
+    """
+
+    @app.callback(
+        Output(TRADE_GRAPH_IDS["cytoscape"],          "elements"),
+        Output(TRADE_GRAPH_IDS["cytoscape"],          "stylesheet"),
+        Output(TRADE_GRAPH_IDS["cytoscape"],          "layout"),
+        Output(TRADE_GRAPH_IDS["cytoscape_minimap"],  "elements"),
+        Output(TRADE_GRAPH_IDS["cytoscape_minimap"],  "layout"),
+        Output(TRADE_GRAPH_IDS["pane_status"],        "children"),
+        Output(TRADE_GRAPH_IDS["cluster_stats_grid"], "children"),
+        Output(TRADE_GRAPH_IDS["store_graph"],        "data"),
+        Input(SHELL_IDS["url"],                       "pathname"),
+        Input(SHELL_IDS["session_store"],             "data"),
+    )
+    def _render(
+        pathname:     Optional[str],
+        session_data: Optional[Dict[str, Any]],
+    ) -> Tuple[Any, Any, Any, Any, Any, Any, Any, Any]:
+        if pathname != _TRADE_GRAPH_PATH:
+            raise PreventUpdate
+
+        session = Session.from_store(session_data)
+        ev = session.evaluation
+        cluster_id = ev.trade_graph_cluster_id or session.cluster_id
+
+        layout_name = ev.trade_graph_layout or DEFAULT_TRADE_GRAPH_LAYOUT
+        layout_cfg = {
+            "name":    layout_name,
+            "fit":     True,
+            "padding": 30,
+            "animate": False,
+        }
+        minimap_layout_cfg = {**layout_cfg, "padding": 4}
+
+        empty_grid = _cluster_stats_grid(None)
+
+        if not cluster_id:
+            return (
+                [],
+                build_stylesheet(ev.trade_graph_color_by, nodes_payload=[])[0],
+                layout_cfg,
+                [],
+                minimap_layout_cfg,
+                "No cluster selected.",
+                empty_grid,
+                {},
+            )
+
+        res = backend.trade_graph(cluster_id=cluster_id)
+        if not res.ok or res.data is None:
+            logger.info(
+                "trade-graph fetch failed for cluster %s: %s",
+                cluster_id, res.error,
+            )
+            return (
+                [],
+                build_stylesheet(ev.trade_graph_color_by, nodes_payload=[])[0],
+                layout_cfg,
+                [],
+                minimap_layout_cfg,
+                f"Graph unavailable for {cluster_id}.",
+                empty_grid,
+                {},
+            )
+
+        payload = res.data
+
+        # Trade-level attribute lookup for color-by enrichment.  Per-
+        # node residual lives on ``mean_residual``; categorical
+        # attributes (asset_class / currency / product) live on the
+        # cluster row, so every node in this cluster shares the same
+        # value (the colour-by helper falls back gracefully when
+        # values are missing).
+        residuals_by_trade = _per_trade_residuals(backend, session.split, cluster_id)
+        cluster_attrs = _cluster_attrs(backend, cluster_id)
+
+        nodes_payload: List[Dict[str, Any]] = []
+        for n in payload.nodes:
+            data = {
+                "id":         n.trade_id,
+                "trade_type": n.trade_type,
+                "cluster_id": n.cluster_id,
+            }
+            residual = residuals_by_trade.get(n.trade_id)
+            if residual is not None and not _is_nan(residual):
+                data["residual"] = float(residual)
+            for k, v in cluster_attrs.items():
+                data[k] = v
+            nodes_payload.append({"data": data})
+
+        # Threshold filter — drops weak edges before painting.  Cheap
+        # enough to redo in this callback (we already have the
+        # payload in hand) so the threshold slider's own render
+        # callback only owns the label.
+        thr = ev.trade_graph_weight_threshold
+        edges_payload: List[Dict[str, Any]] = []
+        for e in payload.edges:
+            w = float(e.weight)
+            if w < thr:
+                continue
+            edges_payload.append({"data": {"source": e.source, "target": e.target, "weight": w}})
+
+        n_hidden = len(payload.edges) - len(edges_payload)
+        status = (
+            f"{payload.cluster_id} · "
+            f"{payload.stats.n_nodes:,} nodes · "
+            f"{len(edges_payload):,} edges"
+        )
+        if n_hidden > 0:
+            status += f" · {n_hidden:,} hidden"
+
+        stylesheet, _legend_pairs = build_stylesheet(
+            ev.trade_graph_color_by, nodes_payload=nodes_payload,
+        )
+
+        elements = [*nodes_payload, *edges_payload]
+
+        cluster_stats_children = _cluster_stats_grid(
             {
-                "selector": f"node[{column_name} = '{safe}']",
-                "style": {"background-color": colour},
+                "n_nodes":     payload.stats.n_nodes,
+                "n_edges":     len(edges_payload),
+                "density":     payload.stats.density,
+                "mean_weight": payload.stats.mean_weight,
             }
         )
 
-    return rules, pairs
+        # Store payload for downstream callbacks — keep the raw node
+        # list, the filtered edge list, and a mapping of edges by
+        # source so the neighbours popover can find top-k weights
+        # without re-walking the whole edge list.
+        store_payload: Dict[str, Any] = {
+            "cluster_id":   payload.cluster_id,
+            "nodes":        nodes_payload,
+            "edges":        edges_payload,
+            "n_target":     payload.n_target_trades,
+            "n_elementary": payload.n_elementary_trades,
+        }
 
-
-def build_stylesheet(
-    color_by: str,
-    *,
-    nodes_payload: Iterable[Dict[str, Any]],
-) -> Tuple[List[Dict[str, Any]], Optional[List[Tuple[str, str]]]]:
-    """Build the Cytoscape stylesheet for the given color-by mode.
-
-    Parameters
-    ----------
-    color_by
-        One of :data:`session.EVALUATION_TRADE_GRAPH_COLOR_BY`.  When
-        the mode is unknown (e.g. user hand-edited the store), falls
-        back to ``trade_type`` and the legend reflects that.
-    nodes_payload
-        The same dict payload the render callback stashed in
-        ``store_graph["nodes"]`` — each item is
-        ``{"data": {"id": ..., "trade_type": ..., "residual": ...,
-        "asset_class": ..., "currency_code": ..., "product_code": ...}}``.
-
-    Returns
-    -------
-    (stylesheet, legend_pairs)
-        * ``stylesheet`` — the rule list, ready for
-          ``Cytoscape.stylesheet``.
-        * ``legend_pairs`` — for the categorical / trade_type modes,
-          a list of ``(label, colour)`` tuples the legend builder
-          uses to reconstruct the swatches.  ``None`` for
-          ``residual`` (the legend renders a gradient bar instead).
-
-    Notes
-    -----
-    The base sizing / edge rules come first so mode-specific colour
-    rules can override the default ``background-color`` simply by
-    appearing later in the list (Cytoscape applies rules in order).
-    """
-    rules = _base_stylesheet()
-
-    if color_by == "residual":
-        residuals = [
-            float(n.get("data", {}).get("residual"))
-            for n in nodes_payload
-            if n.get("data", {}).get("residual") is not None
-        ]
-        rules.extend(_residual_rules(residuals))
-        return rules, None
-
-    column = _NODE_COLUMN_FOR_MODE.get(color_by)
-    if column is None or color_by == "trade_type":
-        # ``trade_type`` mode (default + fallback for unknown mode).
-        rules.extend(_trade_type_rules())
-        return rules, [("Target", "#f59e0b"), ("Elementary", "#8b5cf6")]
-
-    values = [
-        str(n.get("data", {}).get(column))
-        for n in nodes_payload
-        if n.get("data", {}).get(column) is not None
-    ]
-    cat_rules, pairs = _categorical_rules(values, column_name=column)
-    rules.extend(cat_rules)
-
-    # Edge case — cluster nodes carry no entry under this column
-    # (e.g. residual-only metadata).  Fall back to trade-type so we
-    # never paint a transparent / broken graph.
-    if not pairs:
-        rules.extend(_trade_type_rules())
-        return rules, [("Target", "#f59e0b"), ("Elementary", "#8b5cf6")]
-
-    return rules, pairs
-
-
-# ─────────────────────────────────────────────────────────────────────
-# Legend body builder
-# ─────────────────────────────────────────────────────────────────────
-
-
-def _swatch(color: str) -> html.Div:
-    return html.Div(
-        className="w-3 h-3 rounded-full flex-shrink-0",
-        style={"backgroundColor": color},
-    )
-
-
-def _legend_row(color: str, label: str, sublabel: Optional[str] = None) -> html.Div:
-    children: List[Any] = [_swatch(color)]
-    text_block_children: List[Any] = [
-        html.Span(label, className="text-xs text-slate-200"),
-    ]
-    if sublabel:
-        text_block_children.append(
-            html.Span(sublabel, className="text-[10px] text-slate-500"),
+        return (
+            elements,
+            stylesheet,
+            layout_cfg,
+            elements,           # mini-map shares the same elements
+            minimap_layout_cfg,
+            status,
+            cluster_stats_children,
+            store_payload,
         )
-    children.append(
-        html.Div(
-            className="flex flex-col leading-tight",
-            children=text_block_children,
-        ),
-    )
-    return html.Div(
-        className="flex items-center gap-2",
-        children=children,
-    )
 
 
-def _residual_gradient_bar() -> html.Div:
-    """Horizontal gradient bar with min / mid / max tick labels.
+def _cluster_stats_grid(stats: Optional[Dict[str, Any]]) -> List[Any]:
+    """2×2 KPI grid children for the Cluster Stats card."""
+    if stats is None:
+        return [
+            KpiCard(label="Nodes",       value=_PLACEHOLDER),
+            KpiCard(label="Edges",       value=_PLACEHOLDER),
+            KpiCard(label="Density",     value=_PLACEHOLDER),
+            KpiCard(label="Mean weight", value=_PLACEHOLDER),
+        ]
+    return [
+        KpiCard(label="Nodes",       value=_fmt_int(stats.get("n_nodes"))),
+        KpiCard(label="Edges",       value=_fmt_int(stats.get("n_edges"))),
+        KpiCard(label="Density",     value=_fmt_float(stats.get("density"))),
+        KpiCard(label="Mean weight", value=_fmt_float(stats.get("mean_weight"))),
+    ]
 
-    The renderer doesn't know the exact residual extrema (we pass the
-    raw bar; the user reads "negative ← → positive" as semantic, not
-    quantitative).  A future enhancement can drop the per-cluster
-    ``[min, max]`` numbers in here once we surface them through the
-    payload's metadata.
+
+def _per_trade_residuals(
+    backend: "RadeBackend", split: str, cluster_id: str,
+) -> Dict[str, float]:
+    """Return ``{trade_id: mean_residual}`` for every trade in the cluster.
+
+    Returns an empty dict on any backend failure — the caller treats
+    "no residuals available" as "skip residual colouring", which
+    falls back to ``trade_type`` via the stylesheet helper.
     """
-    gradient = (
-        f"linear-gradient(to right, "
-        f"{_RESIDUAL_NEGATIVE_COLOR}, "
-        f"{_RESIDUAL_ZERO_COLOR}, "
-        f"{_RESIDUAL_POSITIVE_COLOR})"
+    res = backend.trades_df(split, cluster_id=cluster_id)
+    if not res.ok or res.data is None or res.data.empty:
+        return {}
+    df = res.data
+    if "trade_id" not in df.columns or "mean_residual" not in df.columns:
+        return {}
+    return dict(zip(df["trade_id"], df["mean_residual"]))
+
+
+def _cluster_attrs(
+    backend: "RadeBackend", cluster_id: str,
+) -> Dict[str, Any]:
+    """Return the per-cluster categorical attributes.
+
+    Every node in a cluster shares the same asset_class / currency /
+    product (clusters are *defined* by these attributes), so a single
+    lookup feeds every node.  When a column is missing we omit the
+    key — the stylesheet helper's fallback handles the missing case.
+    """
+    res = backend.clusters_df(cluster_id=cluster_id)
+    if not res.ok or res.data is None or res.data.empty:
+        return {}
+    row = res.data.iloc[0]
+    out: Dict[str, Any] = {}
+    for column in ("asset_class", "currency_code", "product_code"):
+        if column in res.data.columns:
+            value = row.get(column)
+            if value is not None and not _is_nan(value):
+                out[column] = str(value)
+    return out
+
+
+# ═════════════════════════════════════════════════════════════════════
+# RENDER — Selected-Trade card
+# ═════════════════════════════════════════════════════════════════════
+
+
+def _register_render_selected_card(app: "Dash") -> None:
+    """Reflect the active selection inside the Selected-Trade card.
+
+    All inputs come from the local store + session — no backend hit
+    so card paints synchronously after every node tap.
+    """
+
+    @app.callback(
+        Output(TRADE_GRAPH_IDS["selected_trade_id"],       "children"),
+        Output(TRADE_GRAPH_IDS["selected_chip_strip"],     "children"),
+        Output(TRADE_GRAPH_IDS["selected_metrics"],        "children"),
+        Output(TRADE_GRAPH_IDS["selected_neighbours_btn"], "disabled"),
+        Output(TRADE_GRAPH_IDS["selected_copy_btn"],       "disabled"),
+        Output(TRADE_GRAPH_IDS["selected_deep_dive_btn"],  "disabled"),
+        Input(SHELL_IDS["url"],                            "pathname"),
+        Input(SHELL_IDS["session_store"],                  "data"),
+        Input(TRADE_GRAPH_IDS["store_graph"],              "data"),
     )
+    def _render(
+        pathname:     Optional[str],
+        session_data: Optional[Dict[str, Any]],
+        store_data:   Optional[Dict[str, Any]],
+    ) -> Tuple[Any, Any, Any, bool, bool, bool]:
+        if pathname != _TRADE_GRAPH_PATH:
+            raise PreventUpdate
+
+        session = Session.from_store(session_data)
+        selected_id = session.evaluation.trade_graph_selected_trade_id
+
+        if not selected_id or not store_data or not store_data.get("nodes"):
+            return (
+                _PLACEHOLDER,
+                [],
+                "Click a node in the graph to inspect the trade.",
+                True,    # neighbours disabled
+                True,    # copy disabled
+                True,    # deep-dive disabled
+            )
+
+        node = _find_node(store_data["nodes"], selected_id)
+        if node is None:
+            return (
+                _PLACEHOLDER,
+                [],
+                f"Trade '{selected_id}' is not in the active cluster.",
+                True, True, True,
+            )
+
+        chips = _build_chips(node)
+        metrics = _build_metrics_row(node)
+
+        return (
+            selected_id,
+            chips,
+            metrics,
+            False,
+            False,
+            False,
+        )
+
+
+def _find_node(
+    nodes_payload: Sequence[Dict[str, Any]], trade_id: str,
+) -> Optional[Dict[str, Any]]:
+    for n in nodes_payload:
+        if n.get("data", {}).get("id") == trade_id:
+            return n.get("data", {})
+    return None
+
+
+def _build_chips(node_data: Dict[str, Any]) -> List[Any]:
+    """Return the chip strip for the Selected-Trade card.
+
+    Renders one chip per categorical attribute we know about.  The
+    chips share the ``rade-filter-chip`` style from rade.css so they
+    visually match the global filter bar's chips.
+    """
+    rows: List[Tuple[str, str]] = []
+    if (tt := node_data.get("trade_type")):
+        rows.append(("Type", tt.capitalize()))
+    if (ac := node_data.get("asset_class")):
+        rows.append(("Asset", ac))
+    if (cc := node_data.get("currency_code")):
+        rows.append(("CCY", cc))
+    if (pc := node_data.get("product_code")):
+        rows.append(("Product", pc))
+
+    return [
+        html.Span(
+            f"{label}: {value}",
+            className=(
+                "px-2 py-0.5 rounded-md text-[11px] "
+                "bg-slate-800 text-slate-200 border border-slate-700"
+            ),
+        )
+        for label, value in rows
+    ]
+
+
+def _build_metrics_row(node_data: Dict[str, Any]) -> Any:
+    residual = node_data.get("residual")
+    if residual is None or _is_nan(residual):
+        return html.Span(
+            "No metrics available for this trade.",
+            className="text-[11px] text-slate-500 italic",
+        )
     return html.Div(
-        className="flex flex-col gap-1",
+        className="text-xs text-slate-300 flex items-center gap-2",
         children=[
-            html.Div(
-                className="h-2 rounded-full w-full",
-                style={"background": gradient},
-            ),
-            html.Div(
-                className="flex justify-between text-[10px] text-slate-500",
-                children=[
-                    html.Span("Negative"),
-                    html.Span("0"),
-                    html.Span("Positive"),
-                ],
-            ),
+            html.Span("Mean residual", className="text-slate-500"),
+            html.Span(_fmt_float(residual), className="font-mono text-slate-100"),
         ],
     )
 
 
-def build_legend_body(
-    color_by: str,
-    *,
-    pairs: Optional[List[Tuple[str, str]]],
-) -> List[Any]:
-    """Build the ``legend_body``'s children for the given mode.
+# ═════════════════════════════════════════════════════════════════════
+# RENDER — Neighbours popover list
+# ═════════════════════════════════════════════════════════════════════
 
-    The legend card is a fixed-height container (140 px); for modes
-    with many distinct categorical values, the legend wraps onto a
-    second / third row.  We don't paginate or scroll the legend —
-    if a cluster has 30 distinct currencies, the user has bigger
-    problems than legend layout.
 
-    Parameters
-    ----------
-    color_by
-        One of :data:`session.EVALUATION_TRADE_GRAPH_COLOR_BY`.
-    pairs
-        From :func:`build_stylesheet`'s return tuple.  ``None`` for
-        ``residual`` (gradient bar); a list of ``(label, colour)``
-        for ``trade_type`` and the categoricals.
-    """
-    if color_by == "residual":
-        return [_residual_gradient_bar()]
+def _register_render_neighbours_list(app: "Dash") -> None:
+    """Selected trade + k + cached graph → top-k neighbour rows."""
 
-    if not pairs:
-        return [
-            html.Span(
-                "No data for legend.",
-                className="text-xs text-slate-500 italic",
-            ),
+    @app.callback(
+        Output(TRADE_GRAPH_IDS["selected_neighbours_list"],     "children"),
+        Output(TRADE_GRAPH_IDS["selected_neighbours_btn_label"], "children"),
+        Input(SHELL_IDS["url"],                                  "pathname"),
+        Input(SHELL_IDS["session_store"],                        "data"),
+        Input(TRADE_GRAPH_IDS["store_graph"],                    "data"),
+    )
+    def _render(
+        pathname:     Optional[str],
+        session_data: Optional[Dict[str, Any]],
+        store_data:   Optional[Dict[str, Any]],
+    ) -> Tuple[Any, Any]:
+        if pathname != _TRADE_GRAPH_PATH:
+            raise PreventUpdate
+
+        session = Session.from_store(session_data)
+        ev = session.evaluation
+        selected_id = ev.trade_graph_selected_trade_id
+        k = max(1, min(20, ev.trade_graph_neighbour_k))
+        button_label = f"Nearest {k}"
+
+        if not selected_id or not store_data or not store_data.get("edges"):
+            return (
+                [
+                    html.Span(
+                        "Pick a node to load its neighbours.",
+                        className="text-xs text-slate-500 italic",
+                    ),
+                ],
+                button_label,
+            )
+
+        neighbours = _top_k_neighbours(store_data["edges"], selected_id, k=k)
+        if not neighbours:
+            return (
+                [
+                    html.Span(
+                        "This trade has no neighbours under the active threshold.",
+                        className="text-xs text-slate-500 italic",
+                    ),
+                ],
+                button_label,
+            )
+
+        rows = [
+            html.Div(
+                id={"type": "tg-neighbour-row", "trade_id": tid},
+                className=(
+                    "flex items-center justify-between gap-2 "
+                    "px-2 py-1 rounded-md cursor-pointer "
+                    "hover:bg-slate-800 transition-colors"
+                ),
+                # ``n_clicks`` initialised so the pattern-matching
+                # callback's ``any(n_clicks_list)`` filter works.
+                n_clicks=0,
+                children=[
+                    html.Code(
+                        tid,
+                        className="font-mono text-xs text-slate-200 truncate",
+                    ),
+                    html.Span(
+                        f"ρ {weight:.2f}",
+                        className="text-[11px] font-mono text-violet-300",
+                    ),
+                ],
+            )
+            for tid, weight in neighbours
         ]
 
-    # Two-column flex-wrap so up to ~8 categoricals stay legible
-    # within the 140-px card without overflowing.  Beyond 8, the
-    # palette cycles (callers see this in `_categorical_rules`) and
-    # the swatch repeats — visually the user understands "more
-    # categories than colours".
-    return [
-        html.Div(
-            className="grid grid-cols-2 gap-x-3 gap-y-1",
-            children=[_legend_row(color, label) for label, color in pairs],
-        ),
-    ]
+        return rows, button_label
 
 
-__all__ = [
-    "build_legend_body",
-    "build_stylesheet",
-]
-```
+def _top_k_neighbours(
+    edges_payload: Sequence[Dict[str, Any]],
+    trade_id: str,
+    *,
+    k: int,
+) -> List[Tuple[str, float]]:
+    """Walk the edge list, return the k strongest connections to ``trade_id``.
 
-Don't forget to add the re-export to `figures/__init__.py`:
+    Edges are undirected — we look at both ``source`` and ``target``
+    sides.  Self-loops are dropped server-side already, but we
+    defensively skip them here too.
+    """
+    pairs: List[Tuple[str, float]] = []
+    for e in edges_payload:
+        data = e.get("data", {})
+        src, tgt = data.get("source"), data.get("target")
+        if src == trade_id and tgt and tgt != trade_id:
+            pairs.append((str(tgt), float(data.get("weight", 0.0))))
+        elif tgt == trade_id and src and src != trade_id:
+            pairs.append((str(src), float(data.get("weight", 0.0))))
 
-```python
-from .trade_graph_stylesheet import build_legend_body, build_stylesheet
+    pairs.sort(key=lambda p: p[1], reverse=True)
+    return pairs[:k]
 
-__all__ = [
-    # ... existing entries ...
-    "build_legend_body",
-    "build_stylesheet",
-    # ... existing entries ...
-]
-```
 
----
+# ═════════════════════════════════════════════════════════════════════
+# RENDER — Node Legend
+# ═════════════════════════════════════════════════════════════════════
 
-## Appendix B — `assets/js/trade_graph.js`
 
-Two clientside callbacks for the **Trade-Graph sub-tab**'s Cytoscape
-toolbar — `fit_view` (re-runs `cy.fit() + cy.center()`) and
-`export_png` (downloads a 2× scale base64 PNG of the current graph
-state).  Lives at `src/ui/apps/rade_analytics/assets/js/trade_graph.js`;
-Dash auto-loads every file under `assets/` at startup, so dropping
-this file in place is all that's required — no bundler, no import
-statement.
+def _register_render_legend(app: "Dash") -> None:
+    """Color-by + cached payload → legend body children."""
 
-The functions are referenced from Python via:
+    @app.callback(
+        Output(TRADE_GRAPH_IDS["legend_body"], "children"),
+        Input(SHELL_IDS["url"],                "pathname"),
+        Input(SHELL_IDS["session_store"],      "data"),
+        Input(TRADE_GRAPH_IDS["store_graph"],  "data"),
+    )
+    def _render(
+        pathname:     Optional[str],
+        session_data: Optional[Dict[str, Any]],
+        store_data:   Optional[Dict[str, Any]],
+    ) -> Any:
+        if pathname != _TRADE_GRAPH_PATH:
+            raise PreventUpdate
 
-```python
-ClientsideFunction(namespace="trade_graph", function_name="fit_view")
-ClientsideFunction(namespace="trade_graph", function_name="export_png")
-```
+        session = Session.from_store(session_data)
+        color_by = session.evaluation.trade_graph_color_by
+        nodes_payload = (store_data or {}).get("nodes") or []
 
-Both pull the live Cytoscape instance via `dash_cytoscape`'s internal
-registry (`el._cyreg.cy`, with a fallback for older builds).  When the
-graph isn't ready yet (user clicks Fit before mount completes) both
-silently no-op rather than throwing.
+        # Run the stylesheet helper just for its (mode, pairs) tuple
+        # — we discard the rules and use the legend pairs to render
+        # the legend card body.  Both helpers stay in lockstep this
+        # way (no chance of legend / stylesheet drift).
+        _rules, pairs = build_stylesheet(color_by, nodes_payload=nodes_payload)
+        return build_legend_body(color_by, pairs=pairs)
 
-```javascript
-/* ──────────────────────────────────────────────────────────────────
- * Trade-Graph sub-tab — clientside callbacks.
- *
- * Two actions live here, both targeting the Cytoscape instance the
- * Dash app mounts at id="eval-trade-graph-cytoscape":
- *
- *   1. fit_view   — re-runs cy.fit() so the graph centres + zooms
- *                   to fill the viewport.  Useful after the user
- *                   has panned / zoomed away.
- *   2. export_png — calls cy.png({...}) and triggers a download
- *                   via a synthetic <a> element.
- *
- * Both functions are referenced from Python via:
- *
- *     ClientsideFunction(namespace="trade_graph",
- *                        function_name="fit_view")
- *
- * Page Contract reference: §6 Lever P2 (clientside_callback for
- * trivial UI / non-stateful actions).
- *
- * Why we hunt for the cy instance via dash_cytoscape's internal
- * registry: dash_cytoscape doesn't expose a clean "give me the
- * cy instance for id=X" hook.  The component stashes the cy
- * reference on the underlying React component, which we reach via
- * ``window.cy`` (set by some integrations) or by reading the
- * canvas DOM and walking the React fiber tree as a last resort.
- *
- * The lookup intentionally guards against "Cytoscape not ready
- * yet" — when the user clicks Fit before the graph has finished
- * its first render, we silently no-op rather than throwing.
- * ────────────────────────────────────────────────────────────────── */
 
-window.dash_clientside = window.dash_clientside || {};
-window.dash_clientside.trade_graph = (function () {
-    "use strict";
+# ═════════════════════════════════════════════════════════════════════
+# RENDER — Threshold label
+# ═════════════════════════════════════════════════════════════════════
 
-    /* Locate the live Cytoscape instance for the given DOM id.
-     *
-     * dash_cytoscape attaches the cy instance as a property on the
-     * outer container element; we read it back via the cy global
-     * pattern. */
-    function getCy(cytoscapeId) {
-        const el = document.getElementById(cytoscapeId);
-        if (!el) {
-            return null;
-        }
-        /* dash_cytoscape (v0.3+) exposes the cy instance as a
-         * property on the wrapping div.  Older versions stashed it
-         * on the canvas element — we check both. */
-        if (el._cyreg && el._cyreg.cy) {
-            return el._cyreg.cy;
-        }
-        if (el.__cy) {
-            return el.__cy;
-        }
-        /* Last resort — walk the children for a canvas with a cy
-         * back-reference (older dash_cytoscape builds). */
-        const canvas = el.querySelector("canvas");
-        if (canvas && canvas._cy) {
-            return canvas._cy;
-        }
-        return null;
-    }
 
-    /* Trigger a download of a base64 PNG payload as a file. */
-    function triggerDownload(dataUrl, fileName) {
-        const a = document.createElement("a");
-        a.href = dataUrl;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-    }
+def _register_render_threshold_label(app: "Dash") -> None:
+    """Slider value → "Min weight" pill label.
 
-    /* Fit-view — re-runs the layout's fit/center logic.
-     *
-     * Returns dash.no_update so we don't churn the button's n_clicks
-     * (which is the Dash callback's Output sink). */
-    function fit_view(_n_clicks, cytoscapeId) {
-        if (!_n_clicks) {
-            return window.dash_clientside.no_update;
-        }
-        const cy = getCy(cytoscapeId);
-        if (!cy) {
-            return window.dash_clientside.no_update;
-        }
-        cy.fit(undefined, 30);    // 30 px padding — matches layout default
-        cy.center();
-        return window.dash_clientside.no_update;
-    }
+    Lives separately from the session-sync because the label is a
+    pure local mirror of the slider — keeping it in its own callback
+    means dragging the slider doesn't churn unrelated session
+    consumers.
+    """
 
-    /* Export-PNG — generates a high-res PNG of the current graph
-     * state and triggers a browser download. */
-    function export_png(_n_clicks, cytoscapeId) {
-        if (!_n_clicks) {
-            return window.dash_clientside.no_update;
-        }
-        const cy = getCy(cytoscapeId);
-        if (!cy) {
-            return window.dash_clientside.no_update;
-        }
+    @app.callback(
+        Output(TRADE_GRAPH_IDS["threshold_value_label"], "children"),
+        Input(TRADE_GRAPH_IDS["threshold_slider"],       "value"),
+    )
+    def _render(threshold: Optional[float]) -> str:
+        try:
+            return f"{max(0.0, min(1.0, float(threshold))):.2f}"
+        except (TypeError, ValueError):
+            return "0.00"
 
-        /* 2× scale gives us a crisp image for retina displays
-         * without bloating the file size. */
-        const dataUrl = cy.png({
-            output: "base64uri",
-            full:   true,
-            scale:  2,
-            bg:     "#0f172a",     // slate-900 — matches dark theme
-        });
 
-        const ts = new Date().toISOString().replace(/[:.]/g, "-");
-        triggerDownload(dataUrl, `trade-graph-${ts}.png`);
+# ═════════════════════════════════════════════════════════════════════
+# RENDER — Density distribution + Edges-vs-nodes scatter
+# ═════════════════════════════════════════════════════════════════════
 
-        return window.dash_clientside.no_update;
-    }
 
-    return {
-        fit_view:   fit_view,
-        export_png: export_png,
-    };
-})();
+def _register_render_density_chart(
+    app: "Dash", backend: "RadeBackend",
+) -> None:
+    @app.callback(
+        Output(TRADE_GRAPH_IDS["density_chart"], "figure"),
+        Input(SHELL_IDS["url"],                  "pathname"),
+        Input(SHELL_IDS["session_store"],        "data"),
+    )
+    def _render(
+        pathname:     Optional[str],
+        session_data: Optional[Dict[str, Any]],
+    ) -> Any:
+        if pathname != _TRADE_GRAPH_PATH:
+            raise PreventUpdate
+
+        session = Session.from_store(session_data)
+        selected_cluster = (
+            session.evaluation.trade_graph_cluster_id or session.cluster_id
+        )
+
+        res = backend.graph_stats_df()
+        if not res.ok or res.data is None or res.data.empty:
+            return empty_figure("No graph stats available.")
+
+        return density_distribution(
+            res.data, selected_cluster_id=selected_cluster,
+        )
+
+
+def _register_render_edges_vs_nodes_chart(
+    app: "Dash", backend: "RadeBackend",
+) -> None:
+    @app.callback(
+        Output(TRADE_GRAPH_IDS["edges_vs_nodes_chart"], "figure"),
+        Input(SHELL_IDS["url"],                         "pathname"),
+        Input(SHELL_IDS["session_store"],               "data"),
+    )
+    def _render(
+        pathname:     Optional[str],
+        session_data: Optional[Dict[str, Any]],
+    ) -> Any:
+        if pathname != _TRADE_GRAPH_PATH:
+            raise PreventUpdate
+
+        session = Session.from_store(session_data)
+        selected_cluster = (
+            session.evaluation.trade_graph_cluster_id or session.cluster_id
+        )
+
+        res = backend.graph_stats_df()
+        if not res.ok or res.data is None or res.data.empty:
+            return empty_figure("No graph stats available.")
+
+        return edges_vs_nodes_scatter(
+            res.data, selected_cluster_id=selected_cluster,
+        )
+
+
+# ═════════════════════════════════════════════════════════════════════
+# CLIENTSIDE — Fit view + Export PNG
+# ═════════════════════════════════════════════════════════════════════
+
+
+def _register_clientside(app: "Dash") -> None:
+    """Wire the two clientside actions to their JS implementations.
+
+    Both use the existing ``window.dash_clientside.trade_graph``
+    namespace from ``assets/js/trade_graph.js``.  Output goes to a
+    placeholder Div property to satisfy Dash's "every callback must
+    have an Output" rule — neither action needs to round-trip server
+    state.
+    """
+    app.clientside_callback(
+        ClientsideFunction(namespace="trade_graph", function_name="fit_view"),
+        # The button itself is the receiver of the no-op write; we
+        # never read this property so it's a safe sink.
+        Output(TRADE_GRAPH_IDS["fit_btn"], "n_clicks"),
+        Input(TRADE_GRAPH_IDS["fit_btn"],  "n_clicks"),
+        State(TRADE_GRAPH_IDS["cytoscape"], "id"),
+        prevent_initial_call=True,
+    )
+
+    app.clientside_callback(
+        ClientsideFunction(namespace="trade_graph", function_name="export_png"),
+        Output(TRADE_GRAPH_IDS["export_btn"], "n_clicks"),
+        Input(TRADE_GRAPH_IDS["export_btn"],  "n_clicks"),
+        State(TRADE_GRAPH_IDS["cytoscape"],   "id"),
+        prevent_initial_call=True,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Formatters / helpers
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _fmt_int(x: Optional[float]) -> str:
+    if x is None:
+        return _PLACEHOLDER
+    try:
+        return f"{int(x):,}"
+    except (TypeError, ValueError):
+        return _PLACEHOLDER
+
+
+def _fmt_float(x: Optional[float], *, precision: int = 3) -> str:
+    if x is None:
+        return _PLACEHOLDER
+    try:
+        return f"{float(x):.{precision}g}"
+    except (TypeError, ValueError):
+        return _PLACEHOLDER
+
+
+def _is_nan(value: Any) -> bool:
+    """``True`` for ``NaN`` / ``None``; survives non-numeric inputs."""
+    if value is None:
+        return True
+    try:
+        return math.isnan(float(value))
+    except (TypeError, ValueError):
+        return False
+
+
+__all__ = ["register"]
 ```
