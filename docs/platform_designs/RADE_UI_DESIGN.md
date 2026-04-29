@@ -252,57 +252,13 @@ No mock, no merge.
 
 ---
 
-## Appendix A — `layouts/evaluation/cluster_deep_dive.py`
+## Appendix A — Cluster deep-dive copy-paste bundle
 
-Full layout module for the **Cluster Deep-Dive sub-tab** (Phase E.5
-hybrid).  Lives at `src/ui/apps/rade_analytics/layouts/evaluation/cluster_deep_dive.py`;
-mounted by the Evaluation tab's sub-tab router via
-`build_cluster_deep_dive(session=...)`.
+Single appendix (replaces prior appendix blocks). Paste into your work tree as needed.
 
-Height strategy
----------------
+### A.1 — ``src/ui/apps/rade_analytics/layouts/evaluation/cluster_deep_dive.py`` (full file)
 
-The row wrappers are **intrinsic-height** — there are no
-`h-[560px]` / `h-[340px]` / `h-[400px]` locks like the first draft
-shipped.  Each row's grid uses `items-stretch` so the left and right
-columns equalise to whichever is naturally taller, which lets the
-page self-heal across viewport widths:
-
-* **Row 1** left rail (Attributes + Metrics-with-sparklines + Graph
-  Stats) drives the row height at ~600 px; the right pane
-  (Cluster Portfolio + Trade-Level Metrics grid) stretches to match.
-* **Row 2** two-up (residual-over-time + training curves) sizes to
-  the taller ChartContainer (~380 px).
-* **Row 3** (per-trade detail) is `display: none` until a trade is
-  picked, then renders at ~410 px.
-* **Row 4** (elementary explorer + timeseries/empty-state) sizes to
-  ~410 px via the empty-state's `min-h-[400px]`.
-
-The first draft with fixed row heights clipped the Cluster Metrics
-card's 2×2 KpiCard grid (which needs ~300 px, not the ~180 px a
-third of 560 px gave it), and the overflow bled visually into the
-row below — you could see the bottom of sparklines overlapping
-"Residual over time".  Intrinsic sizing plus `items-stretch` is the
-fix.
-
-Key contract points
--------------------
-
-* All dynamic ids are exported from `CLUSTER_DEEP_DIVE_IDS` so the
-  callback module never hard-codes string literals.
-* `mount_signal` is a `dcc.Store(data=True)` mounted at the bottom
-  of the page; it is the bootstrap callback's *only* trigger
-  (Page Contract §5 — `pathname` races the sub-tab content swap).
-* `store_trade_types` carries the `{trade_id: "target" | "elementary"}`
-  classification map populated from `/trade-graph` so Row 4's
-  Elementary PnL Explorer can filter to `trade_type == "elementary"`
-  client-side without a second `/trades` round-trip.
-* Row 3 (per-trade detail) ships with `style={"display": "none"}`
-  by default — the render callback toggles it visible only when the
-  user picks a row in the Trade-Level Metrics grid.
-* Row 4's elementary PnL chart card sits behind an empty-state
-  placeholder; both are mounted simultaneously and the render
-  callback flips their `display` styles in opposite directions.
+Residual-over-time and Training curves are stacked (curves underneath) in a ``flex flex-col gap-8`` strip so both use full content width.
 
 ```python
 """Evaluation → Cluster Deep-Dive sub-tab layout (Phase E.5 hybrid).
@@ -318,7 +274,11 @@ Four-row layout designed against ``rade_cluster_deep_dive.png``:
                                stacked at exactly the same height as the
                                right pane; right pane: Cluster
                                Portfolio chart over Trade-Level Metrics
-                               grid, click-row → Row 3 expands)
+                               grid; click-row → Row 3 per-trade expands.)
+
+    Row 2.5 · Convergence      Residual-over-time chart, then Training
+                               curves (stacked full-width below with
+                               chip group; long page, clear reading order.)
 
     Row 3 · Per-trade detail  (residual distribution + bias-vs-magnitude
                                scatter, both per-scenario for the
@@ -334,11 +294,12 @@ Four-row layout designed against ``rade_cluster_deep_dive.png``:
 
 Why the hybrid (vs. a pure mock copy)?  The mock has the cluster
 attributes / metrics / graph-stats / convergence as four stacked left-
-rail cards.  We collapse that to three cards by promoting the
-training-curves chart to its own row (Row 2 right) where it's actually
-readable, and we drop ``Avg Degree`` / ``Avg Path Length`` from the
-Graph Statistics card (those numbers would need a new endpoint and
-the user explicitly said "show only what we have today").
+rail cards.  We collapse that to three metric cards on the left rail;
+the training-curves block sits in a full-width stack *under* residual
+over time (not squeezed beside it), and we drop ``Avg Degree`` /
+``Avg Path Length`` from the Graph Statistics card (those numbers would
+need a new endpoint and the user explicitly said "show only what we have
+today").
 
 All dynamic ids live in :data:`CLUSTER_DEEP_DIVE_IDS` so callbacks
 never hardcode strings.  Callbacks live in
@@ -418,9 +379,7 @@ CLUSTER_DEEP_DIVE_IDS: Dict[str, str] = {
     "elementary_pnl_chart_card":  "eval-cluster-elementary-pnl-chart-card",
     "elementary_pnl_empty":       "eval-cluster-elementary-pnl-empty",
 
-    # ── Row 2 · Training curves (chart + chip group) ─────────────
-    # (Visually under the per-trade row in the mock; kept here so the
-    # layout sub-rows stay numbered top-to-bottom.)
+    # ── Convergence strip (residual → training curves, stacked) ──
     "training_curves_chart":      "eval-cluster-training-curves-chart",
     "training_curves_chip_group": "eval-cluster-training-curves-chip-group",
     "training_curves_chip_empty": "eval-cluster-training-curves-chip-empty",
@@ -761,7 +720,10 @@ def _row2_right_pane() -> html.Div:
     )
 
     return html.Div(
-        className="lg:col-span-3 flex flex-col gap-3 min-w-0",
+        # Gap between Cluster Portfolio chart and Trade-Level Metrics card —
+        # slightly wider than intra-card spacing so reads as two deliberate
+        # panels in the column.
+        className="lg:col-span-3 flex flex-col gap-5 min-w-0",
         children=[
             portfolio,
             html.Div(
@@ -862,7 +824,13 @@ def _row_residual_and_curves(
     *,
     initial_curve_metrics: Optional[List[str]] = None,
 ) -> html.Div:
-    """Two-up row: residual-over-time on the left, training curves on the right."""
+    """Residual-over-time on top; training curves full-width underneath.
+
+    Stacked vertically with ``gap-8`` so both charts span the content width
+    and the chip group under the convergence plot stays readable --- the user
+    accepted a longer scrolling page instead of cramming curves beside the
+    residual chart at ``lg`` breakpoints.
+    """
     residual = ChartContainer(
         title="Residual over time",
         subtitle="Rolling absolute error with ±1σ band across the active split",
@@ -871,7 +839,7 @@ def _row_residual_and_curves(
     )
 
     curves = html.Div(
-        className="rade-card flex flex-col gap-2 min-h-0",
+        className="rade-card flex w-full min-w-0 flex-col gap-2 min-h-0",
         children=[
             html.Div(
                 className="flex items-start justify-between",
@@ -895,7 +863,7 @@ def _row_residual_and_curves(
             dcc.Graph(
                 id=CLUSTER_DEEP_DIVE_IDS["training_curves_chart"],
                 figure={},
-                style={"height": "260px"},
+                style={"height": "280px"},
                 config={
                     "displaylogo": False,
                     "modeBarButtonsToRemove": [
@@ -908,11 +876,7 @@ def _row_residual_and_curves(
     )
 
     return html.Div(
-        # Intrinsic height — the residual ChartContainer needs ~380 px
-        # (card chrome 70 + graph 300) and the curves card is a shade
-        # taller because of the chip-group strip.  ``items-stretch``
-        # keeps both columns aligned at the tallest.
-        className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch",
+        className="flex w-full min-w-0 flex-col gap-8",
         children=[residual, curves],
     )
 
@@ -987,7 +951,7 @@ def _row_per_trade_detail() -> html.Div:
         # callback flips this style + scrolls the row into view via a
         # clientside callback (see ``cluster_deep_dive_cb``).
         style={"display": "none"},
-        className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch",
+        className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch",
         children=[histogram, bias_scatter],
     )
 
@@ -1077,15 +1041,23 @@ def _row_elementary_pnl() -> html.Div:
     )
 
     explorer_card = html.Div(
-        className="rade-card flex flex-col gap-2",
+        # ``h-full`` + grid ``items-stretch`` so this column inherits the
+        # row track height driven by whichever side is taller in other
+        # breakpoints — keeps the explorer card vertically aligned with
+        # the timeseries placeholder / chart beside it.
+        className="rade-card flex h-full min-h-0 flex-col gap-2",
         children=[explorer_header, explorer_grid],
     )
 
     chart_empty_state = html.Div(
         id=CLUSTER_DEEP_DIVE_IDS["elementary_pnl_empty"],
+        # Compact dashed placeholder — the old ``min-h-[400px]`` stacked
+        # beneath a titled ChartContainer read as two stacked cards (~700 px).
+        # ``flex-1`` + ``min-h-[160px]`` keeps the placeholder readable while
+        # stretching vertically to align with the explorer beside it.
         className=(
-            "rade-list-empty flex flex-col items-center justify-center "
-            "gap-2 py-8 min-h-[400px]"
+            "rade-list-empty flex flex-1 flex-col items-center justify-center "
+            "gap-2 px-4 py-5 text-center min-h-[160px]"
         ),
         children=[
             DashIconify(
@@ -1095,37 +1067,30 @@ def _row_elementary_pnl() -> html.Div:
             html.Div(
                 "Pick one or more elementary trades from the explorer "
                 "table to plot their per-scenario PnL.",
-                className="text-xs text-slate-500 text-center max-w-sm",
+                className="text-xs text-slate-500 max-w-sm",
             ),
         ],
     )
 
-    # Chart card is mounted but its outer wrapper carries
-    # ``display: none`` until the user selects ≥1 elementary trade.
-    # The render callback flips the empty state and the chart card
-    # in opposite directions (one shows, one hides) so we never have
-    # both visible simultaneously.  ``container_id`` lets the
-    # callback toggle the *inner* card's display style; we don't
-    # nest a redundant wrapper around it.
     chart = ChartContainer(
         title="Elementary PnL timeseries",
         subtitle="Raw PnL per scenario for the selected elementary trades",
         graph_id=CLUSTER_DEEP_DIVE_IDS["elementary_pnl_chart"],
         height=300,
         container_id=CLUSTER_DEEP_DIVE_IDS["elementary_pnl_chart_card"],
+        # Hidden until the user selects ≥ 1 elementary trade — render cb
+        # flips visibility vs ``elementary_pnl_empty``.
+        style={"display": "none"},
     )
 
-    chart_panel = html.Div(
-        className="flex flex-col",
+    elementary_timeseries_column = html.Div(
+        className="flex flex-1 flex-col gap-4 h-full min-h-0",
         children=[chart_empty_state, chart],
     )
 
     return html.Div(
-        # Intrinsic-height two-up row.  The left explorer card and
-        # right chart-or-empty-state panel each want ~380 px; grid
-        # ``items-stretch`` keeps them visually aligned.
-        className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch",
-        children=[explorer_card, chart_panel],
+        className="grid grid-cols-1 gap-8 lg:grid-cols-2 items-stretch",
+        children=[explorer_card, elementary_timeseries_column],
     )
 
 
@@ -1164,7 +1129,9 @@ def build_cluster_deep_dive(*, session: Optional[Session] = None) -> html.Div:
 
     return html.Div(
         id=CLUSTER_DEEP_DIVE_IDS["root"],
-        className="rade-evaluation-subtab flex flex-col gap-4",
+        # Vertical rhythm between sticky header strip, main rails, residual
+        # curves row, optional per-trade detail, and elementary PnL.
+        className="rade-evaluation-subtab flex flex-col gap-8",
         children=[
             _header_band(initial_cluster_id=initial_cluster_id),
             _row2_main_area(),
@@ -1207,261 +1174,35 @@ def build_cluster_deep_dive(*, session: Optional[Session] = None) -> html.Div:
 __all__ = ["CLUSTER_DEEP_DIVE_IDS", "build_cluster_deep_dive"]
 ```
 
----
+### A.2 — ``src/ui/apps/rade_analytics/assets/rade.css`` (incremental tail only)
 
-## Appendix B — `components/kpi_card.py`
+**Not** the entire ~1500-line file.  This block runs from the Evaluation **sub-tab stub** section through **end of file** (Phase E.3 arbitrary Tailwind utilities, responsive ``lg:*`` grid helpers, Cluster Deep-Dive ``.rade-*`` chrome, ag-grid stretch rules).  Merge after your existing Evaluation content-slot / stub rules.
 
-Updated KPI-card primitive that pairs with Appendix A.  Adds three
-optional kwargs over the original signature — every existing callsite
-keeps working unchanged because all three default to `None`:
+```css
+/* ── Sub-tab stub placeholder ──────────────────────────────────── */
 
-* `sparkline_data: Sequence[float] | None` — when supplied, renders a
-  zero-chrome line trace beneath the value (~36 px tall, no axes / no
-  legend / no hover).
-* `sparkline_id: str | None` — DOM id on the inner `dcc.Graph` so a
-  callback can swap the sparkline's `figure` without re-rendering the
-  surrounding card (the Cluster Deep-Dive's Cluster-Metrics row
-  uses this to feed per-trade distribution shapes from `/trades`).
-* `sparkline_colour: str` — stroke colour override, defaults to
-  slate-300 to match the surrounding typography.
-
-The slot is only emitted when *either* `sparkline_data` or
-`sparkline_id` is set — old callsites stay visually identical.
-
-```python
-"""Single KPI card — label + value + optional delta chip + optional icon.
-
-Used by the landing overview, governance, monitoring and the "headline
-row" of every long page.  Pairs with :class:`Loading` 's ``kpi_strip``
-variant so the loading skeleton matches the final shape.
-
-The visual chrome lives in ``rade.css`` (B.1) via ``rade-card-compact``
-+ ``rade-kpi-label`` + ``rade-kpi-value`` classes; this module is a
-thin composition layer.
-
-Design spec anchors
--------------------
-* §6 Components — KPI card is the "compact card" variant.
-* §7 Colour tones — deltas use emerald-400 / rose-400 / slate-400.
-"""
-
-from __future__ import annotations
-
-from typing import Any, List, Literal, Optional, Sequence
-
-from dash import dcc, html
-from dash_iconify import DashIconify
-
-
-DeltaTone = Literal["positive", "negative", "neutral"]
-
-
-_DELTA_CLASS: dict[DeltaTone, str] = {
-    "positive": "text-emerald-400",
-    "negative": "text-rose-400",
-    "neutral":  "text-slate-400",
+.rade-evaluation-subtab--stub {
+  /* The Empty card already supplies its own chrome (border, radius,
+     padding); this wrapper just constrains width on ultra-wide
+     screens so the message doesn't stretch across 3000 px. */
+  max-width: 720px;
+  margin: 1.5rem auto 0 auto;
 }
 
+/* ─────────────────────────────────────────────────────────────────── */
+/* PHASE E.3 — TRADE-GRAPH UTILITIES                                    */
+/* Tailwind classes consumed by                                         */
+/* ``layouts/evaluation/trade_graph.py`` and                            */
+/* ``figures/trade_graph_stylesheet.py`` that were not present in the   */
+/* pre-E.3 compile of rade.css.  Rebuilding via the Tailwind CLI would  */
+/* regenerate these automatically; until then we ship them by hand.    */
+/* ─────────────────────────────────────────────────────────────────── */
 
-# Default colour for the sparkline trace.  Slate-300 reads on the
-# dark card background and matches the rest of the typography tones
-# without competing with the KPI value.
-_SPARKLINE_COLOUR = "#94a3b8"
-
-
-def _sparkline_figure(
-    data: Sequence[float],
-    *,
-    colour: str = _SPARKLINE_COLOUR,
-) -> dict[str, Any]:
-    """Build a tiny zero-chrome line trace for the bottom of a KpiCard.
-
-    The figure is intentionally cheap — no markers, no axes, no
-    hovers, no padding.  Only purpose is conveying the *shape* of the
-    metric distribution across the cluster's trades, so the user can
-    spot bimodality / heavy tails at a glance without an extra click
-    into the per-trade table.
-    """
-    if not data:
-        return {
-            "data": [],
-            "layout": {
-                "xaxis": {"visible": False},
-                "yaxis": {"visible": False},
-                "margin": {"l": 0, "r": 0, "t": 0, "b": 0},
-                "paper_bgcolor": "rgba(0,0,0,0)",
-                "plot_bgcolor":  "rgba(0,0,0,0)",
-                "showlegend":    False,
-                "height":        36,
-            },
-        }
-    return {
-        "data": [
-            {
-                "type": "scatter",
-                "mode": "lines",
-                "x":    list(range(len(data))),
-                "y":    list(data),
-                "line": {"color": colour, "width": 1.4},
-                "hoverinfo": "skip",
-            }
-        ],
-        "layout": {
-            "xaxis": {"visible": False},
-            "yaxis": {"visible": False},
-            "margin": {"l": 0, "r": 0, "t": 0, "b": 0},
-            "paper_bgcolor": "rgba(0,0,0,0)",
-            "plot_bgcolor":  "rgba(0,0,0,0)",
-            "showlegend":    False,
-            "height":        36,
-        },
-    }
-
-
-def KpiCard(
-    *,
-    label: str,
-    value: str,
-    delta: Optional[str] = None,
-    delta_tone: DeltaTone = "neutral",
-    icon: Optional[str] = None,
-    card_id: Optional[str] = None,
-    value_id: Optional[str] = None,
-    sparkline_data:    Optional[Sequence[float]] = None,
-    sparkline_id:      Optional[str] = None,
-    sparkline_colour:  str = _SPARKLINE_COLOUR,
-) -> html.Div:
-    """A single-KPI card.
-
-    Parameters
-    ----------
-    label
-        Short uppercase caption (e.g. ``"MAE"``, ``"ACTIVE VERSION"``).
-    value
-        Main figure already formatted as a string (``"12.4 bps"``,
-        ``"v2024.09.22"``).  Numeric formatting is the caller's job —
-        this component doesn't try to interpret the value.
-    delta
-        Optional secondary line under the value, e.g. ``"+1.2% vs prior"``.
-    delta_tone
-        ``"positive"`` (emerald), ``"negative"`` (rose) or
-        ``"neutral"`` (slate).  Picks the colour of the ``delta`` text.
-    icon
-        Optional ``tabler:*`` identifier rendered top-right at 18 px —
-        useful on monitoring dashboards to cue metric category.
-    card_id
-        Optional DOM id for the outer card.  Named ``card_id`` (not
-        ``id``) to avoid shadowing the Python built-in — every primitive
-        in this package follows the same ``{component}_id`` convention.
-    value_id
-        Optional DOM id for the value span.  Set this so a callback
-        can update the value without re-rendering the whole card.
-    sparkline_data
-        Optional sequence of numeric values that will be rendered as a
-        tiny line chart beneath the value (~36 px tall, no axes / no
-        legend).  Useful on dense cluster-metric strips where the
-        single KPI number hides distribution shape.  ``None`` (the
-        default) hides the sparkline entirely.
-    sparkline_id
-        Optional DOM id for the sparkline ``dcc.Graph``.  Set this if
-        you need a callback to swap the sparkline data without
-        re-rendering the whole card.  Ignored when ``sparkline_data``
-        is ``None`` and no id-bearing slot is needed.
-    sparkline_colour
-        Override stroke colour for the sparkline line trace; defaults
-        to slate-300 to match the surrounding typography.
-    """
-    label_row_children: List[Any] = [
-        html.Div(label, className="rade-kpi-label"),
-    ]
-    if icon:
-        label_row_children.append(
-            DashIconify(icon=icon, width=18, className="text-slate-500")
-        )
-
-    # Dash rejects ``id=None`` on component props — include the kwarg
-    # only when the caller supplied a real id.
-    value_id_kwargs = {"id": value_id} if value_id is not None else {}
-    card_id_kwargs = {"id": card_id} if card_id is not None else {}
-
-    body: List[Any] = [
-        html.Div(
-            className="flex items-center justify-between",
-            children=label_row_children,
-        ),
-        html.Div(
-            value,
-            className="rade-kpi-value",
-            **value_id_kwargs,
-        ),
-    ]
-    if delta:
-        body.append(
-            html.Div(
-                delta,
-                className=f"text-xs mt-1 {_DELTA_CLASS[delta_tone]}",
-            )
-        )
-
-    # Sparkline slot — always emitted when ``sparkline_id`` is given
-    # so a render callback can later swap the figure in without
-    # re-creating the surrounding card.  When the caller didn't pass
-    # an id and didn't pass data either, we omit the slot entirely
-    # (no empty 36-px gap on cards that don't want a sparkline).
-    if sparkline_data is not None or sparkline_id is not None:
-        spark_id_kwargs = (
-            {"id": sparkline_id} if sparkline_id is not None else {}
-        )
-        body.append(
-            dcc.Graph(
-                figure=_sparkline_figure(
-                    sparkline_data or [],
-                    colour=sparkline_colour,
-                ),
-                config={"displayModeBar": False, "staticPlot": True},
-                style={"height": "36px"},
-                className="rade-kpi-sparkline mt-1",
-                **spark_id_kwargs,
-            )
-        )
-
-    return html.Div(
-        className="rade-card-compact flex flex-col gap-1",
-        children=body,
-        **card_id_kwargs,
-    )
-
-
-__all__ = ["DeltaTone", "KpiCard"]
-```
-
-
----
-
-## Appendix C — `assets/rade.css` patch (Cluster Deep-Dive utilities)
-
-These are the four small edits to `src/ui/apps/rade_analytics/assets/rade.css`
-that turn the Phase-E.5 layout from "components on the page" into
-"the layout the mock specifies".  All edits live inside the existing
-**`PHASE E.3 — TRADE-GRAPH UTILITIES`** banner block at the bottom of
-the file (the manual Tailwind-compile shim).  Patch 4 is a brand-new
-block to append at the very end of the file.
-
-### Patch 1 — extend the `Arbitrary fixed heights` block
-
-**Find** (around line 1379):
-
-```css
-.h-\[200px\] { height: 200px; }
-.h-\[180px\] { height: 180px; }
-.h-\[140px\] { height: 140px; }
-.h-\[240px\] { height: 240px; }
-.h-\[260px\] { height: 260px; }
-```
-
-**Replace with**:
-
-```css
+/* ── Arbitrary fixed heights ───────────────────────────────────── */
+/* Side-panel cards anchor to these heights so the cytoscape pane
+   can match their combined intrinsic height via ``items-stretch``
+   on the row grid.  See trade_graph.py:_selected_trade_card,
+   _legend_card, _cluster_stats_card. */
 .h-\[200px\] { height: 200px; }
 .h-\[180px\] { height: 180px; }
 .h-\[140px\] { height: 140px; }
@@ -1475,47 +1216,41 @@ block to append at the very end of the file.
 .h-\[360px\] { height: 360px; }
 .h-\[400px\] { height: 400px; }
 .h-\[560px\] { height: 560px; }
-```
 
-### Patch 2 — extend the `Arbitrary minimum dimensions` block
-
-**Find** (around line 1389):
-
-```css
+/* ── Arbitrary minimum dimensions ──────────────────────────────── */
+/* Cytoscape pane never collapses below 400 px even on short
+   viewports; selector header pickers reserve a sensible minimum
+   width so the cluster id labels don't ellipsis-clip. */
 .min-h-\[400px\] { min-height: 400px; }
 .min-h-\[22px\]  { min-height: 22px; }
-.min-w-\[180px\] { min-width: 180px; }
-.min-w-\[220px\] { min-width: 220px; }
-```
-
-**Replace with**:
-
-```css
-.min-h-\[400px\] { min-height: 400px; }
-.min-h-\[22px\]  { min-height: 22px; }
+/* Thin empty-state slab for Elementary PnL column (paired with explorer). */
+.min-h-\[160px\] { min-height: 160px; }
 /* Cluster Deep-Dive curves chip-group strip — 28 px keeps the row
    the height of one Mantine Chip + a hair of breathing room so the
    "no additional metrics" empty-state message doesn't reflow. */
 .min-h-\[28px\]  { min-height: 28px; }
 .min-w-\[180px\] { min-width: 180px; }
 .min-w-\[220px\] { min-width: 220px; }
-```
 
-### Patch 3 — extend the `Responsive grid (lg: ≥ 1024 px)` block
+/* ── Arbitrary text sizes ──────────────────────────────────────── */
+/* 10–11 px micro-labels for the legend, chip strip, threshold
+   pill and 2×2 KPI grid. */
+.text-\[10px\] { font-size: 10px; line-height: 1; }
+.text-\[11px\] { font-size: 11px; line-height: 1.4; }
 
-**Find** (around line 1419):
+/* ── Aliases / supplementary single-purpose utilities ──────────── */
+/* ``flex-shrink-0`` is the Tailwind v2 alias for ``shrink-0``;
+   the legend swatch builder still emits the long form. */
+.flex-shrink-0 { flex-shrink: 0; }
 
-```css
-@media (min-width: 1024px) {
-  .lg\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .lg\:col-span-2  { grid-column: span 2 / span 2; }
-}
-```
+/* Mini-map background uses 70 % alpha; existing rade.css covers
+   60 % and 80 % only. */
+.bg-slate-900\/70 { background-color: rgb(15 23 42 / 0.7); }
 
-**Replace with** (and update the leading comment so it documents the
-new use cases):
+/* Default ``backdrop-blur`` (8 px) used by the mini-map glass card;
+   existing CSS only ships ``backdrop-blur-sm`` (4 px). */
+.backdrop-blur { backdrop-filter: blur(8px); }
 
-```css
 /* ── Responsive grid (lg: ≥ 1024 px) ───────────────────────────── */
 /* Row 2 of the Trade-Graph layout collapses to one column on
    narrow screens and switches to a 2-fr-cytoscape + 1-fr-side-
@@ -1535,26 +1270,19 @@ new use cases):
   .lg\:col-span-2  { grid-column: span 2 / span 2; }
   .lg\:col-span-3  { grid-column: span 3 / span 3; }
 }
-```
 
-### Patch 4 — append the Cluster Deep-Dive bespoke-chrome block
-
-Append this **at the very end** of `rade.css` (after the closing `}`
-of the `@media` block from Patch 3, before any final whitespace):
-
-```css
 /* ── Cluster Deep-Dive (Phase E.5) — bespoke chrome ─────────────── */
-/* The page-level wrapper is a passive container today (the children
-   carry all visual chrome), but having a hook means future global
-   tweaks land in one place. */
+/* Hook for scoped overrides (``.rade-evaluation-subtab .rade-card``).
+   **Do not set ``display`` here.**  The JSX root div uses ``className=
+   "rade-evaluation-subtab flex flex-col gap-*"``.  A lone ``display:
+   block`` on this selector lives *after* ``.flex { display: flex }``
+   in this file and overrides it at equal specificity — the node stops
+   being a flex container and ``gap-*`` utilities silently stop working
+   (no vertical space between sticky header strip and main grids). */
 .rade-evaluation-subtab {
-  /* No bespoke styling needed yet; the wrapper just exists so
-     callbacks can scope queries (e.g.
-     ``.rade-evaluation-subtab .rade-card``).  ``display: block`` is
-     the div default — declared explicitly so the ruleset isn't an
-     empty linter warning and any future override only has to add
-     declarations next to a valid one. */
-  display: block;
+  /* Harmless non-empty ruleset for the linter; propagates flex-shrink
+     semantics to deeply nested scroll chains. */
+  min-height: 0;
 }
 
 /* The selected-trade chip in Row 3's bias-vs-magnitude chart header
@@ -1592,7 +1320,7 @@ of the `@media` block from Patch 3, before any final whitespace):
 
 /* Empty-state placeholder for Row 4's elementary-PnL chart panel.
    Row 4 has a fixed 400 px height; this placeholder fills the chart
-   half until >= 1 elementary trade is selected.  Mirrors the visual
+   half until ≥ 1 elementary trade is selected.  Mirrors the visual
    weight of the chart card (same border, same radius) so the
    transition to "populated" is a swap, not a layout shift. */
 .rade-list-empty {
@@ -1627,14 +1355,12 @@ of the `@media` block from Patch 3, before any final whitespace):
 .rade-cluster-elementary-grid {
   flex: 1 1 0%;
   min-height: 0;
+  /* dash-ag-grid mounts its viewport inside a div with the same
+     id as the wrapper; the .ag-root-wrapper inherits height from
+     this parent. */
 }
 .rade-cluster-trades-grid .ag-root-wrapper,
 .rade-cluster-elementary-grid .ag-root-wrapper {
   height: 100% !important;
 }
 ```
-
-### Smoke check
-
-After applying all four patches, ``grep -c '\.rade-focus-chip\|\.rade-list-empty\|\.rade-kpi-sparkline\|\.rade-cluster-trades-grid\|\.rade-cluster-elementary-grid\|h-\\\[560px\\\]'``
-should return at least **6** matches across the file.
