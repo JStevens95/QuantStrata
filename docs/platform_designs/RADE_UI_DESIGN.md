@@ -259,7 +259,34 @@ hybrid).  Lives at `src/ui/apps/rade_analytics/layouts/evaluation/cluster_deep_d
 mounted by the Evaluation tab's sub-tab router via
 `build_cluster_deep_dive(session=...)`.
 
-Key contract points:
+Height strategy
+---------------
+
+The row wrappers are **intrinsic-height** — there are no
+`h-[560px]` / `h-[340px]` / `h-[400px]` locks like the first draft
+shipped.  Each row's grid uses `items-stretch` so the left and right
+columns equalise to whichever is naturally taller, which lets the
+page self-heal across viewport widths:
+
+* **Row 1** left rail (Attributes + Metrics-with-sparklines + Graph
+  Stats) drives the row height at ~600 px; the right pane
+  (Cluster Portfolio + Trade-Level Metrics grid) stretches to match.
+* **Row 2** two-up (residual-over-time + training curves) sizes to
+  the taller ChartContainer (~380 px).
+* **Row 3** (per-trade detail) is `display: none` until a trade is
+  picked, then renders at ~410 px.
+* **Row 4** (elementary explorer + timeseries/empty-state) sizes to
+  ~410 px via the empty-state's `min-h-[400px]`.
+
+The first draft with fixed row heights clipped the Cluster Metrics
+card's 2×2 KpiCard grid (which needs ~300 px, not the ~180 px a
+third of 560 px gave it), and the overflow bled visually into the
+row below — you could see the bottom of sparklines overlapping
+"Residual over time".  Intrinsic sizing plus `items-stretch` is the
+fix.
+
+Key contract points
+-------------------
 
 * All dynamic ids are exported from `CLUSTER_DEEP_DIVE_IDS` so the
   callback module never hard-codes string literals.
@@ -507,20 +534,25 @@ def _cluster_attributes_card() -> html.Div:
     *shape* on first paint (so the row 1 height calculation is
     stable), and the bootstrap callback only needs to swap text
     children — no children-replacement re-mount.
+
+    No ``flex-1`` on the outer card — we sized the whole row to
+    intrinsic content and rely on the grid's ``items-stretch`` to
+    equalise the right pane's height.  ``flex-1`` on a card whose
+    parent has no definite height collapses the card to its content
+    (fine) or fights for non-existent leftover space with its
+    siblings (also fine but confusing).  Dropping it keeps the
+    layout predictable across viewport sizes.
     """
     body = html.Div(
         id=CLUSTER_DEEP_DIVE_IDS["attributes_body"],
-        className="flex flex-col gap-1 flex-1",
+        className="flex flex-col gap-1",
         children=[
             _attribute_row(label) for label, _ in _ATTRIBUTE_PLACEHOLDER_KEYS
         ],
     )
     return html.Div(
         id=CLUSTER_DEEP_DIVE_IDS["attributes_card"],
-        # ``flex-1`` so this card splits the left-rail height equally
-        # with the metrics + graph-stats cards (Row 2 wrapper sits at
-        # ``h-[560px]`` and the three cards' flex-1 each grab 1/3).
-        className="rade-card-compact flex flex-col gap-2 flex-1",
+        className="rade-card-compact flex flex-col gap-2",
         children=[
             html.Div(
                 "Cluster Attributes",
@@ -542,7 +574,7 @@ def _cluster_metrics_card() -> html.Div:
     """
     return html.Div(
         id=CLUSTER_DEEP_DIVE_IDS["metrics_card"],
-        className="rade-card-compact flex flex-col gap-2 flex-1",
+        className="rade-card-compact flex flex-col gap-2",
         children=[
             html.Div(
                 "Cluster Metrics",
@@ -551,8 +583,11 @@ def _cluster_metrics_card() -> html.Div:
             html.Div(
                 # 2×2 KpiCard grid; each KpiCard already has its own
                 # padded background, so the outer wrapper just lays
-                # them out.
-                className="grid grid-cols-2 gap-2 flex-1",
+                # them out.  No ``flex-1`` here — the KpiCards with
+                # sparklines are ~110 px tall each, so this grid is
+                # ~235 px and drives the Cluster Metrics card to its
+                # natural height.
+                className="grid grid-cols-2 gap-2",
                 children=[
                     KpiCard(
                         label="MAE",
@@ -618,13 +653,13 @@ def _graph_stats_card() -> html.Div:
 
     body = html.Div(
         id=CLUSTER_DEEP_DIVE_IDS["graph_stats_body"],
-        className="flex flex-col gap-1 flex-1",
+        className="flex flex-col gap-1",
         children=rows,
     )
 
     return html.Div(
         id=CLUSTER_DEEP_DIVE_IDS["graph_stats_card"],
-        className="rade-card-compact flex flex-col gap-2 flex-1",
+        className="rade-card-compact flex flex-col gap-2",
         children=[
             html.Div(
                 "Graph Statistics",
@@ -636,12 +671,15 @@ def _graph_stats_card() -> html.Div:
 
 
 def _row2_left_rail() -> html.Div:
-    """Three stacked cards filling the left col of Row 2 evenly."""
+    """Three stacked cards filling the left col of Row 2 evenly.
+
+    ``min-h-0`` on the rail itself + ``flex-1`` on each card lets the
+    flex children shrink below their intrinsic content height when
+    the row is constrained by ``h-[560px]`` — without it a long
+    Cluster-Attributes body would push the rail past the row.
+    """
     return html.Div(
-        # ``lg:col-span-2`` of the 5-col grid; ``flex-col gap-3`` stacks
-        # the cards; each card has ``flex-1`` so they share the height
-        # equally (Row 2 wrapper sits at fixed ``h-[560px]``).
-        className="lg:col-span-2 flex flex-col gap-3",
+        className="lg:col-span-2 flex flex-col gap-3 min-h-0",
         children=[
             _cluster_attributes_card(),
             _cluster_metrics_card(),
@@ -672,16 +710,20 @@ def _trades_grid_column_defs() -> List[Dict[str, Any]]:
 def _row2_right_pane() -> html.Div:
     """Cluster Portfolio chart over Trade-Level Metrics grid.
 
-    Both children carry ``flex-1`` so they split the row's 560-px
-    height evenly (~270 px each).  The grid uses ``rowSelection: 'single'``
-    so a row click fires the per-trade-detail row 3 expand.
+    Both children size to their natural content heights — we no
+    longer impose a fixed row height on the grandparent, so each
+    card renders the height its intrinsic chrome + graph / grid
+    needs.  ``items-stretch`` on the row grid parent then equalises
+    right pane ↔ left rail at whichever column is tallest.
+
+    The grid uses ``rowSelection: 'single'`` so a row click fires
+    the per-trade-detail row 3 expand.
     """
     portfolio = ChartContainer(
         title="Cluster Portfolio",
         subtitle="Predicted vs target PnL across scenarios for the active split",
         graph_id=CLUSTER_DEEP_DIVE_IDS["portfolio_chart"],
-        height=240,            # leaves padding for the title strip
-        className="flex-1",
+        height=240,            # graph height; card chrome adds ≈ 70 px
     )
 
     grid_header = html.Div(
@@ -708,10 +750,12 @@ def _row2_right_pane() -> html.Div:
         grid_id=CLUSTER_DEEP_DIVE_IDS["trades_grid"],
         column_defs=_trades_grid_column_defs(),
         row_data=[],
-        # ``height=None`` lets ag-grid stretch inside the card body
-        # whose own height is dictated by the parent ``flex-1``.
+        # Ag-grid needs an explicit height when its parent doesn't
+        # impose one — without it the grid renders at 0 px because
+        # the flex chain has no definite height to divide.  240 px
+        # shows ~6 rows + header + pagination on a default viewport.
         height=240,
-        className="rade-cluster-trades-grid flex-1",
+        className="rade-cluster-trades-grid",
         grid_options={"rowSelection": "single"},
         getRowId="params.data.trade_id",
     )
@@ -723,7 +767,7 @@ def _row2_right_pane() -> html.Div:
             html.Div(
                 # Inner wrapper card so the grid sits in the same
                 # ``rade-card`` chrome as the chart above it.
-                className="rade-card flex flex-col gap-2 flex-1 min-h-0",
+                className="rade-card flex flex-col gap-2",
                 children=[grid_header, grid],
             ),
         ],
@@ -731,12 +775,25 @@ def _row2_right_pane() -> html.Div:
 
 
 def _row2_main_area() -> html.Div:
-    """Row 2 wrapper — left-rail / right-pane grid at fixed 560 px."""
+    """Row 1 main-area wrapper — left-rail / right-pane grid.
+
+    Intrinsic-height strategy — we let the left rail (Attributes +
+    Metrics-with-sparklines + Graph Stats) dictate the row height
+    (~600 px total) and rely on ``items-stretch`` to stretch the
+    right pane to match.
+
+    An earlier revision locked this row at ``h-[560px]`` with
+    ``overflow-hidden``, which did exactly what it said — clipped
+    the Cluster Metrics card's overflow — but the clip happened
+    mid-KpiCard and the missing 40-80 px of content visually leaked
+    into Row 2 through box-shadows and sparkline tails.  Letting
+    content drive is self-healing: the cards fit, the columns
+    line up, and sub-1024-px viewports (where ``lg:grid-cols-5``
+    falls back to ``grid-cols-1``) stack the rail above the pane
+    without any mystery overlap.
+    """
     return html.Div(
-        # ``items-stretch`` makes both columns grow to the row height
-        # (which we lock to ``h-[560px]``).  Without it the left rail
-        # would naturally collapse to its content height.
-        className="grid grid-cols-1 lg:grid-cols-5 gap-3 items-stretch h-[560px]",
+        className="grid grid-cols-1 lg:grid-cols-5 gap-3 items-stretch",
         children=[
             _row2_left_rail(),
             _row2_right_pane(),
@@ -851,7 +908,11 @@ def _row_residual_and_curves(
     )
 
     return html.Div(
-        className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch h-[340px]",
+        # Intrinsic height — the residual ChartContainer needs ~380 px
+        # (card chrome 70 + graph 300) and the curves card is a shade
+        # taller because of the chip-group strip.  ``items-stretch``
+        # keeps both columns aligned at the tallest.
+        className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch",
         children=[residual, curves],
     )
 
@@ -926,9 +987,7 @@ def _row_per_trade_detail() -> html.Div:
         # callback flips this style + scrolls the row into view via a
         # clientside callback (see ``cluster_deep_dive_cb``).
         style={"display": "none"},
-        # Grid + height locked the same way as the other rows so the
-        # row's footprint is predictable when it does appear.
-        className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch h-[360px]",
+        className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch",
         children=[histogram, bias_scatter],
     )
 
@@ -1005,7 +1064,7 @@ def _row_elementary_pnl() -> html.Div:
         column_defs=_elementary_explorer_column_defs(),
         row_data=[],
         height=300,
-        className="rade-cluster-elementary-grid flex-1",
+        className="rade-cluster-elementary-grid",
         grid_options={
             "rowSelection": "multiple",
             # Without ``suppressRowClickSelection``, clicking a non-
@@ -1018,7 +1077,7 @@ def _row_elementary_pnl() -> html.Div:
     )
 
     explorer_card = html.Div(
-        className="rade-card flex flex-col gap-2 min-h-0",
+        className="rade-card flex flex-col gap-2",
         children=[explorer_header, explorer_grid],
     )
 
@@ -1026,7 +1085,7 @@ def _row_elementary_pnl() -> html.Div:
         id=CLUSTER_DEEP_DIVE_IDS["elementary_pnl_empty"],
         className=(
             "rade-list-empty flex flex-col items-center justify-center "
-            "gap-2 py-8 flex-1"
+            "gap-2 py-8 min-h-[400px]"
         ),
         children=[
             DashIconify(
@@ -1054,16 +1113,18 @@ def _row_elementary_pnl() -> html.Div:
         graph_id=CLUSTER_DEEP_DIVE_IDS["elementary_pnl_chart"],
         height=300,
         container_id=CLUSTER_DEEP_DIVE_IDS["elementary_pnl_chart_card"],
-        className="flex-1",
     )
 
     chart_panel = html.Div(
-        className="flex flex-col flex-1 min-h-0",
+        className="flex flex-col",
         children=[chart_empty_state, chart],
     )
 
     return html.Div(
-        className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch h-[400px]",
+        # Intrinsic-height two-up row.  The left explorer card and
+        # right chart-or-empty-state panel each want ~380 px; grid
+        # ``items-stretch`` keeps them visually aligned.
+        className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch",
         children=[explorer_card, chart_panel],
     )
 
@@ -1145,7 +1206,6 @@ def build_cluster_deep_dive(*, session: Optional[Session] = None) -> html.Div:
 
 __all__ = ["CLUSTER_DEEP_DIVE_IDS", "build_cluster_deep_dive"]
 ```
-
 
 ---
 
