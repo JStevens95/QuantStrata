@@ -1349,3 +1349,114 @@ def _is_nan(value: Any) -> bool:
 
 __all__ = ["register"]
 ```
+
+---
+
+## Appendix B — `assets/rade.css` patch (Trade-Graph utilities)
+
+**One-time** addition to the shipped `rade.css`.  The pre-E.3 build of
+`rade.css` was JIT-compiled before `layouts/evaluation/trade_graph.py`
+existed, so several Tailwind utilities the new layout references were
+never emitted.  Without them the page renders as default block flow
+(side panel below the graph, cards growing to content) — visually
+indistinguishable from the old Phase E.0 stub.
+
+### How to apply
+
+1. Open `src/ui/apps/rade_analytics/assets/rade.css`.
+2. **Append** the block below to the very end of the file
+   (immediately after the last existing rule — typically the
+   `.rade-evaluation-subtab--stub { … }` block).
+3. Hard-refresh the browser (`Ctrl+Shift+R`) to bust the cached old
+   stylesheet.
+
+No existing rules are removed or modified — this is pure additive.
+
+### Why each rule is needed
+
+| Class(es) | Used by | Symptom if missing |
+|---|---|---|
+| `.h-[200px]`, `.h-[180px]`, `.h-[140px]` | Selected-Trade / Cluster-Stats / Legend cards | Side panel grows tall to content; "items-stretch" can't lock the cytoscape pane to a sensible height |
+| `.min-h-[400px]` | Cytoscape wrapper | Pane collapses to zero on short viewports → graph hidden |
+| `.min-h-[22px]` | Empty chip strip | Strip jumps when chips populate after a node tap |
+| `.min-w-[180px]`, `.min-w-[220px]` | Header layout-radio + cluster-select | Pickers ellipsis-clip cluster ids |
+| `.text-[10px]`, `.text-[11px]` | Legend captions, KPI labels, threshold pill | Labels render at parent font-size (way too large) |
+| `.flex-shrink-0` | Legend swatches (figures/trade_graph_stylesheet.py) | Swatches squeeze and disappear |
+| `.bg-slate-900/70` | Mini-map glass background | Mini-map shows transparent (only `/60` and `/80` alpha existed) |
+| `.backdrop-blur` | Mini-map glass | No blur effect (only the `-sm` 4 px variant existed) |
+| `.lg:grid-cols-3`, `.lg:col-span-2` | Row 2 main grid + cytoscape pane | **The keystone fix** — without these the row collapses to a single column on lg+ viewports, putting the side panel below the graph |
+
+The long-term fix is to re-run the Tailwind CLI so `rade.css`
+regenerates from scratch and tracks every class the source files
+reference automatically:
+
+```bash
+npx tailwindcss \
+  -c src/ui/apps/rade_analytics/assets/tailwind.config.js \
+  -i src/ui/apps/rade_analytics/assets/tailwind.input.css \
+  -o src/ui/apps/rade_analytics/assets/rade.css \
+  --minify
+```
+
+Until then, this manual block stays in `rade.css`.
+
+### The patch
+
+```css
+/* ─────────────────────────────────────────────────────────────────── */
+/* PHASE E.3 — TRADE-GRAPH UTILITIES                                    */
+/* Tailwind classes consumed by                                         */
+/* ``layouts/evaluation/trade_graph.py`` and                            */
+/* ``figures/trade_graph_stylesheet.py`` that were not present in the   */
+/* pre-E.3 compile of rade.css.  Rebuilding via the Tailwind CLI would  */
+/* regenerate these automatically; until then we ship them by hand.    */
+/* ─────────────────────────────────────────────────────────────────── */
+
+/* ── Arbitrary fixed heights ───────────────────────────────────── */
+/* Side-panel cards anchor to these heights so the cytoscape pane
+   can match their combined intrinsic height via ``items-stretch``
+   on the row grid.  See trade_graph.py:_selected_trade_card,
+   _legend_card, _cluster_stats_card. */
+.h-\[200px\] { height: 200px; }
+.h-\[180px\] { height: 180px; }
+.h-\[140px\] { height: 140px; }
+
+/* ── Arbitrary minimum dimensions ──────────────────────────────── */
+/* Cytoscape pane never collapses below 400 px even on short
+   viewports; selector header pickers reserve a sensible minimum
+   width so the cluster id labels don't ellipsis-clip. */
+.min-h-\[400px\] { min-height: 400px; }
+.min-h-\[22px\]  { min-height: 22px; }
+.min-w-\[180px\] { min-width: 180px; }
+.min-w-\[220px\] { min-width: 220px; }
+
+/* ── Arbitrary text sizes ──────────────────────────────────────── */
+/* 10–11 px micro-labels for the legend, chip strip, threshold
+   pill and 2×2 KPI grid. */
+.text-\[10px\] { font-size: 10px; line-height: 1; }
+.text-\[11px\] { font-size: 11px; line-height: 1.4; }
+
+/* ── Aliases / supplementary single-purpose utilities ──────────── */
+/* ``flex-shrink-0`` is the Tailwind v2 alias for ``shrink-0``;
+   the legend swatch builder still emits the long form. */
+.flex-shrink-0 { flex-shrink: 0; }
+
+/* Mini-map background uses 70 % alpha; existing rade.css covers
+   60 % and 80 % only. */
+.bg-slate-900\/70 { background-color: rgb(15 23 42 / 0.7); }
+
+/* Default ``backdrop-blur`` (8 px) used by the mini-map glass card;
+   existing CSS only ships ``backdrop-blur-sm`` (4 px). */
+.backdrop-blur { backdrop-filter: blur(8px); }
+
+/* ── Responsive grid (lg: ≥ 1024 px) ───────────────────────────── */
+/* Row 2 of the Trade-Graph layout collapses to one column on
+   narrow screens and switches to a 2-fr-cytoscape + 1-fr-side-
+   panel split at the lg breakpoint.  Without these, the cytoscape
+   pane silently drops back to col-span-1 and the page reads like
+   a vertical stack. */
+@media (min-width: 1024px) {
+  .lg\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .lg\:col-span-2  { grid-column: span 2 / span 2; }
+}
+```
