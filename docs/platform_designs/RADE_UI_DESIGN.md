@@ -252,982 +252,1629 @@ No mock, no merge.
 
 ---
 
-## Appendix A — Cluster Deep-Dive Phase E.5 callback wiring
+## Appendix A — Governance page (Phase E.x)
 
-Single appendix (replaces all prior appendix blocks). Three files;
-each replaces an existing file in your work tree wholesale — paste the
-contents into the path called out in the section header and you're
-done.
+Single appendix (replaces all prior appendix blocks). Wires the
+`/governance` route end-to-end against `rade_governance.png`:
+
+* New PRISM API endpoint `GET /prism/v1/governance/registry` —
+  cross-version walk of the ensemble registry, returning one row per
+  registered version.
+* `RadeApiClient` + `RadeBackend` plumbing — typed wrapper, cache
+  binding (60 s TTL so registry mutations show up within a minute) and
+  a flattened `governance_registry_df()` accessor that stashes
+  `active_version` on `df.attrs`.
+* Dash layout (`layouts/governance.py`) — header band (4 KPIs +
+  status filter + Promote button), Model Registry AG Grid, Lineage
+  Timeline + Approvals row, static Audit Log grid.
+* Dash callbacks (`callbacks/governance_cb.py`) — two render
+  callbacks both gated on `mount_signal` + a pathname guard
+  (Page Contract §4 Rule C7); status filter is **ephemeral V1** (not
+  persisted in `Session`).
+* CSS additions (status pills, lineage rows, page title, mono cell).
+* Router (`router.py`) + callback dispatcher (`callbacks/__init__.py`)
+  swaps in the live `build_governance` and registers `governance_cb`.
 
 ### How to apply
 
-1. **A.1 — `figures/cluster_deep_dive_charts.py`** — replace the file in
-   place. Adds three Phase E.5 builders (`per_trade_residual_histogram`,
-   `per_trade_bias_scatter`, `elementary_pnl_multiline`) alongside the
-   Phase E.4 ones, which stay for backwards compatibility.
-2. **A.2 — `figures/__init__.py`** — replace the file in place. Re-exports
-   the three new builders so callbacks can `from ..figures import …` them.
-3. **A.3 — `callbacks/cluster_deep_dive_cb.py`** — replace the file in
-   place. Full rewrite for the Phase E.5 layout: 5 capture callbacks +
-   8 render callbacks, no duplicate outputs.
+There are eleven targets in this appendix.  Five are **new files** —
+copy the contents into the path called out in the section header.  Six
+are **patches to existing files** — apply the targeted find/replace
+shown in each section.
 
-No layout / CSS / `KpiCard` / session changes are required for this
-patch — those landed in the previous appendix and the layout file
-already calls `KpiCard(..., sparkline_id=…)`. After pasting all three
-files restart the dashboard. Smoke check: registering the cluster-
-deep-dive callbacks should yield 13 entries in `app.callback_map`,
-44 across the whole app.
+| § | Path | Action |
+|---|---|---|
+| A.1  | `src/rade_ml_pt/ensemble/api/models/governance.py`         | NEW |
+| A.2  | `src/rade_ml_pt/ensemble/api/services/governance.py`       | NEW |
+| A.3  | `src/rade_ml_pt/ensemble/api/routers/governance.py`        | NEW |
+| A.4  | `src/rade_ml_pt/ensemble/api/app.py`                       | PATCH |
+| A.5  | `src/rade_ml_pt/ensemble/api/client.py`                    | PATCH |
+| A.6  | `src/ui/apps/rade_analytics/data/backend.py`               | PATCH |
+| A.7  | `src/ui/apps/rade_analytics/layouts/governance.py`         | NEW |
+| A.8  | `src/ui/apps/rade_analytics/callbacks/governance_cb.py`    | NEW |
+| A.9  | `src/ui/apps/rade_analytics/router.py`                     | PATCH |
+| A.10 | `src/ui/apps/rade_analytics/callbacks/__init__.py`         | PATCH |
+| A.11 | `src/ui/apps/rade_analytics/assets/rade.css`               | APPEND |
 
-### A.1 — `src/ui/apps/rade_analytics/figures/cluster_deep_dive_charts.py` (full file)
+No layout / CSS changes to other pages, no new third-party dependency,
+no `Session` schema bump.  See §A.12 for the verification checklist.
 
-Adds the three new Phase E.5 figure builders **at the bottom** of the
-existing Phase E.4 file, plus an updated module docstring + `__all__`.
-Easiest is to paste the whole file:
+---
+
+### A.1 — `src/rade_ml_pt/ensemble/api/models/governance.py` (NEW)
 
 ```python
-"""Cluster Deep-Dive specific figure builders (Phase E.4 + E.5).
+"""Pydantic schemas for the ``/prism/v1/governance/*`` endpoints.
 
-Six builders land here, all tuned to single-cluster diagnostic views:
+Governance is a *cross-version* concern — every other PRISM endpoint
+serves the active ensemble's evaluation bundle, but the governance
+page needs to enumerate every version registered under the
+``EnsembleRegistry`` so reviewers can see the full release history.
 
-* :func:`predicted_vs_actual_band` — *Phase E.4 legacy.*  Predicted +
-  actual PnL lines for one cluster with the residual zone shaded (rose)
-  so the user can *see* where the model is over- or under-predicting.
-  Distinct from :func:`figures.portfolio_pnl`, which has no error
-  shading and is used on the Portfolio tab.
-* :func:`per_trade_residual_violin` — *Phase E.4 legacy.*  Distribution
-  of per-trade metrics (mean_residual or mae), split by ``trade_type``
-  (target / elementary).  Uses :class:`plotly.graph_objects.Violin` so
-  the visual language matches the Portfolio residual violin.
-* :func:`per_trade_scatter` — *Phase E.4 legacy.*  Per-trade aggregate
-  scatter: ``mean_residual`` (x) vs ``mae`` (y), coloured by
-  ``trade_type``.  A ``selected_trade_id`` gets a larger, emerald-
-  bordered marker so cross-highlighting from the trades AgGrid is
-  visible at a glance.
-* :func:`per_trade_residual_histogram` — *Phase E.5 Row 3 left.*
-  Histogram of (predicted − target) for **one** target trade across
-  every scenario in the active split.  Replaces the per-cluster violin
-  with a per-trade detail view that diagnoses systematic drift +
-  heavy-tailed residuals at a glance.
-* :func:`per_trade_bias_scatter` — *Phase E.5 Row 3 right.*  Per-scenario
-  scatter for **one** target trade: x = predicted PnL, y = residual
-  (predicted − target), colour-coded by ``|residual|`` so the user can
-  spot under-/over-predicted clusters of scenarios immediately.
-* :func:`elementary_pnl_multiline` — *Phase E.5 Row 4.*  One line per
-  selected elementary trade, x = scenario index, y = raw PnL value.
-  Drives the Elementary PnL Explorer's right pane.
+The shape of one row is deliberately wide because the UI Registry
+table renders nine columns (status, version, created_by, created_at,
+promoted_at, commit_sha, mae_test, n_clusters, n_trades) and we'd
+rather pay the JSON inflation than do nine separate lookups in the
+front-end.
 
-All builders share the same data contract: callers pass a pandas frame
-with the columns listed in each function's docstring, and a
-``trade_type_map`` (``{trade_id: "target" | "elementary"}``) derived
-from the trade-graph payload where relevant.  Missing columns / empty
-frames gracefully return an :func:`empty_figure` — the UI never shows
-a broken axis.
+Audit-log + sign-offs are intentionally *not* on the wire yet — the
+V1 of the page seeds those panels from static placeholders so we can
+ship the registry view immediately.  Re-introducing them is a Stage-2
+add: extend this file with two more response types and add matching
+endpoints; the UI is already set up to swallow the new fields.
 """
 from __future__ import annotations
 
-from typing import Mapping, Optional, Sequence
+from typing import List, Optional
 
-import numpy as np
+from pydantic import BaseModel, Field
+
+
+class GovernanceRegistryRow(BaseModel):
+    """One row of the model registry — one ensemble version."""
+
+    version: str = Field(
+        ..., description="Concrete version directory name (e.g. ``ens_20260417_142233_abc123``).",
+    )
+    tags: List[str] = Field(
+        default_factory=list,
+        description=(
+            "All tags pointing at this version in ``index.json`` (e.g. "
+            "``['production']``, ``['latest']``, or both)."
+        ),
+    )
+    status: str = Field(
+        ...,
+        description=(
+            "Lifecycle bucket derived from the tag set: "
+            "``'production'`` (carries the ``production`` tag), "
+            "``'staging'`` (``staging`` tag), "
+            "``'candidate'`` (the active / ``latest`` version when no "
+            "production / staging tag has been set yet), or "
+            "``'archived'`` (no tags pointing at it)."
+        ),
+    )
+    created_at: str = Field(
+        ...,
+        description=(
+            "ISO-formatted UTC timestamp.  Parsed from the version directory "
+            "name when possible (versions follow the ``ens_YYYYMMDD_HHMMSS_*`` "
+            "convention) and falls back to the directory's ``mtime``."
+        ),
+    )
+    promoted_at: Optional[str] = Field(
+        None,
+        description=(
+            "When the version was last tagged ``production`` — taken from the "
+            "mtime of ``index.json`` for now (V1 placeholder).  Re-promotion "
+            "events will get a proper audit trail in Stage 2."
+        ),
+    )
+    created_by: str = Field(
+        ...,
+        description=(
+            "Author / pipeline identity.  Currently a static seed (``pipeline-bot``) "
+            "until the registry stamps a real author into version metadata."
+        ),
+    )
+    commit_sha: str = Field(
+        ...,
+        description=(
+            "Short git SHA proxy — the trailing hash component of the version "
+            "directory name (the registry already embeds an md5-derived 6-char "
+            "tag).  Replaced with the real source-control SHA in Stage 2."
+        ),
+    )
+    n_members: int = Field(
+        ...,
+        description="Number of cluster members in this version's ``ensemble_config.json``.",
+    )
+    n_trades: int = Field(
+        ...,
+        description=(
+            "Total trade count across all clusters' ``cluster_mapping`` entries — "
+            "the population the ensemble was trained on."
+        ),
+    )
+    aggregation: str = Field(
+        ...,
+        description="Aggregation strategy from ``ensemble_config.json`` (e.g. ``concat``, ``stacking``).",
+    )
+    has_evaluation: bool = Field(
+        ...,
+        description=(
+            "Whether ``{artifacts_dir}/ensemble/{version}/evaluation/`` exists — "
+            "tells the UI whether the row's *Open* button should land on the "
+            "Evaluation tab or display 'Eval pending'."
+        ),
+    )
+    mae_test: Optional[float] = Field(
+        None,
+        description=(
+            "Test-split MAE if the evaluation bundle was published.  ``None`` "
+            "for versions that were registered but never evaluated, or "
+            "evaluations that didn't include a ``test`` split."
+        ),
+    )
+    rmse_test: Optional[float] = Field(
+        None,
+        description="Test-split RMSE; same caveats as :attr:`mae_test`.",
+    )
+    coverage_test: Optional[float] = Field(
+        None,
+        description=(
+            "Fraction of test trades the ensemble produced predictions for "
+            "(0–1, expected to be ~1.0 for a healthy run).  ``None`` when "
+            "evaluation hasn't run."
+        ),
+    )
+
+
+class GovernanceRegistryResponse(BaseModel):
+    """Collection response for ``GET /prism/v1/governance/registry``."""
+
+    active_version: str = Field(
+        ...,
+        description=(
+            "The currently-served version — the row whose ``version`` matches "
+            "this gets a *Selected* outline in the UI table."
+        ),
+    )
+    rows: List[GovernanceRegistryRow] = Field(
+        ...,
+        description=(
+            "Every registered version, sorted newest-first by "
+            ":attr:`GovernanceRegistryRow.created_at`."
+        ),
+    )
+```
+
+---
+
+### A.2 — `src/rade_ml_pt/ensemble/api/services/governance.py` (NEW)
+
+```python
+"""Governance service — walks the cross-version ensemble registry.
+
+Sits *next to* :mod:`reader` rather than on it because the
+:class:`~src.rade_ml_pt.ensemble.api.services.reader.ArtifactReader` is
+scoped to a single ensemble version (the active one), whereas
+governance needs every version that's ever been registered.
+
+What we read
+------------
+* ``{registry_dir}/ensemble/index.json`` — the tag → version map.  We
+  invert it so each version carries the list of tags pointing at it.
+* ``{registry_dir}/ensemble/{version}/ensemble_config.json`` — for
+  ``n_members``, ``n_trades`` and ``aggregation``.
+* The version directory's ``mtime`` — fallback for ``created_at`` when
+  the version name doesn't follow the ``ens_YYYYMMDD_HHMMSS_*`` convention.
+* ``{artifacts_dir}/ensemble/{version}/evaluation/ensemble_metrics.parquet`` —
+  for ``mae_test`` / ``rmse_test`` / ``coverage_test``.  Optional —
+  versions registered but not yet evaluated leave these as ``None``.
+
+What we *don't* read
+--------------------
+* No git lookups, no author resolution — V1 seeds those columns with
+  static placeholders and we'll add a real source-of-truth in Stage 2
+  (probably stamped at registration time by the eval pipeline).
+* No audit-log persistence — the UI seeds that panel with mocked
+  events for the same Stage-2 reason.
+"""
+from __future__ import annotations
+
+import json
+import logging
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 import pandas as pd
-import plotly.graph_objects as go
+import pyarrow.parquet as pq
 
-from ._theme import color_for_index, empty_figure, rade_layout, rgba, sort_chronologically
+from src.rade_ml_pt.ensemble.api.models.governance import (
+    GovernanceRegistryResponse,
+    GovernanceRegistryRow,
+)
 
-# Fixed colours for the two trade types so violin + scatter + Cytoscape
-# legend always match.  Must stay in sync with the Cytoscape stylesheet
-# in ``layouts/evaluation/trade_graph.py``.
-_TRADE_TYPE_COLOR = {
-    "target":     "#f59e0b",   # amber
-    "elementary": "#8b5cf6",   # violet
-}
-_TRADE_TYPE_ORDER: tuple[str, ...] = ("target", "elementary")
+logger = logging.getLogger(__name__)
 
 
-# ─────────────────────────────────────────────────────────────────────
-# Row 2 right — predicted vs actual with shaded error band
-# ─────────────────────────────────────────────────────────────────────
+# ── Constants ─────────────────────────────────────────────────────────
+
+_INDEX_FILENAME = "index.json"
+_CONFIG_FILENAME = "ensemble_config.json"
+_EVAL_METRICS_FILENAME = "ensemble_metrics.parquet"
+
+# Until the registry stamps real authors, every row gets the same
+# placeholder — keeps the table column populated without lying about
+# provenance.  Replaced with a real lookup in Stage 2.
+_DEFAULT_AUTHOR = "pipeline-bot"
+
+# Versions follow ``ens_YYYYMMDD_HHMMSS_<6 char md5>``; we extract
+# the timestamp + the trailing hash separately.  Anything that
+# doesn't match falls back to filesystem mtime + a synthetic SHA.
+_VERSION_PATTERN = re.compile(
+    r"^ens_(?P<ts>\d{8}_\d{6})_(?P<sha>[a-fA-F0-9]+)$",
+)
 
 
-def predicted_vs_actual_band(
-    df: pd.DataFrame,
-    *,
-    uirevision_key: Optional[str] = None,
-) -> go.Figure:
-    """Two-line PnL chart with the residual zone shaded rose.
-
-    Parameters
-    ----------
-    df
-        Single-cluster timeseries frame.  Required columns:
-        ``predictions``, ``targets``.  Optional but preferred:
-        ``scenario_idx`` (drives sort order) and ``scenario_label``
-        (drives the x-axis tick labels).  Extra columns are ignored.
-    uirevision_key
-        Optional Plotly ``uirevision`` value.  Page Contract §6 — when
-        the same key recurs across re-renders the user's zoom / pan
-        / legend toggles are preserved; a different key resets UI
-        state to the new data domain.  Callers typically pass
-        ``f"{split}::{cluster_id}"`` so navigating across clusters /
-        splits resets, but in-place re-renders (e.g. session-store
-        churn from another widget) preserve the user's view.
-
-    Notes
-    -----
-    The shaded band is built as ``predictions`` fill-to-zero *minus*
-    ``targets`` fill-to-zero — i.e. two scatter traces with
-    ``fill='tonexty'`` form the envelope between the two lines.  Using
-    ``rgba(0.18)`` for the fill keeps the band visible against the
-    dark theme without drowning the line strokes.
-    """
-    if (
-        df is None
-        or df.empty
-        or "predictions" not in df.columns
-        or "targets" not in df.columns
-    ):
-        return empty_figure("No cluster timeseries for this selection.")
-
-    # Train split is shuffled at fit time; sort by parsed scenario_label so
-    # the predicted/actual bands read chronologically left-to-right.
-    df_sorted = sort_chronologically(df)
-    x_vals: Sequence
-    if "scenario_label" in df_sorted.columns:
-        x_vals = df_sorted["scenario_label"].tolist()
-    else:
-        x_vals = list(range(len(df_sorted)))
-
-    pred_color = color_for_index(0)       # violet
-    actual_color = "#cbd5e1"              # slate-300 — neutral reference
-    band_color = color_for_index(3)       # rose — "error zone"
-
-    fig = go.Figure()
-
-    # Baseline trace — predictions.  Rendered first so the "targets"
-    # trace below can fill-to-next and produce the between-lines band.
-    fig.add_trace(
-        go.Scatter(
-            x=x_vals,
-            y=df_sorted["predictions"],
-            mode="lines",
-            name="Predicted PnL",
-            line={"color": pred_color, "width": 2.5},
-            hovertemplate="%{y:.4f}<extra>Predicted</extra>",
-        )
-    )
-    # Error band — targets with fill='tonexty' fills the area between
-    # the two traces.
-    fig.add_trace(
-        go.Scatter(
-            x=x_vals,
-            y=df_sorted["targets"],
-            mode="lines",
-            name="Actual PnL",
-            line={"color": actual_color, "width": 1.5, "dash": "dash"},
-            fill="tonexty",
-            fillcolor=rgba(band_color, 0.18),
-            hovertemplate="%{y:.4f}<extra>Actual</extra>",
-        )
-    )
-
-    fig.update_layout(
-        **rade_layout(
-            show_legend=True,
-            hovermode="x unified",
-            xaxis={"showticklabels": True},
-            yaxis={"title": {"text": "PnL", "font": {"color": "#94a3b8"}}},
-        ),
-    )
-    if uirevision_key is not None:
-        fig.update_layout(uirevision=uirevision_key)
-    return fig
+# ── Public entry point ────────────────────────────────────────────────
 
 
-# ─────────────────────────────────────────────────────────────────────
-# Row 3 left — per-trade residual violin (target vs elementary)
-# ─────────────────────────────────────────────────────────────────────
-
-
-def per_trade_residual_violin(
-    trades_df:      pd.DataFrame,
-    *,
-    trade_type_map: Optional[Mapping[str, str]] = None,
-    value_column:   str = "mean_residual",
-    y_axis_title:   str = "Mean residual per trade",
-) -> go.Figure:
-    """Violin of a per-trade metric, split by ``trade_type``.
+def build_governance_registry(
+    registry_dir: Path,
+    artifacts_dir: Path,
+    active_version: str,
+) -> GovernanceRegistryResponse:
+    """Walk every registered ensemble version and return the registry payload.
 
     Parameters
     ----------
-    trades_df
-        ``trades_df``-shaped frame (one row per trade).  Must carry
-        ``trade_id`` and :paramref:`value_column`.
-    trade_type_map
-        ``{trade_id: "target" | "elementary"}``, typically derived from
-        ``trade_graph.nodes``.  Trades with no entry are dropped — the
-        graph payload is the authoritative source for trade type.  When
-        the map is empty / ``None`` the chart falls back to an
-        aggregate single-violin view.
-    value_column
-        Column whose distribution is plotted.  Default
-        ``"mean_residual"`` — callers can swap to ``"mae"`` /
-        ``"rmse"`` without changing anything else.
-    y_axis_title
-        Y-axis caption.
+    registry_dir
+        ``settings.registry_path`` — the *parent* of the ``ensemble/``
+        subtree.  Mirrors the directory the eval pipeline registers
+        versions into.
+    artifacts_dir
+        ``settings.artifacts_path`` — the *parent* of the per-version
+        ``evaluation/`` subtree.  Used to discover whether a version has
+        evaluation artefacts and to read its ``ensemble_metrics`` parquet.
+    active_version
+        The version the rest of the API is currently serving — bubbled
+        up to the response so the UI can decorate that row.
     """
-    if (
-        trades_df is None
-        or trades_df.empty
-        or value_column not in trades_df.columns
-        or "trade_id" not in trades_df.columns
-    ):
-        return empty_figure("No per-trade metrics for this cluster.")
+    registry_root = registry_dir / "ensemble"
 
-    values = trades_df[value_column].astype(float).to_numpy()
-    if values.size == 0:
-        return empty_figure("No per-trade metrics for this cluster.")
+    if not registry_root.exists():
+        logger.warning("Governance: registry root missing at %s", registry_root)
+        return GovernanceRegistryResponse(
+            active_version=active_version, rows=[],
+        )
 
-    if not trade_type_map:
-        return _aggregate_trade_violin(values, y_axis_title=y_axis_title)
-
-    trade_types = (
-        trades_df["trade_id"].map(trade_type_map).fillna("").to_numpy(dtype=object)
+    tag_index = _load_index(registry_root)
+    version_to_tags = _invert_tag_index(tag_index)
+    index_path = registry_root / _INDEX_FILENAME
+    index_mtime = (
+        _to_iso_utc(_safe_mtime(index_path)) if index_path.exists() else None
     )
-    # Drop any rows we couldn't classify — keeps the violin honest.
-    keep = trade_types != ""
-    if not keep.any():
-        return _aggregate_trade_violin(values, y_axis_title=y_axis_title)
-    values = values[keep]
-    trade_types = trade_types[keep]
 
-    fig = go.Figure()
-    for group in _TRADE_TYPE_ORDER:
-        mask = trade_types == group
-        if not mask.any():
+    rows: List[GovernanceRegistryRow] = []
+    for version_dir in sorted(p for p in registry_root.iterdir() if p.is_dir()):
+        config_path = version_dir / _CONFIG_FILENAME
+        if not config_path.exists():
+            # Half-written / aborted registration — skip rather than
+            # blow up the whole governance page for it.
             continue
-        color = _TRADE_TYPE_COLOR[group]
-        fig.add_trace(
-            go.Violin(
-                y=values[mask],
-                name=group.capitalize(),
-                x=[group.capitalize()] * int(mask.sum()),
-                line_color=color,
-                fillcolor=rgba(color, 0.2),
-                box_visible=True,
-                meanline_visible=True,
-                points="outliers",
-                hoveron="violins",
-                hovertemplate=(
-                    f"<b>{group.capitalize()}</b><br>"
-                    "median: %{median:.4f}<br>"
-                    "Q1: %{q1:.4f} / Q3: %{q3:.4f}<br>"
-                    "min: %{lowerfence:.4f} / max: %{upperfence:.4f}"
-                    "<extra></extra>"
-                ),
-                showlegend=False,
+
+        try:
+            row = _build_row(
+                version_dir=version_dir,
+                config_path=config_path,
+                tags=version_to_tags.get(version_dir.name, []),
+                artifacts_dir=artifacts_dir,
+                promoted_at=index_mtime,
             )
-        )
-
-    fig.update_layout(
-        **rade_layout(
-            show_legend=False,
-            xaxis={
-                "title": {"text": "Trade type", "font": {"color": "#94a3b8", "size": 11}},
-                "showgrid": False,
-            },
-            yaxis={"title": {"text": y_axis_title, "font": {"color": "#94a3b8"}}},
-        ),
-    )
-    fig.add_hline(
-        y=0,
-        line_dash="dash",
-        line_color="rgba(148, 163, 184, 0.4)",
-        line_width=1,
-    )
-    return fig
-
-
-# ─────────────────────────────────────────────────────────────────────
-# Row 3 right — per-trade scatter (mean_residual vs mae, by trade_type)
-# ─────────────────────────────────────────────────────────────────────
-
-
-def per_trade_scatter(
-    trades_df:          pd.DataFrame,
-    *,
-    trade_type_map:     Optional[Mapping[str, str]] = None,
-    selected_trade_id:  Optional[str] = None,
-    x_column:           str = "mean_residual",
-    y_column:           str = "mae",
-) -> go.Figure:
-    """Per-trade scatter, coloured by ``trade_type``.
-
-    Parameters
-    ----------
-    trades_df
-        ``trades_df``-shaped frame.  Must carry ``trade_id`` plus
-        :paramref:`x_column` and :paramref:`y_column`.
-    trade_type_map
-        ``{trade_id: "target" | "elementary"}``.  Trades not in the
-        map render as "unknown" in a muted slate colour — we keep them
-        rather than drop them so the user notices when the trade-graph
-        payload is incomplete.
-    selected_trade_id
-        Optional trade id to highlight with an emerald ring + larger
-        marker.  Pass ``None`` for no highlight.
-    x_column, y_column
-        Defaults put ``mean_residual`` on x (bias) and ``mae`` on y
-        (magnitude), which diagnoses both systematic drift and error
-        scale at a glance.
-
-    Notes
-    -----
-    Each point's ``customdata`` is ``[trade_id, trade_type]``.  Callbacks
-    read ``clickData["points"][0]["customdata"][0]`` to sync the grid /
-    session selection.  Hovertemplate uses ``%{customdata[0]}`` for the
-    trade id so every point surfaces an identifier on hover.
-    """
-    required = {"trade_id", x_column, y_column}
-    if trades_df is None or trades_df.empty or not required.issubset(trades_df.columns):
-        return empty_figure("No per-trade scatter data.")
-
-    df = trades_df.copy()
-    if trade_type_map:
-        df["trade_type"] = df["trade_id"].map(trade_type_map).fillna("unknown")
-    else:
-        df["trade_type"] = "unknown"
-
-    fig = go.Figure()
-    order = [*_TRADE_TYPE_ORDER, "unknown"]
-    seen_any = False
-    for group in order:
-        sub = df[df["trade_type"] == group]
-        if sub.empty:
+        except Exception as exc:  # pragma: no cover — defensive
+            logger.exception(
+                "Governance: failed to build registry row for %s — skipping",
+                version_dir.name,
+            )
+            del exc
             continue
-        seen_any = True
-        color = _TRADE_TYPE_COLOR.get(group, "#64748b")
-        fig.add_trace(
-            go.Scattergl(
-                x=sub[x_column],
-                y=sub[y_column],
-                mode="markers",
-                marker={
-                    "size":    7,
-                    "color":   color,
-                    "opacity": 0.78,
-                    "line":    {"width": 0},
-                },
-                name=group.capitalize(),
-                customdata=np.stack(
-                    [sub["trade_id"].astype(str).to_numpy(),
-                     sub["trade_type"].astype(str).to_numpy()],
-                    axis=-1,
-                ),
-                hovertemplate=(
-                    "<b>%{customdata[0]}</b><br>"
-                    f"{x_column}: %{{x:.4f}}<br>"
-                    f"{y_column}: %{{y:.4f}}<br>"
-                    "type: %{customdata[1]}"
-                    "<extra></extra>"
-                ),
-                showlegend=True,
-            )
-        )
 
-    if not seen_any:
-        return empty_figure("No per-trade scatter data.")
+        rows.append(row)
 
-    # Highlight the selected trade on top of everything else so it pops.
-    if selected_trade_id:
-        sel = df[df["trade_id"] == selected_trade_id]
-        if not sel.empty:
-            fig.add_trace(
-                go.Scattergl(
-                    x=sel[x_column],
-                    y=sel[y_column],
-                    mode="markers",
-                    marker={
-                        "size":    14,
-                        "color":   "rgba(16, 185, 129, 0)",
-                        "line":    {"color": "#10b981", "width": 2.5},
-                    },
-                    name=f"Selected · {selected_trade_id}",
-                    hoverinfo="skip",
-                    showlegend=False,
-                )
-            )
+    rows.sort(key=lambda r: r.created_at, reverse=True)
 
-    fig.update_layout(
-        **rade_layout(
-            show_legend=True,
-            hovermode="closest",
-            xaxis={"title": {"text": x_column, "font": {"color": "#94a3b8"}}},
-            yaxis={"title": {"text": y_column, "font": {"color": "#94a3b8"}}},
-        ),
+    return GovernanceRegistryResponse(
+        active_version=active_version, rows=rows,
     )
-    # x=0 reference line helps read bias at a glance.
-    fig.add_vline(
-        x=0,
-        line_dash="dash",
-        line_color="rgba(148, 163, 184, 0.4)",
-        line_width=1,
-    )
-    return fig
 
 
-# ─────────────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────────────
+# ── Row builder ───────────────────────────────────────────────────────
 
 
-def _aggregate_trade_violin(
-    values:       np.ndarray,
+def _build_row(
     *,
-    y_axis_title: str,
-) -> go.Figure:
-    """Single-violin fallback when trade_type classification is missing.
+    version_dir: Path,
+    config_path: Path,
+    tags: List[str],
+    artifacts_dir: Path,
+    promoted_at: Optional[str],
+) -> GovernanceRegistryRow:
+    """Build one :class:`GovernanceRegistryRow` from one version directory."""
+    version = version_dir.name
 
-    Kept visually consistent with the grouped variant so the chart
-    shape doesn't flicker when the trade-graph payload arrives and the
-    callback re-renders with a populated map.
+    config = json.loads(config_path.read_text())
+    cluster_mapping: Dict[str, List[str]] = config.get("cluster_mapping", {}) or {}
+    n_members = len(cluster_mapping)
+    n_trades = sum(len(v) for v in cluster_mapping.values())
+    aggregation = str(config.get("aggregation", "concat"))
+
+    created_at = _resolve_created_at(version, version_dir)
+    commit_sha = _resolve_commit_sha(version)
+    status = _classify_status(tags)
+
+    # Evaluation artefacts — best-effort.  If the parquet is missing or
+    # malformed we keep the row but leave the metrics as ``None``; the
+    # UI renders an em-dash.
+    eval_dir = artifacts_dir / "ensemble" / version / "evaluation"
+    has_evaluation = eval_dir.exists()
+
+    mae_test, rmse_test, coverage_test = _read_test_metrics(
+        eval_dir / _EVAL_METRICS_FILENAME,
+    )
+
+    return GovernanceRegistryRow(
+        version=version,
+        tags=tags,
+        status=status,
+        created_at=created_at,
+        promoted_at=promoted_at if status == "production" else None,
+        created_by=_DEFAULT_AUTHOR,
+        commit_sha=commit_sha,
+        n_members=n_members,
+        n_trades=n_trades,
+        aggregation=aggregation,
+        has_evaluation=has_evaluation,
+        mae_test=mae_test,
+        rmse_test=rmse_test,
+        coverage_test=coverage_test,
+    )
+
+
+# ── Registry index helpers ────────────────────────────────────────────
+
+
+def _load_index(registry_root: Path) -> Dict[str, str]:
+    """Return ``{tag: version}`` from ``index.json``, or empty dict."""
+    index_path = registry_root / _INDEX_FILENAME
+    if not index_path.exists():
+        return {}
+    try:
+        return json.loads(index_path.read_text()) or {}
+    except json.JSONDecodeError:
+        logger.exception("Governance: malformed index.json at %s", index_path)
+        return {}
+
+
+def _invert_tag_index(index: Dict[str, str]) -> Dict[str, List[str]]:
+    """Invert the ``{tag: version}`` map into ``{version: [tags...]}``.
+
+    Tags are sorted to give the response a stable order across calls.
     """
-    color = color_for_index(0)
-    fig = go.Figure()
-    fig.add_trace(
-        go.Violin(
-            y=values,
-            x=[""] * values.size,
-            name="All",
-            line_color=color,
-            fillcolor=rgba(color, 0.2),
-            box_visible=True,
-            meanline_visible=True,
-            points="outliers",
-            hoveron="violins",
-            showlegend=False,
-        )
-    )
-    fig.update_layout(
-        **rade_layout(
-            show_legend=False,
-            xaxis={"visible": False},
-            yaxis={"title": {"text": y_axis_title, "font": {"color": "#94a3b8"}}},
-        ),
-    )
-    fig.add_hline(
-        y=0,
-        line_dash="dash",
-        line_color="rgba(148, 163, 184, 0.4)",
-        line_width=1,
-    )
-    return fig
+    out: Dict[str, List[str]] = {}
+    for tag, version in index.items():
+        out.setdefault(version, []).append(tag)
+    for v in out:
+        out[v].sort()
+    return out
 
 
-# ─────────────────────────────────────────────────────────────────────
-# Phase E.5 Row 3 left — per-trade residual histogram (per scenario)
-# ─────────────────────────────────────────────────────────────────────
+# ── Status / lifecycle classification ─────────────────────────────────
 
 
-def per_trade_residual_histogram(
-    predictions:    np.ndarray,
-    targets:        np.ndarray,
-    *,
-    trade_id:       Optional[str] = None,
-    n_bins:         int = 40,
-    uirevision_key: Optional[str] = None,
-) -> go.Figure:
-    """Histogram of ``predictions − targets`` for one trade.
+def _classify_status(tags: List[str]) -> str:
+    """Bucket a tag list into one of four lifecycle states.
 
-    Parameters
-    ----------
-    predictions, targets
-        1-D numpy arrays of equal length, one entry per scenario for
-        the *single* trade currently in focus.  The column-slicing
-        from the cluster-level NPZ (``predictions[:, target_idx]``)
-        happens in the caller — by the time we get here the input is
-        already trade-shaped.
-    trade_id
-        Optional id to thread through to the trace name; surfaces
-        on hover when the user has multiple traces overlaid (we don't
-        today, but the contract is symmetric with the bias scatter).
-    n_bins
-        Histogram bin count.  40 is the design-spec default and reads
-        well at the 320-px row-3 chart height; callers can override
-        for very long tails.
-    uirevision_key
-        See :func:`predicted_vs_actual_band`'s docstring for the
-        contract — typically ``f"{split}::{cluster_id}::{trade_id}"``
-        so toggling between trades resets zoom but session-store churn
-        from another widget preserves it.
+    Resolution order:
+
+    1. ``production`` — the most authoritative tag wins.
+    2. ``staging`` — second-rank tag.
+    3. ``candidate`` — has any tag (typically ``latest``) but neither of
+       the two promoted tags above.
+    4. ``archived`` — no tags pointing at it (rolled past or
+       superseded).
     """
-    if (
-        predictions is None or targets is None
-        or predictions.size == 0 or targets.size == 0
-        or predictions.shape != targets.shape
-    ):
-        return empty_figure("No per-scenario data for this trade.")
-
-    residuals = (predictions - targets).astype(float)
-    finite_mask = np.isfinite(residuals)
-    if not finite_mask.any():
-        return empty_figure("Residuals are all non-finite for this trade.")
-    residuals = residuals[finite_mask]
-
-    primary = color_for_index(0)
-    fig = go.Figure()
-    fig.add_trace(
-        go.Histogram(
-            x=residuals,
-            nbinsx=int(n_bins),
-            marker={
-                "color":    rgba(primary, 0.55),
-                "line":     {"color": primary, "width": 1.0},
-            },
-            name=trade_id or "Residual",
-            hovertemplate=(
-                "residual: %{x:.4f}<br>"
-                "scenarios: %{y}"
-                "<extra></extra>"
-            ),
-            showlegend=False,
-        )
-    )
-    fig.add_vline(
-        x=float(np.mean(residuals)),
-        line_dash="dot",
-        line_color="rgba(16, 185, 129, 0.8)",   # emerald — mean marker
-        line_width=1.5,
-        annotation_text="mean",
-        annotation_position="top left",
-        annotation_font_color="#10b981",
-    )
-    fig.add_vline(
-        x=0,
-        line_dash="dash",
-        line_color="rgba(148, 163, 184, 0.5)",
-        line_width=1,
-    )
-    fig.update_layout(
-        **rade_layout(
-            show_legend=False,
-            hovermode="x",
-            xaxis={
-                "title": {
-                    "text": "Residual (predicted − target)",
-                    "font": {"color": "#94a3b8"},
-                },
-            },
-            yaxis={
-                "title": {"text": "Scenarios", "font": {"color": "#94a3b8"}},
-            },
-        ),
-        bargap=0.04,
-    )
-    if uirevision_key is not None:
-        fig.update_layout(uirevision=uirevision_key)
-    return fig
+    tag_set = {t.lower() for t in tags}
+    if "production" in tag_set:
+        return "production"
+    if "staging" in tag_set:
+        return "staging"
+    if tag_set:
+        return "candidate"
+    return "archived"
 
 
-# ─────────────────────────────────────────────────────────────────────
-# Phase E.5 Row 3 right — per-scenario bias-vs-magnitude scatter
-# ─────────────────────────────────────────────────────────────────────
+# ── created_at / commit_sha resolution ────────────────────────────────
 
 
-def per_trade_bias_scatter(
-    predictions:    np.ndarray,
-    targets:        np.ndarray,
-    *,
-    trade_id:       Optional[str] = None,
-    uirevision_key: Optional[str] = None,
-) -> go.Figure:
-    """Per-scenario scatter for one trade — predictions vs residuals.
+def _resolve_created_at(version: str, version_dir: Path) -> str:
+    """Parse the timestamp from the version name, falling back to mtime."""
+    match = _VERSION_PATTERN.match(version)
+    if match:
+        try:
+            dt = datetime.strptime(match.group("ts"), "%Y%m%d_%H%M%S")
+            return dt.replace(tzinfo=timezone.utc).isoformat()
+        except ValueError:
+            pass
+    return _to_iso_utc(_safe_mtime(version_dir))
 
-    Parameters
-    ----------
-    predictions, targets
-        Same trade-shaped 1-D arrays as
-        :func:`per_trade_residual_histogram`.  The caller handles
-        column-slicing the NPZ.
-    trade_id
-        Optional trade id for the hover footer.  No visual effect
-        when omitted.
-    uirevision_key
-        See :func:`per_trade_residual_histogram` — typically the same
-        key so both row-3 figures share zoom-reset semantics.
 
-    Notes
-    -----
-    The colour scale runs from cool (low ``|residual|``) to warm
-    (high ``|residual|``) so the user can find the pathological
-    scenarios at a glance.  Plotly's ``RdYlBu_r`` is the closest
-    perceptually-uniform diverging scale to the rest of the
-    dashboard's diagnostic charts.
+def _resolve_commit_sha(version: str) -> str:
+    """Return the trailing hash from a registry version, or a synthetic stub."""
+    match = _VERSION_PATTERN.match(version)
+    if match:
+        return match.group("sha")
+    # Stable but synthetic — use the directory name as the source so
+    # the UI gets *something* unique instead of a placeholder string.
+    return version[:8]
+
+
+def _safe_mtime(path: Path) -> float:
+    """Return ``path.stat().st_mtime`` with a 0-fallback so callers never raise."""
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _to_iso_utc(epoch_seconds: float) -> str:
+    """Format a POSIX timestamp as UTC ISO-8601 string."""
+    return datetime.fromtimestamp(epoch_seconds, tz=timezone.utc).isoformat()
+
+
+# ── Test metrics extraction ───────────────────────────────────────────
+
+
+def _read_test_metrics(
+    metrics_path: Path,
+) -> tuple[Optional[float], Optional[float], Optional[float]]:
+    """Pull ``mae`` / ``rmse`` / ``coverage`` for the ``test`` split, if present.
+
+    Returns ``(None, None, None)`` for any version whose evaluation
+    bundle hasn't been produced (or any malformed parquet) so the
+    governance row still renders.
     """
-    if (
-        predictions is None or targets is None
-        or predictions.size == 0 or targets.size == 0
-        or predictions.shape != targets.shape
-    ):
-        return empty_figure("No per-scenario data for this trade.")
+    if not metrics_path.exists():
+        return None, None, None
 
-    pred_arr = predictions.astype(float)
-    tgt_arr  = targets.astype(float)
-    residuals = pred_arr - tgt_arr
-    abs_res = np.abs(residuals)
-
-    finite_mask = (
-        np.isfinite(pred_arr) & np.isfinite(tgt_arr) & np.isfinite(residuals)
-    )
-    if not finite_mask.any():
-        return empty_figure("Residuals are all non-finite for this trade.")
-
-    pred_arr = pred_arr[finite_mask]
-    residuals = residuals[finite_mask]
-    abs_res = abs_res[finite_mask]
-    scenario_idx = np.arange(pred_arr.size, dtype=int)
-
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scattergl(
-            x=pred_arr,
-            y=residuals,
-            mode="markers",
-            marker={
-                "size":       6,
-                "color":      abs_res,
-                "colorscale": "RdYlBu_r",
-                "showscale":  True,
-                "colorbar":   {
-                    "title":       {"text": "|residual|", "side": "right"},
-                    "thickness":   8,
-                    "outlinewidth": 0,
-                    "tickfont":    {"color": "#94a3b8", "size": 10},
-                },
-                "opacity":    0.78,
-                "line":       {"width": 0},
-            },
-            customdata=np.stack([scenario_idx, abs_res], axis=-1),
-            name=trade_id or "Per-scenario",
-            hovertemplate=(
-                "scenario %{customdata[0]}<br>"
-                "predicted: %{x:.4f}<br>"
-                "residual:  %{y:.4f}<br>"
-                "|residual|: %{customdata[1]:.4f}"
-                "<extra></extra>"
-            ),
-            showlegend=False,
+    try:
+        df = pq.read_table(metrics_path).to_pandas()
+    except Exception:  # pragma: no cover — defensive
+        logger.exception(
+            "Governance: failed to read ensemble_metrics at %s", metrics_path,
         )
+        return None, None, None
+
+    if df.empty or "split" not in df.columns:
+        return None, None, None
+
+    test_rows = df[df["split"].astype(str).str.lower() == "test"]
+    if test_rows.empty:
+        return None, None, None
+
+    row = test_rows.iloc[0]
+    return (
+        _maybe_float(row.get("mae")),
+        _maybe_float(row.get("rmse")),
+        _maybe_float(row.get("coverage")),
     )
-    fig.add_hline(
-        y=0,
-        line_dash="dash",
-        line_color="rgba(148, 163, 184, 0.5)",
-        line_width=1,
-    )
-    fig.update_layout(
-        **rade_layout(
-            show_legend=False,
-            hovermode="closest",
-            xaxis={
-                "title": {
-                    "text": "Predicted PnL",
-                    "font": {"color": "#94a3b8"},
-                },
-            },
-            yaxis={
-                "title": {
-                    "text": "Residual (predicted − target)",
-                    "font": {"color": "#94a3b8"},
-                },
-            },
-        ),
-    )
-    if uirevision_key is not None:
-        fig.update_layout(uirevision=uirevision_key)
-    return fig
 
 
-# ─────────────────────────────────────────────────────────────────────
-# Phase E.5 Row 4 — elementary PnL multi-line timeseries
-# ─────────────────────────────────────────────────────────────────────
-
-
-def elementary_pnl_multiline(
-    df:             pd.DataFrame,
-    *,
-    uirevision_key: Optional[str] = None,
-) -> go.Figure:
-    """Multi-line PnL chart, one trace per selected elementary trade.
-
-    Parameters
-    ----------
-    df
-        Wide DataFrame from :meth:`RadeBackend.elementary_pnl_df` —
-        index = scenario index (int), one column per elementary
-        trade id.  An empty / all-NaN frame falls through to an
-        :func:`empty_figure` placeholder so the empty-state branch
-        is identical for "no selection" and "all selections returned
-        empty".
-    uirevision_key
-        See :func:`predicted_vs_actual_band` — typically
-        ``f"{cluster_id}::{','.join(sorted(trade_ids))}"`` so adding
-        / removing an elementary trade resets zoom while session-
-        store churn from elsewhere preserves it.
-    """
-    if df is None or df.empty:
-        return empty_figure(
-            "Pick one or more elementary trades to plot their PnL."
-        )
-
-    x_vals = df.index.tolist()
-    fig = go.Figure()
-    plotted = 0
-    for i, col in enumerate(df.columns):
-        series = df[col]
-        if series.dropna().empty:
-            continue
-        color = color_for_index(i)
-        fig.add_trace(
-            go.Scattergl(
-                x=x_vals,
-                y=series.tolist(),
-                mode="lines",
-                name=str(col),
-                line={"color": color, "width": 1.6},
-                hovertemplate=(
-                    f"<b>{col}</b><br>"
-                    "scenario %{x}<br>"
-                    "PnL: %{y:.4f}"
-                    "<extra></extra>"
-                ),
-                showlegend=True,
-            )
-        )
-        plotted += 1
-
-    if plotted == 0:
-        return empty_figure(
-            "Selected elementary trades have no PnL data on this split."
-        )
-
-    fig.update_layout(
-        **rade_layout(
-            show_legend=True,
-            hovermode="x unified",
-            xaxis={
-                "title": {
-                    "text": "Scenario index",
-                    "font": {"color": "#94a3b8"},
-                },
-            },
-            yaxis={
-                "title": {"text": "Elementary PnL", "font": {"color": "#94a3b8"}},
-            },
-        ),
-    )
-    if uirevision_key is not None:
-        fig.update_layout(uirevision=uirevision_key)
-    return fig
-
-
-__all__ = [
-    "elementary_pnl_multiline",
-    "per_trade_bias_scatter",
-    "per_trade_residual_histogram",
-    "per_trade_residual_violin",
-    "per_trade_scatter",
-    "predicted_vs_actual_band",
-]
+def _maybe_float(value: Any) -> Optional[float]:
+    """Coerce parquet cell to ``float`` or ``None`` (handles NaN)."""
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 ```
 
-### A.2 — `src/ui/apps/rade_analytics/figures/__init__.py` (full file)
+---
 
-Re-exports the three new builders plus updates `__all__`. Replace the
-whole file:
+### A.3 — `src/rade_ml_pt/ensemble/api/routers/governance.py` (NEW)
 
 ```python
-"""Figure builders for the Rade Analytics Dash UI.
+"""``/prism/v1/governance/*`` — cross-version registry endpoints.
 
-This is the single place every callback goes to for a Plotly
-``go.Figure``.  Keeping chart construction out of the callback modules
-means:
+The single endpoint shipped here returns one row per registered
+ensemble version (the *Model Registry* table that anchors the
+governance page).  Sign-offs / approvals / audit-log endpoints will
+join this router in Stage 2 once the producer side exists; the route
+prefix is already namespaced under ``/governance/`` so adding them is
+a single ``router.get(...)`` away.
 
-* Callbacks stay focused on fetch + state plumbing.
-* Figures can be unit-tested headlessly (``fig.to_dict()`` snapshots).
-* Visual tweaks land in one diff — no hunting through every callback
-  module for a font-size bump.
-
-Modules shipped
----------------
-* :mod:`._theme`                   — shared layout defaults, palette, helpers.
-* :mod:`.cluster_deep_dive_charts` — per-cluster PnL band + per-trade
-  violin / scatter (Phase E.4).
-* :mod:`.distributions`            — residual violin (aggregate + grouped).
-* :mod:`.graph_charts`             — graph density histogram + edges vs nodes.
-* :mod:`.scatter`                  — predicted-vs-actual scatter (+ focus).
-* :mod:`.timeseries`               — portfolio PnL + rolling error band.
-* :mod:`.trade_graph_stylesheet`   — Cytoscape stylesheet + legend body
-  builders for the Trade-Graph color-by toggle (Phase E.3 rebuild).
-* :mod:`.training_curves`          — per-cluster training loss + metric
-  overlays (Phase E.4 Row 2).
+Why settings (not the reader) provide the paths
+-----------------------------------------------
+Every other PRISM router reads the active ensemble's bundle through
+:func:`get_reader` — but governance is *cross-version* by definition.
+The :class:`~src.rade_ml_pt.ensemble.api.services.reader.ArtifactReader`
+holds a single :class:`~..services.paths.ArtifactPaths` keyed on the
+active version, so it can't enumerate the full registry.  We pull
+``registry_path`` / ``artifacts_path`` straight from settings instead
+and delegate the walk to
+:mod:`src.rade_ml_pt.ensemble.api.services.governance`.
 """
 from __future__ import annotations
 
-from ._theme import (
-    CATEGORY_PALETTE,
-    color_for_index,
-    empty_figure,
-    rade_layout,
-    rgba,
+from fastapi import APIRouter
+
+from src.rade_ml_pt.ensemble.api.config import get_settings
+from src.rade_ml_pt.ensemble.api.models.governance import (
+    GovernanceRegistryResponse,
 )
-from .cluster_deep_dive_charts import (
-    elementary_pnl_multiline,
-    per_trade_bias_scatter,
-    per_trade_residual_histogram,
-    per_trade_residual_violin,
-    per_trade_scatter,
-    predicted_vs_actual_band,
+from src.rade_ml_pt.ensemble.api.services.governance import (
+    build_governance_registry,
 )
-from .distributions import residual_violin
-from .graph_charts import density_distribution, edges_vs_nodes_scatter
-from .scatter import pred_actual_scatter
-from .timeseries import error_over_time, portfolio_pnl
-from .trade_graph_stylesheet import build_legend_body, build_stylesheet
-from .training_curves import training_curves_chart
+
+router = APIRouter(prefix="/prism/v1/governance", tags=["governance"])
+
+
+@router.get("/registry", response_model=GovernanceRegistryResponse)
+def get_governance_registry() -> GovernanceRegistryResponse:
+    """Return the full ensemble registry (one row per version)."""
+    settings = get_settings()
+    return build_governance_registry(
+        registry_dir=settings.registry_path,
+        artifacts_dir=settings.artifacts_path,
+        active_version=settings.resolved_version,
+    )
+```
+
+---
+
+### A.4 — `src/rade_ml_pt/ensemble/api/app.py` (PATCH)
+
+Two targeted edits — add the router import to the alphabetical
+imports block, then include the router alongside the other artifact
+routers.
+
+**Patch 1** — find this import block:
+
+```python
+from src.rade_ml_pt.ensemble.api.routers.graph_stats import (
+    router as graph_stats_router,
+)
+from src.rade_ml_pt.ensemble.api.routers.group_correlations import (
+    router as group_correlations_router,
+)
+```
+
+…and replace it with:
+
+```python
+from src.rade_ml_pt.ensemble.api.routers.governance import (
+    router as governance_router,
+)
+from src.rade_ml_pt.ensemble.api.routers.graph_stats import (
+    router as graph_stats_router,
+)
+from src.rade_ml_pt.ensemble.api.routers.group_correlations import (
+    router as group_correlations_router,
+)
+```
+
+**Patch 2** — find the tail of the router-include block in `create_app`:
+
+```python
+    app.include_router(quality_router)
+    app.include_router(predictions_router)
+
+    return app
+```
+
+…and replace it with:
+
+```python
+    app.include_router(quality_router)
+    app.include_router(predictions_router)
+    app.include_router(governance_router)
+
+    return app
+```
+
+---
+
+### A.5 — `src/rade_ml_pt/ensemble/api/client.py` (PATCH)
+
+Two targeted edits — add the response-model import, then add a single
+client method that talks to the new endpoint.
+
+**Patch 1** — find this import block:
+
+```python
+from src.rade_ml_pt.ensemble.api.models.graph_stats import GraphStatsResponse
+from src.rade_ml_pt.ensemble.api.models.group_correlations import (
+    GroupCorrelationsResponse,
+)
+```
+
+…and replace it with:
+
+```python
+from src.rade_ml_pt.ensemble.api.models.governance import (
+    GovernanceRegistryResponse,
+)
+from src.rade_ml_pt.ensemble.api.models.graph_stats import GraphStatsResponse
+from src.rade_ml_pt.ensemble.api.models.group_correlations import (
+    GroupCorrelationsResponse,
+)
+```
+
+**Patch 2** — find this section header just before the predictions
+section:
+
+```python
+    # ── Predictions (binary NPZ) ──────────────────────────────────
+```
+
+…and replace it with the governance method block plus the original
+section header:
+
+```python
+    # ── Governance (cross-version registry) ──────────────────────
+
+    def governance_registry(self) -> GovernanceRegistryResponse:
+        """Return one row per registered ensemble version.
+
+        Cross-version endpoint — unlike every other method on this
+        client, the response is independent of the active version
+        served by the server (it covers the whole registry).  See
+        :mod:`..models.governance` for the schema.
+        """
+        return GovernanceRegistryResponse(
+            **self._get_json("/prism/v1/governance/registry")
+        )
+
+    # ── Predictions (binary NPZ) ──────────────────────────────────
+```
+
+---
+
+### A.6 — `src/ui/apps/rade_analytics/data/backend.py` (PATCH)
+
+Four targeted edits — model import, cache wiring, raw fetcher, and
+two public accessors.
+
+**Patch 1** — find this import block:
+
+```python
+from src.rade_ml_pt.ensemble.api.client import RadeApiClient, RadeApiError
+from src.rade_ml_pt.ensemble.api.models.clusters import ClustersResponse
+from src.rade_ml_pt.ensemble.api.models.meta import HealthResponse, VersionsResponse
+from src.rade_ml_pt.ensemble.api.models.overview import OverviewResponse
+from src.rade_ml_pt.ensemble.api.models.trade_graph import TradeGraphResponse
+```
+
+…and replace it with:
+
+```python
+from src.rade_ml_pt.ensemble.api.client import RadeApiClient, RadeApiError
+from src.rade_ml_pt.ensemble.api.models.clusters import ClustersResponse
+from src.rade_ml_pt.ensemble.api.models.governance import (
+    GovernanceRegistryResponse,
+)
+from src.rade_ml_pt.ensemble.api.models.meta import HealthResponse, VersionsResponse
+from src.rade_ml_pt.ensemble.api.models.overview import OverviewResponse
+from src.rade_ml_pt.ensemble.api.models.trade_graph import TradeGraphResponse
+```
+
+**Patch 2** — find the tail of `_bind_cached_methods` (the
+`feature_summary` line is the last existing assignment before the
+governance block):
+
+```python
+        self._completeness_cached = cache.memoize(timeout=ttl)(
+            self._fetch_completeness
+        )
+        self._feature_summary_cached = cache.memoize(timeout=ttl)(
+            self._fetch_feature_summary
+        )
+```
+
+…and replace it with:
+
+```python
+        self._completeness_cached = cache.memoize(timeout=ttl)(
+            self._fetch_completeness
+        )
+        self._feature_summary_cached = cache.memoize(timeout=ttl)(
+            self._fetch_feature_summary
+        )
+        # Governance registry — cross-version walk of the registry tree;
+        # cheap on the server (one JSON read per version) but worth
+        # caching at UI scope so a quick tab-flip doesn't re-issue the
+        # request.  Shorter TTL (60 s) than the default because a fresh
+        # ``register()`` / ``tag()`` mutation should be visible to
+        # reviewers within a minute without a hard refresh.
+        self._governance_registry_cached = cache.memoize(timeout=60)(
+            self._fetch_governance_registry
+        )
+```
+
+**Patch 3** — find this raw-fetcher block:
+
+```python
+    def _fetch_feature_summary(
+        self,
+        split: str,
+        cluster_id: Optional[str],
+    ) -> pd.DataFrame:
+        resp = self._client.feature_summary(split, cluster_id=cluster_id)
+        return pd.DataFrame([r.model_dump() for r in resp.rows])
+```
+
+…and replace it with:
+
+```python
+    def _fetch_feature_summary(
+        self,
+        split: str,
+        cluster_id: Optional[str],
+    ) -> pd.DataFrame:
+        resp = self._client.feature_summary(split, cluster_id=cluster_id)
+        return pd.DataFrame([r.model_dump() for r in resp.rows])
+
+    def _fetch_governance_registry(self) -> GovernanceRegistryResponse:
+        # Returned as the Pydantic model (not a DataFrame) because the
+        # response carries two cardinalities — a scalar ``active_version``
+        # used to decorate the active row and the per-version ``rows``
+        # list used by the table.  Wrapping that in a ``DataFrame``
+        # would lose the active-version pointer; the public
+        # :meth:`governance_registry_df` flattens to a frame for
+        # callbacks that only need the rows.
+        return self._client.governance_registry()
+```
+
+**Patch 4** — find this public-method block (the `feature_summary_df`
+accessor is the last public Quality method):
+
+```python
+    def feature_summary_df(
+        self,
+        split: str,
+        *,
+        cluster_id: Optional[str] = None,
+    ) -> BackendResult[pd.DataFrame]:
+        return self._wrap(self._feature_summary_cached, split, cluster_id)
+```
+
+…and replace it with:
+
+```python
+    def feature_summary_df(
+        self,
+        split: str,
+        *,
+        cluster_id: Optional[str] = None,
+    ) -> BackendResult[pd.DataFrame]:
+        return self._wrap(self._feature_summary_cached, split, cluster_id)
+
+    # ── Governance ────────────────────────────────────────────────
+
+    def governance_registry(
+        self,
+    ) -> BackendResult[GovernanceRegistryResponse]:
+        """Full registry payload (active version pointer + per-version rows).
+
+        Returned as the raw Pydantic response so the caller can decide
+        whether to render the table from ``rows`` and decorate one row
+        as ``active_version``, or flatten the rows to a DataFrame via
+        :meth:`governance_registry_df` (most table callbacks pick the
+        latter).
+        """
+        return self._wrap(self._governance_registry_cached)
+
+    def governance_registry_df(self) -> BackendResult[pd.DataFrame]:
+        """One-row-per-version registry as a :class:`pandas.DataFrame`.
+
+        Stashes the ``active_version`` string on
+        ``df.attrs["active_version"]`` so callbacks that need to
+        highlight the active row don't have to make a second call.
+        """
+        res = self.governance_registry()
+        if not res.ok:
+            return BackendResult.failure(
+                error=res.error or "", status_code=res.status_code,
+            )
+
+        rows = [r.model_dump() for r in res.data.rows]  # type: ignore[union-attr]
+        df = pd.DataFrame(rows)
+        df.attrs["active_version"] = res.data.active_version  # type: ignore[union-attr]
+        return BackendResult.success(df)
+```
+
+---
+
+### A.7 — `src/ui/apps/rade_analytics/layouts/governance.py` (NEW)
+
+```python
+"""Governance page layout.
+
+Mirrors ``docs/platform_designs/rade_governance.png`` region-for-region:
+
+* **Row 0** — invisible mount tripwire (Page Contract §3 Rule L4).
+* **Row 1** — Header band: 4 KPI chips (total / production / pending /
+  last-activity) on the left, status filter ``SegmentedControl`` and a
+  *Promote Version* primary button on the right.
+* **Row 2** — *Model Registry* AG Grid: one row per registered
+  ensemble version, populated from
+  :meth:`backend.governance_registry_df`.  Status / version pair render
+  as a single cell with a coloured pill.
+* **Row 3** — Two-column row: *Lineage Timeline* (~2/3 width, derived
+  from the same registry payload + a couple of static seed events) and
+  *Approvals* card (~1/3 width, static V1) housing the pending-review
+  CTA, Sign-offs checklist and Policy Checks list.
+* **Row 4** — *Audit Log* AG Grid (V1: hard-coded rows; the producer
+  side ships in Stage 2).
+
+Mocked vs. real
+---------------
+The registry table, the four header KPIs and the lineage timeline read
+from the live backend.  The right-hand approvals card, the sign-off
+checklist, the policy-check list and the audit-log table are static
+seed data baked into this module — labelled in code where they appear
+so a future commit can replace them with a real source-of-truth
+without hunting.
+"""
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
+
+import dash_mantine_components as dmc
+from dash import dcc, html
+from dash_iconify import DashIconify
+
+from ..components.ag_grid_table import AgGridTable
+from ..components.kpi_card import KpiCard
+
+if TYPE_CHECKING:
+    from ..data.session import Session
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Stable id contract — every component a callback might target lives
+# here so callbacks never hardcode strings (Page Contract §3 Rule L3).
+# ─────────────────────────────────────────────────────────────────────
+
+
+GOVERNANCE_IDS: Dict[str, str] = {
+    "root":                      "governance-root",
+
+    # Mount tripwire — Page Contract §3 Rule L4.
+    "mount_signal":              "governance-mount-signal",
+
+    # Row 1 — Header band.
+    "status_filter":             "governance-status-filter",
+    "promote_btn":                "governance-promote-btn",
+    "kpi_total":                 "governance-kpi-total",
+    "kpi_total_value":           "governance-kpi-total-value",
+    "kpi_production":            "governance-kpi-production",
+    "kpi_production_value":      "governance-kpi-production-value",
+    "kpi_pending":               "governance-kpi-pending",
+    "kpi_pending_value":         "governance-kpi-pending-value",
+    "kpi_last_activity":         "governance-kpi-last-activity",
+    "kpi_last_activity_value":   "governance-kpi-last-activity-value",
+
+    # Row 2 — Model registry grid.
+    "registry_grid":             "governance-registry-grid",
+
+    # Row 3 — Lineage timeline.
+    "lineage_timeline":          "governance-lineage-timeline",
+
+    # Row 3 — Approvals card (static V1 — id present so the Stage-2
+    # render callback can swap content without a layout refactor).
+    "approvals_card":            "governance-approvals-card",
+    "approvals_approve_btn":     "governance-approvals-approve-btn",
+    "approvals_reject_btn":      "governance-approvals-reject-btn",
+
+    # Row 4 — Audit log grid.
+    "audit_log_grid":            "governance-audit-log-grid",
+}
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Static seed data — V1 placeholders, replaced in Stage 2 when the
+# producer side (audit.sqlite + sign-off workflow) ships.
+# ─────────────────────────────────────────────────────────────────────
+
+
+# Pending review card — single open approval.  Hard-coded version is
+# not* automatically tied to the active backend version because Stage 1
+# has no real workflow producer; rendering a real version here without
+# real workflow state would be misleading.
+_PENDING_APPROVAL = {
+    "version": "v2024.04.18",
+    "approvers": ["pipeline-bot", "Joe Stevens"],
+}
+
+_SIGN_OFF_CHECKLIST: List[Dict[str, str]] = [
+    {"label": "Risk",       "status": "approved"},
+    {"label": "Quant",      "status": "approved"},
+    {"label": "Production", "status": "approved"},
+]
+
+_POLICY_CHECKS: List[Dict[str, str]] = [
+    {"label": "Backtest pass",     "status": "passed"},
+    {"label": "Drift within band", "status": "passed"},
+    {"label": "Coverage ≥ 95%",    "status": "passed"},
+    {"label": "Peer review",       "status": "pending"},
+]
+
+_AUDIT_LOG_ROWS: List[Dict[str, Any]] = [
+    {
+        "timestamp": "2026-04-29 18:23:33",
+        "actor":     "Joe Stevens",
+        "action":    "Tag",
+        "target":    "production",
+        "result":    "approved",
+    },
+    {
+        "timestamp": "2026-04-29 17:08:14",
+        "actor":     "pipeline-bot",
+        "action":    "Eval published",
+        "target":    "ens_20260429_170201",
+        "result":    "approved",
+    },
+    {
+        "timestamp": "2026-04-29 16:42:01",
+        "actor":     "Joe Stevens",
+        "action":    "Drift check",
+        "target":    "Coverage ≥ 95%",
+        "result":    "rejected",
+    },
+    {
+        "timestamp": "2026-04-29 14:11:07",
+        "actor":     "pipeline-bot",
+        "action":    "Register",
+        "target":    "ens_20260429_141102",
+        "result":    "approved",
+    },
+]
+
+
+# Status filter values — keep in lock-step with the
+# :class:`GovernanceRegistryRow.status` enum on the backend so the
+# front-end SegmentedControl filters cleanly without an extra mapping.
+_STATUS_FILTER_OPTIONS = [
+    {"value": "all",        "label": "All"},
+    {"value": "production", "label": "Production"},
+    {"value": "staging",    "label": "Staging"},
+    {"value": "candidate",  "label": "Candidate"},
+    {"value": "archived",   "label": "Archived"},
+]
+_STATUS_FILTER_DEFAULT = "all"
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Row builders
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _kpi_strip() -> html.Div:
+    """Four KPI cards across the top of the page (left half of Row 1).
+
+    Values are em-dashes at build time and overwritten by the bootstrap
+    render callback once the registry payload arrives.
+    """
+    return html.Div(
+        className="grid grid-cols-4 gap-4",
+        children=[
+            KpiCard(
+                label="Total Versions",
+                value="—",
+                card_id=GOVERNANCE_IDS["kpi_total"],
+                value_id=GOVERNANCE_IDS["kpi_total_value"],
+                icon="tabler:database",
+            ),
+            KpiCard(
+                label="In Production",
+                value="—",
+                card_id=GOVERNANCE_IDS["kpi_production"],
+                value_id=GOVERNANCE_IDS["kpi_production_value"],
+                icon="tabler:circle-check",
+            ),
+            KpiCard(
+                label="Pending Sign-offs",
+                value="—",
+                card_id=GOVERNANCE_IDS["kpi_pending"],
+                value_id=GOVERNANCE_IDS["kpi_pending_value"],
+                icon="tabler:hourglass",
+            ),
+            KpiCard(
+                label="Last Activity",
+                value="—",
+                card_id=GOVERNANCE_IDS["kpi_last_activity"],
+                value_id=GOVERNANCE_IDS["kpi_last_activity_value"],
+                icon="tabler:clock",
+            ),
+        ],
+    )
+
+
+def _header_actions() -> html.Div:
+    """Status filter SegmentedControl + *Promote Version* button (right half).
+
+    The filter is bound to the registry grid via a render callback that
+    re-emits ``rowData``.  The promote button is wired to a no-op
+    notification today; Stage 2 lifts it into the workflow producer.
+    """
+    return html.Div(
+        className="flex items-center justify-end gap-3",
+        children=[
+            dmc.SegmentedControl(
+                id=GOVERNANCE_IDS["status_filter"],
+                data=_STATUS_FILTER_OPTIONS,
+                value=_STATUS_FILTER_DEFAULT,
+                size="sm",
+                color="violet",
+                radius="md",
+            ),
+            dmc.Button(
+                id=GOVERNANCE_IDS["promote_btn"],
+                children="Promote Version",
+                color="violet",
+                size="sm",
+                leftSection=DashIconify(icon="tabler:rocket", width=16),
+            ),
+        ],
+    )
+
+
+def _row_header() -> html.Div:
+    """Row 1 — KPI strip + filter + promote CTA in a single visual band."""
+    return html.Div(
+        className="flex flex-col gap-3",
+        children=[
+            html.Div(
+                className=(
+                    "flex items-center justify-between gap-4 flex-wrap"
+                ),
+                children=[
+                    html.Div("Governance", className="rade-page-title"),
+                    _header_actions(),
+                ],
+            ),
+            _kpi_strip(),
+        ],
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Row 2 — Model Registry grid
+# ─────────────────────────────────────────────────────────────────────
+
+
+# Status / Result colour rules — reused by the registry + audit
+# grids.  Cells get exactly one of these classes via
+# ``cellClassRules`` (AG Grid evaluates the predicates server-side
+# during cell render); the matching CSS lives in ``rade.css`` under
+# the ``.rade-pill--*`` selectors.
+_STATUS_CLASS_RULES: Dict[str, str] = {
+    "rade-pill rade-pill--production": "params.value === 'production'",
+    "rade-pill rade-pill--staging":    "params.value === 'staging'",
+    "rade-pill rade-pill--candidate":  "params.value === 'candidate'",
+    "rade-pill rade-pill--archived":   "params.value === 'archived'",
+}
+
+_AUDIT_RESULT_CLASS_RULES: Dict[str, str] = {
+    "rade-pill rade-pill--approved": "params.value === 'approved'",
+    "rade-pill rade-pill--rejected": "params.value === 'rejected'",
+    "rade-pill rade-pill--pending":  "params.value === 'pending'",
+}
+
+
+_REGISTRY_COLUMN_DEFS: List[Dict[str, Any]] = [
+    {
+        "field": "version",
+        "headerName": "Version",
+        "minWidth": 220,
+        "pinned": "left",
+        "cellClass": "rade-grid-mono",
+    },
+    {
+        "field": "status",
+        "headerName": "Status",
+        "minWidth": 130,
+        "cellClassRules": _STATUS_CLASS_RULES,
+        # Render-time capitalisation — keeps the wire format lowercase
+        # (so the SegmentedControl filter compares cleanly) while
+        # showing a human-friendly label in the cell.
+        "valueFormatter": {
+            "function": (
+                "params.value ? "
+                "params.value.charAt(0).toUpperCase() + params.value.slice(1)"
+                " : '—'"
+            ),
+        },
+    },
+    {
+        "field": "created_by",
+        "headerName": "Created By",
+        "minWidth": 140,
+    },
+    {
+        "field": "created_at",
+        "headerName": "Created",
+        "minWidth": 170,
+        "valueFormatter": {
+            "function": (
+                "params.value ? "
+                "new Date(params.value).toLocaleString('en-GB', "
+                "{day:'2-digit', month:'short', year:'numeric', "
+                " hour:'2-digit', minute:'2-digit'}) "
+                ": '—'"
+            ),
+        },
+    },
+    {
+        "field": "promoted_at",
+        "headerName": "Promoted",
+        "minWidth": 140,
+        "valueFormatter": {
+            "function": (
+                "params.value ? "
+                "new Date(params.value).toLocaleDateString('en-GB', "
+                "{day:'2-digit', month:'short', year:'numeric'}) "
+                ": '—'"
+            ),
+        },
+    },
+    {
+        "field": "commit_sha",
+        "headerName": "Commit SHA",
+        "minWidth": 110,
+        "cellClass": "rade-grid-mono",
+    },
+    {
+        "field": "mae_test",
+        "headerName": "MAE (test)",
+        "type": "numericColumn",
+        "minWidth": 110,
+        "valueFormatter": {
+            "function": (
+                "params.value == null ? '—' : "
+                "Number(params.value).toFixed(3)"
+            ),
+        },
+    },
+    {
+        "field": "n_members",
+        "headerName": "Clusters",
+        "type": "numericColumn",
+        "minWidth": 90,
+    },
+    {
+        "field": "n_trades",
+        "headerName": "Trades",
+        "type": "numericColumn",
+        "minWidth": 90,
+        "valueFormatter": {
+            "function": (
+                "params.value == null ? '—' : "
+                "Number(params.value).toLocaleString('en-GB')"
+            ),
+        },
+    },
+    {
+        "field": "has_evaluation",
+        "headerName": "Artifacts",
+        "minWidth": 100,
+        # Map the boolean to a glyph; AG Grid evaluates the function
+        # at render time so callers can keep the wire format minimal.
+        "valueFormatter": {
+            "function": "params.value ? 'Available' : 'Pending'"
+        },
+        "cellClassRules": {
+            "text-emerald-400": "params.value === true",
+            "text-slate-500":   "params.value === false",
+        },
+    },
+]
+
+
+def _row_registry() -> html.Div:
+    """Row 2 — full-width AG Grid for the Model Registry table."""
+    return html.Div(
+        className="rade-card flex flex-col gap-3",
+        children=[
+            html.Div(
+                "Model Registry",
+                className="text-sm font-semibold text-slate-200",
+            ),
+            AgGridTable(
+                grid_id=GOVERNANCE_IDS["registry_grid"],
+                row_data=[],
+                column_defs=_REGISTRY_COLUMN_DEFS,
+                grid_options={
+                    "pagination": True,
+                    "paginationPageSize": 25,
+                    "paginationPageSizeSelector": [10, 25, 50, 100],
+                    "rowHeight": 40,
+                    "headerHeight": 38,
+                    "animateRows": False,
+                    "suppressCellFocus": True,
+                    "domLayout": "normal",
+                },
+                height=340,
+                className="rade-governance-registry-grid",
+            ),
+        ],
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Row 3 — Lineage timeline + Approvals card
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _lineage_timeline_card() -> html.Div:
+    """Left ~2/3 of Row 3 — recent lifecycle events, populated by callback.
+
+    The body is an empty list at build time; the bootstrap render
+    callback fills the timeline from the same registry payload that
+    drives the table (most recent ``promoted_at`` / ``created_at``
+    events get a one-line entry).  No-data fallback is rendered
+    inline by the callback rather than baked here so the layout stays
+    pure.
+    """
+    return html.Div(
+        className="rade-card flex flex-col gap-3 col-span-2",
+        children=[
+            html.Div(
+                "Lineage Timeline",
+                className="text-sm font-semibold text-slate-200",
+            ),
+            html.Div(
+                id=GOVERNANCE_IDS["lineage_timeline"],
+                className="rade-feed",
+                children=[],
+            ),
+        ],
+    )
+
+
+def _approvals_card() -> html.Div:
+    """Right ~1/3 of Row 3 — pending approval + sign-offs + policy checks.
+
+    Static V1 content.  The Stage-2 producer (workflow service) will
+    drive this card via a callback that overwrites the
+    ``approvals_card`` children — no layout change required.
+    """
+    avatars_row = html.Div(
+        className="flex items-center gap-1",
+        children=[
+            DashIconify(
+                icon="tabler:user-circle",
+                width=22,
+                className="text-slate-300",
+            )
+            for _ in _PENDING_APPROVAL["approvers"]
+        ],
+    )
+
+    pending_block = html.Div(
+        className="rade-card-compact flex flex-col gap-2",
+        children=[
+            html.Div(
+                "Pending review:",
+                className="text-xs text-slate-500 uppercase tracking-wider",
+            ),
+            html.Div(
+                _PENDING_APPROVAL["version"],
+                className="text-base font-semibold text-slate-100",
+            ),
+            html.Div(
+                className="flex items-center justify-between gap-3 mt-1",
+                children=[
+                    avatars_row,
+                    html.Div(
+                        className="flex items-center gap-2",
+                        children=[
+                            dmc.Button(
+                                id=GOVERNANCE_IDS["approvals_approve_btn"],
+                                children="Approve",
+                                color="teal",
+                                size="xs",
+                                variant="filled",
+                            ),
+                            dmc.Button(
+                                id=GOVERNANCE_IDS["approvals_reject_btn"],
+                                children="Reject",
+                                color="red",
+                                size="xs",
+                                variant="light",
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    sign_offs_block = html.Div(
+        className="flex flex-col gap-2",
+        children=[
+            html.Div(
+                "Sign-offs",
+                className="text-sm font-semibold text-slate-200",
+            ),
+            *[
+                html.Div(
+                    className="flex items-center gap-2 text-xs text-slate-300",
+                    children=[
+                        DashIconify(
+                            icon=(
+                                "tabler:circle-check-filled"
+                                if row["status"] == "approved"
+                                else "tabler:circle-dashed"
+                            ),
+                            width=14,
+                            className=(
+                                "text-emerald-400"
+                                if row["status"] == "approved"
+                                else "text-slate-500"
+                            ),
+                        ),
+                        html.Span(row["label"]),
+                    ],
+                )
+                for row in _SIGN_OFF_CHECKLIST
+            ],
+        ],
+    )
+
+    policy_block = html.Div(
+        className="flex flex-col gap-2",
+        children=[
+            html.Div(
+                "Policy Checks",
+                className="text-sm font-semibold text-slate-200",
+            ),
+            *[
+                html.Div(
+                    className="flex items-center gap-2 text-xs",
+                    children=[
+                        DashIconify(
+                            icon=(
+                                "tabler:circle-check-filled"
+                                if row["status"] == "passed"
+                                else "tabler:alert-triangle-filled"
+                            ),
+                            width=14,
+                            className=(
+                                "text-emerald-400"
+                                if row["status"] == "passed"
+                                else "text-amber-400"
+                            ),
+                        ),
+                        html.Span(
+                            row["label"],
+                            className=(
+                                "text-slate-300"
+                                if row["status"] == "passed"
+                                else "text-amber-300"
+                            ),
+                        ),
+                        html.Span(
+                            "" if row["status"] == "passed" else " · pending",
+                            className="text-amber-400",
+                        ),
+                    ],
+                )
+                for row in _POLICY_CHECKS
+            ],
+        ],
+    )
+
+    return html.Div(
+        id=GOVERNANCE_IDS["approvals_card"],
+        className="rade-card flex flex-col gap-3 col-span-1",
+        children=[
+            html.Div(
+                "Approvals",
+                className="text-sm font-semibold text-slate-200",
+            ),
+            pending_block,
+            html.Div(
+                className="grid grid-cols-2 gap-4 mt-2",
+                children=[sign_offs_block, policy_block],
+            ),
+        ],
+    )
+
+
+def _row_lineage_and_approvals() -> html.Div:
+    return html.Div(
+        className="grid grid-cols-3 gap-4 items-stretch",
+        children=[
+            _lineage_timeline_card(),
+            _approvals_card(),
+        ],
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Row 4 — Audit log grid
+# ─────────────────────────────────────────────────────────────────────
+
+
+_AUDIT_LOG_COLUMN_DEFS: List[Dict[str, Any]] = [
+    {
+        "field": "timestamp",
+        "headerName": "Timestamp",
+        "minWidth": 180,
+        "cellClass": "rade-grid-mono",
+    },
+    {"field": "actor",  "headerName": "Actor",  "minWidth": 140},
+    {"field": "action", "headerName": "Action", "minWidth": 160},
+    {"field": "target", "headerName": "Target", "minWidth": 200},
+    {
+        "field": "result",
+        "headerName": "Result",
+        "minWidth": 120,
+        "cellClassRules": _AUDIT_RESULT_CLASS_RULES,
+        "valueFormatter": {
+            "function": (
+                "params.value ? "
+                "params.value.charAt(0).toUpperCase() + params.value.slice(1)"
+                " : '—'"
+            ),
+        },
+    },
+]
+
+
+def _row_audit_log() -> html.Div:
+    """Row 4 — full-width AG Grid for the audit log (V1: static rows)."""
+    return html.Div(
+        className="rade-card flex flex-col gap-3",
+        children=[
+            html.Div(
+                className=(
+                    "flex items-center justify-between gap-3 flex-wrap"
+                ),
+                children=[
+                    html.Div(
+                        "Audit Log (last 24h)",
+                        className="text-sm font-semibold text-slate-200",
+                    ),
+                    html.Div(
+                        "Governance data sourced from ensemble registry "
+                        "+ audit.sqlite",
+                        className="text-xs text-slate-500",
+                    ),
+                ],
+            ),
+            AgGridTable(
+                grid_id=GOVERNANCE_IDS["audit_log_grid"],
+                row_data=_AUDIT_LOG_ROWS,
+                column_defs=_AUDIT_LOG_COLUMN_DEFS,
+                grid_options={
+                    "pagination": False,
+                    "rowHeight": 36,
+                    "headerHeight": 38,
+                    "animateRows": False,
+                    "suppressCellFocus": True,
+                    "domLayout": "autoHeight",
+                },
+                height=200,
+                className="rade-governance-audit-grid",
+            ),
+        ],
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Public entry point
+# ─────────────────────────────────────────────────────────────────────
+
+
+def build_governance(*, session: Optional["Session"] = None) -> html.Div:
+    """Build the full Governance page tree.
+
+    The ``session`` kwarg is accepted for uniformity with every other
+    page builder (Page Contract §2.1) but unused today — the page
+    has no per-user persisted state.  Reserved so adding e.g. a
+    ``governance_status_filter`` field to ``Session`` later is a
+    one-line layout change.
+    """
+    del session  # unused today; reserved for forward-compat
+
+    return html.Div(
+        id=GOVERNANCE_IDS["root"],
+        className="rade-page",
+        children=[
+            # Mount tripwire — Page Contract §3 Rule L4.
+            dcc.Store(
+                id=GOVERNANCE_IDS["mount_signal"],
+                data=True,
+                storage_type="memory",
+            ),
+            _row_header(),
+            _row_registry(),
+            _row_lineage_and_approvals(),
+            _row_audit_log(),
+        ],
+    )
+
 
 __all__ = [
-    "CATEGORY_PALETTE",
-    "build_legend_body",
-    "build_stylesheet",
-    "color_for_index",
-    "density_distribution",
-    "edges_vs_nodes_scatter",
-    "elementary_pnl_multiline",
-    "empty_figure",
-    "error_over_time",
-    "per_trade_bias_scatter",
-    "per_trade_residual_histogram",
-    "per_trade_residual_violin",
-    "per_trade_scatter",
-    "portfolio_pnl",
-    "pred_actual_scatter",
-    "predicted_vs_actual_band",
-    "rade_layout",
-    "residual_violin",
-    "rgba",
-    "training_curves_chart",
+    "GOVERNANCE_IDS",
+    "build_governance",
 ]
 ```
 
-### A.3 — `src/ui/apps/rade_analytics/callbacks/cluster_deep_dive_cb.py` (full file)
+---
 
-Full rewrite of the callback module against the Phase E.5 layout
-ids. **Replace the whole file** in your work tree:
+### A.8 — `src/ui/apps/rade_analytics/callbacks/governance_cb.py` (NEW)
 
 ```python
-"""Evaluation → Cluster Deep-Dive sub-tab callbacks (Phase E.5 hybrid).
+"""Governance page callbacks — live wiring for the ``/governance`` route.
 
-Page Contract structure
------------------------
-The public surface is a single :func:`register` that delegates to two
-section helpers, matching Page Contract §2 (capture / render split):
+Wires three rendering surfaces from a single backend call
+(:meth:`RadeBackend.governance_registry`):
 
-* :func:`_register_capture` — user-input gestures and cross-page
-  navigation → :class:`Session` writes (no UI side-effects).
-* :func:`_register_render`  — derived state → DOM updates (no
-  :class:`Session` writes, except for the bootstrap capture-edge
-  described below).
+* **Header KPIs** — total versions / in-production / pending sign-offs
+  (mocked V1) / last activity timestamp.
+* **Lineage timeline** — most-recent ``promoted_at`` / ``created_at``
+  events from the registry payload, plus one static seed event so the
+  timeline reads non-empty even when only a single version exists.
+* **Model Registry grid** — full list, filtered client-side by the
+  status SegmentedControl above it.
 
-Capture (5 callbacks)
-~~~~~~~~~~~~~~~~~~~~~
-* ``_sync_selection``               — cluster picker, trades-grid row
-  click, clear-chip button → ``deep_dive_cluster_id`` /
-  ``deep_dive_selected_trade_id``.
-* ``_sync_curve_metrics``           — overlay-metric chip group
-  ``value`` → ``deep_dive_curve_metrics``.
-* ``_sync_elementary_selection``    — Elementary PnL Explorer
-  ``selectedRows`` and reset button → ``deep_dive_elementary_trade_ids``.
-* ``_navigate_to_trade_graph``      — "Trade-Graph" button on this
-  page → ``/evaluation/trade-graph`` with the active cluster pinned.
-* ``_navigate_from_trade_graph``    — "Open in Cluster Deep Dive" on
-  the Trade-Graph tab → ``/evaluation/cluster`` with the trade-
-  graph's cluster + selected trade copied into the deep-dive slots.
+Capture surface
+---------------
+The status SegmentedControl is intentionally **ephemeral** (V1) — its
+selection lives only in the live component value and never makes it
+into ``Session``.  That keeps this page's callback graph minimal: there
+is no capture-side write, and the registry-render callback reads the
+filter directly off the SegmentedControl.
 
-Render (8 callbacks)
-~~~~~~~~~~~~~~~~~~~~
-* ``_bootstrap``                    — mount-signal-triggered fetch of
-  the cluster ``Select.data``; coalesces the URL ``?cid=`` deep-link
-  + fresh-user defaults into the same round-trip.
-* ``_render_attributes``            — session → cluster-attributes
-  card body, graph-statistics card body, "Trade-Graph" button enabled
-  state, ``store_trade_types`` (the canonical trade-type map +
-  ordered ``target_ids`` / ``elementary_ids`` lists for downstream
-  callbacks).
-* ``_render_kpis``                  — session → 4 KPI values
-  (MAE / RMSE / P95 / P99) + 4 sparkline figures showing the per-trade
-  distribution shape across the cluster.
-* ``_render_timeseries``            — session → cluster portfolio
-  chart (predicted vs target line) + residual-over-time chart.
-* ``_render_training_curves``       — session → training-curves
-  figure + chip group children + chip empty-state + curve-metrics
-  store.
-* ``_render_grids``                 — session + store_trade_types →
-  Trade-Level Metrics grid (all trades) and Elementary PnL Explorer
-  grid (filtered to elementary).  Also re-asserts the elementary
-  ``selectedRows`` from session so deep-links / browser-back paint
-  correctly.
-* ``_render_per_trade_detail``      — session + store_trade_types →
-  Row 3 wrapper visibility + selected-trade chip label + per-trade
-  residual histogram + bias-vs-magnitude scatter.  Lazy-loads the
-  per-cluster predictions NPZ on demand via ``backend.predictions``.
-* ``_render_elementary_pnl``        — session → empty-state vs chart
-  visibility on Row 4 right + elementary-pnl multi-line chart figure.
+If a future reviewer wants the page to remember the last filter across
+navigation, add a ``governance_status_filter`` field to ``Session``,
+register a small ``_sync_status_filter`` capture callback (mirror
+``portfolio_cb._register_split_sync``) and seed the SegmentedControl
+``value`` from session at layout build time (Page Contract §3 Rule L1).
 
-Data contract
--------------
-Trade-type classification comes from the trade-graph endpoint and is
-shared across the page via ``store_trade_types``::
-
-    {
-        "types":          {trade_id: "target" | "elementary"},
-        "target_ids":     [tid, …],     # NPZ column ordering
-        "elementary_ids": [tid, …],
-    }
-
-Why the ordered ``target_ids`` list?  The predictions NPZ is shaped
-``(n_scenarios, n_target_trades_in_cluster)``; column ``i`` corresponds
-to ``target_ids[i]``.  Threading the list through the store means the
-per-trade detail callback never re-fetches the trade graph just to
-recover ordering — the cached fetch in :func:`_render_attributes` is
-the single source of truth.
-
-Every fetch goes through :class:`RadeBackend`; the cache layer there
-coalesces duplicate requests within a render tick.
+Why mount_signal-triggered, not pathname-triggered
+--------------------------------------------------
+Page Contract §4 Rule C7 — when the router swaps ``app-host`` to a
+new page tree, the new page's ``mount_signal`` store mounts fresh
+with ``data=True``, which fires the bootstrap callback exactly once
+*after* the DOM is in place.  ``Input(pathname)`` would race the
+content swap and try to write into IDs that don't exist yet
+(Anti-pattern A8).  Both render callbacks below trigger off
+``mount_signal``; the registry-render also takes ``status_filter`` as
+an Input so the table re-emits whenever the user picks a chip.
 """
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple
-from urllib.parse import parse_qs
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
-import dash_mantine_components as dmc
-import numpy as np
 import pandas as pd
-from dash import Input, Output, State, ctx, html, no_update
+from dash import Input, Output, State, html
 from dash.exceptions import PreventUpdate
+from dash_iconify import DashIconify
 
-from ..data.result_helpers import figure_with_fallback
-from ..data.session import Session
-from ..figures import (
-    elementary_pnl_multiline,
-    empty_figure,
-    error_over_time,
-    per_trade_bias_scatter,
-    per_trade_residual_histogram,
-    portfolio_pnl,
-    training_curves_chart,
-)
-from ..layouts.evaluation.cluster_deep_dive import CLUSTER_DEEP_DIVE_IDS
-from ..layouts.evaluation.trade_graph import TRADE_GRAPH_IDS
+from ..layouts.governance import GOVERNANCE_IDS
 from ..layouts.shell import SHELL_IDS
 
 if TYPE_CHECKING:
@@ -1239,1219 +1886,720 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-_DEEP_DIVE_PATH   = "/evaluation/cluster"
-_TRADE_GRAPH_PATH = "/evaluation/trade-graph"
-_PLACEHOLDER      = "—"
-
-# Visual order in the Cluster Attributes card.  Matches the mock
-# screenshot top-down.  Each entry is ``(label, candidate_columns)``
-# — the first candidate column present in the clusters_df row wins,
-# so we silently degrade when the ensemble's attribute schema drops
-# an entry without leaving a phantom row in the UI.
-_ATTRIBUTE_ROWS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
-    ("Asset Class",  ("asset_class", "AssetClassCode")),
-    ("Currency",     ("currency_code", "CurrencyCode", "currency")),
-    ("Desk",         ("desk", "DeskCode", "desk_code")),
-    ("Product",      ("product_code", "ProductCode", "product")),
-    ("N Trades",     ("n_trades",)),
-    ("N Scenarios", ("n_scenarios",)),
-)
-
-# Graph-stats rows.  The first three carry real values from
-# ``trade_graph.stats``; the last two are deferred and always render
-# as ``—`` so the card visual structure matches the mock.
-_GRAPH_STATS_ROWS: Tuple[Tuple[str, Optional[str]], ...] = (
-    ("Nodes",           "n_nodes"),
-    ("Edges",           "n_edges"),
-    ("Density",         "density"),
-    ("Avg Degree",      None),
-    ("Avg Path Length", None),
-)
-
-
 # ─────────────────────────────────────────────────────────────────────
-# Formatters
+# Constants
 # ─────────────────────────────────────────────────────────────────────
 
 
-def _fmt_float(x: Optional[float], *, precision: int = 4) -> str:
-    if x is None:
-        return _PLACEHOLDER
-    try:
-        val = float(x)
-    except (TypeError, ValueError):
-        return _PLACEHOLDER
-    if pd.isna(val):
-        return _PLACEHOLDER
-    return f"{val:.{precision}f}"
+_GOVERNANCE_PATH = "/governance"
+_PLACEHOLDER = "—"
+
+# Pending sign-offs — V1 mock count.  Mirrors the static
+# ``_PENDING_APPROVAL`` block in :mod:`..layouts.governance`.  When the
+# Stage-2 workflow producer ships this becomes a backend lookup.
+_MOCK_PENDING_APPROVALS = 1
+
+# Maximum lineage timeline rows we render.  Cap is small because the
+# panel is a rhythm-glance widget — denser views live on the
+# Evaluation / Monitoring tabs.
+_LINEAGE_MAX_ROWS = 6
 
 
-def _fmt_int(x: Any) -> str:
-    if x is None:
-        return _PLACEHOLDER
-    try:
-        val = int(x)
-    except (TypeError, ValueError):
-        try:
-            val = int(float(x))
-        except (TypeError, ValueError):
-            return _PLACEHOLDER
-    return f"{val:,}"
-
-
-def _fmt_density(x: Optional[float]) -> str:
-    if x is None:
-        return _PLACEHOLDER
-    try:
-        val = float(x)
-    except (TypeError, ValueError):
-        return _PLACEHOLDER
-    if pd.isna(val):
-        return _PLACEHOLDER
-    return f"{val:.3f}"
-
-
-def _nullable_float(v: Any) -> Optional[float]:
-    if v is None:
-        return None
-    try:
-        fv = float(v)
-    except (TypeError, ValueError):
-        return None
-    if pd.isna(fv):
-        return None
-    return fv
-
-
-def _parse_cid_from_search(search: Optional[str]) -> Optional[str]:
-    """Extract the ``?cid=`` query param from the URL search string."""
-    if not search:
-        return None
-    try:
-        params = parse_qs(search.lstrip("?"))
-    except (ValueError, TypeError):
-        return None
-    values = params.get("cid")
-    if not values:
-        return None
-    candidate = values[0]
-    return candidate if isinstance(candidate, str) and candidate else None
-
-
-# ─────────────────────────────────────────────────────────────────────
-# Entry point
-# ─────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════
+# Public surface
+# ═════════════════════════════════════════════════════════════════════
 
 
 def register(app: "Dash", backend: "RadeBackend") -> None:
-    """Attach every Cluster-Deep-Dive sub-tab callback to ``app``."""
-    _register_capture(app)
+    """Attach every governance callback to ``app``.
+
+    Mirrors the Page Contract §2 capture/render split.  Capture is
+    empty for V1 — every input on this page is ephemeral — so this
+    function only calls :func:`_register_render`.
+    """
     _register_render(app, backend)
 
 
-def _register_capture(app: "Dash") -> None:
-    """Capture-side callbacks (input gestures → session writes only)."""
-    _register_sync_selection(app)
-    _register_sync_curve_metrics(app)
-    _register_sync_elementary_selection(app)
-    _register_navigate_to_trade_graph(app)
-    _register_navigate_from_trade_graph(app)
+# ─────────────────────────────────────────────────────────────────────
+# Section dispatcher
+# ─────────────────────────────────────────────────────────────────────
 
 
 def _register_render(app: "Dash", backend: "RadeBackend") -> None:
-    """Render-side callbacks (state → DOM, no session writes except bootstrap)."""
-    _register_bootstrap(app, backend)
-    _register_render_attributes(app, backend)
-    _register_render_kpis(app, backend)
-    _register_render_timeseries(app, backend)
-    _register_render_training_curves(app, backend)
-    _register_render_grids(app, backend)
-    _register_render_per_trade_detail(app, backend)
-    _register_render_elementary_pnl(app, backend)
+    """Attach the two render callbacks (header + registry grid)."""
+    _register_render_header(app, backend)
+    _register_render_registry(app, backend)
 
 
 # ═════════════════════════════════════════════════════════════════════
-# 1. Bootstrap — populate Select option list + resolve initial cluster
+# 1. Render — header KPIs + lineage timeline
 # ═════════════════════════════════════════════════════════════════════
 
 
-def _register_bootstrap(app: "Dash", backend: "RadeBackend") -> None:
+def _register_render_header(app: "Dash", backend: "RadeBackend") -> None:
+    """Populate the four KPI values and the lineage timeline.
+
+    Cheap call (cache hit after the first request) so we re-issue it
+    here rather than threading the registry payload through a
+    ``dcc.Store`` — keeps the callback graph linear and the diff
+    against the registry-render callback obvious.
+    """
+
     @app.callback(
-        Output(CLUSTER_DEEP_DIVE_IDS["cluster_select"], "data"),
-        Output(CLUSTER_DEEP_DIVE_IDS["cluster_select"], "value",
-               allow_duplicate=True),
-        Output(SHELL_IDS["session_store"],              "data",
-               allow_duplicate=True),
-        Input(CLUSTER_DEEP_DIVE_IDS["mount_signal"],    "data"),
-        State(SHELL_IDS["url"],                         "search"),
-        State(SHELL_IDS["url"],                         "pathname"),
-        State(SHELL_IDS["session_store"],               "data"),
+        Output(GOVERNANCE_IDS["kpi_total_value"],         "children"),
+        Output(GOVERNANCE_IDS["kpi_production_value"],    "children"),
+        Output(GOVERNANCE_IDS["kpi_pending_value"],       "children"),
+        Output(GOVERNANCE_IDS["kpi_last_activity_value"], "children"),
+        Output(GOVERNANCE_IDS["lineage_timeline"],        "children"),
+        Input(GOVERNANCE_IDS["mount_signal"],             "data"),
+        State(SHELL_IDS["url"],                           "pathname"),
         prevent_initial_call="initial_duplicate",
     )
-    def _bootstrap(
-        _mount_signal: Any,
-        search:        Optional[str],
-        pathname:      Optional[str],
-        session_data:  Optional[Dict[str, Any]],
-    ) -> Tuple[List[Dict[str, str]], Any, Any]:
-        if pathname != _DEEP_DIVE_PATH:
-            raise PreventUpdate
-
-        res = backend.clusters_df()
-        if not res.ok or res.data is None or res.data.empty:
-            return [], no_update, no_update
-
-        session = Session.from_store(session_data)
-        df = res.data
-        options = [
-            {"value": cid, "label": cid}
-            for cid in sorted(df["cluster_id"].unique())
-        ]
-        valid_ids = {o["value"] for o in options}
-
-        layout_seed = (
-            session.evaluation.deep_dive_cluster_id or session.cluster_id
-        )
-        url_override = _parse_cid_from_search(search)
-        canonical = (
-            url_override
-            or session.evaluation.deep_dive_cluster_id
-            or session.cluster_id
-            or (options[0]["value"] if options else None)
-        )
-        if canonical not in valid_ids:
-            canonical = options[0]["value"] if options else None
-
-        if canonical == layout_seed:
-            return options, no_update, no_update
-
-        session.evaluation.deep_dive_cluster_id = canonical
-        return options, canonical, session.to_store()
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 2. Sync picker / grid-click / clear-btn → session
-# ═════════════════════════════════════════════════════════════════════
-
-
-def _register_sync_selection(app: "Dash") -> None:
-    @app.callback(
-        Output(SHELL_IDS["session_store"],                       "data",
-               allow_duplicate=True),
-        Input(CLUSTER_DEEP_DIVE_IDS["cluster_select"],           "value"),
-        Input(CLUSTER_DEEP_DIVE_IDS["trades_grid"],              "cellClicked"),
-        Input(CLUSTER_DEEP_DIVE_IDS["selected_trade_clear_btn"], "n_clicks"),
-        State(SHELL_IDS["session_store"],                        "data"),
-        prevent_initial_call=True,
-    )
-    def _sync(
-        cluster:      Optional[str],
-        cell_clicked: Optional[Dict[str, Any]],
-        clear_clicks: Optional[int],
-        session_data: Optional[Dict[str, Any]],
-    ) -> Dict[str, Any]:
-        trigger = ctx.triggered_id
-        if trigger is None:
-            raise PreventUpdate
-
-        session = Session.from_store(session_data)
-        ev = session.evaluation
-        changed = False
-
-        if trigger == CLUSTER_DEEP_DIVE_IDS["cluster_select"]:
-            new_cluster = cluster if cluster else None
-            if ev.deep_dive_cluster_id != new_cluster:
-                ev.deep_dive_cluster_id = new_cluster
-                # Cluster change invalidates per-trade + per-scenario
-                # selections — those ids almost certainly don't live
-                # in the new cluster.  Overlay-metric chips also reset
-                # because metric availability is per-cluster.
-                ev.deep_dive_selected_trade_id = None
-                ev.deep_dive_elementary_trade_ids = []
-                ev.deep_dive_curve_metrics = []
-                changed = True
-
-        elif trigger == CLUSTER_DEEP_DIVE_IDS["trades_grid"]:
-            trade_id = _trade_id_from_cell(cell_clicked)
-            if trade_id and ev.deep_dive_selected_trade_id != trade_id:
-                ev.deep_dive_selected_trade_id = trade_id
-                changed = True
-
-        elif trigger == CLUSTER_DEEP_DIVE_IDS["selected_trade_clear_btn"]:
-            if clear_clicks and ev.deep_dive_selected_trade_id is not None:
-                ev.deep_dive_selected_trade_id = None
-                changed = True
-
-        if not changed:
-            raise PreventUpdate
-        return session.to_store()
-
-
-def _trade_id_from_cell(cell_data: Optional[Dict[str, Any]]) -> Optional[str]:
-    """Pull ``trade_id`` out of AgGrid's ``cellClicked`` payload."""
-    if not cell_data:
-        return None
-    row = cell_data.get("data") or {}
-    tid = row.get("trade_id")
-    return tid if isinstance(tid, str) and tid else None
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 3. Overlay-metric chip group → session.deep_dive_curve_metrics
-# ═════════════════════════════════════════════════════════════════════
-
-
-def _register_sync_curve_metrics(app: "Dash") -> None:
-    @app.callback(
-        Output(SHELL_IDS["session_store"],                          "data",
-               allow_duplicate=True),
-        Input(CLUSTER_DEEP_DIVE_IDS["training_curves_chip_group"],  "value"),
-        State(SHELL_IDS["session_store"],                           "data"),
-        prevent_initial_call=True,
-    )
-    def _sync(
-        selected:     Optional[List[str]],
-        session_data: Optional[Dict[str, Any]],
-    ) -> Dict[str, Any]:
-        session = Session.from_store(session_data)
-        normalised = _normalise_str_list(selected)
-        if session.evaluation.deep_dive_curve_metrics == normalised:
-            raise PreventUpdate
-        session.evaluation.deep_dive_curve_metrics = normalised
-        return session.to_store()
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 4. Elementary explorer multi-select / reset → session
-# ═════════════════════════════════════════════════════════════════════
-
-
-def _register_sync_elementary_selection(app: "Dash") -> None:
-    @app.callback(
-        Output(SHELL_IDS["session_store"],                            "data",
-               allow_duplicate=True),
-        Input(CLUSTER_DEEP_DIVE_IDS["elementary_explorer_grid"],      "selectedRows"),
-        Input(CLUSTER_DEEP_DIVE_IDS["elementary_reset_btn"],          "n_clicks"),
-        State(SHELL_IDS["session_store"],                             "data"),
-        prevent_initial_call=True,
-    )
-    def _sync(
-        selected_rows: Optional[List[Dict[str, Any]]],
-        n_clicks:      Optional[int],
-        session_data:  Optional[Dict[str, Any]],
-    ) -> Dict[str, Any]:
-        trigger = ctx.triggered_id
-        if trigger is None:
-            raise PreventUpdate
-
-        session = Session.from_store(session_data)
-        ev = session.evaluation
-
-        if trigger == CLUSTER_DEEP_DIVE_IDS["elementary_reset_btn"]:
-            if not n_clicks:
-                raise PreventUpdate
-            if not ev.deep_dive_elementary_trade_ids:
-                raise PreventUpdate
-            ev.deep_dive_elementary_trade_ids = []
-            return session.to_store()
-
-        # selectedRows trigger: extract trade ids and dedupe.
-        new_ids = _normalise_str_list(
-            [
-                row.get("trade_id") for row in (selected_rows or [])
-                if isinstance(row, dict)
-            ]
-        )
-        if sorted(ev.deep_dive_elementary_trade_ids) == sorted(new_ids):
-            raise PreventUpdate
-        # Preserve user-visible click order rather than re-sorting —
-        # the multiline chart respects the order columns arrive in.
-        ev.deep_dive_elementary_trade_ids = new_ids
-        return session.to_store()
-
-
-def _normalise_str_list(raw: Optional[Sequence[Any]]) -> List[str]:
-    """Stable, deduped list of non-empty strings."""
-    if not isinstance(raw, (list, tuple)):
-        return []
-    seen: set[str] = set()
-    out: List[str] = []
-    for v in raw:
-        if not isinstance(v, str) or not v or v in seen:
-            continue
-        seen.add(v)
-        out.append(v)
-    return out
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 5. Render — Cluster Attributes + Graph Stats + nav button + store
-# ═════════════════════════════════════════════════════════════════════
-
-
-def _register_render_attributes(
-    app: "Dash", backend: "RadeBackend",
-) -> None:
-    @app.callback(
-        Output(CLUSTER_DEEP_DIVE_IDS["attributes_body"],      "children"),
-        Output(CLUSTER_DEEP_DIVE_IDS["graph_stats_body"],     "children"),
-        Output(CLUSTER_DEEP_DIVE_IDS["open_trade_graph_btn"], "disabled"),
-        Output(CLUSTER_DEEP_DIVE_IDS["store_trade_types"],    "data"),
-        Input(SHELL_IDS["url"],                               "pathname"),
-        Input(SHELL_IDS["session_store"],                     "data"),
-        prevent_initial_call=False,
-    )
     def _render(
-        pathname:     Optional[str],
-        session_data: Optional[Dict[str, Any]],
-    ) -> Tuple[List[Any], List[Any], bool, Dict[str, Any]]:
-        if pathname != _DEEP_DIVE_PATH:
+        _trigger: Any,
+        pathname: Optional[str],
+    ) -> Tuple[str, str, str, str, List[Any]]:
+        # Belt-and-braces: the mount_signal Store only mounts when the
+        # router swaps to the governance page tree, but a pathname
+        # guard is still cheap and protects against future router
+        # refactors that mount governance under a different route.
+        if pathname != _GOVERNANCE_PATH:
             raise PreventUpdate
 
-        session = Session.from_store(session_data)
-        cluster_id = session.evaluation.deep_dive_cluster_id or session.cluster_id
-
-        if not cluster_id:
+        res = backend.governance_registry()
+        if not res.ok or res.data is None:
+            logger.warning(
+                "Governance: registry fetch failed — %s", res.error,
+            )
             return (
-                _attribute_rows(None),
-                _graph_stats_rows(None),
-                True,
-                _empty_trade_types_store(),
+                _PLACEHOLDER,
+                _PLACEHOLDER,
+                str(_MOCK_PENDING_APPROVALS),
+                _PLACEHOLDER,
+                _empty_lineage_message("Registry unavailable."),
             )
 
-        clusters_res = backend.clusters_df(cluster_id=cluster_id)
-        attrs_row: Optional[Dict[str, Any]] = None
-        if (
-            clusters_res.ok
-            and clusters_res.data is not None
-            and not clusters_res.data.empty
-        ):
-            attrs_row = clusters_res.data.iloc[0].to_dict()
+        rows = list(res.data.rows)
+        total = len(rows)
+        n_production = sum(1 for r in rows if r.status == "production")
+        last_activity = _format_last_activity(rows)
 
-        graph_res = backend.trade_graph(cluster_id=cluster_id)
-        stats: Optional[Dict[str, Any]] = None
-        store_payload = _empty_trade_types_store()
-        if graph_res.ok and graph_res.data is not None:
-            tg = graph_res.data
-            stats = tg.stats.model_dump() if tg.stats else None
-            types_map: Dict[str, str] = {}
-            target_ids: List[str] = []
-            elementary_ids: List[str] = []
-            for node in tg.nodes:
-                tid = str(node.trade_id)
-                ttype = str(node.trade_type)
-                types_map[tid] = ttype
-                if ttype == "target":
-                    target_ids.append(tid)
-                elif ttype == "elementary":
-                    elementary_ids.append(tid)
-            store_payload = {
-                "types":          types_map,
-                "target_ids":     target_ids,
-                "elementary_ids": elementary_ids,
-                "cluster_id":     cluster_id,
-            }
-
-        # n_trades / n_scenarios fall back to the trades_df shape if
-        # they aren't carried on clusters_df (older parquets).  The
-        # cheap fetch is cached so this doesn't add a round-trip on
-        # the steady-state path.
-        if attrs_row is None:
-            attrs_row = {}
-        if "n_trades" not in attrs_row or attrs_row.get("n_trades") is None:
-            attrs_row["n_trades"] = (
-                len(store_payload["types"])
-                if store_payload["types"] else None
-            )
+        timeline = _build_lineage_timeline(rows)
 
         return (
-            _attribute_rows(attrs_row),
-            _graph_stats_rows(stats),
-            False,
-            store_payload,
+            f"{total}",
+            f"{n_production}",
+            str(_MOCK_PENDING_APPROVALS),
+            last_activity,
+            timeline,
         )
 
 
-def _empty_trade_types_store() -> Dict[str, Any]:
-    return {
-        "types":          {},
-        "target_ids":     [],
-        "elementary_ids": [],
-        "cluster_id":     None,
-    }
+# ═════════════════════════════════════════════════════════════════════
+# 2. Render — Model Registry grid (filtered by status SegmentedControl)
+# ═════════════════════════════════════════════════════════════════════
 
 
-def _attribute_rows(row: Optional[Dict[str, Any]]) -> List[Any]:
-    """Render each (label, value) row — placeholder ``—`` on missing data."""
-    children: List[Any] = []
-    for label, candidates in _ATTRIBUTE_ROWS:
-        value: Optional[Any] = None
-        if row:
-            for col in candidates:
-                if col in row and row[col] is not None:
-                    candidate = row[col]
-                    if not (isinstance(candidate, float) and pd.isna(candidate)):
-                        value = candidate
-                        break
-        if isinstance(value, float):
-            display = _fmt_float(value, precision=2)
-        elif isinstance(value, (int,)) and value is not None:
-            display = _fmt_int(value)
-        elif label in ("N Trades", "N Scenarios"):
-            display = _fmt_int(value) if value is not None else _PLACEHOLDER
-        elif value is None:
-            display = _PLACEHOLDER
-        else:
-            display = str(value)
-        children.append(_kv_row(label, display))
-    return children
+def _register_render_registry(app: "Dash", backend: "RadeBackend") -> None:
+    """Populate the registry grid's ``rowData``, filtered by status chip.
 
-
-def _graph_stats_rows(stats: Optional[Dict[str, Any]]) -> List[Any]:
-    """Render Graph Statistics body — Nodes / Edges / Density real,
-    Avg Degree / Avg Path Length deferred (always ``—``).
+    The status chip is *not* persisted in session (V1) — its current
+    value is read straight off the SegmentedControl as a render-time
+    Input.  Filtering is applied in Python before emit so AG Grid
+    only ever sees the rows we want shown; this keeps the table's
+    pagination + sort behaviour intuitive across filter flips.
     """
-    children: List[Any] = []
-    for label, key in _GRAPH_STATS_ROWS:
-        if key is None or stats is None:
-            children.append(_kv_row(label, _PLACEHOLDER))
-            continue
-        value = stats.get(key)
-        if key == "density":
-            display = _fmt_density(_nullable_float(value))
-        else:
-            display = _fmt_int(value)
-        children.append(_kv_row(label, display))
-    return children
 
-
-def _kv_row(label: str, value: str) -> html.Div:
-    return html.Div(
-        className="flex items-center justify-between text-xs",
-        children=[
-            html.Span(label, className="text-slate-400"),
-            html.Span(value, className="text-slate-100 font-medium"),
-        ],
-    )
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 6. Render — Cluster Metrics KPI grid (4 KPIs + 4 sparklines)
-# ═════════════════════════════════════════════════════════════════════
-
-
-_KPI_CONFIG: Tuple[Tuple[str, str, str, str], ...] = (
-    # (kpi_key, candidate column,         value_id key,             spark_id key)
-    ("MAE",      "mae",            "kpi_mae_value",   "kpi_mae_spark"),
-    ("RMSE",     "rmse",           "kpi_rmse_value",  "kpi_rmse_spark"),
-    ("P95",      "p95_ae",         "kpi_p95_value",   "kpi_p95_spark"),
-    ("P99",      "p99_ae",         "kpi_p99_value",   "kpi_p99_spark"),
-)
-
-
-def _register_render_kpis(
-    app: "Dash", backend: "RadeBackend",
-) -> None:
     @app.callback(
-        Output(CLUSTER_DEEP_DIVE_IDS["kpi_mae_value"],   "children"),
-        Output(CLUSTER_DEEP_DIVE_IDS["kpi_rmse_value"],  "children"),
-        Output(CLUSTER_DEEP_DIVE_IDS["kpi_p95_value"],   "children"),
-        Output(CLUSTER_DEEP_DIVE_IDS["kpi_p99_value"],   "children"),
-        Output(CLUSTER_DEEP_DIVE_IDS["kpi_mae_spark"],   "figure"),
-        Output(CLUSTER_DEEP_DIVE_IDS["kpi_rmse_spark"],  "figure"),
-        Output(CLUSTER_DEEP_DIVE_IDS["kpi_p95_spark"],   "figure"),
-        Output(CLUSTER_DEEP_DIVE_IDS["kpi_p99_spark"],   "figure"),
-        Input(SHELL_IDS["url"],                          "pathname"),
-        Input(SHELL_IDS["session_store"],                "data"),
-        prevent_initial_call=False,
+        Output(GOVERNANCE_IDS["registry_grid"], "rowData"),
+        Input(GOVERNANCE_IDS["mount_signal"],   "data"),
+        Input(GOVERNANCE_IDS["status_filter"],  "value"),
+        State(SHELL_IDS["url"],                 "pathname"),
+        prevent_initial_call="initial_duplicate",
     )
     def _render(
-        pathname:     Optional[str],
-        session_data: Optional[Dict[str, Any]],
-    ) -> Tuple[Any, ...]:
-        if pathname != _DEEP_DIVE_PATH:
+        _trigger:    Any,
+        status_pick: Optional[str],
+        pathname:    Optional[str],
+    ) -> List[Dict[str, Any]]:
+        if pathname != _GOVERNANCE_PATH:
             raise PreventUpdate
 
-        session = Session.from_store(session_data)
-        cluster_id = session.evaluation.deep_dive_cluster_id or session.cluster_id
-        if not cluster_id:
-            blank_spark = _sparkline_payload([])
-            return (
-                _PLACEHOLDER, _PLACEHOLDER, _PLACEHOLDER, _PLACEHOLDER,
-                blank_spark, blank_spark, blank_spark, blank_spark,
-            )
-
-        # KPI headline values come from per_member_metrics (cluster
-        # aggregate); sparklines come from trades_df (per-trade
-        # distribution across the cluster's trades).
-        member_res = backend.per_member_metrics_df(
-            split=session.split, cluster_id=cluster_id,
-        )
-        member_row: Dict[str, Any] = {}
-        if (
-            member_res.ok
-            and member_res.data is not None
-            and not member_res.data.empty
-        ):
-            member_row = member_res.data.iloc[0].to_dict()
-
-        trades_res = backend.trades_df(session.split, cluster_id=cluster_id)
-        trades_df: Optional[pd.DataFrame] = (
-            trades_res.data
-            if trades_res.ok and trades_res.data is not None
-            else None
-        )
-
-        values: List[str] = []
-        sparks: List[Dict[str, Any]] = []
-        for _, col, _vid, _sid in _KPI_CONFIG:
-            headline = _nullable_float(member_row.get(col))
-            # If the per-member parquet doesn't carry the column,
-            # fall back to the median of the trades_df column so
-            # the user still sees a number rather than ``—``.
-            if headline is None and trades_df is not None and col in trades_df.columns:
-                series = trades_df[col].dropna()
-                if not series.empty:
-                    headline = float(series.median())
-            values.append(_fmt_float(headline))
-
-            spark_data: List[float] = []
-            if trades_df is not None and col in trades_df.columns:
-                series = trades_df[col].dropna().astype(float)
-                if not series.empty:
-                    spark_data = series.tolist()
-            sparks.append(_sparkline_payload(spark_data))
-
-        return (
-            values[0], values[1], values[2], values[3],
-            sparks[0], sparks[1], sparks[2], sparks[3],
-        )
-
-
-def _sparkline_payload(data: Sequence[float]) -> Dict[str, Any]:
-    """Tiny line trace with no chrome — matches ``KpiCard``'s built-in
-    ``_sparkline_figure`` helper so the visual baseline is consistent."""
-    if not data:
-        return {
-            "data": [],
-            "layout": {
-                "xaxis":         {"visible": False},
-                "yaxis":         {"visible": False},
-                "margin":        {"l": 0, "r": 0, "t": 0, "b": 0},
-                "paper_bgcolor": "rgba(0,0,0,0)",
-                "plot_bgcolor":  "rgba(0,0,0,0)",
-                "showlegend":    False,
-                "height":        36,
-            },
-        }
-    return {
-        "data": [
-            {
-                "type": "scatter",
-                "mode": "lines",
-                "x":    list(range(len(data))),
-                "y":    list(data),
-                "line": {"color": "#94a3b8", "width": 1.4},
-                "hoverinfo": "skip",
-            }
-        ],
-        "layout": {
-            "xaxis":         {"visible": False},
-            "yaxis":         {"visible": False},
-            "margin":        {"l": 0, "r": 0, "t": 0, "b": 0},
-            "paper_bgcolor": "rgba(0,0,0,0)",
-            "plot_bgcolor":  "rgba(0,0,0,0)",
-            "showlegend":    False,
-            "height":        36,
-        },
-    }
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 7. Render — Cluster Portfolio + Residual-over-time
-# ═════════════════════════════════════════════════════════════════════
-
-
-def _register_render_timeseries(
-    app: "Dash", backend: "RadeBackend",
-) -> None:
-    @app.callback(
-        Output(CLUSTER_DEEP_DIVE_IDS["portfolio_chart"],   "figure"),
-        Output(CLUSTER_DEEP_DIVE_IDS["residual_ts_chart"], "figure"),
-        Input(SHELL_IDS["url"],                            "pathname"),
-        Input(SHELL_IDS["session_store"],                  "data"),
-        prevent_initial_call=False,
-    )
-    def _render(
-        pathname:     Optional[str],
-        session_data: Optional[Dict[str, Any]],
-    ) -> Tuple[Any, Any]:
-        if pathname != _DEEP_DIVE_PATH:
-            raise PreventUpdate
-
-        session = Session.from_store(session_data)
-        cluster_id = session.evaluation.deep_dive_cluster_id or session.cluster_id
-        if not cluster_id:
-            return (
-                empty_figure("Pick a cluster to see its portfolio."),
-                empty_figure("Pick a cluster to see its residual-over-time."),
-            )
-
-        res = backend.cluster_timeseries_df(
-            session.split, cluster_id=cluster_id,
-        )
-        ui_key = f"{session.split}::{cluster_id}"
-        return (
-            figure_with_fallback(
-                res,
-                on_ok=lambda df: portfolio_pnl(df, uirevision_key=ui_key),
-                empty_msg="No timeseries data for this cluster.",
-            ),
-            figure_with_fallback(
-                res,
-                on_ok=lambda df: error_over_time(df, uirevision_key=ui_key),
-                empty_msg="No residual data for this cluster.",
-            ),
-        )
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 8. Render — Training curves (figure + chip group + empty msg + store)
-# ═════════════════════════════════════════════════════════════════════
-
-
-def _register_render_training_curves(
-    app: "Dash", backend: "RadeBackend",
-) -> None:
-    @app.callback(
-        Output(CLUSTER_DEEP_DIVE_IDS["training_curves_chart"],       "figure"),
-        Output(CLUSTER_DEEP_DIVE_IDS["training_curves_chip_group"],  "children"),
-        Output(CLUSTER_DEEP_DIVE_IDS["training_curves_chip_group"],  "value"),
-        Output(CLUSTER_DEEP_DIVE_IDS["training_curves_chip_empty"],  "style"),
-        Output(CLUSTER_DEEP_DIVE_IDS["store_curve_metrics"],         "data"),
-        Input(SHELL_IDS["url"],                                      "pathname"),
-        Input(SHELL_IDS["session_store"],                            "data"),
-        prevent_initial_call=False,
-    )
-    def _render(
-        pathname:     Optional[str],
-        session_data: Optional[Dict[str, Any]],
-    ) -> Tuple[Any, List[Any], List[str], Dict[str, str], List[str]]:
-        if pathname != _DEEP_DIVE_PATH:
-            raise PreventUpdate
-
-        session = Session.from_store(session_data)
-        cluster_id = session.evaluation.deep_dive_cluster_id or session.cluster_id
-
-        empty_chip_hidden  = {"display": "none"}
-        empty_chip_visible = {"display": "inline"}
-
-        if not cluster_id:
-            return (
-                empty_figure("Pick a cluster to see its training curves."),
-                [],
-                [],
-                empty_chip_visible,
-                [],
-            )
-
-        res = backend.training_curves_df(cluster_id=cluster_id)
+        res = backend.governance_registry_df()
         if not res.ok or res.data is None or res.data.empty:
-            err = res.error if not res.ok else "no data"
-            logger.info(
-                "training_curves fetch failed / empty for cluster %s: %s",
-                cluster_id, err,
-            )
-            return (
-                empty_figure("No training curves staged for this cluster."),
-                [],
-                [],
-                empty_chip_visible,
-                [],
-            )
+            if not res.ok:
+                logger.warning(
+                    "Governance: registry_df fetch failed — %s",
+                    res.error,
+                )
+            return []
 
         df = res.data
-        available = list(df.attrs.get("metrics") or [])
-        persisted = list(session.evaluation.deep_dive_curve_metrics)
-        validated = [m for m in persisted if m in available]
+        df = _apply_status_filter(df, status_pick)
 
-        chip_children = [
-            dmc.Chip(m, value=m, size="xs", variant="outline")
-            for m in available
-        ]
-        fig = training_curves_chart(
-            df,
-            selected_metrics=validated,
-            available_metrics=available,
-            uirevision_key=cluster_id,
-        )
-        empty_style = empty_chip_hidden if available else empty_chip_visible
-        return fig, chip_children, validated, empty_style, available
+        # AG Grid expects plain dicts; ``model_dump``-derived rows
+        # already JSON-friendly.  Drop any row that lost critical
+        # context after the filter (defensive — shouldn't happen).
+        return df.to_dict(orient="records")
 
 
 # ═════════════════════════════════════════════════════════════════════
-# 9. Render — Trade-Level Metrics + Elementary Explorer grids
+# Helpers
 # ═════════════════════════════════════════════════════════════════════
 
 
-_TRADES_GRID_COLUMN_HEADERS: Dict[str, str] = {
-    "trade_id":       "Trade",
-    "trade_type":     "Type",
-    "mae":            "MAE",
-    "mse":            "MSE",
-    "rmse":           "RMSE",
-    "max_ae":         "Max |err|",
-    "p95_ae":         "P95 |err|",
-    "p99_ae":         "P99 |err|",
-    "mean_residual":  "Mean resid.",
-    "std_residual":   "Std resid.",
-    "n_scenarios":    "Scenarios",
-}
-_TRADES_GRID_PRIORITY: Tuple[str, ...] = (
-    "trade_id", "trade_type",
-    "mae", "rmse", "p95_ae", "p99_ae",
-    "mean_residual", "std_residual", "n_scenarios",
-)
+def _apply_status_filter(
+    df: pd.DataFrame,
+    status_pick: Optional[str],
+) -> pd.DataFrame:
+    """Return rows matching ``status_pick``; ``"all"`` / ``None`` is identity."""
+    if not status_pick or status_pick == "all":
+        return df
+    if "status" not in df.columns:
+        return df
+    return df[df["status"].astype(str) == status_pick]
 
 
-def _register_render_grids(
-    app: "Dash", backend: "RadeBackend",
-) -> None:
-    @app.callback(
-        Output(CLUSTER_DEEP_DIVE_IDS["trades_grid"],              "rowData"),
-        Output(CLUSTER_DEEP_DIVE_IDS["trades_grid"],              "columnDefs"),
-        Output(CLUSTER_DEEP_DIVE_IDS["elementary_explorer_grid"], "rowData"),
-        Output(CLUSTER_DEEP_DIVE_IDS["elementary_explorer_grid"], "columnDefs"),
-        Output(CLUSTER_DEEP_DIVE_IDS["elementary_explorer_grid"], "selectedRows"),
-        Input(SHELL_IDS["url"],                                   "pathname"),
-        Input(SHELL_IDS["session_store"],                         "data"),
-        Input(CLUSTER_DEEP_DIVE_IDS["store_trade_types"],         "data"),
-        prevent_initial_call=False,
-    )
-    def _render(
-        pathname:        Optional[str],
-        session_data:    Optional[Dict[str, Any]],
-        types_payload:   Optional[Dict[str, Any]],
-    ) -> Tuple[
-        List[Dict[str, Any]], List[Dict[str, Any]],
-        List[Dict[str, Any]], List[Dict[str, Any]],
-        List[Dict[str, Any]],
-    ]:
-        if pathname != _DEEP_DIVE_PATH:
-            raise PreventUpdate
+def _format_last_activity(rows: List[Any]) -> str:
+    """Return the most recent ``created_at`` formatted as ``DD Mon HH:MM``.
 
-        session = Session.from_store(session_data)
-        cluster_id = session.evaluation.deep_dive_cluster_id or session.cluster_id
-        elem_columns = _elementary_grid_column_defs()
-        trade_columns = _trades_grid_column_defs_initial()
+    ``rows`` is the Pydantic list straight off the response — already
+    sorted newest-first by the service, so we just take the head and
+    parse its ISO timestamp.  Failure to parse falls through to the
+    em-dash placeholder so the KPI never renders ``Invalid Date``.
+    """
+    if not rows:
+        return _PLACEHOLDER
+    ts = getattr(rows[0], "created_at", None)
+    if not ts:
+        return _PLACEHOLDER
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return _PLACEHOLDER
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.strftime("%d %b %H:%M")
 
-        if not cluster_id:
-            return [], trade_columns, [], elem_columns, []
 
-        res = backend.trades_df(session.split, cluster_id=cluster_id)
-        if not res.ok or res.data is None or res.data.empty:
-            return [], trade_columns, [], elem_columns, []
+def _build_lineage_timeline(rows: List[Any]) -> List[Any]:
+    """Build a small list of timeline events from the registry payload.
 
-        df = res.data.copy()
-        types_map: Dict[str, str] = {}
-        elementary_set: set = set()
-        if isinstance(types_payload, dict):
-            types_map = dict(types_payload.get("types") or {})
-            elementary_set = set(types_payload.get("elementary_ids") or [])
+    Three event sources, blended into one chronologically-sorted feed:
 
-        df["trade_type"] = (
-            df["trade_id"].map(types_map).fillna("unknown")
-            if "trade_id" in df.columns
-            else "unknown"
+    * **Promotion events** — every row with a non-null ``promoted_at``
+      (currently the production row(s)).
+    * **Registration events** — every row's ``created_at``.
+    * **Evaluation events** — every row whose evaluation bundle has
+      been published (``has_evaluation``); we use ``promoted_at`` as
+      a proxy timestamp because we don't yet record an "evaluated_at"
+      on the wire.
+
+    Events are de-duplicated by ``(version, action)`` so a row that
+    was promoted and registered doesn't generate two near-identical
+    "Registered" entries.  The newest :data:`_LINEAGE_MAX_ROWS` are
+    rendered.
+    """
+    if not rows:
+        return _empty_lineage_message(
+            "No registered ensemble versions yet."
         )
 
-        trades_columns = _trades_grid_column_defs(df)
-        trades_rows = df[
-            [c["field"] for c in trades_columns if c["field"] in df.columns]
-        ].to_dict(orient="records")
-
-        # Elementary explorer — filter to elementary trades.  Use the
-        # graph-derived set when present; degrade to ``trade_type``
-        # column when the graph payload is missing.
-        if elementary_set:
-            elem_df = df[df["trade_id"].isin(elementary_set)]
-        else:
-            elem_df = df[df["trade_type"] == "elementary"]
-
-        elem_rows = (
-            elem_df[
-                [c["field"] for c in elem_columns if c["field"] in elem_df.columns]
-            ].to_dict(orient="records")
-            if not elem_df.empty
-            else []
-        )
-
-        # Re-assert selectedRows from session so deep-link / browser-
-        # back paints the user's prior selection.  Match by trade_id;
-        # any session id that's no longer in the cluster is silently
-        # dropped (the capture callback will reconcile session on the
-        # next user gesture).
-        selected_ids = set(
-            session.evaluation.deep_dive_elementary_trade_ids or []
-        )
-        selected_rows = [r for r in elem_rows if r.get("trade_id") in selected_ids]
-
-        return trades_rows, trades_columns, elem_rows, elem_columns, selected_rows
-
-
-def _trades_grid_column_defs_initial() -> List[Dict[str, Any]]:
-    """Stable column defs for the empty-state trades grid."""
-    return [
-        {"field": "trade_id",      "headerName": "Trade",        "flex": 2, "minWidth": 160},
-        {"field": "trade_type",    "headerName": "Type",         "flex": 1, "minWidth": 100},
-        {"field": "mae",           "headerName": "MAE",          "flex": 1, "type": "numericColumn"},
-        {"field": "rmse",          "headerName": "RMSE",         "flex": 1, "type": "numericColumn"},
-        {"field": "p95_ae",        "headerName": "P95 |err|",    "flex": 1, "type": "numericColumn"},
-        {"field": "p99_ae",        "headerName": "P99 |err|",    "flex": 1, "type": "numericColumn"},
-        {"field": "mean_residual", "headerName": "Mean resid.",  "flex": 1, "type": "numericColumn"},
-        {"field": "std_residual",  "headerName": "Std resid.",   "flex": 1, "type": "numericColumn"},
-        {"field": "n_scenarios",   "headerName": "Scenarios",    "flex": 1, "type": "numericColumn"},
-    ]
-
-
-def _trades_grid_column_defs(df: pd.DataFrame) -> List[Dict[str, Any]]:
-    """Dynamic columnDefs from the available ``trades_df`` columns."""
-    numeric_cols = {
-        col for col in df.columns
-        if pd.api.types.is_numeric_dtype(df[col].dtype)
-    }
-    ordered_cols: List[str] = []
-    seen: set = set()
-    for col in _TRADES_GRID_PRIORITY:
-        if col in df.columns and col not in seen:
-            ordered_cols.append(col)
-            seen.add(col)
-    for col in df.columns:
-        if col in seen or col in ("cluster_id", "split"):
-            continue
-        ordered_cols.append(col)
-        seen.add(col)
-
-    defs: List[Dict[str, Any]] = []
-    for col in ordered_cols:
-        col_def: Dict[str, Any] = {
-            "field":      str(col),
-            "headerName": _TRADES_GRID_COLUMN_HEADERS.get(col, str(col)),
-        }
-        if col == "trade_id":
-            col_def.update({"flex": 2, "minWidth": 160})
-        elif col == "trade_type":
-            col_def.update({"flex": 1, "minWidth": 100})
-        else:
-            col_def["flex"] = 1
-            if col in numeric_cols:
-                col_def["type"] = "numericColumn"
-                col_def["valueFormatter"] = {
-                    "function": "d3.format('.4~g')(params.value)",
+    events: List[Dict[str, Any]] = []
+    for row in rows:
+        version = row.version
+        if row.promoted_at:
+            events.append(
+                {
+                    "ts":      row.promoted_at,
+                    "icon":    "tabler:rocket",
+                    "kind":    "promoted",
+                    "title":   f"Promoted {version} to Production",
+                    "actor":   row.created_by,
                 }
-        defs.append(col_def)
-    return defs
+            )
+        if row.has_evaluation and row.mae_test is not None:
+            events.append(
+                {
+                    "ts":    row.created_at,
+                    "icon":  "tabler:bolt",
+                    "kind":  "evaluated",
+                    "title": (
+                        f"Eval completed — MAE {row.mae_test:.3f}"
+                        + (
+                            f"  RMSE {row.rmse_test:.3f}"
+                            if row.rmse_test is not None
+                            else ""
+                        )
+                    ),
+                    "actor": "system",
+                }
+            )
+        events.append(
+            {
+                "ts":     row.created_at,
+                "icon":   "tabler:cube",
+                "kind":   "registered",
+                "title":  f"Registered {version}",
+                "actor":  row.created_by,
+            }
+        )
+
+    # Sort newest-first; ISO-8601 strings sort correctly lexicographically.
+    events.sort(key=lambda e: str(e["ts"]), reverse=True)
+
+    seen: set = set()
+    deduped: List[Dict[str, Any]] = []
+    for e in events:
+        key = (e["title"], e["ts"])
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(e)
+        if len(deduped) >= _LINEAGE_MAX_ROWS:
+            break
+
+    return [_lineage_row(e) for e in deduped]
 
 
-def _elementary_grid_column_defs() -> List[Dict[str, Any]]:
-    """Static column defs for the Elementary PnL Explorer grid.
+def _lineage_row(event: Dict[str, Any]) -> html.Div:
+    """Render a single timeline event row.
 
-    Mirrors ``layouts.evaluation.cluster_deep_dive
-    ._elementary_explorer_column_defs`` so the rowSelection /
-    checkbox setup the layout configures stays the source of truth on
-    initial paint, and the callback re-asserts the same shape after
-    data lands so AgGrid doesn't drop the checkboxSelection flag
-    when it sees a non-empty rowData for the first time.
+    The icon's coloured background is keyed off ``event["kind"]`` —
+    matches the design's coloured event marker palette.  ``ts``
+    formatting matches the registry table's ``Created`` column for
+    visual continuity.
     """
+    icon_class = f"rade-lineage-icon rade-lineage-icon--{event['kind']}"
+
+    body = html.Div(
+        className="rade-lineage-body",
+        children=[
+            html.Span(event["title"]),
+            html.Span(
+                f"({event.get('actor', 'system')} · {_relative_time(event['ts'])})",
+                className="rade-lineage-meta",
+            ),
+        ],
+    )
+
+    return html.Div(
+        className="rade-lineage-row",
+        children=[
+            html.Div(
+                className=icon_class,
+                children=DashIconify(icon=event["icon"], width=14),
+            ),
+            body,
+            html.A(
+                "View details",
+                href="#",
+                className="rade-lineage-link",
+            ),
+        ],
+    )
+
+
+def _relative_time(ts: Optional[str]) -> str:
+    """Return a coarse relative-time string (``2h ago`` / ``3d ago`` / ...).
+
+    Falls back to the raw ISO string if parsing fails so the row
+    still carries useful information.
+    """
+    if not ts:
+        return _PLACEHOLDER
+    try:
+        dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return str(ts)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+
+    delta = datetime.now(tz=timezone.utc) - dt
+    seconds = int(delta.total_seconds())
+    if seconds < 60:
+        return "just now"
+    if seconds < 3600:
+        return f"{seconds // 60}m ago"
+    if seconds < 86400:
+        return f"{seconds // 3600}h ago"
+    if seconds < 7 * 86400:
+        return f"{seconds // 86400}d ago"
+    return dt.strftime("%d %b %Y")
+
+
+def _empty_lineage_message(message: str) -> List[Any]:
+    """Single-row "no data" placeholder for the lineage timeline."""
     return [
-        {
-            "field":                  "trade_id",
-            "headerName":             "Trade",
-            "flex":                   2,
-            "minWidth":               160,
-            "checkboxSelection":      True,
-            "headerCheckboxSelection": False,
-        },
-        {"field": "mae",           "headerName": "MAE",         "flex": 1, "type": "numericColumn"},
-        {"field": "rmse",          "headerName": "RMSE",        "flex": 1, "type": "numericColumn"},
-        {"field": "mean_residual", "headerName": "Mean resid.", "flex": 1, "type": "numericColumn"},
-        {"field": "n_scenarios",   "headerName": "Scenarios",   "flex": 1, "type": "numericColumn"},
+        html.Div(
+            message,
+            className="text-xs text-slate-500 py-2",
+        )
     ]
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 10. Render — Per-trade detail (Row 3, collapse-on-no-selection)
-# ═════════════════════════════════════════════════════════════════════
-
-
-def _register_render_per_trade_detail(
-    app: "Dash", backend: "RadeBackend",
-) -> None:
-    @app.callback(
-        Output(CLUSTER_DEEP_DIVE_IDS["row3_wrapper"],            "style"),
-        Output(CLUSTER_DEEP_DIVE_IDS["selected_trade_label"],    "children"),
-        Output(CLUSTER_DEEP_DIVE_IDS["per_trade_residual_hist"], "figure"),
-        Output(CLUSTER_DEEP_DIVE_IDS["per_trade_bias_scatter"],  "figure"),
-        Input(SHELL_IDS["url"],                                  "pathname"),
-        Input(SHELL_IDS["session_store"],                        "data"),
-        Input(CLUSTER_DEEP_DIVE_IDS["store_trade_types"],        "data"),
-        prevent_initial_call=False,
-    )
-    def _render(
-        pathname:      Optional[str],
-        session_data:  Optional[Dict[str, Any]],
-        types_payload: Optional[Dict[str, Any]],
-    ) -> Tuple[Dict[str, Any], str, Any, Any]:
-        if pathname != _DEEP_DIVE_PATH:
-            raise PreventUpdate
-
-        session = Session.from_store(session_data)
-        cluster_id = session.evaluation.deep_dive_cluster_id or session.cluster_id
-        selected_trade_id = session.evaluation.deep_dive_selected_trade_id
-
-        hidden_style  = {"display": "none"}
-        visible_style = {"display": "grid"}
-
-        if not selected_trade_id or not cluster_id:
-            return hidden_style, "Trade: —", no_update, no_update
-
-        types_map: Dict[str, str] = {}
-        target_ids: List[str] = []
-        if isinstance(types_payload, dict):
-            types_map = dict(types_payload.get("types") or {})
-            target_ids = list(types_payload.get("target_ids") or [])
-
-        trade_type = types_map.get(selected_trade_id, "unknown")
-        chip_label = f"Trade: {selected_trade_id}  ·  Type: {trade_type}"
-
-        # Residuals only make sense for *target* trades — the model
-        # doesn't predict elementary trades (those are inputs).  Show
-        # the row, but render an explanatory empty figure so the user
-        # learns *why* the chart is blank rather than seeing a stale
-        # plot or the row silently snapping shut.
-        if trade_type != "target":
-            placeholder = empty_figure(
-                "Residual diagnostics are only available for target trades."
-            )
-            return visible_style, chip_label, placeholder, placeholder
-
-        if not target_ids:
-            placeholder = empty_figure(
-                "Trade-graph payload missing target ordering — "
-                "re-run the eval pipeline to stage trade_universe.json."
-            )
-            return visible_style, chip_label, placeholder, placeholder
-
-        try:
-            target_idx = target_ids.index(selected_trade_id)
-        except ValueError:
-            placeholder = empty_figure(
-                f"Trade {selected_trade_id!r} not found in this cluster's "
-                "target ordering."
-            )
-            return visible_style, chip_label, placeholder, placeholder
-
-        pred_res = backend.predictions(cluster_id=cluster_id, split=session.split)
-        if not pred_res.ok or pred_res.data is None:
-            err = pred_res.error or "predictions fetch failed"
-            placeholder = empty_figure(
-                f"Could not load per-scenario predictions ({err})."
-            )
-            return visible_style, chip_label, placeholder, placeholder
-
-        npz: Dict[str, np.ndarray] = pred_res.data
-        predictions_arr = np.asarray(npz.get("predictions"))
-        targets_arr     = np.asarray(npz.get("targets"))
-        if (
-            predictions_arr.size == 0
-            or targets_arr.size == 0
-            or predictions_arr.ndim != 2
-            or targets_arr.shape != predictions_arr.shape
-        ):
-            placeholder = empty_figure(
-                "Predictions NPZ is empty or malformed for this cluster."
-            )
-            return visible_style, chip_label, placeholder, placeholder
-
-        if target_idx >= predictions_arr.shape[1]:
-            placeholder = empty_figure(
-                f"Target index {target_idx} out of range for predictions "
-                f"shape {predictions_arr.shape}."
-            )
-            return visible_style, chip_label, placeholder, placeholder
-
-        pred_slice   = predictions_arr[:, target_idx]
-        target_slice = targets_arr[:, target_idx]
-        ui_key = f"{cluster_id}::{session.split}::{selected_trade_id}"
-
-        histogram = per_trade_residual_histogram(
-            pred_slice, target_slice,
-            trade_id=selected_trade_id,
-            uirevision_key=ui_key,
-        )
-        scatter = per_trade_bias_scatter(
-            pred_slice, target_slice,
-            trade_id=selected_trade_id,
-            uirevision_key=ui_key,
-        )
-        return visible_style, chip_label, histogram, scatter
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 11. Render — Elementary PnL multi-line (Row 4 right)
-# ═════════════════════════════════════════════════════════════════════
-
-
-def _register_render_elementary_pnl(
-    app: "Dash", backend: "RadeBackend",
-) -> None:
-    @app.callback(
-        Output(CLUSTER_DEEP_DIVE_IDS["elementary_pnl_empty"],      "style"),
-        Output(CLUSTER_DEEP_DIVE_IDS["elementary_pnl_chart_card"], "style"),
-        Output(CLUSTER_DEEP_DIVE_IDS["elementary_pnl_chart"],      "figure"),
-        Input(SHELL_IDS["url"],                                    "pathname"),
-        Input(SHELL_IDS["session_store"],                          "data"),
-        prevent_initial_call=False,
-    )
-    def _render(
-        pathname:     Optional[str],
-        session_data: Optional[Dict[str, Any]],
-    ) -> Tuple[Dict[str, Any], Dict[str, Any], Any]:
-        if pathname != _DEEP_DIVE_PATH:
-            raise PreventUpdate
-
-        session = Session.from_store(session_data)
-        cluster_id = session.evaluation.deep_dive_cluster_id or session.cluster_id
-        selected_ids = list(session.evaluation.deep_dive_elementary_trade_ids or [])
-
-        empty_style_visible = {
-            "display": "flex",
-            "flex":    "1 1 auto",
-            "min-height": "160px",
-        }
-        empty_style_hidden  = {"display": "none"}
-
-        if not cluster_id or not selected_ids:
-            return (
-                empty_style_visible,
-                {"display": "none"},
-                empty_figure(
-                    "Pick one or more elementary trades to plot their PnL."
-                ),
-            )
-
-        res = backend.elementary_pnl_df(
-            cluster_id=cluster_id, trade_ids=selected_ids,
-        )
-        if not res.ok:
-            err = res.error or "elementary-pnl fetch failed"
-            return (
-                empty_style_visible,
-                {"display": "none"},
-                empty_figure(f"Could not load elementary PnL ({err})."),
-            )
-        df = res.data
-        if df is None or df.empty:
-            return (
-                empty_style_visible,
-                {"display": "none"},
-                empty_figure(
-                    "Selected elementary trades have no PnL data on this split."
-                ),
-            )
-
-        ui_key = f"{cluster_id}::{','.join(sorted(selected_ids))}"
-        fig = elementary_pnl_multiline(df, uirevision_key=ui_key)
-        return (
-            empty_style_hidden,
-            {"display": "block"},
-            fig,
-        )
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 12. Cross-page navigation — to / from Trade-Graph sub-tab
-# ═════════════════════════════════════════════════════════════════════
-
-
-def _register_navigate_to_trade_graph(app: "Dash") -> None:
-    @app.callback(
-        Output(SHELL_IDS["url"],                             "pathname",
-               allow_duplicate=True),
-        Output(SHELL_IDS["url"],                             "search",
-               allow_duplicate=True),
-        Output(SHELL_IDS["session_store"],                   "data",
-               allow_duplicate=True),
-        Input(CLUSTER_DEEP_DIVE_IDS["open_trade_graph_btn"], "n_clicks"),
-        State(SHELL_IDS["session_store"],                    "data"),
-        prevent_initial_call=True,
-    )
-    def _navigate(
-        n_clicks:     Optional[int],
-        session_data: Optional[Dict[str, Any]],
-    ) -> Tuple[str, str, Dict[str, Any]]:
-        if not n_clicks:
-            raise PreventUpdate
-
-        session = Session.from_store(session_data)
-        cid = session.evaluation.deep_dive_cluster_id or session.cluster_id
-        if not cid:
-            raise PreventUpdate
-
-        session.evaluation.trade_graph_cluster_id = cid
-        session.evaluation.trade_graph_selected_trade_id = None
-
-        return _TRADE_GRAPH_PATH, "", session.to_store()
-
-
-def _register_navigate_from_trade_graph(app: "Dash") -> None:
-    @app.callback(
-        Output(SHELL_IDS["url"],                          "pathname",
-               allow_duplicate=True),
-        Output(SHELL_IDS["url"],                          "search",
-               allow_duplicate=True),
-        Output(SHELL_IDS["session_store"],                "data",
-               allow_duplicate=True),
-        Input(TRADE_GRAPH_IDS["selected_deep_dive_btn"],  "n_clicks"),
-        State(SHELL_IDS["session_store"],                 "data"),
-        prevent_initial_call=True,
-    )
-    def _navigate(
-        n_clicks:     Optional[int],
-        session_data: Optional[Dict[str, Any]],
-    ) -> Tuple[str, str, Dict[str, Any]]:
-        if not n_clicks:
-            raise PreventUpdate
-
-        session = Session.from_store(session_data)
-        cid = (
-            session.evaluation.trade_graph_cluster_id
-            or session.cluster_id
-        )
-        if not cid:
-            raise PreventUpdate
-
-        session.evaluation.deep_dive_cluster_id = cid
-        session.evaluation.deep_dive_selected_trade_id = (
-            session.evaluation.trade_graph_selected_trade_id
-        )
-
-        return _DEEP_DIVE_PATH, f"?cid={cid}", session.to_store()
 
 
 __all__ = ["register"]
 ```
 
-### Verification (after pasting all three files)
+---
 
-Restart the dashboard, then check:
+### A.9 — `src/ui/apps/rade_analytics/router.py` (PATCH)
 
-| Sanity probe | Expected |
-|---|---|
-| Browser console | No `Duplicate callback outputs` errors. |
-| `/evaluation/cluster` page | All cards render: Cluster Attributes, KPI grid (4 sparklines), Graph Statistics, Cluster Portfolio chart, Trade-Level Metrics grid, Convergence strip (residual + curves stacked), Elementary PnL Explorer + empty-state placeholder. |
-| Click a row in the Trade-Level Metrics grid | Row 3 (per-trade detail) expands.  For target trades you see histogram + bias scatter populated from the predictions NPZ.  For elementary trades you see an explanatory empty figure. |
-| Tick rows in the Elementary PnL Explorer | Row 4 right swaps the empty placeholder for the multi-line PnL chart. |
-| Click "Reset selection" | Multi-line chart collapses back to the empty-state placeholder. |
-| Switch cluster in the picker | Selected trade + elementary multi-select + curve overlay metrics all reset (intentional — those ids belong to the prior cluster). |
-| Browser-back on a `?cid=` deep-link | Cluster + selected trade + elementary checkboxes all repaint from session. |
+Two targeted edits — add the layout import, then swap the placeholder
+PageSpec for the live builder.
+
+**Patch 1** — find this import block:
+
+```python
+from .layouts.evaluation import build_evaluation
+from .layouts.overview import build_overview
+from .layouts.shell import SHELL_IDS, build_chrome
+from .layouts.splash import build_splash
+```
+
+…and replace it with:
+
+```python
+from .layouts.evaluation import build_evaluation
+from .layouts.governance import build_governance
+from .layouts.overview import build_overview
+from .layouts.shell import SHELL_IDS, build_chrome
+from .layouts.splash import build_splash
+```
+
+**Patch 2** — find the placeholder governance entry inside `ROUTES`:
+
+```python
+    "/governance": PageSpec(
+        path="/governance",
+        title="Governance",
+        build=_placeholder("Governance", "Phase F"),
+    ),
+```
+
+…and replace it with:
+
+```python
+    "/governance": PageSpec(
+        path="/governance",
+        title="Governance",
+        build=build_governance,
+    ),
+```
+
+---
+
+### A.10 — `src/ui/apps/rade_analytics/callbacks/__init__.py` (PATCH)
+
+Two targeted edits — add the new module to the imports tuple, then
+register it in `register_all`.
+
+**Patch 1** — find this import block:
+
+```python
+from ..router import register_router
+from . import (
+    cluster_deep_dive_cb,
+    evaluation_cb,
+    overview_cb,
+    portfolio_cb,
+    splash_cb,
+    trade_graph_cb,
+)
+```
+
+…and replace it with:
+
+```python
+from ..router import register_router
+from . import (
+    cluster_deep_dive_cb,
+    evaluation_cb,
+    governance_cb,
+    overview_cb,
+    portfolio_cb,
+    splash_cb,
+    trade_graph_cb,
+)
+```
+
+**Patch 2** — find the dispatch tail in `register_all`:
+
+```python
+    register_router(app, backend)
+    splash_cb.register(app, backend)
+    overview_cb.register(app, backend)
+    evaluation_cb.register(app, backend)
+    portfolio_cb.register(app, backend)
+    trade_graph_cb.register(app, backend)
+    cluster_deep_dive_cb.register(app, backend)
+```
+
+…and replace it with:
+
+```python
+    register_router(app, backend)
+    splash_cb.register(app, backend)
+    overview_cb.register(app, backend)
+    evaluation_cb.register(app, backend)
+    portfolio_cb.register(app, backend)
+    trade_graph_cb.register(app, backend)
+    cluster_deep_dive_cb.register(app, backend)
+    governance_cb.register(app, backend)
+```
+
+---
+
+### A.11 — `src/ui/apps/rade_analytics/assets/rade.css` (APPEND)
+
+Append the block below to the **end** of `rade.css` (immediately
+after the existing `.rade-cluster-trades-grid .ag-root-wrapper` rule).
+Adds the status pills, lineage-row chrome, page title and grid
+helpers used by the layout in §A.7.
+
+```css
+/* ==================================================================
+ * GOVERNANCE PAGE  (Phase E.x)
+ *
+ * Visual anchor: ``docs/platform_designs/rade_governance.png``.
+ *
+ * What this section adds:
+ *   .rade-page-title          — Section H1 (e.g. "Governance")
+ *   .rade-grid-mono           — Monospace cell font for hashes / versions
+ *   .rade-pill                — Inline pill chrome used inside AG Grid cells
+ *     .rade-pill--production  — Emerald  (lifecycle: live)
+ *     .rade-pill--staging     — Amber    (lifecycle: pre-prod)
+ *     .rade-pill--candidate   — Violet   (lifecycle: latest, not promoted)
+ *     .rade-pill--archived    — Slate    (lifecycle: rolled past)
+ *     .rade-pill--approved    — Emerald  (audit result)
+ *     .rade-pill--rejected    — Rose     (audit result)
+ *     .rade-pill--pending     — Amber    (audit result)
+ *
+ * Pills sit inside AG Grid cells, so they're styled to *look* inline-
+ * block-ish without overflowing the cell row.  ``cellClassRules`` in
+ * ``layouts/governance.py`` wires one of the lifecycle / result
+ * variants per row.
+ * ================================================================== */
+
+.rade-page-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #f1f5f9;                       /* slate-100 */
+  letter-spacing: -0.01em;
+}
+
+/* Monospace cell font for AG Grid columns that show hashes / versions. */
+.rade-grid-mono {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.78rem;
+  letter-spacing: -0.01em;
+}
+
+/* Inline pill chrome used inside AG Grid cells.
+
+   Setting ``display: inline-flex`` lets the pill sit alongside any
+   AG-grid-injected text without inheriting the cell's full row
+   height — otherwise the chip would stretch vertically and look
+   like a coloured row instead of a tag.  ``align-self: center`` on
+   the inner span isn't required because the cell host applies its
+   own flex centering. */
+.rade-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.5;
+  border: 1px solid transparent;
+}
+
+.rade-pill--production {
+  background-color: rgba(16, 185, 129, 0.16);
+  color: #34d399;                       /* emerald-400 */
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+.rade-pill--staging {
+  background-color: rgba(245, 158, 11, 0.16);
+  color: #fbbf24;                       /* amber-400 */
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.rade-pill--candidate {
+  background-color: rgba(139, 92, 246, 0.16);
+  color: #a78bfa;                       /* violet-400 */
+  border-color: rgba(139, 92, 246, 0.35);
+}
+
+.rade-pill--archived {
+  background-color: rgba(100, 116, 139, 0.16);
+  color: #94a3b8;                       /* slate-400 */
+  border-color: rgba(100, 116, 139, 0.35);
+}
+
+.rade-pill--approved {
+  background-color: rgba(16, 185, 129, 0.16);
+  color: #34d399;                       /* emerald-400 */
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+.rade-pill--rejected {
+  background-color: rgba(244, 63, 94, 0.16);
+  color: #fb7185;                       /* rose-400 */
+  border-color: rgba(244, 63, 94, 0.35);
+}
+
+.rade-pill--pending {
+  background-color: rgba(245, 158, 11, 0.16);
+  color: #fbbf24;                       /* amber-400 */
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+/* Lineage-timeline rows — repurposes the rade-feed bullet pattern but
+   bumps the icon column to 32 px so we can drop a square-ish event
+   marker (e.g. "promoted", "eval completed", "registered") that
+   matches the design's coloured status dots.  Markup-wise the layout
+   uses ``html.Div(className="rade-lineage-row")`` for each event. */
+
+.rade-lineage-row {
+  display: grid;
+  grid-template-columns: 32px 1fr auto;
+  gap: 0.875rem;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(30, 41, 59, 0.6);
+}
+
+.rade-lineage-row:last-child { border-bottom: 0; }
+
+.rade-lineage-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(139, 92, 246, 0.18);
+  color: #a78bfa;                       /* violet-400 */
+}
+
+.rade-lineage-icon--promoted {
+  background-color: rgba(16, 185, 129, 0.16);
+  color: #34d399;                       /* emerald-400 */
+}
+
+.rade-lineage-icon--registered {
+  background-color: rgba(139, 92, 246, 0.18);
+  color: #a78bfa;                       /* violet-400 */
+}
+
+.rade-lineage-icon--evaluated {
+  background-color: rgba(59, 130, 246, 0.16);
+  color: #60a5fa;                       /* blue-400 */
+}
+
+.rade-lineage-body {
+  font-size: 0.85rem;
+  color: #cbd5e1;                       /* slate-300 */
+}
+
+.rade-lineage-meta {
+  color: #64748b;                       /* slate-500 */
+  font-size: 0.75rem;
+  margin-left: 0.5rem;
+}
+
+.rade-lineage-link {
+  font-size: 0.78rem;
+  color: #818cf8;                       /* indigo-400 */
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.rade-lineage-link:hover { text-decoration: underline; }
+
+/* Governance grids — match the page card and let AG Grid breathe.
+   Both grids use the standard ``ag-theme-alpine-dark`` chrome so we
+   only need to align the row striping and the pill cell host. */
+.rade-governance-registry-grid,
+.rade-governance-audit-grid {
+  min-height: 0;
+}
+
+/* Centre pill cells vertically inside AG Grid (cells default to
+   flex with ``align-items: center`` already, but the explicit rule
+   here defends against future theme upgrades). */
+.rade-governance-registry-grid .ag-cell,
+.rade-governance-audit-grid .ag-cell {
+  display: flex;
+  align-items: center;
+}
+```
+
+---
+
+### A.12 — Verification (after pasting all eleven targets)
+
+Run from the repo root.  The first two commands need no live registry
+data; the last two do (point them at your real `PRISM_*` env vars).
+
+1. **Static checks** — imports + lints, no live server:
+
+   ```bash
+   python -c "
+   from src.rade_ml_pt.ensemble.api.app import create_app
+   from src.ui.apps.rade_analytics.layouts.governance import build_governance
+   from src.ui.apps.rade_analytics.callbacks import register_all
+   tree = build_governance()
+   assert tree.id == 'governance-root'
+   print('governance imports + layout build: OK')
+   "
+   ```
+
+2. **API dry-run** — synthetic 2-version registry via FastAPI's
+   `TestClient` (catches Pydantic / route-prefix / response-shape regressions):
+
+   ```bash
+   python -c "
+   import json, tempfile
+   from pathlib import Path
+   from fastapi.testclient import TestClient
+   from src.rade_ml_pt.ensemble.api.config import Settings, set_settings
+   from src.rade_ml_pt.ensemble.api.app import create_app
+   with tempfile.TemporaryDirectory() as tmp:
+       root = Path(tmp); reg = root/'registry'/'ensemble'; art = root/'artifacts'
+       reg.mkdir(parents=True); art.mkdir()
+       (reg/'ens_20260417_142233_abc123').mkdir()
+       (reg/'ens_20260417_142233_abc123'/'ensemble_config.json').write_text(json.dumps({
+           'cluster_mapping': {'cluster_0': ['t1','t2','t3']}, 'aggregation': 'concat'}))
+       (reg/'index.json').write_text(json.dumps({
+           'production': 'ens_20260417_142233_abc123',
+           'latest':     'ens_20260417_142233_abc123'}))
+       set_settings(Settings(artifacts_dir=str(root/'artifacts'),
+                             registry_dir=str(root/'registry'),
+                             ensemble_version='latest'))
+       r = TestClient(create_app()).get('/prism/v1/governance/registry')
+       assert r.status_code == 200, r.text
+       body = r.json()
+       assert body['rows'][0]['status'] == 'production'
+       assert body['rows'][0]['n_members'] == 1
+       assert body['rows'][0]['n_trades']  == 3
+       print('API smoke: OK')
+   "
+   ```
+
+3. **Live PRISM API** — boot the existing example launcher and call
+   the endpoint:
+
+   ```bash
+   python examples/rade_ml_pt/hybrid_gnn_rnn/12_run_prism_api.py    # in one shell
+   curl http://localhost:8000/prism/v1/governance/registry | jq '.rows[:2]'
+   ```
+
+4. **Live Dash UI** — launch the existing UI runner and navigate to
+   `/governance`.  All four KPIs populate from the registry, the table
+   row count matches `versions/active`, the SegmentedControl filters
+   the table, and the Lineage Timeline shows one row per
+   `(version, kind)` pair, capped at 6.
