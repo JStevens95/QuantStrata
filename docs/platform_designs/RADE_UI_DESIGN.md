@@ -251,65 +251,195 @@ When a new tab or card is proposed:
 No mock, no merge.
 
 ---
+## Appendix A — Inference Console (V2 · scenario ingest + activity log + 5-tab analytics)
 
-## Appendix A — Inference Console (scenario ingest · Option A: empty layout, no callbacks)
-
-Single appendix entry (this block replaces whatever lived in Appendix A before).
+This appendix supersedes whatever lived in Appendix A before.
 Implementation pairs with [`docs/rade_analytics/page_contract.md`](../rade_analytics/page_contract.md)
 and the mechanical workflow in [`docs/rade_analytics/page_template/README.md`](../rade_analytics/page_template/README.md).
 
-**Design anchor:** scenario-first variant of [`rade_inference.png`](rade_inference.png) — global **version +
-split live in chrome** (`TOPBAR_IDS["version_select"]`, `"split_toggle"`).  This option ships **navigation +
-layout shells only**: no callbacks in `callbacks/__init__.py`, therefore no REST calls yet.
+**Design anchor:** scenario-first variant of [`rade_inference.png`](rade_inference.png) — global **version + split**
+live in chrome (`TOPBAR_IDS["version_select"]`, `"split_toggle"`).
+This is still **Option A** (layout-only, no callbacks); Stage 2 lights up
+the contract in §4 below.
 
 ---
 
 ### Appendix A · 1 — Contract + template checklist (pre-flight before callbacks)
 
-Pass criteria for reviewers — should match Cluster Deep‑Dive / Data Quality parity.
+Pass criteria for reviewers — should match Cluster Deep-Dive / Data Quality parity.
 
-| Item | Requirement (page contract / template) | This page |
-|------|---------------------------------------|-----------|
+| Item | Requirement | This page |
+| --- | --- | --- |
 | §2·1 Pure layout | `build_inference(*, session=…)` is side-effect-free; zero backend imports under `layouts/`. | **Pass** · only `components/`, `figures/`, `dcc`/`dmc`/`html`. |
-| §2·1 `Session` signature | Builders accept optional `session` typed as `Optional[Session]` + `del session`/`use` honestly. | **Pass** · `del session` with note until capture persists state. |
-| §3 Rule L2 | **`<PAGE>_IDS`** dict owns every callable id (`INFERENCE_IDS`). | **Pass** (`inference-*` prefixes). |
-| §3 Rule L3 | Prefer shared styles in `rade.css`; primitives use Tailwind like sibling pages until a page-specific block is warranted. | **Pass** reuse `rade-card`, `rade-page-title`, pills. |
-| §3 Rule L4 | **`dcc.Store(id=mount_signal, data=True, storage_type="memory")`** sits under page root early in children. | **Pass** (`inference-mount-signal`). |
+| §2·1 `Session` signature | Builders accept `Optional[Session]` + `del session` honestly. | **Pass** · `del session` with note until capture persists state. |
+| §3 Rule L2 | `<PAGE>_IDS` dict owns every callable id (`INFERENCE_IDS`). | **Pass** · 42 stable `inference-*` ids. |
+| §3 Rule L3 | Prefer shared styles in `rade.css`; primitives use Tailwind like sibling pages until a page-specific block is warranted. | **Pass** reuse `rade-card`, `rade-page-title`, pills + new `rade-activity-*` / `rade-stress-mini-*` blocks (§5.3). |
+| §3 Rule L4 | `dcc.Store(id=mount_signal, data=True, storage_type="memory")` sits under page root early in children. | **Pass** · `inference-mount-signal` plus four data Stores (§4.1). |
 | Chrome scope | Ensemble **version** + **split** come from shell top bar (`TOPBAR_IDS`); do not duplicate on the page. | **Pass** · caption references top bar. |
-| Template layout | Mirrors template row order philosophy: tripwire → header → strips → grids; future `callbacks/inference_cb.py` pairs with `layouts/inference.py` per README step 4. | **Pass** Phase A layout only (`inference_cb` not merged yet). |
-| §11 mock coverage | Honour palette / card cadence §4–§6 (gradient CTA sparingly — Run button only). | **Pass** violet→cyan mirrors splash CTA conventions. |
+| Template layout | Mirrors template row order: tripwire + Stores → header → ingest bar → 2-col workspace; future `callbacks/inference_cb.py` pairs with `layouts/inference.py`. | **Pass** Phase A layout only (`inference_cb` not merged yet). |
+| §11 mock coverage | Honour palette / card cadence §4–§6 (gradient CTA sparingly — *Run* button only). | **Pass** violet→cyan mirrors splash CTA conventions. |
 
-**Known platform limitation (`dcc.Upload` 3.4):** Dash does **not** expose `directory=True`. **Multi-file** browse +
-**paste server path** is the authoritative story until a packaged `clientside_callback` attaches `webkitdirectory`.
+**Known platform limitation (`dcc.Upload` in Dash 3.4):** does **not** expose `directory=True`. Multi-file browse + paste-server-path is the authoritative story until a packaged `clientside_callback` attaches `webkitdirectory`.
 
 ---
 
 ### Appendix A · 2 — File touch summary
 
 | Action | Path |
-|--------|------|
-| **NEW** | `src/ui/apps/rade_analytics/figures/inference_charts.py` |
+| --- | --- |
+| **NEW** | `src/ui/apps/rade_analytics/figures/inference_charts.py` (now exports 5 empties — adds `empty_risk_attribution`, `empty_stress_tails`) |
 | **NEW** | `src/ui/apps/rade_analytics/layouts/inference.py` |
 | **PATCH** | `src/ui/apps/rade_analytics/router.py` — alphabetised imports + `/inference` route + breadcrumb title |
-| Deferred | `src/ui/apps/rade_analytics/callbacks/inference_cb.py` (+ `callbacks/__init__.py` registration) |
+| **PATCH** | `src/ui/apps/rade_analytics/assets/rade.css` — appends `rade-activity-*` and `rade-stress-mini-*` blocks |
+| Deferred | `src/ui/apps/rade_analytics/callbacks/inference_cb.py` (+ `callbacks/__init__.py` registration) — see §4.3 wiring table |
 
-No `data/backend.py` changes for Option A. CSS: optional scoped hooks under `.rade-inference` if overrides become necessary — reuse existing `rade-card`, `rade-page-title`, pill classes today.
-
----
-
-### Appendix A · 3 — Stage 2 callback playbook (outline only)
-
-Implementers bootstrap off `docs/rade_analytics/page_template/template_cb.py`:
-
-1. **Capture** paths: paste field + last `dcc.Upload` `contents`; write structured ingest payload to `dcc.Store` or session extension.
-2. **Upload scenarios** button: `Output(upload_scenarios_btn, "loading")` + `Output(ingest_status, "children")` success `DashIconify(tabler:circle-check, className="text-emerald-500")`.
-3. **Render** listens on `Input(mount_signal, "data")` + `State(SHELL_IDS["url"], "pathname")` gate `== "/inference"` — never `Input(pathname)` on page render (Anti-pattern A8).
-4. **Chart mode** `chart_view_mode` → swap `empty_pnl_*` vs live figures on `chart_main`.
-5. **AgGrid** `rowSelection="single"` → future `selectedRows` callback filters chart series.
+No `data/backend.py` changes for Option A.  Stage 2 will add a `RadeBackend.run_inference(...)` returning a typed `RunMeta`-shaped payload (see §4.1).
 
 ---
 
-### Appendix A · 4 — `figures/inference_charts.py` (NEW · full file)
+### Appendix A · 3 — V2 delta vs V1 (what's actually new)
+
+| Region | V1 | V2 |
+| --- | --- | --- |
+| INPUT (Row 3 left) | One scrollable manifest box + Run / Validate buttons. | **Two stacked cards**: Activity log (top, scrollable, status-coded) → Manifest preview (bottom, scrollable, holds Run / Validate buttons). |
+| Page-level Stores | `mount_signal` only. | `mount_signal` + `activity_log_store` + `ingest_meta_store` + `run_meta_store` + `selected_scenario_store`. |
+| Analytics tabs | 3 — Charts · Sensitivity · Diagnostics. | **5** — Charts · Sensitivity · **Risk attribution** (new) · **Stress & tails** (new) · Diagnostics. |
+| Empty figures | 3 — distribution / timeseries / overlay. | **5** — adds `empty_risk_attribution`, `empty_stress_tails`. |
+| Workspace grid | (V1.1 fix) `lg:grid-cols-5` + `lg:col-span-2/3` (Cluster Deep-Dive idiom). | Unchanged — same parent. |
+| Public render helpers | none | `render_activity_entries(entries)` — used by both the empty-state layout and Stage-2 callbacks. |
+
+---
+
+### Appendix A · 4 — Callback functional spec (Stage 2 contract)
+
+This page is intentionally **stateful via Stores** so Stage-2 callbacks
+remain pure functions of `(stores, controls)` — no globals, no module
+state.  The store contracts below are the source of truth; everything
+else (chart / KPI / grid populates) derives from them.
+
+#### 4.1 Store contracts
+
+| Store ID | Initial | Shape | Owner / writer |
+| --- | --- | --- | --- |
+| `inference-mount-signal` | `True` | bool | layout — Page Contract Rule L4 tripwire |
+| `inference-activity-log-store` | `[]` | `List[ActivityEntry]` (append-only) | ingest, validate, run callbacks |
+| `inference-ingest-meta-store` | `None` | `IngestMeta \| None` | upload-scenarios callback |
+| `inference-run-meta-store` | `None` | `RunMeta \| None` | run callback |
+| `inference-selected-scenario-store` | `None` | `str \| None` (scenario id) | scenario-grid row-click callback |
+
+```python
+# Append-only feed entry (see render_activity_entries):
+ActivityEntry = TypedDict("ActivityEntry", {
+    "id":     str,                        # uuid for stable React keys
+    "stage":  Literal["ingest", "validate", "inference"],
+    "phase":  str,                        # human readable phase
+    "target": NotRequired[str],           # filename / cluster id / risk factor
+    "status": Literal["ok", "fail", "running", "pending"],
+    "ts":     str,                        # ISO-8601 or HH:MM:SS
+    "detail": NotRequired[str],           # error message / extra detail
+})
+
+IngestMeta = TypedDict("IngestMeta", {
+    "source":       str,                  # folder path or "uploaded"
+    "files":        List[FileMeta],
+    "started_ts":   str,
+    "completed_ts": str,
+    "n_files":      int,
+    "n_scenarios":  int,
+})
+
+FileMeta = TypedDict("FileMeta", {
+    "name":         str,
+    "scenarios":    int,
+    "risk_factors": List[str],
+    "valid":        bool,
+    "errors":       List[str],
+})
+
+RunMeta = TypedDict("RunMeta", {
+    "run_id":       str,
+    "started_ts":   str,
+    "completed_ts": str,
+    "elapsed_ms":   int,
+    "n_clusters":   int,
+    "n_trades":     int,
+    "kpi": {
+        "scenarios":         int,
+        "clusters":          int,
+        "avg_inference_ms":  float,
+        "portfolio_pnl":     float,
+    },
+})
+```
+
+#### 4.2 Activity-log lifecycle (golden-path narrative)
+
+The activity log is the user-facing *story* of what's happening.  Every
+state transition pushes one or more entries.  Stage-2 callbacks should
+emit at least the events below; intermediate progress is welcome but
+not required.
+
+**Phase 1 — ingest (per file in the bundle):**
+
+```text
+[ingest][running] File loaded                  · scenario_001.json
+[ingest][ok]      Manifest parsed              · scenario_001.json
+[ingest][ok]      Scenarios ingested into RF1  · scenario_001.json (100 scenarios)
+[ingest][fail]    Schema mismatch              · scenario_002.json (detail: missing 'horizon')
+```
+
+**Phase 2 — validate (when *Validate only* clicked, or pre-flight before run):**
+
+```text
+[validate][running] Cross-checking shock schema vs ensemble version v0.4.2
+[validate][ok]      All risk factors covered
+[validate][ok]      No NaN / Inf shocks
+```
+
+**Phase 3 — inference (when *Run* clicked):**
+
+```text
+[inference][running] Cluster 1 (RF1) model loading
+[inference][ok]      Cluster 1 (RF1) model loaded
+[inference][ok]      Cluster 1 (RF1) input batch ready (100 scenarios x 8 trades)
+[inference][ok]      Cluster 1 (RF1) forward pass complete (3.4 ms)
+[inference][ok]      Cluster 1 (RF1) predictions ready
+... per cluster ...
+[inference][ok]      Aggregation complete · KPIs published
+```
+
+#### 4.3 Callback wiring (one row per Stage-2 callback)
+
+| # | Trigger | Outputs | Reads | Notes |
+| --- | --- | --- | --- | --- |
+| 1 | `Input(upload_scenarios_btn, "n_clicks")` | `Output(upload_scenarios_btn, "loading")`, `Output(ingest_status, "children")`, `Output(ingest_meta_store, "data")`, `Output(activity_log_store, "data")`, `Output(manifest_preview_container, "children")` | `State(scenario_folder_path, "value")`, `State(scenario_folder_upload, "contents")`, `State(scenario_folder_upload, "filename")`, `State(activity_log_store, "data")` | Streams ingest events into the activity log; final write fills `ingest_meta_store` and renders manifest preview. Use a long-running callback if ingest > ~200 ms. |
+| 2 | `Input(activity_log_store, "data")` | `Output(activity_log_container, "children")` | — | Pure render: `render_activity_entries(data)`. |
+| 3 | `Input(validate_only_btn, "n_clicks")` | `Output(activity_log_store, "data", allow_duplicate=True)` | `State(ingest_meta_store, "data")`, `State(activity_log_store, "data")` | Validates the ingested manifest only; emits validate events. |
+| 4 | `Input(run_btn, "n_clicks")` | `Output(activity_log_store, "data", allow_duplicate=True)`, `Output(run_meta_store, "data")`, `Output(scenario_results_grid, "rowData")` | `State(ingest_meta_store, "data")`, `State(activity_log_store, "data")`, `State(TOPBAR_IDS["version_select"], "value")` | Executes inference; streams per-cluster events; writes per-scenario rows. |
+| 5 | `Input(run_meta_store, "data")` | `Output(kpi_*_value, "children")` × 4, `Output(kpi_*_spark, "data")` × 4 | — | KPI hydrate from `RunMeta.kpi`. |
+| 6 | `Input(chart_view_mode, "value")`, `Input(run_meta_store, "data")`, `Input(selected_scenario_store, "data")` | `Output(chart_main, "figure")` | — | Swaps distribution / timeseries / overlay; re-slices when row selected. |
+| 7 | `Input(risk_attribution_breakdown, "value")`, `Input(run_meta_store, "data")`, `Input(selected_scenario_store, "data")` | `Output(risk_attribution_chart, "figure")` | — | Attribution view; bar when 1-deep, treemap when nested. |
+| 8 | `Input(stress_tails_mode, "value")`, `Input(run_meta_store, "data")`, `Input(selected_scenario_store, "data")` | `Output(stress_tails_chart, "figure")`, `Output(stress_kpi_var, "children")`, `Output(stress_kpi_cvar, "children")`, `Output(stress_kpi_worst, "children")` | — | Recomputes tail stats over current slice. |
+| 9 | `Input(scenario_results_grid, "selectedRows")` | `Output(selected_scenario_store, "data")` | — | Single-select; null when deselected. |
+| 10 | `Input(publish_btn, "n_clicks")` | `Output(activity_log_store, "data", allow_duplicate=True)` (governance event) | `State(run_meta_store, "data")`, `State(save_run_as, "value")`, `State(TOPBAR_IDS["version_select"], "value")` | Posts to Governance writer (Stage 3); emits *Published to governance* event. |
+
+#### 4.4 Anti-patterns to avoid
+
+* **Do not** use `Input(scenario_folder_upload, "contents")` as a callback
+  trigger — analysts want to confirm the bundle before ingest fires.
+  Use the *Upload scenarios* button as the explicit trigger.
+* **Do not** filter charts by mutating `run_meta_store` — slice from a
+  read-only copy and key chart callbacks off `selected_scenario_store`.
+* **Do not** mutate `activity_log_store` in-place; always return a new
+  list.  React reconciles on identity, and append-in-place will drop
+  entries silently.
+
+
+---
+
+### Appendix A · 5 — Source files (full code)
+
+#### 5.1 `figures/inference_charts.py` (NEW · full file)
 
 ```python
 """Plotly figure builders for the Inference Console page.
@@ -327,6 +457,16 @@ Modes
   aggregated curve with optional percentile band.
 * **Overlay** — reserved third view (e.g. train vs live scenario
   kernel density) until the product contract names it.
+* **Risk attribution** — bar / treemap of P&L contribution split by
+  cluster, risk-factor, and trade type.  Tells the user *why* the
+  book moved under the new scenarios.
+* **Stress & tails** — VaR / CVaR cross-sections, tail histogram and
+  fan-chart percentile band.  Regulatory / risk-management view of
+  the same scenarios.
+
+Builders are intentionally trivial wrappers around ``empty_figure``
+so the page renders cleanly before any inference run; replace each
+helper body once the inference executor lands a typed payload.
 """
 from __future__ import annotations
 
@@ -350,28 +490,59 @@ def empty_pnl_overlay() -> go.Figure:
     return empty_figure("Third chart mode — reserved")
 
 
+def empty_risk_attribution() -> go.Figure:
+    """Placeholder for *P&L attribution by cluster · risk-factor · trade-type*.
+
+    Stage 2 will replace this with either a horizontal bar chart
+    (cluster contribution, signed) or a treemap (cluster → risk
+    factor → trade type) depending on the user's last selected
+    breakdown axis.
+    """
+    return empty_figure("Awaiting scenario run — attribution view")
+
+
+def empty_stress_tails() -> go.Figure:
+    """Placeholder for *VaR / CVaR / tail-quantile* view.
+
+    Stage 2 candidates: percentile band fan chart over scenario
+    index, tail-bar (VaR vs CVaR), or worst-N scenarios sparkline.
+    """
+    return empty_figure("Awaiting scenario run — tail-risk view")
+
+
 __all__ = [
     "empty_pnl_distribution",
     "empty_pnl_overlay",
     "empty_pnl_timeseries",
+    "empty_risk_attribution",
+    "empty_stress_tails",
 ]
-
 ```
 
----
-
-### Appendix A · 5 — `layouts/inference.py` (NEW · full file)
+#### 5.2 `layouts/inference.py` (NEW · full file)
 
 ```python
-"""Inference Console page layout — **scenario ingestion** path (V1).
+"""Inference Console page layout — **scenario ingestion** path (V2).
 
-This iteration targets **uploading scenario definitions** from a filesystem
-folder (paste path vs browser folder pick), not ad-hoc new trades.
+This iteration upgrades the original "scenario folder ingest" mock with
+two product-driven additions:
+
+1.  **Activity log** in the INPUT column — a streaming, status-coded
+    feed that narrates *every* lifecycle event (file loaded, scenarios
+    ingested into a risk factor, model loaded, forward pass, predictions
+    ready, …) with green-tick / red-cross / pulsing-circle icons.
+
+2.  **Two new analytics tabs** in the RESULTS column — *Risk
+    attribution* (P&L breakdown by cluster · risk factor · trade type)
+    and *Stress & tails* (VaR, CVaR, worst-N).  These sit alongside the
+    existing **Charts**, **Sensitivity** and **Diagnostics** tabs.
 
 Row map
 -------
 
-* **Row 0** — ``dcc.Store`` mount tripwire (Page Contract §3 Rule L4).
+* **Row 0** — ``dcc.Store`` mount tripwire (Page Contract §3 Rule L4)
+  *plus* four data Stores driving the page state machine: activity
+  log, ingest meta, run meta, selected scenario.
 
 * **Row 1** — Title + subtitle.  Ensemble **version** and **train /
   val / test** split remain in the chrome topbar (:data:`TOPBAR_IDS`)
@@ -382,57 +553,135 @@ Row map
 
     * ``dmc.TextInput`` — paste a server-accessible folder path.
 
-    * ``dcc.Upload`` — ``multiple=True``, wraps a *Browse files* button so
-      analysts can pick many scenario files at once.  True **folder**
-      selection (``webkitdirectory``) is not exposed by ``dcc.Upload`` in
-      Dash 3.4 — use the pasted path for recursive directory ingest on the
-      server, or extend with a small clientside bundle later.
+    * ``dcc.Upload`` — ``multiple=True``, wraps a *Browse files* button
+      so analysts can pick many scenario files at once.  True
+      **folder** selection (``webkitdirectory``) is not exposed by
+      ``dcc.Upload`` in Dash 3.4 — use the pasted path for recursive
+      directory ingest on the server, or extend with a small
+      clientside bundle later.
 
     * *Upload scenarios* ``dmc.Button`` — exposes ``loading=`` /
       ``loaderProps`` at ``False``; the hydrate callback toggles
-      ``loading``, then swaps the ingest status slot for an emerald tick
-      when ingest completes.
+      ``loading``, then swaps the ingest status slot for an emerald
+      tick when ingest completes.
 
     * Ingest feedback slot ``#inference-ingest-status`` — empty shell
       the callback swaps to ``tabler:circle-check``, error icon, etc.
 
-* **Row 3** — Two-column split:
+* **Row 3** — Two-column workspace:
 
-    * **Left · INPUT** — scrollable scenario manifest preview
-      placeholder; **Run** (gradient violet→cyan — matches splash CTAs)
-      and **Validate only** footer actions.
+    * **Left · INPUT** — *two stacked cards*.
+
+        - **Activity log card** — scrollable feed bound to
+          :data:`INFERENCE_IDS["activity_log_store"]`.  Each entry is
+          a dict (see *Callback contract* below) and the renderer
+          emits one ``rade-activity-row`` per entry.
+
+        - **Manifest card** — scrollable manifest preview of the
+          ingested bundle (filenames, scenario counts, risk-factor
+          coverage, validity).  Footer holds **Validate only** and
+          **Run** (gradient violet→cyan) actions; both gated until
+          ingest completes.
 
     * **Right · RESULTS** — four KPI tiles (sparkline slots via
-      ``sparkline_id``); ``dmc.Tabs`` (**Charts · Sensitivity ·
-      Diagnostics**).  The **Charts** tab holds the segmented control
-      (**Distribution** / **Timeseries** / **More · TBD**) and the main
-      ``dcc.Graph`` (:class:`~components.chart_container.ChartContainer`).
-      Then *Save run* / Publish / Export, then AG Grid (**single-row
-      selection**) for per-scenario aggregates — clicking a row filters
-      the charts upstream in Phase 2.
+      ``sparkline_id``); ``dmc.Tabs`` (**Charts · Sensitivity · Risk
+      attribution · Stress & tails · Diagnostics**).
 
-Beyond these regions, roadmap analytics (add as tabs or accordion later):
+      * **Charts** holds the segmented control (Distribution /
+        Timeseries / *More · TBD*) and the main ``dcc.Graph``
+        (:class:`~components.chart_container.ChartContainer`).
 
-    * Shock attribution tornado — dominant risk legs per scenario slice.
+      * **Risk attribution** holds a *breakdown* segmented control
+        (Cluster / Risk factor / Trade type) and an attribution chart
+        (bar / treemap depending on the breakdown).
+
+      * **Stress & tails** holds a 3-mini-KPI strip (VaR · CVaR ·
+        Worst loss) and a tail-view chart (percentile fan / worst-N
+        sparkline / tail histogram).
+
+      Below the tabs sit *Save run* / *Publish* / *Export*, then the
+      ``rade-inference-results-grid`` AG Grid (single-row select) for
+      per-scenario aggregates.  Selecting a row fills
+      :data:`INFERENCE_IDS["selected_scenario_store"]`, which the
+      Stage-2 chart callbacks key off to filter every chart above.
+
+Callback contract (Stage 2)
+---------------------------
+
+The page is intentionally **stateful via Stores** so callbacks can
+remain pure functions.  Use these as the contract:
+
+* :data:`INFERENCE_IDS["activity_log_store"]` — ``List[ActivityEntry]``.
+  Append-only.  Each entry::
+
+      {
+          "id":     "<uuid>",          # stable React key
+          "stage":  "ingest|validate|inference",
+          "phase":  "File loaded",     # human readable
+          "target": "scenario_001.json",  # optional
+          "status": "ok|fail|running|pending",
+          "ts":     "2028-04-01T12:30:01Z",
+          "detail": "Optional error / extra detail string",
+      }
+
+  See :func:`render_activity_entries` — exposed publicly so
+  callbacks can rebuild the rendered list cheaply each time the
+  store mutates.
+
+* :data:`INFERENCE_IDS["ingest_meta_store"]` — ``IngestMeta | None``::
+
+      {
+          "source":     "/data/.../sim_2028q3" | "uploaded",
+          "files":      [
+              {"name": "...", "scenarios": 100, "risk_factors": [...],
+               "valid": true, "errors": []},
+              ...
+          ],
+          "started_ts": "...",
+          "completed_ts": "...",
+          "n_files":    3,
+          "n_scenarios": 300,
+      }
+
+* :data:`INFERENCE_IDS["run_meta_store"]` — ``RunMeta | None`` —
+  populated when the ensemble inference run completes::
+
+      {
+          "run_id":      "<uuid>",
+          "started_ts":  "...",
+          "completed_ts": "...",
+          "elapsed_ms":  1234,
+          "n_clusters":  4,
+          "n_trades":    120,
+          "kpi": {"scenarios": 300, "clusters": 4,
+                  "avg_inference_ms": 4.2, "portfolio_pnl": 12345.6},
+      }
+
+* :data:`INFERENCE_IDS["selected_scenario_store"]` — ``str | None``
+  scenario id; row click on the results grid sets this; chart
+  callbacks observe it and slice the underlying frame.
+
+Beyond V2, roadmap analytics (add as additional tabs / accordions):
 
     * Cluster routing matrix — ensemble coverage vs fallback buckets.
 
     * Train-baseline Δ overlay — run distribution vs frozen eval split.
 
-    * Dispersion funnel — predictive band calibration when labels exist.
+    * Per-member latency waterfall — exposes which cluster dominates
+      wall-clock during batch runs.
 
-    * Per-member latency waterfall — exposes which cluster dominates wall
-      clock during batch runs.
+    * Comparison tab — scenario-A vs scenario-B side-by-side.
 
 Page Contract anchors
 ---------------------
 
 * §3 Rule L3 — ids only through :data:`INFERENCE_IDS`.
+* §3 Rule L4 — ``mount_signal`` Store + ``rade-page`` root class.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
 
 import dash_mantine_components as dmc
 from dash import dcc, html
@@ -443,6 +692,8 @@ from ..components.chart_container import ChartContainer
 from ..components.kpi_card import KpiCard
 from ..figures.inference_charts import (
     empty_pnl_distribution,
+    empty_risk_attribution,
+    empty_stress_tails,
 )
 
 if TYPE_CHECKING:
@@ -453,48 +704,68 @@ if TYPE_CHECKING:
 
 
 INFERENCE_IDS: Dict[str, str] = {
-    "root":                      "inference-root",
-    "mount_signal":              "inference-mount-signal",
-    "subtitle":                  "inference-subtitle",
+    "root":                       "inference-root",
+    "mount_signal":               "inference-mount-signal",
+    "subtitle":                   "inference-subtitle",
+
+    # Row 0 — page-level data Stores driving the state machine.
+    "activity_log_store":         "inference-activity-log-store",
+    "ingest_meta_store":          "inference-ingest-meta-store",
+    "run_meta_store":             "inference-run-meta-store",
+    "selected_scenario_store":    "inference-selected-scenario-store",
 
     # Row 2 — scenario folder ingestion.
-    "scenario_folder_path":      "inference-scenario-folder-path",
-    "scenario_folder_upload":    "inference-scenario-folder-upload",
-    "upload_scenarios_btn":      "inference-upload-scenarios-btn",
-    "ingest_status":             "inference-ingest-status",
+    "scenario_folder_path":       "inference-scenario-folder-path",
+    "scenario_folder_upload":     "inference-scenario-folder-upload",
+    "upload_scenarios_btn":       "inference-upload-scenarios-btn",
+    "ingest_status":              "inference-ingest-status",
 
-    # Row 3 · left — INPUT.
-    "scenario_manifest":         "inference-scenario-manifest",
-    "validate_only_btn":         "inference-validate-only-btn",
-    "run_btn":                   "inference-run-btn",
+    # Row 3 · left — INPUT column.
+    "activity_log_container":     "inference-activity-log-container",
+    "manifest_preview_container": "inference-manifest-preview-container",
+    "validate_only_btn":          "inference-validate-only-btn",
+    "run_btn":                    "inference-run-btn",
 
     # Row 3 · right — KPI strip.
-    "kpi_scenarios":             "inference-kpi-scenarios",
-    "kpi_scenarios_value":       "inference-kpi-scenarios-value",
-    "kpi_scenarios_spark":       "inference-kpi-scenarios-spark",
-    "kpi_clusters":              "inference-kpi-clusters",
-    "kpi_clusters_value":        "inference-kpi-clusters-value",
-    "kpi_clusters_spark":        "inference-kpi-clusters-spark",
-    "kpi_latency":               "inference-kpi-latency",
-    "kpi_latency_value":         "inference-kpi-latency-value",
-    "kpi_latency_spark":         "inference-kpi-latency-spark",
-    "kpi_portfolio":             "inference-kpi-portfolio",
-    "kpi_portfolio_value":       "inference-kpi-portfolio-value",
-    "kpi_portfolio_spark":       "inference-kpi-portfolio-spark",
+    "kpi_scenarios":              "inference-kpi-scenarios",
+    "kpi_scenarios_value":        "inference-kpi-scenarios-value",
+    "kpi_scenarios_spark":        "inference-kpi-scenarios-spark",
+    "kpi_clusters":               "inference-kpi-clusters",
+    "kpi_clusters_value":         "inference-kpi-clusters-value",
+    "kpi_clusters_spark":         "inference-kpi-clusters-spark",
+    "kpi_latency":                "inference-kpi-latency",
+    "kpi_latency_value":          "inference-kpi-latency-value",
+    "kpi_latency_spark":          "inference-kpi-latency-spark",
+    "kpi_portfolio":              "inference-kpi-portfolio",
+    "kpi_portfolio_value":        "inference-kpi-portfolio-value",
+    "kpi_portfolio_spark":        "inference-kpi-portfolio-spark",
 
-    # Row 3 · right — analytics tabs + chart mode + graph.
-    "analytics_tabs":            "inference-analytics-tabs",
-    "chart_view_mode":           "inference-chart-view-mode",
-    "chart_main":                "inference-chart-main",
+    # Row 3 · right — analytics tabs (5 tabs).
+    "analytics_tabs":             "inference-analytics-tabs",
+
+    # Charts tab — segmented mode + main graph.
+    "chart_view_mode":            "inference-chart-view-mode",
+    "chart_main":                 "inference-chart-main",
+
+    # Risk-attribution tab — breakdown axis + chart.
+    "risk_attribution_breakdown": "inference-risk-attribution-breakdown",
+    "risk_attribution_chart":     "inference-risk-attribution-chart",
+
+    # Stress & tails tab — mini KPI strip + chart-mode + chart.
+    "stress_tails_mode":          "inference-stress-tails-mode",
+    "stress_tails_chart":         "inference-stress-tails-chart",
+    "stress_kpi_var":             "inference-stress-kpi-var",
+    "stress_kpi_cvar":            "inference-stress-kpi-cvar",
+    "stress_kpi_worst":           "inference-stress-kpi-worst",
 
     # Row 3 · right — run footer actions.
-    "save_run_as":               "inference-save-run-as",
-    "publish_btn":               "inference-publish-btn",
-    "export_json_btn":           "inference-export-json-btn",
-    "export_csv_btn":            "inference-export-csv-btn",
+    "save_run_as":                "inference-save-run-as",
+    "publish_btn":                "inference-publish-btn",
+    "export_json_btn":            "inference-export-json-btn",
+    "export_csv_btn":             "inference-export-csv-btn",
 
-    # Row 3 · right — results grid (row click → filters charts Phase 2).
-    "scenario_results_grid":     "inference-scenario-results-grid",
+    # Row 3 · right — results grid (row click → filters charts Stage 2).
+    "scenario_results_grid":      "inference-scenario-results-grid",
 }
 
 
@@ -513,6 +784,101 @@ _FOOTER_CAPTION = (
 )
 
 
+# ─────────────────────────────────────────────────────────────────────
+# Activity log — public render helper used by both layout + callbacks.
+# ─────────────────────────────────────────────────────────────────────
+
+
+_STATUS_ICON = {
+    "ok":      ("tabler:circle-check",   "rade-activity-icon--ok"),
+    "fail":    ("tabler:circle-x",       "rade-activity-icon--fail"),
+    "running": ("tabler:loader-2",       "rade-activity-icon--running"),
+    "pending": ("tabler:circle-dashed",  "rade-activity-icon--pending"),
+}
+
+
+_STAGE_LABEL = {
+    "ingest":    "Ingest",
+    "validate":  "Validate",
+    "inference": "Inference",
+}
+
+
+def _activity_row(entry: Dict[str, Any]) -> html.Div:
+    """Render one activity feed entry into a ``rade-activity-row``."""
+    status = str(entry.get("status", "pending"))
+    icon_name, icon_class = _STATUS_ICON.get(status, _STATUS_ICON["pending"])
+    stage = str(entry.get("stage", "ingest"))
+    phase = str(entry.get("phase", "—"))
+    target = entry.get("target")
+    detail = entry.get("detail")
+    ts = str(entry.get("ts", ""))
+
+    body_children: List[Any] = [
+        html.Span(_STAGE_LABEL.get(stage, stage.title()),
+                  className="rade-activity-stage"),
+        html.Span(phase, className="rade-activity-phase"),
+    ]
+    if target:
+        body_children.append(
+            html.Span(target, className="rade-activity-target font-mono")
+        )
+    if detail:
+        body_children.append(
+            html.Div(detail, className="rade-activity-detail")
+        )
+
+    return html.Div(
+        className="rade-activity-row",
+        children=[
+            html.Div(
+                className=f"rade-activity-icon {icon_class}",
+                children=DashIconify(icon=icon_name, width=16),
+            ),
+            html.Div(className="rade-activity-body", children=body_children),
+            html.Span(ts, className="rade-activity-ts font-mono"),
+        ],
+    )
+
+
+def render_activity_entries(
+    entries: Optional[Sequence[Dict[str, Any]]],
+) -> List[Any]:
+    """Render an activity log store payload into row children.
+
+    Intentionally exposed for Stage-2 callbacks: pass the current
+    contents of :data:`INFERENCE_IDS["activity_log_store"]` and return
+    the children of :data:`INFERENCE_IDS["activity_log_container"]`.
+    Callbacks should append entries to the store, then call this with
+    the *full* list — the diff is cheap enough at typical bundle sizes
+    (<200 entries per run).
+    """
+    if not entries:
+        return [
+            html.Div(
+                className="rade-activity-empty",
+                children=[
+                    DashIconify(
+                        icon="tabler:wave-square",
+                        width=18,
+                        className="text-slate-600",
+                    ),
+                    html.Div(
+                        "Activity feed will populate as scenarios are "
+                        "uploaded, ingested, validated and priced.",
+                        className="text-xs text-slate-500 leading-snug",
+                    ),
+                ],
+            ),
+        ]
+    return [_activity_row(e) for e in entries]
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Row 2 — Scenario ingestion bar
+# ─────────────────────────────────────────────────────────────────────
+
+
 def _scenario_ingestion_bar() -> html.Div:
     path_field = dmc.TextInput(
         id=INFERENCE_IDS["scenario_folder_path"],
@@ -529,15 +895,15 @@ def _scenario_ingestion_bar() -> html.Div:
         id=INFERENCE_IDS["scenario_folder_upload"],
         multiple=True,
         style={
-            "display":               "inline-block",
-            "border":                "none",
-            "padding":               0,
-            "margin":                0,
-            "background":            "transparent",
-            "cursor":                "pointer",
-            "verticalAlign":         "middle",
+            "display":        "inline-block",
+            "border":         "none",
+            "padding":        0,
+            "margin":         0,
+            "background":     "transparent",
+            "cursor":         "pointer",
+            "verticalAlign":  "middle",
         },
-            children=dmc.Button(
+        children=dmc.Button(
             children="Browse files",
             variant="default",
             size="sm",
@@ -564,7 +930,7 @@ def _scenario_ingestion_bar() -> html.Div:
         title="Shows a green tick once scenarios are ingested",
         className=(
             "flex items-center justify-center w-10 h-10 "
-            "rounded-md border border-slate-700/70 bg-slate-900/40"
+            "rounded-md border border-slate-700 bg-slate-950/40"
         ),
         children=[],
     )
@@ -577,7 +943,10 @@ def _scenario_ingestion_bar() -> html.Div:
                 className="text-sm font-semibold text-slate-200",
             ),
             html.Div(
-                className="flex flex-row flex-wrap items-end gap-3 gap-y-5",
+                # ``flex-wrap`` + ``gap-y-4`` so the path field stretches
+                # horizontally on wide viewports but the trio of buttons
+                # drops below it cleanly on narrow ones.
+                className="flex flex-row flex-wrap items-end gap-3 gap-y-4",
                 children=[
                     path_field,
                     browse,
@@ -587,32 +956,70 @@ def _scenario_ingestion_bar() -> html.Div:
             ),
             html.Div(
                 "Browser multi-file pick gathers individual files; paste a "
-                "folder path below for full-tree ingest on the server.",
-                className="text-xs text-slate-500 leading-snug max-w-[720px]",
+                "folder path above for full-tree ingest on the server.",
+                className="text-xs text-slate-500 leading-snug max-w-2xl",
             ),
         ],
     )
 
 
-def _input_panel() -> html.Div:
+# ─────────────────────────────────────────────────────────────────────
+# Row 3 · left — INPUT column (Activity log + Manifest)
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _activity_log_card() -> html.Div:
+    return html.Div(
+        className="rade-card flex flex-col gap-2 min-w-0",
+        children=[
+            html.Div(
+                className="flex items-center justify-between",
+                children=[
+                    html.Div(
+                        "Activity log",
+                        className="text-sm font-semibold text-slate-200",
+                    ),
+                    html.Div(
+                        "Live — append-only",
+                        className=(
+                            "text-[11px] uppercase tracking-wide "
+                            "text-slate-500"
+                        ),
+                    ),
+                ],
+            ),
+            html.Div(
+                id=INFERENCE_IDS["activity_log_container"],
+                className=(
+                    "rade-activity-log overflow-y-auto rounded-md "
+                    "border border-slate-800 bg-slate-950/40 p-3"
+                ),
+                style={"minHeight": "180px", "maxHeight": "320px"},
+                children=render_activity_entries(None),
+            ),
+        ],
+    )
+
+
+def _manifest_card() -> html.Div:
     manifest_box = html.Div(
-        id=INFERENCE_IDS["scenario_manifest"],
+        id=INFERENCE_IDS["manifest_preview_container"],
         className=(
-            "min-h-[200px] max-h-[340px] overflow-y-auto rounded-md "
-            "border border-slate-800 bg-slate-950/50 p-3 text-xs "
-            "text-slate-400 leading-relaxed"
+            "overflow-y-auto rounded-md border border-slate-800 "
+            "bg-slate-950/40 p-3 text-xs text-slate-400 leading-relaxed"
         ),
+        style={"minHeight": "160px", "maxHeight": "260px"},
         children=[
             html.Div(
                 "No scenarios ingested yet.",
-                className="text-slate-500 italic",
+                className="text-slate-500",
             ),
-            html.Ul(
-                className="list-disc mt-3 ps-5 space-y-1 text-slate-500",
+            html.Div(
+                className="flex flex-col gap-1 mt-3 text-slate-500",
                 children=[
-                    html.Li("Upload populates filenames, horizons, shocks."),
-                    html.Li("Validate only checks manifest + shock schema."),
-                    html.Li("Run executes ensemble inference on the bundle."),
+                    html.Div("• Upload populates filenames, horizons, shocks."),
+                    html.Div("• Validate only checks manifest + shock schema."),
+                    html.Div("• Run executes ensemble inference on the bundle."),
                 ],
             ),
         ],
@@ -621,7 +1028,7 @@ def _input_panel() -> html.Div:
     actions = dmc.Group(
         gap="sm",
         grow=True,
-        className="w-full mt-4",
+        className="w-full mt-3",
         children=[
             dmc.Button(
                 id=INFERENCE_IDS["validate_only_btn"],
@@ -648,20 +1055,43 @@ def _input_panel() -> html.Div:
     )
 
     return html.Div(
-        className="rade-card flex flex-col gap-3 flex-1 min-w-0",
+        className="rade-card flex flex-col gap-2 min-w-0",
         children=[
             html.Div(
-                "Scenario bundle",
-                className="text-sm font-semibold text-slate-200",
-            ),
-            html.Div(
-                "Ingest summary",
-                className="text-[11px] uppercase tracking-wide text-slate-500",
+                className="flex items-center justify-between",
+                children=[
+                    html.Div(
+                        "Scenario bundle",
+                        className="text-sm font-semibold text-slate-200",
+                    ),
+                    html.Div(
+                        "Manifest preview",
+                        className=(
+                            "text-[11px] uppercase tracking-wide "
+                            "text-slate-500"
+                        ),
+                    ),
+                ],
             ),
             manifest_box,
             actions,
         ],
     )
+
+
+def _input_panel() -> html.Div:
+    return html.Div(
+        className="flex flex-col gap-4 min-w-0",
+        children=[
+            _activity_log_card(),
+            _manifest_card(),
+        ],
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Row 3 · right — RESULTS column
+# ─────────────────────────────────────────────────────────────────────
 
 
 def _kpi_row() -> html.Div:
@@ -709,11 +1139,19 @@ def _kpi_row() -> html.Div:
 
 
 def _placeholder_panel(title: str, body: str) -> html.Div:
+    # Dashed-border + arbitrary min-height live in inline ``style``
+    # because ``border-dashed`` and ``min-h-[200px]`` aren't in the
+    # compiled ``rade.css`` utility bundle.
     return html.Div(
         className=(
-            "flex flex-col gap-2 min-h-[200px] justify-center px-6 py-10 "
-            "rounded-md border border-dashed border-slate-700/80 bg-slate-900/35"
+            "flex flex-col gap-2 justify-center px-6 py-6 rounded-md "
+            "border border-slate-800"
         ),
+        style={
+            "minHeight":   "200px",
+            "borderStyle": "dashed",
+            "background":  "rgba(15, 23, 42, 0.45)",
+        },
         children=[
             html.Div(title, className="text-xs font-semibold text-slate-300"),
             html.Div(body, className="text-xs text-slate-500 max-w-xl"),
@@ -739,8 +1177,9 @@ def _charts_tab_body() -> html.Div:
     chart_card = ChartContainer(
         title="Aggregate book response",
         subtitle=(
-            "Distribution / timeseries / overlay — callback swaps figure on "
-            "``chart_main`` while honouring segmented state"
+            "Distribution / timeseries / overlay — callback swaps figure "
+            "on ``chart_main`` while honouring segmented state and the "
+            "active row in the scenario grid."
         ),
         graph_id=INFERENCE_IDS["chart_main"],
         figure=empty_pnl_distribution(),
@@ -756,8 +1195,117 @@ def _charts_tab_body() -> html.Div:
     return html.Div(className="flex flex-col gap-2", children=[chart_card])
 
 
+def _risk_attribution_tab_body() -> html.Div:
+    """Risk-attribution view — bar/treemap by selected breakdown axis."""
+    breakdown = dmc.SegmentedControl(
+        id=INFERENCE_IDS["risk_attribution_breakdown"],
+        value="cluster",
+        size="xs",
+        color="violet",
+        radius="md",
+        mb="xs",
+        data=[
+            {"label": "By cluster",      "value": "cluster"},
+            {"label": "By risk factor",  "value": "risk_factor"},
+            {"label": "By trade type",   "value": "trade_type"},
+        ],
+    )
+
+    chart_card = ChartContainer(
+        title="P&L attribution",
+        subtitle=(
+            "Signed contribution of each bucket to portfolio P&L for the "
+            "current scenario set — bar when grouped one-deep, treemap "
+            "when nested (Stage 2 swaps ``figure`` shape via callback)."
+        ),
+        graph_id=INFERENCE_IDS["risk_attribution_chart"],
+        figure=empty_risk_attribution(),
+        height=300,
+        actions=[
+            html.Div(
+                className="flex flex-wrap justify-end",
+                children=[breakdown],
+            ),
+        ],
+    )
+
+    return html.Div(className="flex flex-col gap-2", children=[chart_card])
+
+
+def _stress_tails_tab_body() -> html.Div:
+    """Stress / tail-risk view — mini KPI strip + chart-mode toggle."""
+    mini_kpis = html.Div(
+        className="grid grid-cols-3 gap-3",
+        children=[
+            html.Div(
+                id=INFERENCE_IDS["stress_kpi_var"],
+                className="rade-stress-mini-kpi",
+                children=[
+                    html.Div("VaR (95%)", className="rade-stress-mini-label"),
+                    html.Div(_PLACEHOLDER, className="rade-stress-mini-value"),
+                ],
+            ),
+            html.Div(
+                id=INFERENCE_IDS["stress_kpi_cvar"],
+                className="rade-stress-mini-kpi",
+                children=[
+                    html.Div("CVaR (95%)", className="rade-stress-mini-label"),
+                    html.Div(_PLACEHOLDER, className="rade-stress-mini-value"),
+                ],
+            ),
+            html.Div(
+                id=INFERENCE_IDS["stress_kpi_worst"],
+                className="rade-stress-mini-kpi",
+                children=[
+                    html.Div("Worst loss", className="rade-stress-mini-label"),
+                    html.Div(_PLACEHOLDER, className="rade-stress-mini-value"),
+                ],
+            ),
+        ],
+    )
+
+    mode_toggle = dmc.SegmentedControl(
+        id=INFERENCE_IDS["stress_tails_mode"],
+        value="fan",
+        size="xs",
+        color="violet",
+        radius="md",
+        mb="xs",
+        data=[
+            {"label": "Percentile fan", "value": "fan"},
+            {"label": "Tail histogram", "value": "tail"},
+            {"label": "Worst N",        "value": "worst"},
+        ],
+    )
+
+    chart_card = ChartContainer(
+        title="Tail-risk view",
+        subtitle=(
+            "Percentile band over scenario index, tail histogram of "
+            "scenario P&L, or top-N worst-loss scenarios — callback "
+            "swaps figure shape on ``stress_tails_chart``."
+        ),
+        graph_id=INFERENCE_IDS["stress_tails_chart"],
+        figure=empty_stress_tails(),
+        height=260,
+        actions=[
+            html.Div(
+                className="flex flex-wrap justify-end",
+                children=[mode_toggle],
+            ),
+        ],
+    )
+
+    return html.Div(
+        className="flex flex-col gap-3",
+        children=[mini_kpis, chart_card],
+    )
+
+
 def _analytics_tabs_block() -> dmc.Tabs:
-    charts_tab = _charts_tab_body()
+    charts_tab      = _charts_tab_body()
+    risk_attr_tab   = _risk_attribution_tab_body()
+    stress_tab      = _stress_tails_tab_body()
 
     sensitivity = _placeholder_panel(
         title="Sensitivity sweep",
@@ -770,9 +1318,9 @@ def _analytics_tabs_block() -> dmc.Tabs:
     diagnostics = _placeholder_panel(
         title="Diagnostics",
         body=(
-            "Residual vs baseline, routing confidence histograms, dispersion "
-            "checks — absorbs 'third view' exploratory analytics until we "
-            "split them into first-class charts."
+            "Residual vs baseline, routing confidence histograms, "
+            "dispersion checks — absorbs exploratory analytics until "
+            "they earn first-class chart status."
         ),
     )
 
@@ -790,26 +1338,55 @@ def _analytics_tabs_block() -> dmc.Tabs:
                     dmc.TabsTab(
                         value="charts",
                         flex=1,
-                        leftSection=DashIconify(icon="tabler:chart-histogram", width=14),
+                        leftSection=DashIconify(
+                            icon="tabler:chart-histogram", width=14,
+                        ),
                         children="Charts",
                     ),
                     dmc.TabsTab(
                         value="sensitivity",
                         flex=1,
-                        leftSection=DashIconify(icon="tabler:chart-arcs", width=14),
+                        leftSection=DashIconify(
+                            icon="tabler:chart-arcs", width=14,
+                        ),
                         children="Sensitivity",
+                    ),
+                    dmc.TabsTab(
+                        value="risk_attribution",
+                        flex=1,
+                        leftSection=DashIconify(
+                            icon="tabler:chart-treemap", width=14,
+                        ),
+                        children="Risk attribution",
+                    ),
+                    dmc.TabsTab(
+                        value="stress_tails",
+                        flex=1,
+                        leftSection=DashIconify(
+                            icon="tabler:chart-area-line", width=14,
+                        ),
+                        children="Stress & tails",
                     ),
                     dmc.TabsTab(
                         value="diagnostics",
                         flex=1,
-                        leftSection=DashIconify(icon="tabler:wave-sine", width=14),
+                        leftSection=DashIconify(
+                            icon="tabler:wave-sine", width=14,
+                        ),
                         children="Diagnostics",
                     ),
                 ],
             ),
-            dmc.TabsPanel(value="charts", pt="sm", pb=0, children=charts_tab),
-            dmc.TabsPanel(value="sensitivity", pt="sm", children=sensitivity),
-            dmc.TabsPanel(value="diagnostics", pt="sm", children=diagnostics),
+            dmc.TabsPanel(value="charts",           pt="sm", pb=0,
+                          children=charts_tab),
+            dmc.TabsPanel(value="sensitivity",      pt="sm",
+                          children=sensitivity),
+            dmc.TabsPanel(value="risk_attribution", pt="sm",
+                          children=risk_attr_tab),
+            dmc.TabsPanel(value="stress_tails",     pt="sm",
+                          children=stress_tab),
+            dmc.TabsPanel(value="diagnostics",      pt="sm",
+                          children=diagnostics),
         ],
     )
 
@@ -817,7 +1394,7 @@ def _analytics_tabs_block() -> dmc.Tabs:
 def _scenario_results_footer() -> html.Div:
     note = html.Div(
         "Selecting a scenario / trade row filters charts above — Stage 2",
-        className="text-[11px] text-slate-500 ps-1",
+        className="text-[11px] text-slate-500",
     )
 
     actions = html.Div(
@@ -892,7 +1469,7 @@ def _results_ag_grid_defs() -> List[Dict[str, Any]]:
 
     return [
         {
-            "field":       "scenario_id",
+            "field":      "scenario_id",
             "headerName": "Scenario",
             "pinned":     "left",
             "minWidth":   120,
@@ -905,10 +1482,10 @@ def _results_ag_grid_defs() -> List[Dict[str, Any]]:
             "cellClass":  "rade-grid-mono",
         },
         {
-            "field":       "predicted",
+            "field":      "predicted",
             "headerName": "Predicted",
-            "type":        "numericColumn",
-            "minWidth":    100,
+            "type":       "numericColumn",
+            "minWidth":   100,
             "valueFormatter": {
                 "function": (
                     "params.value == null ? '—' : "
@@ -917,11 +1494,11 @@ def _results_ag_grid_defs() -> List[Dict[str, Any]]:
             },
         },
         {"field": "p95_band", "headerName": "P95 band",
-         "type": "numericColumn", "minWidth": 100},
+         "type":  "numericColumn", "minWidth": 100},
         {
-            "field":           "confidence",
-            "headerName":      "Confidence",
-            "minWidth":        110,
+            "field":          "confidence",
+            "headerName":     "Confidence",
+            "minWidth":       110,
             "cellClassRules": conf_rules,
             "valueFormatter": {"function": fmt_cap},
         },
@@ -931,16 +1508,18 @@ def _results_ag_grid_defs() -> List[Dict[str, Any]]:
 def _results_panel() -> html.Div:
     defs = _results_ag_grid_defs()
     return html.Div(
-        className="rade-card flex flex-col gap-4 flex-1 min-w-0 p-5",
+        # ``rade-card`` already supplies padding, border + radius;
+        # don't double-pad with an extra ``p-5`` here.
+        className="rade-card flex flex-col gap-4 min-w-0",
         children=[
             html.Div(
                 "Results",
-                className="text-sm font-semibold text-slate-200 mb-4",
+                className="text-sm font-semibold text-slate-200",
             ),
             _kpi_row(),
             html.Div(
                 children=[_analytics_tabs_block()],
-                className="w-full shrink-0",
+                className="w-full",
             ),
             _scenario_results_footer(),
             AgGridTable(
@@ -966,11 +1545,24 @@ def _results_panel() -> html.Div:
 
 
 def _row_main_workspace() -> html.Div:
+    """Two-column workspace.
+
+    The compiled ``rade.css`` only ships responsive grid utilities for
+    ``lg:grid-cols-5`` + ``lg:col-span-2`` / ``lg:col-span-3`` (Cluster
+    Deep-Dive idiom).  Keep this idiom — ``grid-cols-12`` / wider
+    spans are not in the bundle and would silently no-op.
+    """
     return html.Div(
-        className="grid grid-cols-12 gap-4 items-start",
+        className="grid grid-cols-1 lg:grid-cols-5 gap-4 items-stretch",
         children=[
-            html.Div(className="col-span-12 lg:col-span-5", children=[_input_panel()]),
-            html.Div(className="col-span-12 lg:col-span-7", children=[_results_panel()]),
+            html.Div(
+                className="lg:col-span-2 flex flex-col min-w-0",
+                children=[_input_panel()],
+            ),
+            html.Div(
+                className="lg:col-span-3 flex flex-col min-w-0",
+                children=[_results_panel()],
+            ),
         ],
     )
 
@@ -982,8 +1574,43 @@ def _page_footer_line() -> html.Div:
     )
 
 
+def _page_stores() -> List[Any]:
+    """All ``dcc.Store`` mounts driving the page state machine.
+
+    Kept as a list so ``build_inference`` can splat them at the top of
+    the page tree without tracking individual ids.
+    """
+    return [
+        dcc.Store(
+            id=INFERENCE_IDS["mount_signal"],
+            data=True,
+            storage_type="memory",
+        ),
+        dcc.Store(
+            id=INFERENCE_IDS["activity_log_store"],
+            data=[],
+            storage_type="memory",
+        ),
+        dcc.Store(
+            id=INFERENCE_IDS["ingest_meta_store"],
+            data=None,
+            storage_type="memory",
+        ),
+        dcc.Store(
+            id=INFERENCE_IDS["run_meta_store"],
+            data=None,
+            storage_type="memory",
+        ),
+        dcc.Store(
+            id=INFERENCE_IDS["selected_scenario_store"],
+            data=None,
+            storage_type="memory",
+        ),
+    ]
+
+
 def build_inference(*, session: Optional["Session"] = None) -> html.Div:
-    """Compose the Inference Console tree (Option A — no callbacks).
+    """Compose the Inference Console tree (V2 — empty layout, no callbacks).
 
     ``session`` follows Page Contract §2.1 (uniform ``build_*`` signature).
     Chrome seeds version + split via ``TOPBAR_IDS``; no per-page hydration
@@ -995,11 +1622,7 @@ def build_inference(*, session: Optional["Session"] = None) -> html.Div:
         id=INFERENCE_IDS["root"],
         className="rade-page rade-inference flex flex-col gap-5",
         children=[
-            dcc.Store(
-                id=INFERENCE_IDS["mount_signal"],
-                data=True,
-                storage_type="memory",
-            ),
+            *_page_stores(),
             html.Div(
                 className="flex flex-col gap-6",
                 children=[
@@ -1016,8 +1639,8 @@ def build_inference(*, session: Optional["Session"] = None) -> html.Div:
                                 className="text-xs text-slate-500",
                             ),
                             html.Span(
-                                "Active ensemble version + split controlled from "
-                                "the top bar.",
+                                "Active ensemble version + split controlled "
+                                "from the top bar.",
                                 className="text-[11px] text-slate-600",
                             ),
                         ],
@@ -1031,51 +1654,277 @@ def build_inference(*, session: Optional["Session"] = None) -> html.Div:
     )
 
 
-__all__ = ["INFERENCE_IDS", "build_inference"]
+__all__ = [
+    "INFERENCE_IDS",
+    "build_inference",
+    "render_activity_entries",
+]
+```
 
+#### 5.3 `assets/rade.css` (PATCH · appended block)
+
+Append to the bottom of `rade.css`. The `rade-activity-*` block styles
+the streaming feed in the INPUT column; the `rade-stress-mini-*` block
+styles the 3-tile mini KPI strip inside the *Stress & tails* tab.
+
+```css
+/* ── Inference Console — activity log feed ─────────────────────── */
+
+/* The activity log lives inside the INPUT column (Row 3 left).  It
+   renders an append-only event stream where each row pairs a
+   status-coloured icon with a stage tag, a phase string, an
+   optional target (file / cluster / risk-factor) and an optional
+   detail string.  Markup-wise the layout uses
+   ``html.Div(className="rade-activity-row")`` for each event — see
+   ``layouts/inference.py::_activity_row``. */
+
+.rade-activity-log {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.rade-activity-row {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 0.625rem;
+  align-items: flex-start;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(30, 41, 59, 0.6);
+}
+
+.rade-activity-row:first-child { padding-top: 0; }
+.rade-activity-row:last-child  { border-bottom: 0; padding-bottom: 0; }
+
+.rade-activity-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(148, 163, 184, 0.12);   /* slate-400/12 */
+  color: #94a3b8;                                /* slate-400 */
+}
+
+.rade-activity-icon--ok {
+  background-color: rgba(16, 185, 129, 0.16);
+  color: #34d399;                                /* emerald-400 */
+}
+
+.rade-activity-icon--fail {
+  background-color: rgba(244, 63, 94, 0.16);
+  color: #fb7185;                                /* rose-400 */
+}
+
+.rade-activity-icon--running {
+  background-color: rgba(139, 92, 246, 0.18);
+  color: #a78bfa;                                /* violet-400 */
+  animation: rade-activity-spin 1.2s linear infinite;
+}
+
+.rade-activity-icon--pending {
+  background-color: rgba(245, 158, 11, 0.16);
+  color: #fbbf24;                                /* amber-400 */
+}
+
+@keyframes rade-activity-spin {
+  to { transform: rotate(360deg); }
+}
+
+.rade-activity-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.rade-activity-stage {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #94a3b8;                                /* slate-400 */
+  margin-right: 0.5rem;
+}
+
+.rade-activity-phase {
+  font-size: 0.8125rem;
+  color: #e2e8f0;                                /* slate-200 */
+}
+
+.rade-activity-target {
+  display: inline-block;
+  font-size: 0.7rem;
+  color: #cbd5e1;                                /* slate-300 */
+  background-color: rgba(15, 23, 42, 0.7);       /* slate-900/70 */
+  border: 1px solid rgba(30, 41, 59, 0.6);
+  padding: 0.0625rem 0.4rem;
+  border-radius: 0.375rem;
+  margin-left: 0.5rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.rade-activity-detail {
+  font-size: 0.7rem;
+  color: #94a3b8;                                /* slate-400 */
+  margin-top: 0.125rem;
+}
+
+.rade-activity-ts {
+  font-size: 0.65rem;
+  color: #64748b;                                /* slate-500 */
+  white-space: nowrap;
+  align-self: center;
+}
+
+.rade-activity-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  color: #475569;                                /* slate-600 */
+  text-align: center;
+}
+
+/* ── Inference Console — stress / tails mini KPI strip ─────────── */
+
+/* Three mini KPI tiles inside the *Stress & tails* tab — purposely
+   smaller than ``KpiCard`` so they fit above the chart without
+   stealing visual weight.  Markup uses
+   ``html.Div(className="rade-stress-mini-kpi")``. */
+
+.rade-stress-mini-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(30, 41, 59, 0.6);
+  background-color: rgba(15, 23, 42, 0.7);       /* slate-900/70 */
+}
+
+.rade-stress-mini-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #94a3b8;                                /* slate-400 */
+}
+
+.rade-stress-mini-value {
+  font-family: "JetBrains Mono", "IBM Plex Mono", ui-monospace,
+               SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #e2e8f0;                                /* slate-200 */
+}
+```
+
+#### 5.4 `router.py` (PATCH)
+
+```python
+# In src/ui/apps/rade_analytics/router.py — alphabetised import list:
+from .layouts.inference         import build_inference
+
+# In ROUTES table (alphabetised):
+"/inference":         RouteSpec(
+    build=build_inference,
+    title="Inference Console",
+),
 ```
 
 ---
 
-### Appendix A · 6 — `router.py` (PATCHES)
-
-**1. Imports** — keep alphabetical among layout builders:
-
-```python
-from .layouts.data_quality import build_data_quality
-from .layouts.evaluation import build_evaluation
-from .layouts.governance import build_governance
-from .layouts.inference import build_inference
-from .layouts.monitoring import build_monitoring
-from .layouts.overview import build_overview
-```
-
-**2. Route registration** — replace placeholder with real builder:
-
-```python
-    "/inference": PageSpec(
-        path="/inference",
-        title="Inference Console",
-        build=build_inference,
-    ),
-```
-
----
-
-### Appendix A · 7 — Smoke import
+### Appendix A · 6 — Smoke import
 
 ```bash
 cd /path/to/QuantStrata && python -c '
-from src.ui.apps.rade_analytics.layouts.inference import build_inference, INFERENCE_IDS
+from src.ui.apps.rade_analytics.layouts.inference import (
+    build_inference, INFERENCE_IDS, _row_main_workspace, _input_panel,
+    _analytics_tabs_block, _page_stores, render_activity_entries,
+)
 from src.ui.apps.rade_analytics.router import ROUTES
+
 tree = build_inference()
 assert tree.id == "inference-root"
-assert len(tree.children) == 2
-assert getattr(tree.children[0], "id", None) == "inference-mount-signal"
-assert len(INFERENCE_IDS) == 30
+assert len(INFERENCE_IDS) == 42
+
+stores = _page_stores()
+assert {s.id for s in stores} == {
+    "inference-mount-signal",
+    "inference-activity-log-store",
+    "inference-ingest-meta-store",
+    "inference-run-meta-store",
+    "inference-selected-scenario-store",
+}
+
+ws = _row_main_workspace()
+assert ws.className == "grid grid-cols-1 lg:grid-cols-5 gap-4 items-stretch"
+assert "lg:col-span-2" in ws.children[0].className
+assert "lg:col-span-3" in ws.children[1].className
+
+ip = _input_panel()
+assert len(ip.children) == 2  # activity card + manifest card
+
+tabs = _analytics_tabs_block()
+tab_values = [t.value for t in tabs.children[0].children]
+assert tab_values == [
+    "charts", "sensitivity", "risk_attribution",
+    "stress_tails", "diagnostics",
+]
+
+# render helper round-trips
+rows = render_activity_entries([
+    {"stage": "ingest", "phase": "File loaded",
+     "target": "sim_001.json", "status": "ok", "ts": "12:30:01"},
+])
+assert len(rows) == 1 and rows[0].className == "rade-activity-row"
+
 assert ROUTES["/inference"].build.__name__ == "build_inference"
 assert ROUTES["/inference"].title == "Inference Console"
 print("OK")
 '
 ```
 
+---
+
+### Appendix A · 7 — Layout gotcha: `rade.css` is hand-compiled, not JIT
+
+`src/ui/apps/rade_analytics/assets/rade.css` is a **hand-compiled
+Tailwind bundle**, not a runtime JIT pass.  Only utilities that
+already shipped (see `tailwind.input.css` + the previous build
+scan) are present at runtime.  Classes that look fine in the source
+but **silently no-op in the browser** include:
+
+- `grid-cols-12`, `col-span-5`, `col-span-7`, `col-span-12`
+- `lg:col-span-5`, `lg:col-span-7`
+- `gap-y-5`
+- arbitrary values: `min-h-[…]`, `max-h-[…]`, `max-w-[…]`, `min-w-[…]`
+- opacity variants: `bg-slate-900/35`, `bg-slate-900/40`,
+  `bg-slate-950/50`, `border-slate-700/70`, `border-slate-700/80`
+- `border-dashed`, `italic`, `list-disc`, `space-y-1`,
+  logical-property `ps-*` / `pe-*`
+
+**Approved substitutions** (already in `rade.css`):
+
+| Need | Use instead |
+| --- | --- |
+| Two-column workspace | `grid grid-cols-1 lg:grid-cols-5 gap-4 items-stretch` parent + `lg:col-span-2` / `lg:col-span-3` (Cluster Deep-Dive idiom) |
+| Soft transparent surface | `bg-slate-900/60` (or `bg-slate-950/40`) |
+| Soft border | `border-slate-800/60` or `border-slate-700` |
+| Arbitrary heights | inline `style={"minHeight": "…", "maxHeight": "…"}` |
+| Dashed border | inline `style={"borderStyle": "dashed"}` |
+| Bullet lists | plain stacked `html.Div`s with leading `"• "` |
+| Italic text | drop or replace with `text-slate-500` weight cue |
+
+Whenever you add a new utility class, sanity-check it appears in
+`rade.css` (or rebuild the bundle per `assets/README.md`); the page
+will render but content will collapse to natural width if the
+parent grid loses its column-span utilities.
