@@ -252,79 +252,96 @@ No mock, no merge.
 
 ---
 
-## Appendix A — Monitoring page (Option A: empty layout, no callbacks)
+## Appendix A — Data Quality page (Option A: empty layout, no callbacks)
 
 Single appendix (replaces all prior appendix blocks).  Wires the
-`/monitoring` route to a fully-structured layout that mirrors
-`rade_model_monitoring.png` region-for-region, but with **no
-callbacks and no API calls** — KPI values are em-dashes, charts
-mount with themed empty-state placeholders, the alerts grid is
-empty.  The page is honest about its state via subtitle copy
-("Drift & residual surveillance — preview (no live telemetry
-connected)") and a footer producer-disclosure caption.
+`/data-quality` route to a fully-structured layout that mirrors
+`rade_data_quality.png` region-for-region, but with **no callbacks
+and no API calls** — KPI values are em-dashes, the Completeness
+Heatmap and Distribution Explorer mount with themed empty-state
+placeholders, the Feature Summary grid mounts empty, and the filter
+bar / feature picker mount with neutral defaults.  The page is honest
+about its state via subtitle copy ("Per-feature completeness &
+summary statistics — preview (no live artifacts connected)") and a
+footer producer-disclosure caption naming the two parquets that will
+drive it.
 
-This shape gives reviewers a navigable preview of the proposed
-design today, with zero risk of `ReadTimeout` / API failures, and
-collapses to a one-line restore once the V1 snapshot-mode callbacks
-ship — the layout's `MONITORING_IDS` contract is already in place
-so the eventual `monitoring_cb` module can target each region via
-`Output` without a layout refactor.
+This shape gives reviewers a navigable preview of the proposed design
+today, with **zero risk of `ReadTimeout` / API failures** even though
+the entire backend pipe (`/prism/v1/quality/completeness`,
+`/prism/v1/quality/feature-summary`, the typed client and the reader)
+is already live.  When the populate callbacks ship the layout doesn't
+change at all — the same `DATA_QUALITY_IDS` are already there, and
+every empty-state placeholder gets overwritten via `Output`.
 
-### How to apply
+### File touch list
 
-Three targets in this appendix.  Two are **new files** — copy the
-contents into the path called out in the section header.  One is a
-**patch to an existing file** — apply the targeted find/replace
-shown in §A.3.
-
-| § | Path | Action |
+| Action | File | Purpose |
 |---|---|---|
-| A.1 | `src/ui/apps/rade_analytics/figures/monitoring_charts.py` | NEW |
-| A.2 | `src/ui/apps/rade_analytics/layouts/monitoring.py`         | NEW |
-| A.3 | `src/ui/apps/rade_analytics/router.py`                     | PATCH |
+| **NEW** | `src/ui/apps/rade_analytics/figures/data_quality_charts.py` | `empty_completeness_heatmap()`, `empty_distribution_explorer()` — themed empty placeholders with "Awaiting …" annotations. |
+| **NEW** | `src/ui/apps/rade_analytics/layouts/data_quality.py` | `DATA_QUALITY_IDS` contract + `build_data_quality(session=…)` — header + filter bar + KPI strip + heatmap + summary grid + distribution explorer + footer. |
+| **PATCH** | `src/ui/apps/rade_analytics/router.py` | Import `build_data_quality`, swap the `/data-quality` placeholder for the real builder. |
 
-Files **deliberately untouched**:
+### Files NOT touched
 
-* `callbacks/__init__.py` — no `monitoring_cb` exists, nothing to
-  register.  When V1 snapshot-mode lands, add a single
-  `monitoring_cb.register(app, backend)` call here.
-* `assets/rade.css` — the existing `.rade-page-title`,
-  `.rade-grid-mono`, `.rade-pill--*` classes (added for the
-  Governance page) cover everything the Monitoring V1 layout uses.
-  Severity-specific pills (`--critical` / `--warn` / `--info`) and
-  KPI-badge variants are deferred to the callback-on phase.
-* Backend stack (`services/`, `routers/`, `client.py`,
-  `backend.py`, Pydantic models) — Option A intentionally ships
-  zero backend.  When Option B (V1 snapshot mode) lands, a single
-  `services/monitoring.py` derives every populated value from
-  existing eval artefacts.
+* `src/ui/apps/rade_analytics/data/backend.py` — no `data_quality_*`
+  methods needed yet (every API call is deferred to Option B).
+* `src/ui/apps/rade_analytics/callbacks/__init__.py` — no
+  `data_quality_cb` registration (no callbacks today).
+* `src/ui/apps/rade_analytics/data/session.py` — no Data Quality
+  state persists yet; the split toggle reads from the existing
+  `session.split` field, no schema bump required.
+* `src/ui/apps/rade_analytics/assets/rade.css` — existing
+  `rade-page-title` / `rade-card` / `rade-pill--*` / `rade-grid-mono`
+  classes cover the V1 page.  The Missing % column already references
+  the `rade-pill--rejected/pending/archived` palette via
+  `cellClassRules` so when the populate callback emits numeric
+  `missing_pct` values, severity colouring lights up automatically.
+* The whole `/prism/v1/quality/*` backend pipe (router, models,
+  reader, typed client) — already in place, untouched by this PR.
 
-See §A.4 for the verification checklist.
+### Backend artifacts the page will read (when callbacks ship)
+
+| Artifact | Schema | Driven components |
+|---|---|---|
+| `quality/completeness_{split}.parquet` | `cluster_id, feature_name, dtype, n_rows, n_null, null_rate, n_distinct, n_zero, n_inf, n_nan` | KPI strip (Total Features / Clusters / Complete / With Missing / Overall %) · Completeness Heatmap · Missing % column on Feature Summary table |
+| `quality/feature_summary_{split}.parquet` | `cluster_id, feature_name, count, mean, std, p01, p50, p99, min, max` | Feature Summary table (Mean / Std / Min / Max / N columns) |
+| Per-cluster raw feature samples (not yet exposed) | n/a | Distribution Explorer violin — **deferred**.  Two candidate paths: (a) approximate a box from the existing percentile stats, or (b) add a new `quality/feature_samples_{split}.parquet` writer.  V1 layout stays empty until that decision lands. |
+
+Both parquets are written by the eval pipeline in
+`src/rade_ml_pt/pipelines/ensemble/eval.py` Phase 5e (see
+`completeness_frames` / `feature_summary_frames` accumulator block).
 
 ---
 
-### A.1 — `src/ui/apps/rade_analytics/figures/monitoring_charts.py` (NEW)
+### A.1 — `figures/data_quality_charts.py` (NEW)
+
+Two empty-state placeholders, both delegating to the shared
+`empty_figure()` helper from `figures/_theme.py`.  Each carries a
+chart-specific annotation hinting at the production source so the
+preview reads as the proposed design rather than two identical "no
+data" boxes.
 
 ```python
-"""Plotly figure builders for the Monitoring page.
+"""Plotly figure builders for the Data Quality page.
 
 V1 ships **empty-state placeholders only** — every helper here returns
 the standard themed empty figure (see :func:`figures._theme.empty_figure`)
 with a chart-specific *awaiting-data* annotation.  Each placeholder
 hints at what the production version of that chart will show, so the
-Option-A preview reads as the proposed design rather than three
-identical "no data" boxes.
+Option-A preview reads as the proposed design rather than two identical
+"no data" boxes.
 
-When the Monitoring callbacks come online (Option B / V1 snapshot
-mode), populated builders for each chart will land *next to* these
-helpers in this same module, mirroring the layout used by
-``cluster_deep_dive_charts.py`` (paired ``empty_*`` and ``populated_*``
-factories).
+When the Data Quality callbacks come online (Option B / V1 snapshot
+mode), populated builders will land *next to* these helpers in this
+same module, mirroring the layout used by ``cluster_deep_dive_charts.py``
+(paired ``empty_*`` and ``populated_*`` factories).
 
 Design anchor
 -------------
-``docs/platform_designs/rade_model_monitoring.png`` — Row 2 (residual
-drift line + feature PSI bar) and Row 3 (latency histogram).
+``docs/platform_designs/rade_data_quality.png`` — Row 3 (completeness
+heatmap, full-width) and Row 4 (feature summary table + distribution
+explorer violin).
 """
 from __future__ import annotations
 
@@ -338,114 +355,123 @@ from ._theme import empty_figure
 # ─────────────────────────────────────────────────────────────────────
 
 
-def empty_residual_drift() -> go.Figure:
-    """Placeholder for the *Residual Drift — last 30 days* line chart.
+def empty_completeness_heatmap() -> go.Figure:
+    """Placeholder for the *Completeness Heatmap* in Row 3.
 
-    Production version (Option B): per-scenario residual median + a
-    P5–P95 envelope band derived from
-    ``cluster_residuals_test.parquet``, with anomaly markers stamped
-    on outlier scenarios.
+    Production version (Option B): X = ``cluster_id``, Y =
+    ``feature_name``, Z = ``1 - null_rate`` (%).  Built from
+    ``quality/completeness_{split}.parquet`` reshaped to a wide
+    matrix; colour scale 0 % (purple) → 100 % (pink) matching the
+    design palette.
     """
-    return empty_figure("Awaiting eval-driven residual stats")
+    return empty_figure("Awaiting completeness matrix from quality/completeness_{split}.parquet")
 
 
-def empty_feature_drift_psi() -> go.Figure:
-    """Placeholder for the *Feature Drift (PSI)* horizontal bar chart.
+def empty_distribution_explorer() -> go.Figure:
+    """Placeholder for the *Distribution Explorer* in Row 4.
 
-    Production version (Option B): top-10 features by PSI severity
-    (info / warn / critical), computed from
-    ``baseline_feature_stats.parquet`` (train baseline) vs recomputed
-    test-side feature distributions.
+    Production version (deferred): grouped violin per cluster for the
+    feature selected in the right-hand dropdown.  Source TBD —
+    ``quality/feature_summary_{split}.parquet`` only carries summary
+    statistics (mean/std/percentiles), so V1 production either:
+
+    1. Approximates a box from the existing percentile stats
+       (p01 / p50 / p99 + min/max), or
+    2. Adds a new ``quality/feature_samples_{split}.parquet`` writer
+       on the eval side carrying sampled per-cluster values.
+
+    Either path lights up this card without any layout change.
     """
-    return empty_figure("Awaiting feature drift PSI computation")
-
-
-def empty_latency_histogram() -> go.Figure:
-    """Placeholder for the *Latency Histogram* in Row 3.
-
-    Production version (Stage 2): histogram of inference latencies
-    pulled from the production logging pipeline, with annotated P50 /
-    P95 / P99 lines.  Until that producer ships there is no real
-    source for this chart — the V1 snapshot mode will keep this card
-    on a synthesised gamma-shaped distribution.
-    """
-    return empty_figure("Awaiting inference latency telemetry")
+    return empty_figure("Awaiting per-cluster feature distribution data")
 
 
 __all__ = [
-    "empty_residual_drift",
-    "empty_feature_drift_psi",
-    "empty_latency_histogram",
+    "empty_completeness_heatmap",
+    "empty_distribution_explorer",
 ]
 ```
 
-**Why a separate figures module rather than inlining `empty_figure(...)`
-calls in the layout?**  When Option B / V1 snapshot mode lands the
-populated chart builders will need ~50–100 lines each (envelope
-shading, anomaly markers, severity-coloured PSI bars, percentile
-lines).  Putting the empty-state shells here today means the populated
-versions land next to their `empty_*` counterparts — same import path
-the layout already references, no second-order layout edit needed.
-
 ---
 
-### A.2 — `src/ui/apps/rade_analytics/layouts/monitoring.py` (NEW)
+### A.2 — `layouts/data_quality.py` (NEW)
+
+The `DATA_QUALITY_IDS` dict locks every callable target up front so
+the populate callbacks (when they land) never hardcode strings —
+Page Contract §3 Rule L1 / L3.  The `mount_signal` Store (Rule L4)
+gives the future render callback a reliable trigger that fires after
+the DOM swap.
+
+`build_data_quality()` reads `session.split` for the initial Train /
+Val / Test toggle value (Rule L1: initial UI state from session at
+build time, no hydration callback) and falls through to `"test"`
+when no session is supplied — matching the design's default active
+pill.
 
 ```python
-"""Monitoring page layout.
+"""Data Quality page layout.
 
-Mirrors ``docs/platform_designs/rade_model_monitoring.png`` region-for-
+Mirrors ``docs/platform_designs/rade_data_quality.png`` region-for-
 region:
 
 * **Row 0** — invisible mount tripwire (Page Contract §3 Rule L4) so
   the Stage-2 render callback can fire on layout mount without
   racing the DOM swap.
-* **Row 1** — Header band: page title + subtitle on the left, four KPI
-  chips spanning the row (Baseline-vs-Live KS, PSI, Rolling MAE 7d,
-  Alerts Open).
-* **Row 2** — Two-column row: *Residual Drift — last 30 days* line
-  chart on the left (~2/3 width) and *Feature Drift (PSI)* horizontal
-  bar chart on the right (~1/3 width).
-* **Row 3** — Two-column row: *Active Alerts* AG Grid (~1/2 width) and
-  *Latency Histogram* (~1/2 width).
-* **Row 4** — Footer caption: data-source disclosure.
+* **Row 1** — Header band: page title + subtitle on the left, and a
+  filter bar (Train/Val/Test segmented control + Cluster select +
+  Search input) plus the *Export CSV* CTA on the right.
+* **Row 2** — KPI strip: five chips spanning the row (Total Features,
+  Clusters, Complete Features, Features with Missing, Overall
+  Completeness %).
+* **Row 3** — *Completeness Heatmap* (full width).  X axis =
+  ``cluster_id``; Y axis = ``feature_name``; cell colour = ``1 -
+  null_rate`` (%).  Built from ``quality/completeness_{split}.parquet``.
+* **Row 4** — Two-column row: *Feature Summary* AG Grid (~1/2 width)
+  and *Distribution Explorer* (~1/2 width) with a "Selected feature"
+  dropdown anchored top-right.
+* **Row 5** — Footer caption: data-source disclosure naming the two
+  parquets that drive the page.
 
 V1 status — Option A (empty layout, no callbacks)
 -------------------------------------------------
 This module ships the full layout with **empty defaults everywhere**:
 
 * KPI values default to em-dash placeholders.
-* Charts mount with the matching ``empty_*`` figure from
-  :mod:`figures.monitoring_charts` (each carries an "Awaiting …"
-  annotation hinting at what the populated chart will show).
-* The Active Alerts grid mounts with ``rowData=[]``.
+* The Completeness Heatmap and Distribution Explorer mount with the
+  matching ``empty_*`` figure from :mod:`figures.data_quality_charts`
+  (each carries an "Awaiting …" annotation hinting at what the
+  populated chart will show).
+* The Feature Summary grid mounts with ``rowData=[]``.
+* The split toggle, cluster filter, search box and feature dropdown
+  mount with neutral defaults so the chrome reads exactly as it will
+  once callbacks land — but no callback fires today.
 
 No callbacks are registered today (see ``callbacks/__init__.py``) so
-no API request fires when the page is navigated to.  When the V1
-snapshot-mode callbacks land they will overwrite each region via
-``Output`` — no layout change required.
+no API request hits ``/prism/v1/quality/*`` when the page is
+navigated to.  When the V1 snapshot-mode callbacks land they will
+overwrite each region via ``Output`` — no layout change required.
 
 Page Contract anchors
 ---------------------
 * §3 Rule L1 — every primitive a callback might target has a stable
-  id via :data:`MONITORING_IDS`.
+  id via :data:`DATA_QUALITY_IDS`.
 * §3 Rule L3 — no hardcoded id strings outside this dict.
-* §3 Rule L4 — :data:`MONITORING_IDS["mount_signal"]` is a Store with
-  ``data=True`` so render callbacks can fire after the DOM swap.
+* §3 Rule L4 — :data:`DATA_QUALITY_IDS["mount_signal"]` is a Store
+  with ``data=True`` so render callbacks can fire after the DOM swap.
 """
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
+import dash_mantine_components as dmc
 from dash import dcc, html
+from dash_iconify import DashIconify
 
 from ..components.ag_grid_table import AgGridTable
 from ..components.chart_container import ChartContainer
 from ..components.kpi_card import KpiCard
-from ..figures.monitoring_charts import (
-    empty_feature_drift_psi,
-    empty_latency_histogram,
-    empty_residual_drift,
+from ..figures.data_quality_charts import (
+    empty_completeness_heatmap,
+    empty_distribution_explorer,
 )
 
 if TYPE_CHECKING:
@@ -458,34 +484,42 @@ if TYPE_CHECKING:
 # ─────────────────────────────────────────────────────────────────────
 
 
-MONITORING_IDS: Dict[str, str] = {
-    "root":                     "monitoring-root",
+DATA_QUALITY_IDS: Dict[str, str] = {
+    "root":                       "data-quality-root",
 
     # Mount tripwire — Page Contract §3 Rule L4.
-    "mount_signal":             "monitoring-mount-signal",
+    "mount_signal":               "data-quality-mount-signal",
 
     # Row 1 — Header subtitle (carries the "updated N min ago" suffix
     # once the snapshot callback comes online).
-    "subtitle":                 "monitoring-subtitle",
+    "subtitle":                   "data-quality-subtitle",
 
-    # Row 1 — KPI chips.  Each card carries a separate value id so
+    # Row 1 — Filter bar.
+    "split_toggle":               "data-quality-split-toggle",
+    "cluster_filter":             "data-quality-cluster-filter",
+    "feature_search":             "data-quality-feature-search",
+    "export_btn":                 "data-quality-export-btn",
+
+    # Row 2 — KPI chips.  Each card carries a separate value id so
     # callbacks can target the value text without rebuilding chrome.
-    "kpi_ks":                   "monitoring-kpi-ks",
-    "kpi_ks_value":             "monitoring-kpi-ks-value",
-    "kpi_psi":                  "monitoring-kpi-psi",
-    "kpi_psi_value":            "monitoring-kpi-psi-value",
-    "kpi_rolling_mae":          "monitoring-kpi-rolling-mae",
-    "kpi_rolling_mae_value":    "monitoring-kpi-rolling-mae-value",
-    "kpi_alerts_open":          "monitoring-kpi-alerts-open",
-    "kpi_alerts_open_value":    "monitoring-kpi-alerts-open-value",
+    "kpi_total_features":         "data-quality-kpi-total-features",
+    "kpi_total_features_value":   "data-quality-kpi-total-features-value",
+    "kpi_clusters":               "data-quality-kpi-clusters",
+    "kpi_clusters_value":         "data-quality-kpi-clusters-value",
+    "kpi_complete_features":      "data-quality-kpi-complete-features",
+    "kpi_complete_features_value": "data-quality-kpi-complete-features-value",
+    "kpi_with_missing":           "data-quality-kpi-with-missing",
+    "kpi_with_missing_value":     "data-quality-kpi-with-missing-value",
+    "kpi_overall_completeness":   "data-quality-kpi-overall-completeness",
+    "kpi_overall_completeness_value": "data-quality-kpi-overall-completeness-value",
 
-    # Row 2 — Drift charts.
-    "residual_drift_chart":     "monitoring-residual-drift-chart",
-    "feature_drift_chart":      "monitoring-feature-drift-chart",
+    # Row 3 — Completeness heatmap.
+    "completeness_heatmap":       "data-quality-completeness-heatmap",
 
-    # Row 3 — Alerts grid + Latency histogram.
-    "alerts_grid":              "monitoring-alerts-grid",
-    "latency_histogram_chart":  "monitoring-latency-histogram-chart",
+    # Row 4 — Feature summary grid + distribution explorer.
+    "feature_summary_grid":       "data-quality-feature-summary-grid",
+    "distribution_chart":         "data-quality-distribution-chart",
+    "feature_picker":             "data-quality-feature-picker",
 }
 
 
@@ -496,75 +530,175 @@ MONITORING_IDS: Dict[str, str] = {
 
 # Placeholder used for any KPI value that doesn't have a callback
 # overwriting it yet.  Matches the convention used on every other
-# Rade page (Overview / Governance / Cluster Deep-Dive).
+# Rade page (Overview / Governance / Monitoring / Cluster Deep-Dive).
 _PLACEHOLDER = "—"
 
 
 # Subtitle wording for V1 — honest about the empty state.  The
 # snapshot-mode callback (Option B) replaces this with
-# ``"Train vs Test drift snapshot — updated <N> min ago"``.
+# ``"Per-feature completeness & summary stats — split: <split> · N
+# clusters · updated <N> min ago"``.
 _V1_SUBTITLE = (
-    "Drift & residual surveillance — preview "
-    "(no live telemetry connected)"
+    "Per-feature completeness & summary statistics — preview "
+    "(no live artifacts connected)"
 )
+
+
+# Split toggle options — matches the design pill order.  Values stay
+# lowercase to align with the ``Session.split`` literal type and the
+# ``/prism/v1/quality/*`` ``split`` query parameter.
+_SPLIT_OPTIONS: List[Dict[str, str]] = [
+    {"label": "Train", "value": "train"},
+    {"label": "Val",   "value": "val"},
+    {"label": "Test",  "value": "test"},
+]
+_SPLIT_DEFAULT = "test"
+
+
+# Sentinel that means "no cluster filter" in the Cluster select.
+# Picked once here so the populate callback can compare against it
+# without hardcoding the string in two places.
+_ALL_CLUSTERS_VALUE = "__all__"
 
 
 # Footer caption — surface the producer-side reality so reviewers
-# don't infer anything about live monitoring from a static layout.
+# don't infer anything about live data quality from a static layout.
+# Wording mirrors the design's bottom-right grey strap line.
 _FOOTER_CAPTION = (
-    "Monitoring data sourced from production logging pipeline; "
-    "live feed wires up in Stage 2."
+    "Artifacts read from quality/completeness_{split}.parquet and "
+    "quality/feature_summary_{split}.parquet"
 )
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Row 1 — Header band (title + subtitle + KPI strip)
+# Row 1 — Header band (title + subtitle + filter bar + export CTA)
 # ─────────────────────────────────────────────────────────────────────
 
 
-def _kpi_strip() -> html.Div:
-    """Four KPI cards across Row 1.
+def _filter_bar(*, initial_split: str) -> html.Div:
+    """Train / Val / Test toggle + cluster select + search + export CTA.
 
-    Values are em-dashes at build time and overwritten by the
-    snapshot render callback once it lands.  Card icons stay static.
+    Mounted with neutral defaults so the chrome reads as the populated
+    page would — no callback runs today.  The split SegmentedControl
+    seeds from the live session so navigating in from another page
+    keeps the user's split intact.
     """
     return html.Div(
-        className="grid grid-cols-4 gap-4",
+        className="flex items-center justify-between gap-3 flex-wrap",
         children=[
-            KpiCard(
-                label="Baseline vs Live KS",
-                value=_PLACEHOLDER,
-                card_id=MONITORING_IDS["kpi_ks"],
-                value_id=MONITORING_IDS["kpi_ks_value"],
-                icon="tabler:wave-square",
+            html.Div(
+                className="flex items-center gap-3 flex-wrap",
+                children=[
+                    dmc.SegmentedControl(
+                        id=DATA_QUALITY_IDS["split_toggle"],
+                        data=_SPLIT_OPTIONS,
+                        value=initial_split,
+                        size="sm",
+                        color="violet",
+                        radius="md",
+                    ),
+                    html.Div(
+                        className="flex items-center gap-2",
+                        children=[
+                            html.Div(
+                                "Cluster:",
+                                className="text-xs text-slate-400",
+                            ),
+                            dmc.Select(
+                                id=DATA_QUALITY_IDS["cluster_filter"],
+                                data=[
+                                    {
+                                        "label": "All clusters",
+                                        "value": _ALL_CLUSTERS_VALUE,
+                                    },
+                                ],
+                                value=_ALL_CLUSTERS_VALUE,
+                                size="sm",
+                                radius="md",
+                                clearable=False,
+                                searchable=True,
+                                allowDeselect=False,
+                                w=180,
+                            ),
+                        ],
+                    ),
+                    dmc.TextInput(
+                        id=DATA_QUALITY_IDS["feature_search"],
+                        placeholder="Search",
+                        size="sm",
+                        radius="md",
+                        leftSection=DashIconify(
+                            icon="tabler:search", width=14,
+                        ),
+                        w=220,
+                    ),
+                ],
             ),
-            KpiCard(
-                label="PSI (Population Stability)",
-                value=_PLACEHOLDER,
-                card_id=MONITORING_IDS["kpi_psi"],
-                value_id=MONITORING_IDS["kpi_psi_value"],
-                icon="tabler:chart-histogram",
-            ),
-            KpiCard(
-                label="Rolling MAE (7d)",
-                value=_PLACEHOLDER,
-                card_id=MONITORING_IDS["kpi_rolling_mae"],
-                value_id=MONITORING_IDS["kpi_rolling_mae_value"],
-                icon="tabler:trending-down",
-            ),
-            KpiCard(
-                label="Alerts Open",
-                value=_PLACEHOLDER,
-                card_id=MONITORING_IDS["kpi_alerts_open"],
-                value_id=MONITORING_IDS["kpi_alerts_open_value"],
-                icon="tabler:bell-ringing",
+            dmc.Button(
+                id=DATA_QUALITY_IDS["export_btn"],
+                children="Export CSV",
+                variant="default",
+                size="sm",
+                radius="md",
+                leftSection=DashIconify(icon="tabler:download", width=16),
             ),
         ],
     )
 
 
-def _row_header() -> html.Div:
-    """Row 1 — page title + subtitle on the left, KPI strip below.
+def _kpi_strip() -> html.Div:
+    """Five KPI cards across Row 2.
+
+    Values are em-dashes at build time and overwritten by the
+    snapshot render callback once it lands.  Card icons stay static.
+
+    Uses ``grid-cols-5`` so the five chips share the row width
+    evenly, matching the density in the design.
+    """
+    return html.Div(
+        className="grid grid-cols-5 gap-4",
+        children=[
+            KpiCard(
+                label="Total Features",
+                value=_PLACEHOLDER,
+                card_id=DATA_QUALITY_IDS["kpi_total_features"],
+                value_id=DATA_QUALITY_IDS["kpi_total_features_value"],
+                icon="tabler:list-numbers",
+            ),
+            KpiCard(
+                label="Clusters",
+                value=_PLACEHOLDER,
+                card_id=DATA_QUALITY_IDS["kpi_clusters"],
+                value_id=DATA_QUALITY_IDS["kpi_clusters_value"],
+                icon="tabler:apps",
+            ),
+            KpiCard(
+                label="Complete Features",
+                value=_PLACEHOLDER,
+                card_id=DATA_QUALITY_IDS["kpi_complete_features"],
+                value_id=DATA_QUALITY_IDS["kpi_complete_features_value"],
+                icon="tabler:circle-check",
+            ),
+            KpiCard(
+                label="Features with Missing",
+                value=_PLACEHOLDER,
+                card_id=DATA_QUALITY_IDS["kpi_with_missing"],
+                value_id=DATA_QUALITY_IDS["kpi_with_missing_value"],
+                icon="tabler:alert-triangle",
+            ),
+            KpiCard(
+                label="Overall Completeness %",
+                value=_PLACEHOLDER,
+                card_id=DATA_QUALITY_IDS["kpi_overall_completeness"],
+                value_id=DATA_QUALITY_IDS["kpi_overall_completeness_value"],
+                icon="tabler:percentage",
+            ),
+        ],
+    )
+
+
+def _row_header(*, initial_split: str) -> html.Div:
+    """Row 1 — page title + subtitle on the left, filter bar on the right.
 
     The subtitle's id is part of the contract so the snapshot
     callback can drop a real "updated N min ago" suffix into it
@@ -582,205 +716,262 @@ def _row_header() -> html.Div:
                         className="flex flex-col gap-1",
                         children=[
                             html.Div(
-                                "Production Monitoring",
+                                "Data Quality",
                                 className="rade-page-title",
                             ),
                             html.Div(
                                 _V1_SUBTITLE,
-                                id=MONITORING_IDS["subtitle"],
+                                id=DATA_QUALITY_IDS["subtitle"],
                                 className="text-xs text-slate-500",
                             ),
                         ],
                     ),
                 ],
             ),
-            _kpi_strip(),
+            _filter_bar(initial_split=initial_split),
         ],
     )
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Row 2 — Drift charts (residual line + feature PSI bar)
+# Row 3 — Completeness heatmap (full width)
 # ─────────────────────────────────────────────────────────────────────
 
 
-def _row_drift_charts() -> html.Div:
-    """Row 2 — residual drift line (~2/3) + feature drift PSI bar (~1/3).
+def _row_completeness_heatmap() -> html.Div:
+    """Row 3 — full-width Completeness Heatmap card.
 
-    Layout uses a 3-column CSS grid: residual drift spans 2 cols,
-    feature drift takes the remaining 1.  Mirrors the
-    Overview / Cluster-Deep-Dive split conventions so visual rhythm
-    stays consistent across pages.
+    Wider chart height than the standard 320 because the Y axis must
+    accommodate one row per feature (real ensembles have ~50–200
+    features); 360 gives the placeholder some breathing room and
+    matches what the populated chart will need.
     """
-    return html.Div(
-        className="grid grid-cols-3 gap-4 items-stretch",
-        children=[
-            html.Div(
-                className="col-span-2",
-                children=[
-                    ChartContainer(
-                        title="Residual Drift — last 30 days",
-                        subtitle=(
-                            "Median residual + P5–P95 envelope · "
-                            "anomaly markers"
-                        ),
-                        graph_id=MONITORING_IDS["residual_drift_chart"],
-                        figure=empty_residual_drift(),
-                        height=320,
-                    ),
-                ],
-            ),
-            html.Div(
-                className="col-span-1",
-                children=[
-                    ChartContainer(
-                        title="Feature Drift (PSI)",
-                        subtitle="Top 10 features · severity-coloured",
-                        graph_id=MONITORING_IDS["feature_drift_chart"],
-                        figure=empty_feature_drift_psi(),
-                        height=320,
-                    ),
-                ],
-            ),
-        ],
+    return ChartContainer(
+        title="Completeness Heatmap",
+        subtitle=(
+            "Per-feature, per-cluster completeness — colour scale "
+            "0% (purple) → 100% (pink)"
+        ),
+        graph_id=DATA_QUALITY_IDS["completeness_heatmap"],
+        figure=empty_completeness_heatmap(),
+        height=360,
     )
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Row 3 — Active alerts + Latency histogram
+# Row 4 — Feature Summary table + Distribution Explorer
 # ─────────────────────────────────────────────────────────────────────
 
 
-# Column defs for the Active Alerts grid.  Severity column is wired
-# to ``cellClassRules`` against the existing ``rade-pill`` palette
-# (rose / amber / slate via reused ``rejected`` / ``pending`` /
-# ``archived`` variants) so when the alerts callback comes online
-# styling lights up automatically — no second CSS pass.
-_ALERTS_COLUMN_DEFS: List[Dict[str, Any]] = [
+# Missing % colour rules — heat-mapped pill so high-missing rows pop
+# out of the table at a glance.  Reuses the existing
+# ``rade-pill--rejected/pending/archived`` palette so the V1 layout
+# doesn't need a new CSS pass; the populate callback just emits
+# numeric ``missing_pct`` values and AG Grid picks the matching class.
+_MISSING_PCT_CLASS_RULES: Dict[str, str] = {
+    "rade-pill rade-pill--rejected": (
+        "params.value != null && params.value >= 5"
+    ),
+    "rade-pill rade-pill--pending": (
+        "params.value != null && params.value >= 1 && params.value < 5"
+    ),
+    "rade-pill rade-pill--archived": (
+        "params.value != null && params.value > 0 && params.value < 1"
+    ),
+}
+
+
+_FEATURE_SUMMARY_COLUMN_DEFS: List[Dict[str, Any]] = [
     {
-        "field":      "alert_id",
-        "headerName": "Alert ID",
-        "minWidth":   140,
+        "field":      "feature_name",
+        "headerName": "Feature",
+        "minWidth":   160,
         "pinned":     "left",
         "cellClass":  "rade-grid-mono",
     },
     {
-        "field":      "cluster",
+        "field":      "cluster_id",
         "headerName": "Cluster",
+        "minWidth":   90,
+    },
+    {
+        "field":      "mean",
+        "headerName": "Mean",
+        "type":       "numericColumn",
+        "minWidth":   100,
+        "valueFormatter": {
+            "function": (
+                "params.value == null ? '—' : "
+                "Number(params.value).toFixed(4)"
+            ),
+        },
+    },
+    {
+        "field":      "std",
+        "headerName": "Std",
+        "type":       "numericColumn",
+        "minWidth":   100,
+        "valueFormatter": {
+            "function": (
+                "params.value == null ? '—' : "
+                "Number(params.value).toFixed(4)"
+            ),
+        },
+    },
+    {
+        "field":      "min",
+        "headerName": "Min",
+        "type":       "numericColumn",
+        "minWidth":   90,
+        "valueFormatter": {
+            "function": (
+                "params.value == null ? '—' : "
+                "Number(params.value).toFixed(4)"
+            ),
+        },
+    },
+    {
+        "field":      "max",
+        "headerName": "Max",
+        "type":       "numericColumn",
+        "minWidth":   90,
+        "valueFormatter": {
+            "function": (
+                "params.value == null ? '—' : "
+                "Number(params.value).toFixed(4)"
+            ),
+        },
+    },
+    {
+        "field":      "missing_pct",
+        "headerName": "Missing %",
+        "type":       "numericColumn",
         "minWidth":   110,
-    },
-    {
-        "field":      "type",
-        "headerName": "Type",
-        "minWidth":   120,
-    },
-    {
-        "field":      "severity",
-        "headerName": "Severity",
-        "minWidth":   120,
-        "cellClassRules": {
-            # Until severity-specific pills land, reuse the existing
-            # governance palette: critical → rose, warn → amber,
-            # info → slate.  Colour intent stays correct; the class
-            # names are reused not duplicated.
-            "rade-pill rade-pill--rejected": (
-                "params.value === 'critical' || params.value === 'rose'"
-            ),
-            "rade-pill rade-pill--pending": (
-                "params.value === 'warn' || params.value === 'amber'"
-            ),
-            "rade-pill rade-pill--archived": (
-                "params.value === 'info' || params.value === 'slate'"
-            ),
-        },
+        "cellClassRules": _MISSING_PCT_CLASS_RULES,
         "valueFormatter": {
             "function": (
-                "params.value ? "
-                "params.value.charAt(0).toUpperCase() + params.value.slice(1)"
-                " : '—'"
+                "params.value == null ? '—' : "
+                "Number(params.value).toFixed(1) + '%'"
             ),
         },
     },
     {
-        "field":      "opened",
-        "headerName": "Opened",
-        "minWidth":   140,
+        "field":      "n_rows",
+        "headerName": "N",
+        "type":       "numericColumn",
+        "minWidth":   80,
         "valueFormatter": {
             "function": (
-                "params.value ? "
-                "new Date(params.value).toLocaleDateString('en-GB', "
-                "{day:'2-digit', month:'short', year:'numeric'}) "
-                ": '—'"
+                "params.value == null ? '—' : "
+                "Number(params.value).toLocaleString('en-GB')"
             ),
         },
-    },
-    {
-        "field":      "owner",
-        "headerName": "Owner",
-        "minWidth":   140,
     },
 ]
 
 
-def _row_alerts_and_latency() -> html.Div:
-    """Row 3 — active alerts grid (~1/2) + latency histogram (~1/2).
+def _feature_summary_card() -> html.Div:
+    """Left half of Row 4 — feature summary AG Grid card.
 
-    Both children share equal width so the page reads as two paired
-    cards, matching the design.  When the snapshot callback lands
-    the latency histogram becomes a synthesised gamma distribution
-    until inference telemetry exists; alerts stay empty until the
-    Stage-2 alerts producer ships.
+    Mounts with ``rowData=[]`` so the populate callback (when it
+    lands) can drop in whatever the active split's
+    ``feature_summary_{split}.parquet`` carries.  Column defs are
+    finalised today so adding rows later doesn't trigger a layout
+    rebuild — the populate callback just emits ``rowData``.
     """
     return html.Div(
-        className="grid grid-cols-2 gap-4 items-stretch",
+        className="rade-card flex flex-col gap-3",
         children=[
             html.Div(
-                className="rade-card flex flex-col gap-3",
-                children=[
-                    html.Div(
-                        "Active Alerts",
-                        className="text-sm font-semibold text-slate-200",
-                    ),
-                    AgGridTable(
-                        grid_id=MONITORING_IDS["alerts_grid"],
-                        row_data=[],
-                        column_defs=_ALERTS_COLUMN_DEFS,
-                        grid_options={
-                            "pagination": False,
-                            "rowHeight": 36,
-                            "headerHeight": 38,
-                            "animateRows": False,
-                            "suppressCellFocus": True,
-                            "domLayout": "autoHeight",
-                        },
-                        height=240,
-                        className="rade-monitoring-alerts-grid",
-                    ),
-                ],
+                "Feature Summary",
+                className="text-sm font-semibold text-slate-200",
             ),
-            ChartContainer(
-                title="Latency Histogram",
-                subtitle="Inference latency · P50 / P95 / P99",
-                graph_id=MONITORING_IDS["latency_histogram_chart"],
-                figure=empty_latency_histogram(),
-                height=260,
+            AgGridTable(
+                grid_id=DATA_QUALITY_IDS["feature_summary_grid"],
+                row_data=[],
+                column_defs=_FEATURE_SUMMARY_COLUMN_DEFS,
+                grid_options={
+                    "pagination": True,
+                    "paginationPageSize": 10,
+                    "paginationPageSizeSelector": [10, 25, 50, 100],
+                    "rowHeight": 36,
+                    "headerHeight": 38,
+                    "animateRows": False,
+                    "suppressCellFocus": True,
+                    "domLayout": "normal",
+                },
+                height=320,
+                className="rade-data-quality-summary-grid",
             ),
         ],
     )
 
 
+def _distribution_explorer_card() -> html.Div:
+    """Right half of Row 4 — distribution explorer with a feature picker.
+
+    The feature picker lives in the chart card's top-right action
+    slot so the user can swap which feature is being inspected
+    without leaving the row.  Mounts disabled / empty until the
+    populate callback supplies the real feature list — keeping it
+    visible (rather than hidden) makes the design intent obvious in
+    the empty state.
+    """
+    feature_picker = dmc.Select(
+        id=DATA_QUALITY_IDS["feature_picker"],
+        data=[],
+        value=None,
+        size="xs",
+        radius="md",
+        clearable=False,
+        searchable=True,
+        allowDeselect=False,
+        placeholder="Select feature",
+        w=200,
+        disabled=True,
+    )
+
+    return ChartContainer(
+        title="Distribution Explorer",
+        subtitle="Per-cluster distribution for the selected feature",
+        graph_id=DATA_QUALITY_IDS["distribution_chart"],
+        figure=empty_distribution_explorer(),
+        height=320,
+        actions=[feature_picker],
+    )
+
+
+def _row_summary_and_distribution() -> html.Div:
+    """Row 4 — feature summary grid (~1/2) + distribution explorer (~1/2).
+
+    Both children share equal width so the page reads as two paired
+    cards, matching the design.  When the snapshot callback lands
+    the grid populates from ``/prism/v1/quality/feature-summary``
+    and the chart populates from whichever distribution source we
+    pick (see ``empty_distribution_explorer`` docstring for the two
+    candidate paths).
+    """
+    return html.Div(
+        className="grid grid-cols-2 gap-4 items-stretch",
+        children=[
+            _feature_summary_card(),
+            _distribution_explorer_card(),
+        ],
+    )
+
+
 # ─────────────────────────────────────────────────────────────────────
-# Row 4 — Footer caption
+# Row 5 — Footer caption
 # ─────────────────────────────────────────────────────────────────────
 
 
 def _row_footer() -> html.Div:
     """Producer-disclosure caption.
 
-    Rendered as plain text right-aligned underneath Row 3, matching
+    Rendered as plain text right-aligned underneath Row 4, matching
     the design's tiny grey footer line.  Stays static — it's not
-    user-data; the wording becomes "monitoring-data-source-truthful"
-    once Stage 2 wires up production logging.
+    user-data; the wording becomes "data-quality-source-truthful"
+    once the snapshot callback wires up the live parquet reads.
     """
     return html.Div(
         className="flex justify-end",
@@ -798,159 +989,144 @@ def _row_footer() -> html.Div:
 # ─────────────────────────────────────────────────────────────────────
 
 
-def build_monitoring(*, session: Optional["Session"] = None) -> html.Div:
-    """Build the full Monitoring page tree.
+def build_data_quality(*, session: Optional["Session"] = None) -> html.Div:
+    """Build the full Data Quality page tree.
 
-    The ``session`` kwarg is accepted for uniformity with every other
-    page builder (Page Contract §2.1) but unused today — the page
-    has no per-user persisted state.  Reserved so adding e.g. a
-    ``monitoring_split_filter`` field to ``Session`` later is a
-    one-line layout change.
+    The ``session`` kwarg is read for the initial split toggle value
+    (Page Contract §3 Rule L1 — initial UI state from session at
+    build time, no hydration callback needed).  Every other field
+    in :data:`DATA_QUALITY_IDS` mounts with neutral / empty
+    defaults that the populate callback will overwrite once it
+    lands.
     """
-    del session  # unused today; reserved for forward-compat
+    initial_split = session.split if session is not None else _SPLIT_DEFAULT
 
     return html.Div(
-        id=MONITORING_IDS["root"],
+        id=DATA_QUALITY_IDS["root"],
         className="rade-page",
         children=[
             # Mount tripwire — Page Contract §3 Rule L4.
             dcc.Store(
-                id=MONITORING_IDS["mount_signal"],
+                id=DATA_QUALITY_IDS["mount_signal"],
                 data=True,
                 storage_type="memory",
             ),
-            _row_header(),
-            _row_drift_charts(),
-            _row_alerts_and_latency(),
+            _row_header(initial_split=initial_split),
+            _kpi_strip(),
+            _row_completeness_heatmap(),
+            _row_summary_and_distribution(),
             _row_footer(),
         ],
     )
 
 
 __all__ = [
-    "MONITORING_IDS",
-    "build_monitoring",
+    "DATA_QUALITY_IDS",
+    "build_data_quality",
 ]
 ```
 
-**Implementation notes for reviewers**
-
-* `MONITORING_IDS` is the only public id surface.  Adding a new
-  component to a callback later → add the id here first, then in
-  the layout helper, then in the callback's `Input/Output`.  Same
-  workflow as Governance.
-* The Active Alerts grid uses **`domLayout: "autoHeight"`** so an
-  empty grid still renders the header row + the AG Grid "No Rows
-  to Show" overlay at a sensible height.  The container's
-  `height=240` is the *card* height — AG Grid sizes itself to fit.
-* `_ALERTS_COLUMN_DEFS` reuses the Governance pill palette
-  (`rade-pill--rejected` / `--pending` / `--archived`) for severity
-  colours.  When monitoring-specific severity pills land in
-  `rade.css` (`--critical` / `--warn` / `--info`), update the four
-  class names in `cellClassRules` and nothing else.
-* The subtitle has its **own id** (`subtitle`) — when V1 snapshot
-  mode lands, the render callback emits a new value into
-  `Output(MONITORING_IDS["subtitle"], "children")` carrying
-  "Train vs Test drift snapshot — updated 2 min ago"-style copy.
-
 ---
 
-### A.3 — `src/ui/apps/rade_analytics/router.py` (PATCH)
+### A.3 — `router.py` (PATCHED)
 
-Two targeted patches.  The router currently imports every page
-builder at the top of the module and references `_placeholder("Monitoring", "Phase F")`
-in the `/monitoring` `PageSpec`; we add the import and swap the
-builder.
+Two targeted edits, both in `src/ui/apps/rade_analytics/router.py`.
+Imports stay alphabetical; the route table swaps the placeholder for
+the real builder.
 
-**Patch 1 — add `build_monitoring` to the imports**
+**Patch 1 — add the import**
 
-```diff
- from .layouts.evaluation import build_evaluation
- from .layouts.governance import build_governance
-+from .layouts.monitoring import build_monitoring
- from .layouts.overview import build_overview
- from .layouts.shell import SHELL_IDS, build_chrome
- from .layouts.splash import build_splash
+Replace:
+
+```python
+from .layouts.evaluation import build_evaluation
+from .layouts.governance import build_governance
+from .layouts.monitoring import build_monitoring
+from .layouts.overview import build_overview
+```
+
+with:
+
+```python
+from .layouts.data_quality import build_data_quality
+from .layouts.evaluation import build_evaluation
+from .layouts.governance import build_governance
+from .layouts.monitoring import build_monitoring
+from .layouts.overview import build_overview
 ```
 
 **Patch 2 — wire the route**
 
-```diff
-     # ── Remaining top-level pages (stubs until Phase F) ─────────
-     "/monitoring": PageSpec(
-         path="/monitoring",
-         title="Monitoring",
--        build=_placeholder("Monitoring", "Phase F"),
-+        build=build_monitoring,
-     ),
+Replace:
+
+```python
+    "/data-quality": PageSpec(
+        path="/data-quality",
+        title="Data Quality",
+        build=_placeholder("Data Quality", "Phase E"),
+    ),
 ```
 
-No other lines in `router.py` change.  The breadcrumb title stays
-`"Monitoring"`, the sidebar nav item already exists, and there is
-no sub-route registration to add (the page is single-route, unlike
-Evaluation which fans out to `/evaluation/portfolio`,
-`/evaluation/cluster`, etc.).
+with:
+
+```python
+    "/data-quality": PageSpec(
+        path="/data-quality",
+        title="Data Quality",
+        build=build_data_quality,
+    ),
+```
+
+The `_placeholder` helper stays in the file — it still backs
+`/inference`, `/scenario-lab`, `/report-builder`, `/assistant`.
 
 ---
 
-### A.4 — Verification (after pasting all three targets)
+### A.4 — Smoke test
 
-Run from the repo root.  No live API needed — Option A makes zero
-backend calls.
+After applying the three changes, the following sequence should run
+clean from the repo root:
 
-1. **Static checks** — imports + lints:
+```bash
+python -c "
+from src.ui.apps.rade_analytics.layouts.data_quality import build_data_quality, DATA_QUALITY_IDS
+from src.ui.apps.rade_analytics.figures.data_quality_charts import (
+    empty_completeness_heatmap, empty_distribution_explorer,
+)
+from src.ui.apps.rade_analytics.router import ROUTES
 
-   ```bash
-   python -c "
-   from src.ui.apps.rade_analytics.layouts.monitoring import (
-       build_monitoring, MONITORING_IDS,
-   )
-   from src.ui.apps.rade_analytics.figures.monitoring_charts import (
-       empty_residual_drift,
-       empty_feature_drift_psi,
-       empty_latency_histogram,
-   )
-   from src.ui.apps.rade_analytics.router import ROUTES
+tree = build_data_quality()
+assert tree.id == 'data-quality-root'
+assert len(tree.children) == 6  # mount Store + 5 visible rows
+assert ROUTES['/data-quality'].build.__name__ == 'build_data_quality'
+assert len(DATA_QUALITY_IDS) == 21
+empty_completeness_heatmap()
+empty_distribution_explorer()
+print('OK')
+"
+```
 
-   tree = build_monitoring()
-   assert tree.id == 'monitoring-root'
-   assert len(tree.children) == 5, 'Store + 4 rows expected'
-   assert ROUTES['/monitoring'].build is build_monitoring
-   assert empty_residual_drift().layout.template is not None
-   print('monitoring imports + layout build + route wiring: OK')
-   "
-   ```
+Expected output: `OK` (along with the same id / count diagnostics
+already validated in the implementation PR).
 
-2. **Live UI** — boot the existing Dash runner and click
-   *Monitoring* in the sidebar.  Expected:
+---
 
-   * Page title `"Production Monitoring"` and the V1 honest
-     subtitle render.
-   * Four KPI cards each show `—` for value, with the icons
-     visible.
-   * Residual Drift card renders the empty figure with the
-     "Awaiting eval-driven residual stats" annotation centred.
-   * Feature Drift card renders the empty figure with
-     "Awaiting feature drift PSI computation".
-   * Active Alerts card renders the column header row and an
-     "No Rows To Show" overlay (AG Grid default for `rowData=[]`).
-   * Latency Histogram card renders the empty figure with
-     "Awaiting inference latency telemetry".
-   * Footer caption right-aligned under Row 3.
-   * **No HTTP request to `/prism/v1/monitoring/*` ever fires** —
-     verify in the browser DevTools network tab.
-   * Browser console has no "missing callback" warnings.
+### A.5 — Unblocking the populate callback (one-line restore)
 
-3. **Re-enable callbacks later (one-line restore)**.  When V1
-   snapshot mode (Option B) is ready, two adjustments bring the
-   page live:
+When the V1 snapshot mode (Option B) is ready, two adjustments turn
+the page live without touching the layout:
 
-   ```python
-   # callbacks/__init__.py
-   from . import monitoring_cb           # ← add
-   monitoring_cb.register(app, backend)  # ← add inside register_all
-   ```
+```python
+# callbacks/__init__.py
+from . import data_quality_cb           # ← add
+data_quality_cb.register(app, backend)  # ← add inside register_all
+```
 
-   At that point the layout doesn't change at all — the same
-   `MONITORING_IDS` are already there, and every empty-state
-   placeholder gets overwritten via `Output`.
+At that point the layout doesn't change at all — the same
+`DATA_QUALITY_IDS` are already there, every empty-state placeholder
+gets overwritten via `Output`, and the typed PRISM client
+(`backend.completeness(split, …)` / `backend.feature_summary(split,
+…)`) — backed by `/prism/v1/quality/*` — returns ready-shaped
+DataFrames the moment the eval pipeline writes the underlying
+parquets.
+
