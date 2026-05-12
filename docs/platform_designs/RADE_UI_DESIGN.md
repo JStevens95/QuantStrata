@@ -251,209 +251,139 @@ When a new tab or card is proposed:
 No mock, no merge.
 
 ---
-## Appendix A — Inference Console (Phase 1 · pipeline events + backend wrapper)
 
-> **Status:** Phase 1 of 6 complete. The page **layout** lives in
-> `src/ui/apps/rade_analytics/layouts/inference.py` (V2 — already
-> shipped); this appendix covers the new **runtime substrate**
-> Phase 1 adds underneath it: a lifecycle-event protocol on the
-> ensemble pipeline plus a thin UI-facing backend wrapper.
+## Appendix A — `ensemble/infer.py` (full refactored source, copy-paste friendly)
 
-The **incredibly detailed** long-form spec — system architecture,
-all data structures, six-phase roadmap, testing strategy, glossary
-— lives in **[`docs/rade_analytics/inference_implementation.md`](../rade_analytics/inference_implementation.md)**.
-Read that first; this appendix is the implementation cookbook.
-
----
-
-### Appendix A · 0 — TL;DR for reviewers
-
-| Question | Answer |
-|---|---|
-| What does this PR change? | Adds a lifecycle-event hook to `EnsembleInferencePipeline` and a `RadeBackend.run_inference(...)` wrapper that captures it. No UI behaviour changes in this PR. |
-| What does it not change? | Existing pipeline behaviour — `on_event=None` (the default) is a behavioural no-op, proved by `TestPipelineEmits.test_default_on_event_is_noop_behavioural`. |
-| Why? | The Inference Console UI (Phase 2) needs a streamable narration of every run for its activity-log card. Building that on `logging` would couple the UI to every other subsystem's chatter; a first-class hook keeps the contract narrow. |
-| What's the surface area? | **2 new files**, **2 patched files**, **2 new test files**. ~750 lines total, ~30% of which is docstrings. |
-| How do I verify? | `pytest tests/rade_ml_pt/pipelines/ensemble/test_infer_events.py tests/ui/apps/rade_analytics/test_run_inference_backend.py` → 22 tests, ~1.5 s. |
+> **Status**: Lean Plan implementation complete in this env. This appendix
+> contains the complete source of `src/rade_ml_pt/pipelines/ensemble/infer.py`
+> after the staged-pipeline + Tier-2 optimisation refactor, split into copy-
+> friendly sections. Drop each section into the corresponding region of
+> your work-env file, in order.
+>
+> The Phase 1 work (event hook + `RadeBackend.run_inference` wrapper) is
+> still in effect — the new staged pipeline emits exactly the same set
+> of lifecycle events, plus a few new ones for the per-stage envelope.
+> The previous Phase 1 appendix has been replaced by this one; the
+> companion long-form spec
+> [`docs/rade_analytics/inference_implementation.md`](../rade_analytics/inference_implementation.md)
+> remains the source of truth for the event protocol and Phase 2 UI
+> wiring.
+>
+> Companion porting tracker:
+> [`docs/rade_analytics/ensemble_infer_refactor.md`](../rade_analytics/ensemble_infer_refactor.md).
 
 ---
 
-### Appendix A · 1 — File touch summary
+### Appendix A · 0 — Reading guide
 
-| Action | Path | Bytes (approx) |
+**File layout** (single file, 1366 lines):
+
+| Section | Lines | What it contains |
 |---|---|---|
-| **NEW** | `src/rade_ml_pt/pipelines/ensemble/infer_events.py` | full file in §3.1 |
-| **PATCH** | `src/rade_ml_pt/pipelines/ensemble/infer.py` | additive only — diff in §3.2 |
-| **PATCH** | `src/ui/apps/rade_analytics/data/backend.py` | additive only — diff in §3.3 |
-| **NEW** | `tests/rade_ml_pt/pipelines/ensemble/test_infer_events.py` | snippet in §4.1 |
-| **NEW** | `tests/ui/apps/rade_analytics/test_run_inference_backend.py` | snippet in §4.2 |
-| **NEW** | `tests/ui/apps/rade_analytics/conftest.py` | re-exports `registry_with_members` so the backend test can reuse the synthetic registry fixture |
-| **NEW** | `docs/rade_analytics/inference_implementation.md` | the long-form spec |
+| §1 | 1–44 | Module docstring + imports |
+| §2 | 47–84 | `_dict_to_inference_context` (the one module-level helper) |
+| §3 | 87–315 | Three frozen dataclasses: `LoadedScenariosReport`, `ClusterRoutingDecision`, `ValidationReport` |
+| §4 | 318–381 | `EnsembleInferencePipeline.__init__` (contract preserved) |
+| §5 | 383–810 | Orchestration: `run` / `load` / `load_scenarios` / `validate` / `run_inference` / `_run_with_prebuilt` |
+| §6 | 812–907 | Loading helpers: `_load_from_registry`, `_load_from_session` |
+| §7 | 909–1046 | Validation helpers: four cheap, private, no-IO methods |
+| §8 | 1048–1269 | Input building: dispatcher → routing dispatcher → per-cluster builders (full / cheap) |
+| §9 | 1271–1366 | Post-inference + `_build_result` |
 
-The Phase 1 layout (`layouts/inference.py`, `figures/inference_charts.py`,
-`router.py`, `assets/rade.css`) is **unchanged**; the layout-only
-"V2" appendix that previously lived here was a placeholder for the
-runtime contract that Phase 1 now fills in.  The **layout gotcha**
-section (Appendix A · 6) is preserved so future phases don't re-
-introduce the squashed-grid bug.
+**Contracts preserved** (identical to pre-refactor signatures — *do not change these*):
+
+- `EnsembleInferencePipeline.__init__(ensemble_config, ensemble_version="latest", session=None, *, on_event=None)`
+- `EnsembleInferencePipeline.run() -> InferenceResult`
+
+The `__init__` adds three new private cache slots (`_new_scenario_shocks`,
+`_loaded_scenarios`, `_validation_report`) initialised to `None`; existing
+public attributes (`config`, `ensemble_version`, `_session`, `_ensemble`,
+`_ens_config`, `_member_versions`, `_inference_contexts`, `_emit`) stay
+exactly as before.
+
+**Two flow paths** that `run()` dispatches between:
+
+1. **Pre-built short-circuit** — when
+   `config.metadata["inference"]["member_inputs"]` is populated, skip
+   scenario loading + validation and call `_run_with_prebuilt`. This is the
+   legacy path used by smoke tests, model-agnostic harnesses, and the
+   `new_trades` mode (until the staged `new_trades` builder is implemented).
+2. **Staged path** (default for production new-scenarios runs) —
+   `load() → load_scenarios() → validate() → run_inference()`. The UI
+   workflow drives these four stages directly via individual buttons;
+   programmatic callers can either call them in sequence or call `run()`
+   to orchestrate.
+
+**Tier-2 optimisation**: inside `run_inference()` the per-cluster input
+build dispatches on `ClusterRoutingDecision.is_affected`:
+
+- **Affected cluster** (cluster RFs ∩ shock RFs ≠ ∅) → `_build_cluster_inputs_full`
+  re-prices elementary PnL under new shocks (the expensive path).
+- **Unaffected cluster** → `_build_cluster_inputs_cheap` looks up
+  pre-scaled, pre-reduced historical PnL via
+  `ctx.elementary_pnl.loc[scenario_labels]` (the cheap path; eligibility
+  is validated up-front by `validate()`).
+
+Both paths land on the same downstream pipeline
+(`build_new_pnl_sequences` + `build_model_inputs`), so the model sees
+identical input shapes for affected and unaffected members.
+
+**State machine** (implicit, no enum):
+
+```
+__init__   →   _ensemble = None,  _loaded_scenarios = None,  _validation_report = None
+   ↓ load()
+_ensemble  ↑
+   ↓ load_scenarios()
+_new_scenario_shocks ↑,  _loaded_scenarios ↑,  _validation_report = None  (reset)
+   ↓ validate()
+_validation_report ↑
+   ↓ run_inference()
+returns InferenceResult
+```
+
+Each public stage checks its prerequisites at the top and raises
+`RuntimeError` with an actionable message when a prior stage is missing.
 
 ---
 
-### Appendix A · 2 — Data structures (one-page summary)
+### Appendix A · 1 — Module docstring + imports
 
-The full catalogue (with rationale, ownership, and lifecycle
-notes) is in
-[`inference_implementation.md` §4](../rade_analytics/inference_implementation.md).
-Quick reference:
-
-| Name | Where it lives | Wire shape | Owner |
-|---|---|---|---|
-| `ActivityEntry` | `src/rade_ml_pt/pipelines/ensemble/infer_events.py` | `dict` with `id`, `stage`, `phase`, `status`, `ts`, optional `target` / `detail` | Pipeline emits, UI Store consumes (Phase 2). |
-| `EmitFn` | same | `Callable[[ActivityEntry], None]` | The pipeline accepts; `EventCollector` is the canonical implementation. |
-| `EventCollector` | same | thread-safe in-memory buffer that **is itself an `EmitFn`** | Backend wrapper instantiates one per run. |
-| `InferenceRunResult` | `src/ui/apps/rade_analytics/data/backend.py` | frozen dataclass — `ensemble_version`, `n_scenarios`, `n_targets`, `latency_seconds`, `predictions`, `sample_ids`, `activity_log` | `RadeBackend.run_inference` returns. UI callbacks (Phase 2) consume. |
-| `BackendResult[InferenceRunResult]` | same | tri-state envelope (`ok` / `error` / `status_code`) | Returned by `run_inference`; UI never sees raw exceptions. |
-
-Stage / status vocabularies — these are part of the public
-contract, do not invent new tokens without a UI patch:
-
-- `Stage`  ∈ `"ingest" | "validate" | "inference"`
-- `Status` ∈ `"ok" | "fail" | "running" | "pending"`
-
-The Phase 1 pipeline uses only `inference` events.  Ingest and
-validate are reserved for Phase 2 callbacks (file upload + manifest
-sanity).
-
----
-
-### Appendix A · 3 — Source files (full code or diff)
-
-#### 3.1 — `src/rade_ml_pt/pipelines/ensemble/infer_events.py`  (NEW · full file)
-
-This module is *new* and self-contained — copy in verbatim.
+Header of the file (lines 1–44). All imports are alphabetised within
+their group; the `TYPE_CHECKING` block holds forward references that
+would otherwise cause circular imports (`EnsembleSession` and
+`InferenceContext` both import from this module transitively).
 
 ```python
-"""Lifecycle events emitted by :class:`EnsembleInferencePipeline`.
-... (full docstring + module body) ...
+"""
+Ensemble inference pipeline.
+
+Two usage patterns:
+
+1. **Standalone (non-UI):** Construct with an ``EnsembleConfig``, call ``run()``.
+   The pipeline loads the ensemble from the registry, builds per-member inputs
+   via the single-cluster inference helpers, predicts, and aggregates.
+
+2. **Via EnsembleSession (UI):** The session pre-loads models + inference
+   contexts.  Call ``run(session=session)`` or use ``EnsembleSession.run_inference()``
+   directly.  The pipeline skips registry loading and uses the cached state.
 """
 from __future__ import annotations
 
-import threading
-import uuid
+import csv
+import logging
+import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Literal, Optional
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union, TYPE_CHECKING
 
+import numpy as np
+import pandas as pd
 
-Stage  = Literal["ingest", "validate", "inference"]
-Status = Literal["ok", "fail", "running", "pending"]
-
-STAGE_INGEST    : Stage = "ingest"
-STAGE_VALIDATE  : Stage = "validate"
-STAGE_INFERENCE : Stage = "inference"
-
-STATUS_OK      : Status = "ok"
-STATUS_FAIL    : Status = "fail"
-STATUS_RUNNING : Status = "running"
-STATUS_PENDING : Status = "pending"
-
-
-ActivityEntry = Dict[str, Any]
-
-
-@dataclass(frozen=True)
-class TypedActivityEntry:
-    stage:   Stage
-    phase:   str
-    status:  Status
-    target:  Optional[str] = None
-    detail:  Optional[str] = None
-    id:      str           = field(default_factory=lambda: uuid.uuid4().hex)
-    ts:      str           = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat(timespec="seconds"),
-    )
-
-    def to_dict(self) -> ActivityEntry:
-        d: ActivityEntry = {
-            "id":     self.id,
-            "stage":  self.stage,
-            "phase":  self.phase,
-            "status": self.status,
-            "ts":     self.ts,
-        }
-        if self.target is not None:
-            d["target"] = self.target
-        if self.detail is not None:
-            d["detail"] = self.detail
-        return d
-
-
-EmitFn = Callable[[ActivityEntry], None]
-
-
-def noop_emit(_entry: ActivityEntry) -> None:
-    return None
-
-
-def event(
-    stage:   Stage,
-    phase:   str,
-    *,
-    status:  Status              = STATUS_OK,
-    target:  Optional[str]       = None,
-    detail:  Optional[str]       = None,
-) -> ActivityEntry:
-    return TypedActivityEntry(
-        stage=stage, phase=phase, status=status,
-        target=target, detail=detail,
-    ).to_dict()
-
-
-class EventCollector:
-    def __init__(self) -> None:
-        self._events: List[ActivityEntry] = []
-        self._lock = threading.Lock()
-
-    def __call__(self, entry: ActivityEntry) -> None:
-        with self._lock:
-            self._events.append(entry)
-
-    def __len__(self) -> int:
-        with self._lock:
-            return len(self._events)
-
-    def snapshot(self) -> List[ActivityEntry]:
-        with self._lock:
-            return list(self._events)
-
-    def clear(self) -> None:
-        with self._lock:
-            self._events.clear()
-
-
-__all__ = [
-    "ActivityEntry", "EmitFn", "EventCollector",
-    "Stage", "Status",
-    "STAGE_INFERENCE", "STAGE_INGEST", "STAGE_VALIDATE",
-    "STATUS_FAIL", "STATUS_OK", "STATUS_PENDING", "STATUS_RUNNING",
-    "TypedActivityEntry", "event", "noop_emit",
-]
-```
-
-> ⚠️ **Subtle pitfall** — `EventCollector` defines `__len__`, so an
-> empty collector is *falsy*.  Always default the emit-fn with
-> `on_event if on_event is not None else noop_emit`, never
-> `on_event or noop_emit` (the latter silently drops every event
-> on a fresh collector).
-
-#### 3.2 — `src/rade_ml_pt/pipelines/ensemble/infer.py`  (PATCH · additive)
-
-Three changes; all **additive**, none alter existing behaviour
-when `on_event=None`.
-
-**Change 1 — top of file, after the existing imports:**
-
-```python
+from src.rade_ml_pt.ensemble.config import EnsembleConfig
+from src.rade_ml_pt.ensemble.builder import EnsembleBuilder
+from src.rade_ml_pt.ensemble.registry import EnsembleRegistry
+from src.rade_ml_pt.core.types import InferenceResult
 from src.rade_ml_pt.pipelines.ensemble.infer_events import (
     EmitFn,
     STAGE_INFERENCE,
@@ -463,310 +393,1642 @@ from src.rade_ml_pt.pipelines.ensemble.infer_events import (
     event,
     noop_emit,
 )
+
+if TYPE_CHECKING:
+    from src.rade_ml_pt.ensemble.session import EnsembleSession
+    from src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer import InferenceContext
+
+logger = logging.getLogger(__name__)
 ```
 
-**Change 2 — `EnsembleInferencePipeline.__init__` signature + body:**
+---
+
+### Appendix A · 2 — Helper: `_dict_to_inference_context`
+
+The only module-level helper (lines 47–84). Converts the loose dict
+returned by `load_inference_context_from_dir` into the typed
+`InferenceContext` dataclass that the rest of the pipeline operates on.
+Reused by both `_load_from_registry` (cold start) and `_load_from_session`
+(warm start).
 
 ```python
-def __init__(
-    self,
-    ensemble_config: EnsembleConfig,
-    ensemble_version: str = "latest",
-    session: Optional["EnsembleSession"] = None,
-    *,
-    on_event: Optional[EmitFn] = None,         # NEW
-) -> None:
-    self.config = ensemble_config
-    self.ensemble_version = ensemble_version
-    self._session = session
-    self._emit: EmitFn = on_event if on_event is not None else noop_emit  # NEW
-    # ... rest unchanged ...
+# ------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------
+
+def _dict_to_inference_context(
+    raw: Dict[str, Any],
+    data_config_override: Any = None,
+) -> "InferenceContext":
+    """
+    Convert a raw context dict (as returned by ``load_inference_context_from_dir``)
+    into an ``InferenceContext`` dataclass.
+
+    Parameters
+    ----------
+    raw : dict
+        Keys match those produced by ``load_inference_context_from_dir``.
+    data_config_override : optional
+        If provided, replaces the ``data_config`` from *raw*.
+    """
+    from src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer import InferenceContext
+
+    dc = data_config_override if data_config_override is not None else raw.get("data_config")
+    return InferenceContext(
+        data_config=dc,
+        encoder=raw.get("encoder"),
+        encoder_results=raw.get("encoder_results"),
+        graph_builder=raw.get("graph_builder"),
+        graph_results=raw.get("graph_results"),
+        elementary_pnl=raw.get("elementary_pnl"),
+        elementary_scaler=raw.get("elementary_scaler"),
+        elementary_attributes=raw.get("elementary_attribs"),
+        target_scaler=raw.get("target_scaler"),
+        target_attributes=raw.get("target_attribs"),
+        trade_universe=raw.get("trade_universe"),
+        cluster_info=raw.get("cluster_info"),
+        cluster_assets=raw.get("cluster_assets"),
+        cluster_elem_trades=raw.get("cluster_elem_trades"),
+    )
 ```
 
-**Change 3 — emit at the seam points** (full table in
-[`inference_implementation.md` §3.2](../rade_analytics/inference_implementation.md#32-srcrade_ml_ptpipelinesensembleinferpy-patch)).
+---
 
-The eight call-sites and their exact phase strings:
+### Appendix A · 3 — Stage report dataclasses
 
-| Where | Emit |
-|---|---|
-| `run()` first line | `event(STAGE_INFERENCE, "Pipeline started", status=STATUS_RUNNING, target=self.ensemble_version)` |
-| `_load_from_registry` start | `"Loading ensemble from registry"`, `running` |
-| after `builder.build()` | `"Ensemble assembled"`, `ok`, target `"N members"` |
-| per-cluster context start / done / fail | `"Cluster context loading / loaded / failed"` |
-| `_load_from_session` start / done | `"Reusing pre-loaded session"` / `"Session ready"` |
-| `_build_member_inputs` short-circuit | `"Using pre-built member inputs"`, `ok` |
-| `_build_new_scenarios_inputs` start / done | `"Loading new-scenario shocks"` / `"Shocks loaded"` |
-| per-cluster build start / done / fail | `"Building cluster inputs"` / `"Cluster inputs ready"` / `"Cluster input build failed"` |
-| around `self._ensemble.predict(...)` | `"Forward pass started"` (`running`) → `"Forward pass complete"` (`ok`) |
-| `run()` last line on success | `"Pipeline complete"`, `ok` |
-| `run()` outer `except` | `"Pipeline failed"`, `fail`, target `type(exc).__name__`, detail `str(exc)` — re-raises afterwards |
+Three module-level frozen dataclasses (lines 87–315). One per pipeline
+stage (`load_scenarios` returns `LoadedScenariosReport`; `validate`
+returns `ValidationReport`, which contains a list of
+`ClusterRoutingDecision`). All are **intentionally small and JSON-
+serialisable** so the UI can store them in `dcc.Store` and pass them over
+HTTP. Heavy artefacts (shock DataFrames, ensemble model, predictions
+array) stay on the pipeline instance.
 
-The full patched file is in the repo at
-`src/rade_ml_pt/pipelines/ensemble/infer.py`; the diff is small
-(~70 lines added, 0 removed) — read the file in your IDE rather
-than reproducing it inline here.
+#### Appendix A · 3.1 — `LoadedScenariosReport`
 
-#### 3.3 — `src/ui/apps/rade_analytics/data/backend.py`  (PATCH · additive)
+What `load_scenarios()` parsed from the new-scenario directory. Used by
+the UI's *manifest preview* card and by `validate()` downstream.
 
-Two additions; both at the bottom of the existing file.
+```python
+# ------------------------------------------------------------------
+# Stage reports
+# ------------------------------------------------------------------
+#
+# The pipeline returns one frozen dataclass per stage, used by both
+# programmatic callers and the UI activity log.  Heavy artefacts
+# (shock DataFrames, ensemble model, predictions array) stay inside
+# the pipeline; the reports below are intentionally small and JSON-
+# serialisable so they can live in a ``dcc.Store`` or HTTP response.
+#
 
-**Change 1 — add the `InferenceRunResult` dataclass next to
-`BackendResult`:**
+@dataclass(frozen=True)
+class LoadedScenariosReport:
+    """Summary of what :meth:`EnsembleInferencePipeline.load_scenarios`
+    parsed from the new-scenario directory.
+
+    Attributes
+    ----------
+    new_scenario_dir
+        Absolute or relative path to the folder that was parsed.
+    risk_factor_names
+        Risk-factor stems (filename minus ``.csv``).  Order is the
+        order ``os.listdir`` returned them — not significant.
+    n_risk_factors
+        Convenience: ``len(risk_factor_names)``.  Stored for cheap
+        UI consumption.
+    n_scenarios
+        Number of rows in every shock CSV.  Validated equal across
+        files at parse time.
+    scenario_labels
+        The canonical scenario index, shared across all shock files
+        in this run.  Used by :meth:`load_scenarios` /
+        :meth:`validate` to look up rows in each cluster's
+        ``elementary_pnl`` history.
+
+    Notes
+    -----
+    The actual shock dictionaries — i.e. the heavy
+    ``Dict[rf_name, Dict[scenario_label, Dict[knot, value]]]``
+    parsed from disk — live on the pipeline as
+    ``self._new_scenario_shocks`` and are *not* exposed via this
+    report.  UI code consumes only the lightweight summary.
+    """
+    new_scenario_dir:    str
+    risk_factor_names:   List[str]
+    n_risk_factors:      int
+    n_scenarios:         int
+    scenario_labels:     List[str]
+
+    def to_dict(self) -> Dict[str, Any]:
+        """JSON-serialisable view (defensive copies of list fields)."""
+        return {
+            "new_scenario_dir":  self.new_scenario_dir,
+            "risk_factor_names": list(self.risk_factor_names),
+            "n_risk_factors":    self.n_risk_factors,
+            "n_scenarios":       self.n_scenarios,
+            "scenario_labels":   list(self.scenario_labels),
+        }
+```
+
+#### Appendix A · 3.2 — `ClusterRoutingDecision`
+
+One per cluster. Drives the per-cluster branch inside `run_inference()`
+(affected → full path; unaffected → cheap path) and gives the UI's
+routing-table card everything it needs without further context lookups.
 
 ```python
 @dataclass(frozen=True)
-class InferenceRunResult:
-    """Typed payload returned by :meth:`RadeBackend.run_inference`.
-    ... see file for full docstring ...
+class ClusterRoutingDecision:
+    """Per-cluster decision made by :meth:`EnsembleInferencePipeline.validate`.
+
+    Drives the per-cluster branch inside
+    :meth:`EnsembleInferencePipeline.run_inference`: affected clusters
+    take the full price-and-predict path
+    (``_build_cluster_inputs``); unaffected clusters take the cheap
+    historical-lookup path (``_load_cluster_inputs``).
+
+    Attributes
+    ----------
+    cluster_id
+        The cluster this decision is about.
+    is_affected
+        True iff the cluster shares at least one risk factor with the
+        loaded scenario shocks.
+    intersecting_risk_factors
+        Sorted list of RF names that are in both the cluster's
+        instrument universe and ``new_scenario_shocks``.  Empty when
+        ``is_affected`` is False.
+    n_elementary_trades
+        Cluster's reduced elementary-trade count (post dimensionality
+        reduction).  Surfaced here so the UI can render trade counts
+        in the routing table without re-loading contexts.
+    n_target_trades
+        Cluster's target-trade count.  Same UI-convenience rationale.
+    missing_scenario_labels
+        Populated by ``validate()`` *only* for unaffected clusters
+        whose history doesn't cover all requested scenario labels.
+        Affected clusters always have ``[]`` here (they take the full
+        re-pricing path, so historical-label lookup never happens).
+        Non-empty on an unaffected cluster ⇒ cheap path blocked ⇒
+        :class:`ValidationReport` gets a corresponding entry in
+        ``errors``, flipping ``is_valid`` to False.
     """
-    ensemble_version: str
-    n_scenarios:      int
-    n_targets:        int
-    latency_seconds:  float
-    predictions:      "np.ndarray"
-    sample_ids:       Optional[List[str]]
-    activity_log:     List[Dict[str, Any]]
+    cluster_id:                  str
+    is_affected:                 bool
+    intersecting_risk_factors:   List[str]
+    n_elementary_trades:         int
+    n_target_trades:             int
+    missing_scenario_labels:     List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """JSON-serialisable view (defensive copies of list fields)."""
+        return {
+            "cluster_id":                self.cluster_id,
+            "is_affected":               self.is_affected,
+            "intersecting_risk_factors": list(self.intersecting_risk_factors),
+            "n_elementary_trades":       self.n_elementary_trades,
+            "n_target_trades":           self.n_target_trades,
+            "missing_scenario_labels":   list(self.missing_scenario_labels),
+        }
 ```
 
-**Change 2 — append `RadeBackend.run_inference(...)` at the
-end of the class:**
+#### Appendix A · 3.3 — `ValidationReport`
+
+Output of `validate()`. The pipeline never raises on a validation issue —
+the caller (programmatic or UI) decides whether to proceed. `errors`
+block the run (`is_valid` is False); `warnings` are surfaced but don't
+block. Derived properties (`affected_cluster_ids`, `cheap_path_used`,
+etc.) ensure there's a single source of truth — the `cluster_decisions`
+list.
 
 ```python
-def run_inference(
-    self,
-    *,
-    registry_dir: Any,
-    ensemble_version: str,
-    new_scenario_dir: Any,
-    member_inputs: Optional[Dict[str, Any]] = None,
-) -> "BackendResult[InferenceRunResult]":
-    """Execute one ensemble inference run and capture its lifecycle.
-    ... see file for full docstring ...
+@dataclass(frozen=True)
+class ValidationReport:
+    """Output of :meth:`EnsembleInferencePipeline.validate`.
+
+    Two kinds of issues are surfaced separately:
+
+    * **errors** — *block the run*.  ``is_valid`` is False whenever
+      this list is non-empty.  Typical errors: scenario labels not
+      found in an unaffected cluster's history; no cluster intersects
+      any shocked RF (nothing to run).
+    * **warnings** — surfaced to the user but **do not** block the
+      run.  e.g. a single cluster intersects shocks, shock magnitudes
+      look small.
+
+    The pipeline itself never raises on a validation issue.  Those
+    are user-input problems that should be fixable by editing scenario
+    files or selecting a different ensemble version; the caller
+    (programmatic, backend, or UI) decides what to do with the report.
+
+    Attributes
+    ----------
+    ensemble_version
+        The resolved ensemble version this report was built against.
+    n_scenarios
+        Number of scenarios in the loaded shock files.
+    scenario_labels
+        Canonical scenario index used during validation.
+    cluster_decisions
+        One :class:`ClusterRoutingDecision` per cluster in the
+        ensemble, in the order the ensemble's ``cluster_ids`` lists
+        them.
+    errors, warnings
+        Validation issues — see notes above.
+
+    Properties
+    ----------
+    is_valid
+        ``len(errors) == 0``.
+    affected_cluster_ids, unaffected_cluster_ids
+        Derived from ``cluster_decisions``.  Single source of truth
+        (these cannot drift from ``cluster_decisions``).
+    affected_count, unaffected_count, cheap_path_used
+        Convenience counters / boolean for UI display.
     """
-    from pathlib import Path
+    ensemble_version:    str
+    n_scenarios:         int
+    scenario_labels:     List[str]
+    cluster_decisions:   List[ClusterRoutingDecision] = field(default_factory=list)
+    errors:              List[str]                    = field(default_factory=list)
+    warnings:            List[str]                    = field(default_factory=list)
 
-    from src.rade_ml_pt.ensemble.config import EnsembleConfig  # noqa: F401
-    from src.rade_ml_pt.ensemble.registry import EnsembleRegistry
-    from src.rade_ml_pt.pipelines.ensemble.infer import (
-        EnsembleInferencePipeline,
-    )
-    from src.rade_ml_pt.pipelines.ensemble.infer_events import (
-        EventCollector,
-    )
+    @property
+    def is_valid(self) -> bool:
+        """True iff no blocking errors were recorded."""
+        return len(self.errors) == 0
 
-    registry_path = Path(registry_dir)
-    try:
-        ens_registry = EnsembleRegistry(registry_path)
-        config, _member_versions, resolved_version = ens_registry.load(
-            ensemble_version,
-        )
-    except Exception as exc:
-        logger.exception("ensemble registry load failed")
-        return BackendResult.failure(
-            error=f"Could not load ensemble '{ensemble_version}': {exc}",
-        )
+    @property
+    def affected_cluster_ids(self) -> List[str]:
+        """Cluster IDs that intersect with at least one shocked RF."""
+        return [d.cluster_id for d in self.cluster_decisions if d.is_affected]
 
-    config.registry_dir = str(registry_path)
+    @property
+    def unaffected_cluster_ids(self) -> List[str]:
+        """Cluster IDs with no shocked RF — eligible for the cheap path."""
+        return [d.cluster_id for d in self.cluster_decisions if not d.is_affected]
 
-    infer_meta: Dict[str, Any] = {"input_mode": "new_scenarios"}
-    if member_inputs is not None:
-        infer_meta["member_inputs"] = member_inputs
-    else:
-        infer_meta["new_scenario_dir"] = str(new_scenario_dir)
-    config.metadata["inference"] = infer_meta
+    @property
+    def affected_count(self) -> int:
+        return len(self.affected_cluster_ids)
 
-    collector = EventCollector()
-    try:
-        pipeline = EnsembleInferencePipeline(
-            config,
-            ensemble_version=resolved_version,
-            on_event=collector,
-        )
-        inference_result = pipeline.run()
-    except Exception as exc:
-        logger.exception("inference run failed")
-        return BackendResult.failure(
-            error=f"Inference failed: {type(exc).__name__}: {exc}",
-        )
+    @property
+    def unaffected_count(self) -> int:
+        return len(self.unaffected_cluster_ids)
 
-    run_result = InferenceRunResult(
-        ensemble_version=resolved_version,
-        n_scenarios=int(inference_result.n_samples),
-        n_targets=int(
-            inference_result.predictions.shape[1]
-            if inference_result.predictions.ndim > 1 else 1
-        ),
-        latency_seconds=float(inference_result.latency_seconds),
-        predictions=inference_result.predictions,
-        sample_ids=inference_result.sample_ids,
-        activity_log=collector.snapshot(),
-    )
-    return BackendResult.success(run_result)
+    @property
+    def cheap_path_used(self) -> bool:
+        """True iff any cluster will take the cheap (historical-lookup) path."""
+        return self.unaffected_count > 0
+
+    def decision_for(
+        self, cluster_id: str,
+    ) -> Optional[ClusterRoutingDecision]:
+        """Look up the routing decision for one cluster (linear scan).
+
+        Returns ``None`` if the cluster ID isn't in the report — which
+        should never happen for an ensemble member the pipeline knows
+        about, but the method is defensive.
+        """
+        for d in self.cluster_decisions:
+            if d.cluster_id == cluster_id:
+                return d
+        return None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """JSON-serialisable view, including derived properties.
+
+        The derived fields (``is_valid``, ``affected_cluster_ids``
+        etc.) are included so UI code can render the report without
+        having to re-derive them.
+        """
+        return {
+            "ensemble_version":       self.ensemble_version,
+            "n_scenarios":            self.n_scenarios,
+            "scenario_labels":        list(self.scenario_labels),
+            "cluster_decisions":      [d.to_dict() for d in self.cluster_decisions],
+            "errors":                 list(self.errors),
+            "warnings":               list(self.warnings),
+            "is_valid":               self.is_valid,
+            "affected_cluster_ids":   self.affected_cluster_ids,
+            "unaffected_cluster_ids": self.unaffected_cluster_ids,
+            "affected_count":         self.affected_count,
+            "unaffected_count":       self.unaffected_count,
+            "cheap_path_used":        self.cheap_path_used,
+        }
 ```
-
-**Three invariants codified in this method:**
-
-1. *Lazy imports* — pulls in pytorch / pipeline only on first
-   call so other backend methods stay cheap.
-2. *Uncached* — caching would silently bypass the activity log on
-   a hit, breaking the UI narration.
-3. *Tri-state envelope* — load failures + run failures both come
-   back as `BackendResult.failure(...)`; the UI never sees a raw
-   traceback.
 
 ---
 
-### Appendix A · 4 — Test files
+### Appendix A · 4 — `EnsembleInferencePipeline.__init__`
 
-Both tests are dependency-free (use the `MagicMock` HTTP client
-and the synthetic two-cluster fixture from
-`tests/rade_ml_pt/pipelines/ensemble/conftest.py`).  Total runtime
-under 2 seconds.
+Class header and constructor (lines 318–381). **The `__init__` signature
+is unchanged from pre-refactor** — three new private cache slots
+(`_new_scenario_shocks`, `_loaded_scenarios`, `_validation_report`) are
+added at the bottom of the constructor body. These three slots are
+populated by `load_scenarios()` / `validate()`; the pre-built short-
+circuit in `run()` leaves them as `None` (and the result builder reads
+this to decide which metadata keys to add).
 
-#### 4.1 — `tests/rade_ml_pt/pipelines/ensemble/test_infer_events.py`  (NEW)
+```python
+# ------------------------------------------------------------------
+# Pipeline
+# ------------------------------------------------------------------
 
-Outline (full file in the repo):
+class EnsembleInferencePipeline:
+    """
+    Run inference through an ensemble of models.
 
-- `TestEventFactory` — required keys, ID uniqueness, ISO-8601 ts.
-- `TestTypedActivityEntryRoundTrip` — dataclass ↔ wire-dict.
-- `TestNoopEmit` — total no-op.
-- `TestEventCollector` — append, snapshot-is-a-copy, clear,
-  thread-safety under 8 × 250 concurrent appends.
-- `TestPipelineEmits` — six integration tests:
-  1. Default `on_event=None` is behavioural no-op (existing
-     callers untouched).
-  2. Required phase strings (`"Pipeline started"` … `"Pipeline
-     complete"`) all present after a successful run.
-  3. First event is `Pipeline started` / `running`.
-  4. Last event on success is `Pipeline complete` / `ok`.
-  5. Last event on failure is `Pipeline failed` / `fail`, *before*
-     the exception re-raises.
-  6. Total event count is in `[5, 30]` for the 2-cluster fixture
-     (sanity bound).
+    Supports two input modes (set in config.metadata["inference"]["input_mode"]):
+    - ``new_scenarios``: Same trades, new risk-factor scenario data.
+    - ``new_trades``: New trade attributes to route and predict (not yet implemented).
 
-Run with:
+    Parameters
+    ----------
+    ensemble_config : EnsembleConfig
+        Must have ``registry_dir`` set (ignored when *session* is provided).
+    ensemble_version : str
+        Ensemble version or tag to load.
+    session : EnsembleSession or None
+        If provided, skip registry loading and use the session's cached
+        models + inference contexts.  The session must have Phase 3 loaded.
+    """
+
+    def __init__(
+        self,
+        ensemble_config: EnsembleConfig,
+        ensemble_version: str = "latest",
+        session: Optional["EnsembleSession"] = None,
+        *,
+        on_event: Optional[EmitFn] = None,
+    ) -> None:
+        """Initialise the pipeline.
+
+        Parameters
+        ----------
+        ensemble_config, ensemble_version, session
+            Existing arguments — unchanged behaviour.
+        on_event
+            Optional lifecycle-event callback.  When ``None``
+            (default), events are silenced via :data:`noop_emit` and
+            the pipeline behaves exactly as it did before this hook
+            was added — so all existing call-sites (CLI, tests,
+            batch) require no code change.
+
+            Pass an :data:`EmitFn` (e.g. an
+            :class:`~src.rade_ml_pt.pipelines.ensemble.infer_events.EventCollector`
+            instance) to capture a streaming narration of the run
+            for the *Inference Console* activity log.
+        """
+        self.config = ensemble_config
+        self.ensemble_version = ensemble_version
+        self._session = session
+        self._emit: EmitFn = on_event if on_event is not None else noop_emit
+
+        self._ensemble = None
+        self._ens_config: Optional[EnsembleConfig] = None
+        self._member_versions: Optional[Dict[str, str]] = None
+        self._inference_contexts: Dict[str, Any] = {}
+
+        # Staged-flow cache: populated by load_scenarios() / validate().
+        # The pre-built short-circuit in run() leaves these as None.
+        self._new_scenario_shocks: Optional[Dict[str, Any]] = None
+        self._loaded_scenarios:    Optional[LoadedScenariosReport] = None
+        self._validation_report:   Optional[ValidationReport] = None
+```
+
+---
+
+### Appendix A · 5 — Orchestration methods
+
+> **Paste target**: append these six methods inside the
+> `EnsembleInferencePipeline` class, after `__init__`, in this order.
+> They share the `# Orchestration` divider banner.
+
+The orchestration group (lines 383–810) is the public surface that callers
+interact with. `run()` orchestrates the staged path or short-circuits to
+the pre-built path; the four staged methods (`load`, `load_scenarios`,
+`validate`, `run_inference`) can also be called individually by the UI
+between buttons.
+
+Each staged method (a) checks its preconditions at the top and raises
+`RuntimeError` with an actionable message if a prior stage is missing,
+(b) emits a `running` event when it starts and an `ok`/`fail` event when
+it finishes, and (c) caches its result on the instance so subsequent
+calls can read it.
+
+#### Appendix A · 5.1 — `run()` — top-level entry (contract preserved)
+
+`run() -> InferenceResult` is the unchanged public entry point. Internally
+it now dispatches between the staged path (default) and the pre-built
+short-circuit. The `Pipeline started` / `Pipeline complete` /
+`Pipeline failed` envelope events are emitted here; the individual stages
+emit their own start/OK/fail events inside.
+
+```python
+    # ==================================================================
+    # Orchestration
+    # ==================================================================
+
+    def run(self) -> InferenceResult:
+        """
+        Execute the full ensemble inference pipeline (top-level entry).
+
+        Two paths share this signature:
+
+        1. **Staged path** — the default for production new-scenarios
+           runs.  Internally chains
+           ``load() → load_scenarios() → validate() → run_inference()``.
+           Validation failures (user-input problems) raise
+           :class:`ValueError`; system failures propagate the
+           underlying exception.
+
+        2. **Pre-built short-circuit** — if
+           ``metadata['inference']['member_inputs']`` is populated, skip
+           scenario loading + validation and go straight from
+           ``load() → predict() → post_infer()``.  This is the legacy
+           model-agnostic path used by smoke tests and any caller that
+           supplies its own member inputs.
+
+        Lifecycle events
+        ----------------
+        When ``on_event`` was passed to ``__init__``, this method
+        emits a structured narration — see
+        :mod:`src.rade_ml_pt.pipelines.ensemble.infer_events`.  The
+        outer ``Pipeline started`` / ``Pipeline complete`` /
+        ``Pipeline failed`` envelope is emitted here; the individual
+        stages emit their own start/OK/fail events inside.
+
+        Returns
+        -------
+        InferenceResult
+        """
+        logger.info("EnsembleInferencePipeline: starting")
+        self._emit(event(
+            STAGE_INFERENCE, "Pipeline started",
+            status=STATUS_RUNNING, target=self.ensemble_version,
+        ))
+        t0 = time.perf_counter()
+
+        try:
+            infer_meta = self.config.metadata.get("inference", {})
+            input_mode = infer_meta.get("input_mode", "new_scenarios")
+            if input_mode not in {"new_scenarios", "new_trades"}:
+                raise ValueError(
+                    f"Unknown input_mode '{input_mode}'. "
+                    f"Supported modes: 'new_scenarios', 'new_trades'."
+                )
+
+            if infer_meta.get("member_inputs"):
+                # Pre-built short-circuit: load model, then predict
+                # straight from caller-supplied member inputs.  Works
+                # for any input_mode (the caller has already taken
+                # responsibility for what's in member_inputs).
+                self.load()
+                result = self._run_with_prebuilt(infer_meta)
+            else:
+                # Staged path requires per-mode build logic; new_trades
+                # is not yet implemented end-to-end.  Callers that want
+                # new_trades behaviour today must use the pre-built
+                # short-circuit above.
+                if input_mode == "new_trades":
+                    raise NotImplementedError(
+                        "new_trades inference is not yet supported in "
+                        "the staged ensemble pipeline. Provide "
+                        "metadata['inference']['member_inputs'] to use "
+                        "the model-agnostic pre-built path."
+                    )
+                # Staged path: load → load_scenarios → validate →
+                # run_inference.  Each stage caches its result on the
+                # instance so the UI flow can resume mid-pipeline.
+                self.load()
+                self.load_scenarios()
+                report = self.validate()
+                if not report.is_valid:
+                    raise ValueError(
+                        f"Inference validation failed with "
+                        f"{len(report.errors)} error(s): {report.errors}"
+                    )
+                result = self.run_inference()
+
+            wall = time.perf_counter() - t0
+            logger.info(
+                "EnsembleInferencePipeline: done (%.3fs, %d samples)",
+                wall, result.n_samples,
+            )
+            self._emit(event(
+                STAGE_INFERENCE, "Pipeline complete",
+                status=STATUS_OK,
+                target=f"{wall * 1000:.0f} ms · {result.n_samples} samples",
+            ))
+            return result
+
+        except Exception as exc:
+            # Always surface failures into the activity log so the UI
+            # can render a red-cross row instead of a silent timeout.
+            self._emit(event(
+                STAGE_INFERENCE, "Pipeline failed",
+                status=STATUS_FAIL,
+                target=type(exc).__name__,
+                detail=str(exc),
+            ))
+            raise
+```
+
+#### Appendix A · 5.2 — `load()`
+
+Loads the ensemble model + per-cluster inference contexts. Idempotent —
+returns immediately if already loaded. Bound to the "Load model" UI button.
+
+```python
+    def load(self) -> None:
+        """Load the ensemble model + per-cluster inference contexts.
+
+        Idempotent — returns immediately if the ensemble is already
+        loaded.  Dispatches to :meth:`_load_from_session` when an
+        :class:`EnsembleSession` was provided to ``__init__`` and is
+        fully ready, otherwise to :meth:`_load_from_registry`.
+
+        Whether to load per-cluster inference contexts is inferred
+        from ``config.metadata["inference"]["member_inputs"]``: pre-
+        built inputs ⇒ contexts not needed (saves the per-cluster
+        artifact reads).
+
+        UI usage
+        --------
+        Bound to the "Load model" button on the *Inference Console*.
+        Failures emit a ``status="fail"`` event from the underlying
+        loader before re-raising.
+        """
+        if self._ensemble is not None:
+            return
+
+        infer_meta = self.config.metadata.get("inference", {})
+        need_contexts = not bool(infer_meta.get("member_inputs"))
+
+        if self._session is not None and self._session.all_inference_ready:
+            self._load_from_session()
+        else:
+            self._load_from_registry(need_contexts=need_contexts)
+```
+
+#### Appendix A · 5.3 — `load_scenarios()`
+
+Parses every shock CSV in the new-scenario directory and extracts the
+canonical scenario index (validated equal across files). Returns a small
+JSON-friendly report; the heavy shock dict stays on `self._new_scenario_shocks`.
+Bound to the "Load scenarios" UI button.
+
+```python
+    def load_scenarios(
+        self,
+        new_scenario_dir: Optional[Union[str, Path]] = None,
+    ) -> LoadedScenariosReport:
+        """Parse shock CSVs and extract the canonical scenario index.
+
+        Parameters
+        ----------
+        new_scenario_dir
+            Folder containing one CSV per shocked risk factor (filename
+            minus ``.csv`` is the RF key).  If ``None``, falls back to
+            ``self.config.metadata["inference"]["new_scenario_dir"]``.
+
+        Returns
+        -------
+        LoadedScenariosReport
+            Small JSON-friendly summary of what was parsed.  The heavy
+            shock dict itself stays in ``self._new_scenario_shocks``.
+
+        Raises
+        ------
+        RuntimeError
+            If :meth:`load` hasn't been called yet.
+        ValueError
+            If no scenario directory is provided, or shock files
+            disagree on scenario labels / counts.
+
+        Side effects
+        ------------
+        Resets ``self._validation_report`` to ``None`` — any prior
+        validation is invalidated by re-loading scenarios.
+        """
+        if self._ensemble is None:
+            raise RuntimeError(
+                "load() must be called before load_scenarios()."
+            )
+
+        if new_scenario_dir is None:
+            new_scenario_dir = (
+                self.config.metadata
+                    .get("inference", {})
+                    .get("new_scenario_dir")
+            )
+        if not new_scenario_dir:
+            raise ValueError(
+                "new_scenario_dir is required (pass as argument or set "
+                "config.metadata['inference']['new_scenario_dir'])."
+            )
+        new_scenario_dir = str(new_scenario_dir)
+
+        self._emit(event(
+            STAGE_INFERENCE, "Loading new-scenario shocks",
+            status=STATUS_RUNNING, target=new_scenario_dir,
+        ))
+
+        try:
+            from src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer import (
+                HybridGnnRnnInferencePipeline,
+            )
+            shocks = HybridGnnRnnInferencePipeline.load_new_scenarios(
+                new_scenario_dir,
+            )
+            canonical = self._extract_canonical_index(shocks)
+        except Exception as exc:
+            self._emit(event(
+                STAGE_INFERENCE, "Scenario load failed",
+                status=STATUS_FAIL, target=new_scenario_dir,
+                detail=str(exc),
+            ))
+            raise
+
+        self._new_scenario_shocks = shocks
+        self._validation_report = None  # invalidate downstream state
+
+        rf_names = sorted(shocks.keys())
+        report = LoadedScenariosReport(
+            new_scenario_dir=new_scenario_dir,
+            risk_factor_names=rf_names,
+            n_risk_factors=len(rf_names),
+            n_scenarios=len(canonical),
+            scenario_labels=canonical,
+        )
+        self._loaded_scenarios = report
+
+        self._emit(event(
+            STAGE_INFERENCE, "Shocks loaded",
+            status=STATUS_OK, target=new_scenario_dir,
+            detail=(
+                f"{report.n_risk_factors} RFs · "
+                f"{report.n_scenarios} scenarios"
+            ),
+        ))
+        return report
+```
+
+#### Appendix A · 5.4 — `validate()`
+
+Classifies each ensemble member as affected/unaffected, and for unaffected
+clusters verifies that every requested scenario label exists in the
+historical `elementary_pnl` index. Returns a `ValidationReport` — *does
+not raise* on user-input problems (those go into `report.errors`). Bound
+to the "Validate" UI button.
+
+```python
+    def validate(self) -> ValidationReport:
+        """Classify each cluster and check cheap-path eligibility.
+
+        Returns a :class:`ValidationReport` with one
+        :class:`ClusterRoutingDecision` per ensemble member.  Errors
+        and warnings live in ``report.errors`` / ``report.warnings``;
+        ``report.is_valid`` is ``True`` iff no errors were found.
+
+        Validation issues (missing scenario labels in a cluster's
+        history, no cluster intersects any shocked RF, etc.) are
+        treated as user-input problems and **never raise** here — the
+        caller (`run()` or the UI) decides what to do.
+
+        Raises
+        ------
+        RuntimeError
+            If :meth:`load` or :meth:`load_scenarios` haven't run.
+        """
+        if self._ensemble is None:
+            raise RuntimeError("load() must be called before validate().")
+        if self._loaded_scenarios is None:
+            raise RuntimeError(
+                "load_scenarios() must be called before validate()."
+            )
+
+        self._emit(event(
+            STAGE_INFERENCE, "Validating scenarios",
+            status=STATUS_RUNNING, target=self.ensemble_version,
+        ))
+
+        labels = self._loaded_scenarios.scenario_labels
+        shock_rfs = sorted(self._new_scenario_shocks.keys())
+
+        decisions: List[ClusterRoutingDecision] = []
+        errors:    List[str] = []
+        warnings:  List[str] = []
+
+        for cid in self._ens_config.cluster_ids:
+            ctx = self._inference_contexts.get(cid)
+            if ctx is None:
+                errors.append(
+                    f"Cluster '{cid}': no inference context loaded."
+                )
+                continue
+
+            decision = self._classify_cluster(cid, ctx, shock_rfs)
+
+            if not decision.is_affected:
+                ok, missing = self._validate_cluster_for_labels(
+                    cid, ctx, labels,
+                )
+                if not ok:
+                    # Rebuild the decision with missing labels recorded
+                    # (frozen dataclass — can't mutate in place).
+                    decision = ClusterRoutingDecision(
+                        cluster_id=decision.cluster_id,
+                        is_affected=decision.is_affected,
+                        intersecting_risk_factors=decision.intersecting_risk_factors,
+                        n_elementary_trades=decision.n_elementary_trades,
+                        n_target_trades=decision.n_target_trades,
+                        missing_scenario_labels=missing,
+                    )
+                    errors.append(
+                        f"Cluster '{cid}' is unaffected but its history "
+                        f"is missing {len(missing)}/{len(labels)} "
+                        f"requested scenario labels "
+                        f"(first 3: {missing[:3]})."
+                    )
+
+            decisions.append(decision)
+
+        if decisions and not any(d.is_affected for d in decisions):
+            errors.append(
+                "No clusters intersect any shocked risk factor — nothing to run."
+            )
+
+        report = ValidationReport(
+            ensemble_version=self.ensemble_version,
+            n_scenarios=self._loaded_scenarios.n_scenarios,
+            scenario_labels=labels,
+            cluster_decisions=decisions,
+            errors=errors,
+            warnings=warnings,
+        )
+        self._validation_report = report
+
+        self._emit(event(
+            STAGE_INFERENCE, "Validation complete",
+            status=STATUS_OK if report.is_valid else STATUS_FAIL,
+            target=(
+                f"{report.affected_count} affected · "
+                f"{report.unaffected_count} unaffected"
+            ),
+            detail=(
+                f"{len(report.errors)} error(s)" if report.errors else None
+            ),
+        ))
+        return report
+```
+
+#### Appendix A · 5.5 — `run_inference()`
+
+The granular forward-pass stage. Builds per-cluster inputs (routing each
+cluster to the full or cheap path), calls `self._ensemble.predict`,
+wraps the result. Bound to the "Run" UI button — only enabled once
+`load`, `load_scenarios`, and `validate` (with `is_valid=True`) have all
+completed.
+
+```python
+    def run_inference(self) -> InferenceResult:
+        """Build inputs (per-cluster routed), predict, post-process.
+
+        Assumes :meth:`load`, :meth:`load_scenarios`, :meth:`validate`
+        have all completed successfully (i.e. ``report.is_valid`` is
+        True).  Each cluster's :class:`ClusterRoutingDecision` selects
+        the full re-pricing path or the cheap historical-lookup path.
+
+        Raises
+        ------
+        RuntimeError
+            If any prior stage is missing, or :meth:`validate`
+            reported errors.
+        """
+        if self._ensemble is None:
+            raise RuntimeError(
+                "load() must be called before run_inference()."
+            )
+        if self._loaded_scenarios is None:
+            raise RuntimeError(
+                "load_scenarios() must be called before run_inference()."
+            )
+        if self._validation_report is None:
+            raise RuntimeError(
+                "validate() must be called before run_inference()."
+            )
+        if not self._validation_report.is_valid:
+            first = (
+                self._validation_report.errors[0]
+                if self._validation_report.errors else "?"
+            )
+            raise RuntimeError(
+                f"Cannot run inference — validation reported "
+                f"{len(self._validation_report.errors)} error(s). "
+                f"First: {first}"
+            )
+
+        t0 = time.perf_counter()
+        self._emit(event(
+            STAGE_INFERENCE, "Forward pass started",
+            status=STATUS_RUNNING,
+            target=(
+                f"{self._validation_report.affected_count} affected · "
+                f"{self._validation_report.unaffected_count} unaffected"
+            ),
+        ))
+
+        infer_meta = self.config.metadata.get("inference", {})
+        input_mode = infer_meta.get("input_mode", "new_scenarios")
+        member_inputs, extra_meta = self._build_member_inputs(input_mode)
+        combined = self._ensemble.predict(member_inputs)
+
+        self._emit(event(
+            STAGE_INFERENCE, "Forward pass complete",
+            status=STATUS_OK,
+            target=f"{combined.shape[0]} scenarios",
+        ))
+
+        result = self._build_result(combined, infer_meta, extra_meta)
+        result.latency_seconds = time.perf_counter() - t0
+        self.post_infer(result)
+        return result
+```
+
+#### Appendix A · 5.6 — `_run_with_prebuilt()`
+
+Private fast path for callers that already have `member_inputs`. Skips
+scenario loading + validation entirely.
+
+```python
+    def _run_with_prebuilt(
+        self, infer_meta: Dict[str, Any],
+    ) -> InferenceResult:
+        """Predict using caller-supplied ``member_inputs`` (legacy path).
+
+        Bypasses ``load_scenarios`` / ``validate`` /
+        ``_build_member_inputs`` entirely — the caller is responsible
+        for the contents of ``infer_meta["member_inputs"]``.  Used by
+        the synthetic-smoke test path and any model-agnostic harness.
+        """
+        t0 = time.perf_counter()
+        member_inputs = infer_meta["member_inputs"]
+
+        self._emit(event(
+            STAGE_INFERENCE, "Using pre-built member inputs",
+            status=STATUS_OK,
+            target=f"{len(member_inputs)} members",
+        ))
+        self._emit(event(
+            STAGE_INFERENCE, "Forward pass started",
+            status=STATUS_RUNNING,
+            target=f"{len(member_inputs)} members",
+        ))
+        combined = self._ensemble.predict(member_inputs)
+        self._emit(event(
+            STAGE_INFERENCE, "Forward pass complete",
+            status=STATUS_OK,
+            target=f"{combined.shape[0]} scenarios",
+        ))
+
+        result = self._build_result(combined, infer_meta, {})
+        result.latency_seconds = time.perf_counter() - t0
+        self.post_infer(result)
+        return result
+```
+
+---
+
+### Appendix A · 6 — Loading helpers
+
+> **Paste target**: append after §5 inside the
+> `EnsembleInferencePipeline` class. Banner divider precedes them.
+
+Two private methods (lines 812–907) called by `load()`:
+`_load_from_registry` for a cold start (reads from `EnsembleRegistry`)
+and `_load_from_session` for a warm start (reuses `EnsembleSession`'s
+cache). Both end with the ensemble model + per-cluster
+`InferenceContext`s populated on the instance.
+
+```python
+    # ==================================================================
+    # Loading
+    # ==================================================================
+
+    def _load_from_registry(self, need_contexts: bool = True) -> None:
+        """Cold-start: load ensemble + per-member inference contexts from registry."""
+        self._emit(event(
+            STAGE_INFERENCE, "Loading ensemble from registry",
+            status=STATUS_RUNNING, target=self.ensemble_version,
+        ))
+        ens_registry = EnsembleRegistry(self.config.registry_dir)
+        config, member_versions, version = ens_registry.load(self.ensemble_version)
+        self._ens_config = config
+        self._member_versions = member_versions
+
+        from src.rade_ml_pt.registry.store import ModelRegistry
+
+        registry = ModelRegistry(self.config.registry_dir)
+        builder = EnsembleBuilder(registry)
+        self._ensemble = builder.build(config, member_versions)
+        self._emit(event(
+            STAGE_INFERENCE, "Ensemble assembled",
+            status=STATUS_OK,
+            target=f"{config.n_members} members",
+        ))
+
+        if need_contexts:
+            from src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer import (
+                load_inference_context_from_dir,
+            )
+
+            for cid in config.cluster_ids:
+                ver = member_versions[cid]
+                version_dir = Path(self.config.registry_dir) / ver
+                self._emit(event(
+                    STAGE_INFERENCE, "Cluster context loading",
+                    status=STATUS_RUNNING, target=cid,
+                ))
+                try:
+                    raw = load_inference_context_from_dir(version_dir)
+                    self._inference_contexts[cid] = _dict_to_inference_context(raw)
+                    self._emit(event(
+                        STAGE_INFERENCE, "Cluster context loaded",
+                        status=STATUS_OK, target=cid,
+                    ))
+                except Exception as exc:
+                    self._emit(event(
+                        STAGE_INFERENCE, "Cluster context failed",
+                        status=STATUS_FAIL, target=cid, detail=str(exc),
+                    ))
+                    raise ValueError(
+                        f"Could not load inference context for cluster '{cid}' "
+                        f"(version '{ver}', dir={version_dir}). "
+                        f"Provide metadata['inference']['member_inputs'] for "
+                        f"model-agnostic ensemble inference, or ensure model-"
+                        f"specific inference artifacts are present. "
+                        f"Root cause: {exc}"
+                    ) from exc
+
+        logger.info(
+            "Loaded ensemble '%s' (%d members) from registry",
+            version, config.n_members,
+        )
+
+    def _load_from_session(self) -> None:
+        """Warm-start: reuse the session's pre-loaded models + contexts."""
+        self._emit(event(
+            STAGE_INFERENCE, "Reusing pre-loaded session",
+            status=STATUS_RUNNING,
+            target=self._session.ensemble_version,
+        ))
+        self._ens_config = self._session.config
+        self._member_versions = self._session.member_versions
+        self._ensemble = self._session.ensemble_model
+
+        from src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer import InferenceContext
+
+        for cid in self._ens_config.cluster_ids:
+            state = self._session._inference[cid]
+            ctx = state.inference_context
+            if isinstance(ctx, InferenceContext):
+                self._inference_contexts[cid] = ctx
+            else:
+                self._inference_contexts[cid] = _dict_to_inference_context(
+                    ctx, data_config_override=state.data_config,
+                )
+
+        logger.info(
+            "Using pre-loaded session (ensemble '%s', %d members)",
+            self._session.ensemble_version, self._ens_config.n_members,
+        )
+        self._emit(event(
+            STAGE_INFERENCE, "Session ready",
+            status=STATUS_OK,
+            target=f"{self._ens_config.n_members} members",
+        ))
+```
+
+---
+
+### Appendix A · 7 — Validation helpers
+
+> **Paste target**: append after §6 inside the
+> `EnsembleInferencePipeline` class. Banner divider precedes them.
+
+Four private methods (lines 909–1046). All are no-IO, no-forward-pass —
+they operate on already-parsed shocks and already-loaded
+`InferenceContext` instances. Cheap to call. Together they implement the
+classification + eligibility logic that `validate()` orchestrates.
+
+```python
+    # ==================================================================
+    # Validation helpers
+    # ==================================================================
+    #
+    # All private to the pipeline.  Operate on a single cluster's
+    # ``InferenceContext`` (or — for ``_extract_canonical_index`` — the
+    # already-parsed shock dict) and return primitive types or the
+    # frozen ``ClusterRoutingDecision`` dataclass.  No IO; no model
+    # forward pass; cheap to call.
+    #
+
+    def _extract_canonical_index(
+        self,
+        new_scenario_shocks: Dict[str, Dict[Any, Any]],
+    ) -> List[str]:
+        """Cross-shock-file: extract + validate the canonical scenario index.
+
+        Every shock CSV must share the same scenario labels in the
+        same order.  Returns the canonical list.
+
+        Raises
+        ------
+        ValueError
+            If no shocks were provided, or files disagree on labels
+            or counts.  Errors include up to 3 mismatch examples so
+            the user can fix their input files.
+        """
+        if not new_scenario_shocks:
+            raise ValueError(
+                "No shock files were loaded — empty new_scenario_dir?"
+            )
+
+        canonical:    Optional[List[str]] = None
+        canonical_rf: Optional[str]       = None
+
+        for rf, scenarios in new_scenario_shocks.items():
+            labels = [str(k) for k in scenarios.keys()]
+            if canonical is None:
+                canonical    = labels
+                canonical_rf = rf
+                continue
+            if len(labels) != len(canonical):
+                raise ValueError(
+                    f"Shock files disagree on scenario count: "
+                    f"'{canonical_rf}' has {len(canonical)} scenarios, "
+                    f"'{rf}' has {len(labels)}."
+                )
+            if labels != canonical:
+                mismatches = [
+                    (i, a, b)
+                    for i, (a, b) in enumerate(zip(canonical, labels))
+                    if a != b
+                ]
+                raise ValueError(
+                    f"Shock files disagree on scenario labels "
+                    f"('{canonical_rf}' vs '{rf}'). First mismatches "
+                    f"(index, canonical, observed): {mismatches[:3]}"
+                )
+
+        assert canonical is not None  # for type checker
+        return canonical
+
+    def _extract_cluster_risk_factors(
+        self, ctx: "InferenceContext",
+    ) -> List[str]:
+        """Per-cluster: union of RFs across all assets in the cluster.
+
+        Reads ``ctx.cluster_assets[*].risk_factor_shocks.keys()``.
+        Returns a sorted, deterministic list (used in intersection
+        checks against the loaded-scenario RF set).
+        """
+        if ctx.cluster_assets is None:
+            return []
+        rfs: set = set()
+        for asset in ctx.cluster_assets.values():
+            rfs.update(asset.risk_factor_shocks.keys())
+        return sorted(rfs)
+
+    def _classify_cluster(
+        self,
+        cluster_id: str,
+        ctx: "InferenceContext",
+        shock_rfs: Iterable[str],
+    ) -> ClusterRoutingDecision:
+        """Per-cluster: produce the routing decision (affected vs unaffected).
+
+        Cluster is *affected* iff at least one of its risk factors is
+        present in the shocked-RF set.  Trade counts are pulled from
+        ``ctx.trade_universe`` so the routing-decision payload is rich
+        enough to drive the UI's routing table without any further
+        context lookups.
+        """
+        cluster_rfs  = self._extract_cluster_risk_factors(ctx)
+        intersecting = sorted(set(cluster_rfs) & set(shock_rfs))
+
+        n_elementary = 0
+        n_target     = 0
+        if ctx.trade_universe is not None:
+            n_elementary = len(
+                ctx.trade_universe.get("elementary_ids", []) or []
+            )
+            n_target = len(
+                ctx.trade_universe.get("target_ids", []) or []
+            )
+
+        return ClusterRoutingDecision(
+            cluster_id=cluster_id,
+            is_affected=len(intersecting) > 0,
+            intersecting_risk_factors=intersecting,
+            n_elementary_trades=n_elementary,
+            n_target_trades=n_target,
+        )
+
+    def _validate_cluster_for_labels(
+        self,
+        cluster_id: str,
+        ctx: "InferenceContext",
+        scenario_labels: List[str],
+    ) -> Tuple[bool, List[str]]:
+        """Per-cluster cheap-path eligibility check.
+
+        Returns ``(is_valid, missing_labels)``.  Only meaningful for
+        unaffected clusters — they reuse historical elementary PnL
+        looked up by scenario label from
+        ``ctx.elementary_pnl.loc[labels]``, which requires every
+        requested label to be present in the parquet's index.
+
+        Returns ``False`` when ``ctx.elementary_pnl`` is missing or
+        has a numeric (``RangeIndex``) — that index can't satisfy
+        label lookups even if it has the right row count.
+        """
+        if ctx.elementary_pnl is None:
+            return False, list(scenario_labels)
+        if isinstance(ctx.elementary_pnl.index, pd.RangeIndex):
+            return False, list(scenario_labels)
+        existing = set(ctx.elementary_pnl.index)
+        missing = [lab for lab in scenario_labels if lab not in existing]
+        return len(missing) == 0, missing
+```
+
+---
+
+### Appendix A · 8 — Input building
+
+> **Paste target**: append after §7 inside the
+> `EnsembleInferencePipeline` class. Banner divider precedes them.
+
+Four methods (lines 1048–1269) that build the per-member input dicts
+fed to `EnsembleModel.predict`. Layered as dispatcher → routing
+dispatcher → per-cluster builders:
+
+```
+_build_member_inputs(mode)                # by input_mode
+  └─ _build_new_scenarios_inputs()        # routing over cluster decisions
+        ├─ _build_cluster_inputs_full(...)    # affected → re-price
+        └─ _build_cluster_inputs_cheap(...)   # unaffected → historical lookup
+```
+
+Both per-cluster builders compose existing `@staticmethod` helpers on
+`HybridGnnRnnInferencePipeline` (see `src/rade_ml_pt/pipelines/hybrid_gnn_rnn/infer.py`)
+so there is **no duplicated business logic** — only the call graph
+differs.
+
+#### Appendix A · 8.1 — `_build_member_inputs()` (mode dispatcher)
+
+```python
+    # ==================================================================
+    # Input building
+    # ==================================================================
+
+    def _build_member_inputs(
+        self,
+        input_mode: str,
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """Mode dispatcher for input building (staged flow only).
+
+        The pre-built short-circuit is handled at :meth:`run` level —
+        this method is only invoked for the staged flow, after
+        ``validate()`` has populated ``self._validation_report``.
+
+        Returns
+        -------
+        tuple of (member_inputs, extra_meta)
+            *member_inputs*: ``{cluster_id: 7-key model input dict}``
+            ready for ``EnsembleModel.predict``.
+            *extra_meta*: auxiliary info (sample_ids per member).
+        """
+        if input_mode == "new_scenarios":
+            return self._build_new_scenarios_inputs()
+
+        if input_mode == "new_trades":
+            raise NotImplementedError(
+                "new_trades inference is not yet supported in the ensemble "
+                "pipeline. The underlying HybridGnnRnnInferencePipeline does "
+                "not implement _prepare_new_trade_inputs yet."
+            )
+
+        raise ValueError(f"Unknown input_mode: {input_mode}")
+```
+
+#### Appendix A · 8.2 — `_build_new_scenarios_inputs()` (routing dispatcher)
+
+Walks `self._validation_report.cluster_decisions` and dispatches each
+cluster to the full or cheap path. Emits per-cluster build events.
+
+```python
+    def _build_new_scenarios_inputs(
+        self,
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """Routing dispatcher for new-scenarios mode (staged flow).
+
+        Walks ``self._validation_report.cluster_decisions`` in order
+        and dispatches each cluster to the full or cheap path:
+
+        * Affected → :meth:`_build_cluster_inputs_full` (re-prices
+          under new shocks; identical to the pre-refactor logic).
+        * Unaffected → :meth:`_build_cluster_inputs_cheap` (looks up
+          historical PnL via ``ctx.elementary_pnl.loc[labels]`` —
+          no re-pricing, no re-scaling).
+
+        Returns
+        -------
+        tuple of (member_inputs, extra_meta)
+        """
+        assert self._validation_report is not None, "validate() must run first"
+        assert self._new_scenario_shocks is not None, "load_scenarios() must run first"
+
+        member_inputs: Dict[str, Any] = {}
+        extra_meta:    Dict[str, Any] = {"sample_ids": {}}
+
+        labels = self._validation_report.scenario_labels
+        shocks = self._new_scenario_shocks
+
+        for decision in self._validation_report.cluster_decisions:
+            cid  = decision.cluster_id
+            ctx  = self._inference_contexts[cid]
+            path = "full" if decision.is_affected else "cheap"
+
+            self._emit(event(
+                STAGE_INFERENCE, "Building cluster inputs",
+                status=STATUS_RUNNING, target=cid,
+                detail=f"path={path}",
+            ))
+            try:
+                if decision.is_affected:
+                    result = self._build_cluster_inputs_full(cid, ctx, shocks)
+                else:
+                    result = self._build_cluster_inputs_cheap(cid, ctx, labels)
+
+                member_inputs[cid] = result["inputs"]
+                extra_meta["sample_ids"][cid] = result.get("sample_ids")
+
+                n_windows = result["metadata"]["n_scenarios"]
+                logger.info(
+                    "Built inputs for cluster '%s' (path=%s, %d windows)",
+                    cid, path, n_windows,
+                )
+                self._emit(event(
+                    STAGE_INFERENCE, "Cluster inputs ready",
+                    status=STATUS_OK, target=cid,
+                    detail=f"path={path} · {n_windows} scenarios",
+                ))
+            except Exception as exc:
+                self._emit(event(
+                    STAGE_INFERENCE, "Cluster input build failed",
+                    status=STATUS_FAIL, target=cid, detail=str(exc),
+                ))
+                raise
+
+        return member_inputs, extra_meta
+```
+
+#### Appendix A · 8.3 — `_build_cluster_inputs_full()` (affected → re-price)
+
+The full path: re-price elementary PnL under the new shocks, then run it
+through the same sequencing + scaling pipeline used at training time.
+This is the expensive step — `calculate_elementary_pnl` invokes the
+static-replication kernels per asset.
+
+```python
+    def _build_cluster_inputs_full(
+        self,
+        cluster_id: str,
+        ctx: "InferenceContext",
+        new_scenario_shocks: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Full re-pricing path for an *affected* cluster.
+
+        Composes the existing ``@staticmethod`` helpers on
+        :class:`HybridGnnRnnInferencePipeline`:
+
+        1. ``_inject_unchanged_inputs`` — trade features, adjacency,
+           indices (all static, registry-loaded).
+        2. ``_update_asset_portfolio`` — deep-copy + inject new shocks.
+        3. Filter elementary trades to the cluster's reduced population.
+        4. ``calculate_elementary_pnl`` — static-replication kernels.
+           This is the expensive step.
+        5. ``pd.concat`` + column reorder to training schema.
+        6. ``_standardise_pnl`` — fit scaler from training.
+        7. ``build_new_pnl_sequences`` — same windowing as training.
+        8. ``build_model_inputs`` — assemble the 7-key dict.
+
+        Returns the full ``{"inputs", "sample_ids", "metadata"}`` dict
+        from ``build_model_inputs``; the caller peels off
+        ``result["inputs"]`` and ``result["sample_ids"]``.
+        """
+        from src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer import (
+            HybridGnnRnnInferencePipeline,
+        )
+
+        inputs = HybridGnnRnnInferencePipeline._inject_unchanged_inputs(
+            ctx, mode="new_scenarios",
+        )
+
+        new_asset_portfolio = HybridGnnRnnInferencePipeline._update_asset_portfolio(
+            ctx.cluster_assets, new_scenario_shocks,
+        )
+
+        elem_trades = {
+            z: [
+                x for x in ctx.cluster_elem_trades[z]
+                if x["id"] in inputs.elementary_ids
+            ]
+            for z in ctx.cluster_elem_trades.keys()
+        }
+
+        asset_elementary_pnl = HybridGnnRnnInferencePipeline.calculate_elementary_pnl(
+            asset_portfolio=new_asset_portfolio,
+            elementary_trades=elem_trades,
+        )
+
+        new_pnl = pd.concat(asset_elementary_pnl.values(), axis=1)
+        new_pnl = new_pnl[ctx.elementary_attributes["trade_id"]]
+
+        new_pnl_scaled = HybridGnnRnnInferencePipeline._standardise_pnl(
+            pnl_unscaled=new_pnl, scaler=ctx.elementary_scaler,
+        )
+
+        inputs.elementary_pnl = pd.DataFrame(
+            new_pnl_scaled,
+            columns=ctx.elementary_pnl.columns.tolist(),
+            index=new_pnl.index.tolist(),
+        )
+
+        elem_seq = HybridGnnRnnInferencePipeline.build_new_pnl_sequences(
+            elementary_pnl=inputs.elementary_pnl,
+            seq_length=ctx.data_config.seq_length,
+            n_targets=len(inputs.target_indices),
+        )
+
+        return HybridGnnRnnInferencePipeline.build_model_inputs(
+            elem_seq=elem_seq,
+            inputs=inputs,
+            seq_length=ctx.data_config.seq_length,
+        )
+```
+
+#### Appendix A · 8.4 — `_build_cluster_inputs_cheap()` (unaffected → historical lookup)
+
+The Tier-2 cheap path: for an unaffected cluster, elementary PnL under
+the new scenarios *is* the historical elementary PnL on disk (by
+definition — none of its risk factors are shocked). Skip re-pricing,
+skip re-scaling; only the sequencing + assembly remain. Eligibility
+(every requested scenario label exists in the historical index) was
+verified up-front by `_validate_cluster_for_labels` during `validate()`,
+so a missing label can never reach here.
+
+```python
+    def _build_cluster_inputs_cheap(
+        self,
+        cluster_id: str,
+        ctx: "InferenceContext",
+        scenario_labels: List[str],
+    ) -> Dict[str, Any]:
+        """Cheap historical-lookup path for an *unaffected* cluster.
+
+        ``ctx.elementary_pnl`` was saved during training as a parquet
+        of scaled, population-reduced elementary PnL indexed by
+        scenario label.  Since this cluster's risk factors don't
+        intersect any of the loaded scenario shocks, the elementary
+        PnL under the "new" scenarios is — by definition — identical
+        to the historical values stored on disk.
+
+        We therefore skip re-pricing and re-scaling entirely:
+
+        1. ``_inject_unchanged_inputs`` — same static inputs.
+        2. ``ctx.elementary_pnl.loc[scenario_labels]`` — direct lookup
+           (eligibility was verified by ``_validate_cluster_for_labels``
+           during ``validate()``, so missing labels can't reach here).
+        3. ``build_new_pnl_sequences`` — same windowing as the full
+           path; cluster sees the same shape.
+        4. ``build_model_inputs`` — same assembly.
+
+        Returns the full ``{"inputs", "sample_ids", "metadata"}`` dict.
+        """
+        from src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer import (
+            HybridGnnRnnInferencePipeline,
+        )
+
+        inputs = HybridGnnRnnInferencePipeline._inject_unchanged_inputs(
+            ctx, mode="new_scenarios",
+        )
+
+        inputs.elementary_pnl = ctx.elementary_pnl.loc[scenario_labels, :]
+
+        elem_seq = HybridGnnRnnInferencePipeline.build_new_pnl_sequences(
+            elementary_pnl=inputs.elementary_pnl,
+            seq_length=ctx.data_config.seq_length,
+            n_targets=len(inputs.target_indices),
+        )
+
+        return HybridGnnRnnInferencePipeline.build_model_inputs(
+            elem_seq=elem_seq,
+            inputs=inputs,
+            seq_length=ctx.data_config.seq_length,
+        )
+```
+
+---
+
+### Appendix A · 9 — Post-inference + result building
+
+> **Paste target**: append after §8 inside the
+> `EnsembleInferencePipeline` class — these are the final methods in
+> the file.
+
+The post-inference group (lines 1271–1366):
+
+- `post_infer` logs a summary and (if `artifacts_dir` is set) writes
+  `predictions.csv` + `inference_result.json`.
+- `_save_predictions` is the CSV writer (kept separate so it can be
+  unit-tested in isolation).
+- `_build_result` wraps the aggregated predictions into the public
+  `InferenceResult` dataclass. **Important**: when the staged path was
+  used (`self._validation_report` is not None), four extra metadata
+  keys are added: `affected_clusters`, `unaffected_clusters`,
+  `cheap_path_used`, `scenario_labels`. The pre-built short-circuit
+  leaves `_validation_report` as `None`, so those keys are omitted and
+  the legacy result schema is preserved.
+
+```python
+    # ==================================================================
+    # Post-inference
+    # ==================================================================
+
+    def post_infer(self, result: InferenceResult) -> None:
+        """Post-inference analytics: log summary, save predictions CSV."""
+        if result.predictions is not None:
+            preds = result.predictions
+            logger.info(
+                "Ensemble inference summary: n_samples=%d, mean=%.4f, std=%.4f, "
+                "min=%.4f, max=%.4f",
+                result.n_samples, np.mean(preds), np.std(preds),
+                np.min(preds), np.max(preds),
+            )
+
+        if self.config.artifacts_dir and result.predictions is not None:
+            self._save_predictions(result)
+
+    def _save_predictions(self, result: InferenceResult) -> None:
+        """Save predictions to CSV in the artifacts directory."""
+        out_dir = Path(self.config.artifacts_dir) / "inference"
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        csv_path = out_dir / "predictions.csv"
+        preds = result.predictions
+
+        with open(csv_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            if preds.ndim == 2:
+                header = [f"target_{i}" for i in range(preds.shape[1])]
+                if result.sample_ids:
+                    header = ["sample_id"] + header
+                writer.writerow(header)
+                for row_idx in range(preds.shape[0]):
+                    row = list(preds[row_idx])
+                    if result.sample_ids and row_idx < len(result.sample_ids):
+                        row = [result.sample_ids[row_idx]] + row
+                    writer.writerow(row)
+            else:
+                writer.writerow(["prediction"])
+                for val in preds.flat:
+                    writer.writerow([val])
+
+        logger.info("Predictions saved to %s", csv_path)
+
+        result.to_json(out_dir / "inference_result.json")
+
+    # ==================================================================
+    # Result building
+    # ==================================================================
+
+    def _build_result(
+        self,
+        combined: np.ndarray,
+        infer_meta: Dict[str, Any],
+        extra_meta: Dict[str, Any],
+    ) -> InferenceResult:
+        """Wrap aggregated predictions into an ``InferenceResult``.
+
+        Includes routing metadata (affected/unaffected clusters,
+        cheap_path_used flag, scenario labels) when the run went
+        through the staged flow.  The pre-built short-circuit leaves
+        ``self._validation_report`` as ``None``, in which case these
+        keys are omitted from the result metadata.
+        """
+        meta: Dict[str, Any] = {
+            "input_mode": infer_meta.get("input_mode", "new_scenarios"),
+            "cluster_ids": self._ensemble.router.cluster_ids if self._ensemble else [],
+            "n_members": self._ens_config.n_members if self._ens_config else 0,
+        }
+        if self._validation_report is not None:
+            meta["affected_clusters"]    = self._validation_report.affected_cluster_ids
+            meta["unaffected_clusters"]  = self._validation_report.unaffected_cluster_ids
+            meta["cheap_path_used"]      = self._validation_report.cheap_path_used
+            meta["scenario_labels"]      = self._validation_report.scenario_labels
+        if extra_meta.get("sample_ids"):
+            meta["per_member_sample_ids"] = extra_meta["sample_ids"]
+
+        all_sample_ids = None
+        per_member_ids = extra_meta.get("sample_ids", {})
+        if per_member_ids:
+            all_sample_ids = []
+            for cid in sorted(per_member_ids.keys()):
+                ids = per_member_ids[cid]
+                if ids:
+                    all_sample_ids.extend(ids)
+            all_sample_ids = all_sample_ids or None
+
+        return InferenceResult(
+            predictions=combined,
+            n_samples=combined.shape[0],
+            sample_ids=all_sample_ids or infer_meta.get("sample_ids"),
+            model_version=self.ensemble_version,
+            metadata=meta,
+        )
+```
+
+---
+
+### Appendix A · 10 — Porting checklist
+
+When transferring this file to your work env:
+
+1. **Replace the entire `src/rade_ml_pt/pipelines/ensemble/infer.py`** with
+   sections §1 → §9 concatenated in order. There is no shared state
+   between sections beyond what's already inlined; the file is self-
+   contained.
+2. **Verify** `src/rade_ml_pt/pipelines/ensemble/infer_events.py` exists
+   in your work env (it shipped in Phase 1 — unchanged in this refactor).
+3. **No changes needed** in `src/rade_ml_pt/pipelines/hybrid_gnn_rnn/infer.py`
+   — every helper called from `_build_cluster_inputs_full` /
+   `_build_cluster_inputs_cheap` is an existing `@staticmethod` on
+   `HybridGnnRnnInferencePipeline`. A future PR may refactor that file to
+   add a `build_cluster_inputs(...)` method, but it is intentionally
+   deferred (see `ensemble_infer_refactor.md` decisions log).
+4. **Run the verification suite**:
 
 ```bash
+# Lints — file is clean in this env
+ruff check src/rade_ml_pt/pipelines/ensemble/infer.py
+
+# Existing event tests — all 18 must pass
 pytest tests/rade_ml_pt/pipelines/ensemble/test_infer_events.py -v
+
+# Existing pipeline tests — must pass at the same baseline as before
+# (3 of 26 failures in this env are caused by a missing rade_sr import,
+#  unrelated to this refactor; they pass in the work env which has
+#  rade_sr properly installed)
+pytest tests/rade_ml_pt/pipelines/ensemble/test_ensemble_pipelines.py -v
 ```
 
-#### 4.2 — `tests/ui/apps/rade_analytics/test_run_inference_backend.py`  (NEW)
+5. **Optional smoke test for the staged flow** (requires a real
+   ensemble version and a folder of shock CSVs on disk):
 
-Four assertions over `RadeBackend.run_inference` end-to-end:
+```python
+from src.rade_ml_pt.ensemble.config import EnsembleConfig
+from src.rade_ml_pt.pipelines.ensemble.infer import EnsembleInferencePipeline
 
-1. Returns `BackendResult.success` with the typed
-   `InferenceRunResult`.
-2. `activity_log[0]` is `Pipeline started`, `activity_log[-1]` is
-   `Pipeline complete`.
-3. Unknown ensemble version → `BackendResult.failure(...)`,
-   no exception escapes the wrapper.
-4. Tag inputs (e.g. `"backend_test"`) resolve to a concrete
-   `ens_*` version string — so subsequent artifact reads pin to
-   one snapshot.
-
-Run with:
-
-```bash
-pytest tests/ui/apps/rade_analytics/test_run_inference_backend.py -v
-```
-
----
-
-### Appendix A · 5 — End-to-end Phase 1 verification
-
-After landing the patches:
-
-```bash
-# 1) Lints clean (no new warnings introduced)
-python -m pyflakes src/rade_ml_pt/pipelines/ensemble/infer_events.py \
-                   src/rade_ml_pt/pipelines/ensemble/infer.py \
-                   src/ui/apps/rade_analytics/data/backend.py
-
-# 2) New tests pass
-pytest tests/rade_ml_pt/pipelines/ensemble/test_infer_events.py \
-       tests/ui/apps/rade_analytics/test_run_inference_backend.py -q
-
-# 3) Existing pipeline tests still pass (regression check —
-#    proves on_event=None is a behavioural no-op)
-pytest tests/rade_ml_pt/pipelines/ensemble/test_ensemble_pipelines.py::TestEnsembleInferencePipeline::test_infer_new_scenarios \
-       tests/rade_ml_pt/pipelines/ensemble/test_ensemble_pipelines.py::TestEnsembleInferencePipeline::test_infer_saves_csv \
-       tests/rade_ml_pt/pipelines/ensemble/test_ensemble_pipelines.py::TestEnsembleInferencePipeline::test_infer_unknown_mode_raises -q
-
-# 4) Smoke import — the lazy-import path works under a fresh interpreter
-python -c "
-from src.ui.apps.rade_analytics.data.backend import (
-    RadeBackend, NoOpCache, InferenceRunResult, BackendResult,
+config = EnsembleConfig(
+    registry_dir="path/to/registry",
+    artifacts_dir="path/to/artifacts",
+    metadata={
+        "inference": {
+            "input_mode": "new_scenarios",
+            "new_scenario_dir": "path/to/new_scenarios/",
+        }
+    },
 )
-import inspect
-sig = inspect.signature(RadeBackend.run_inference)
-assert list(sig.parameters) == [
-    'self', 'registry_dir', 'ensemble_version', 'new_scenario_dir', 'member_inputs',
-]
-assert [f.name for f in InferenceRunResult.__dataclass_fields__.values()] == [
-    'ensemble_version', 'n_scenarios', 'n_targets',
-    'latency_seconds', 'predictions', 'sample_ids', 'activity_log',
-]
-print('OK')
-"
+
+pipe = EnsembleInferencePipeline(config, ensemble_version="latest")
+
+# Either: one-shot
+result = pipe.run()
+
+# Or: staged (UI-style)
+pipe.load()
+scenarios = pipe.load_scenarios()
+print(scenarios.to_dict())
+report = pipe.validate()
+print(report.to_dict())
+assert report.is_valid
+result = pipe.run_inference()
 ```
 
-Expected output: 22 tests pass, 3 regression tests pass, smoke
-imports `OK`.
-
----
-
-### Appendix A · 6 — Layout gotcha: `rade.css` is hand-compiled, not JIT
-
-*(Preserved from the V2 layout appendix — still relevant for any
-new utility classes future phases want to add.)*
-
-`src/ui/apps/rade_analytics/assets/rade.css` is a **hand-compiled
-Tailwind bundle**, not a runtime JIT pass.  Only utilities that
-already shipped (see `tailwind.input.css` + the previous build
-scan) are present at runtime.  Classes that look fine in the source
-but **silently no-op in the browser** include:
-
-- `grid-cols-12`, `col-span-5`, `col-span-7`, `col-span-12`
-- `lg:col-span-5`, `lg:col-span-7`
-- `gap-y-5`
-- arbitrary values: `min-h-[…]`, `max-h-[…]`, `max-w-[…]`, `min-w-[…]`
-- opacity variants: `bg-slate-900/35`, `bg-slate-900/40`,
-  `bg-slate-950/50`, `border-slate-700/70`, `border-slate-700/80`
-- `border-dashed`, `italic`, `list-disc`, `space-y-1`,
-  logical-property `ps-*` / `pe-*`
-
-**Approved substitutions** (already in `rade.css`):
-
-| Need | Use instead |
-| --- | --- |
-| Two-column workspace | `grid grid-cols-1 lg:grid-cols-5 gap-4 items-stretch` parent + `lg:col-span-2` / `lg:col-span-3` (Cluster Deep-Dive idiom) |
-| Soft transparent surface | `bg-slate-900/60` (or `bg-slate-950/40`) |
-| Soft border | `border-slate-800/60` or `border-slate-700` |
-| Arbitrary heights | inline `style={"minHeight": "…", "maxHeight": "…"}` |
-| Dashed border | inline `style={"borderStyle": "dashed"}` |
-| Bullet lists | plain stacked `html.Div`s with leading `"• "` |
-| Italic text | drop or replace with `text-slate-500` weight cue |
-
-Whenever you add a new utility class, sanity-check it appears in
-`rade.css` (or rebuild the bundle per `assets/README.md`); the page
-will render but content will collapse to natural width if the
-parent grid loses its column-span utilities.
-
----
-
-### Appendix A · 7 — What's next (Phase 2 preview)
-
-Phase 2 will:
-
-1. Wire a Dash `long_callback` from the Run button to
-   `RadeBackend.run_inference`, draining `EventCollector` to the
-   page's `activity_log_store` via `set_progress`.
-2. Add an upload callback that turns the file bar + path
-   `TextInput` into an `IngestMeta` payload feeding the manifest
-   preview card.
-3. Compute and bind the KPI strip + distribution chart from
-   `InferenceRunResult.predictions`.
-
-The full callback wiring table is in
-[`inference_implementation.md` §5](../rade_analytics/inference_implementation.md#5--how-the-ui-consumes-phase-1).
+Both paths return the same `InferenceResult`; the staged path additionally
+exposes `LoadedScenariosReport` and `ValidationReport` as intermediate
+artefacts the UI can render between buttons.
