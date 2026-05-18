@@ -1703,3 +1703,659 @@ inference page renders the empty-state on first visit, Stage 12 is done.
 Stage 13 (real Plotly figure builders) is the next piece — purely a swap
 of the three `empty_*` functions in `figures/inference_charts.py` with no
 callback-side changes required.
+
+---
+
+## Appendix B — Tenor timeseries waterfall backfill (ad-hoc utility)
+
+> **Status**: Self-contained standalone script. Not part of the Rade /
+> ensemble pipeline — pasted here purely as the copy-paste destination for
+> the ad-hoc tenor-backfill request. Run from the command line against a
+> Bloomberg-style tenor sheet; outputs a colour-coded backfilled workbook.
+>
+> **Dependencies**: `pip install pandas openpyxl scipy scikit-learn`
+>
+> **Usage**:
+>
+> ```bash
+> python backfill_waterfall.py <input_file.xlsx>
+> # → <input_file>_backfilled.xlsx
+> ```
+
+### Waterfall priority order
+
+| Priority | Method | When it applies |
+|---|---|---|
+| 1 | Cross-tenor OLS regression | Missing date has observed values in correlated tenors (R² ≥ 0.90 from ≥ 30 overlap points) |
+| 2 | Natural cubic spline | Interior gap with ≥ 4 surrounding known values in the same tenor |
+| 3 | Linear interpolation | Interior gap where the spline can't fit (< 4 known values) |
+| 4 | Forward / backward fill | Edge cases only — before first or after last observation |
+
+### Source
+
+```python
+"""
+Tenor Timeseries Waterfall Backfill
+====================================
+Backfills missing rates in a Bloomberg tenor timeseries using a four-stage
+waterfall that prioritises the most market-informed method available for each
+missing cell:
+
+    Priority 1 — Cross-tenor regression
+        If correlated tenors have observed values on the missing date, predict
+        the missing rate via OLS regression trained on the overlapping history.
+        This exploits the strong co-movement between tenors (typical R² > 0.99
+        for adjacent swap rates).
+
+    Priority 2 — Cubic spline interpolation (temporal)
+        For interior gaps (bounded by known values in the same tenor), fit a
+        natural cubic spline through surrounding observations. Preserves local
+        curvature and avoids the sharp kinks of linear interpolation.
+
+    Priority 3 — Linear interpolation (temporal)
+        Fallback for interior gaps where too few surrounding points exist for a
+        stable spline (e.g. fewer than 4 known values in the tenor).
+
+    Priority 4 — Forward / backward fill
+        Last resort for edge cases only — missing dates before the first
+        observation or after the last observation in a tenor.
+
+Usage
+-----
+    python backfill_waterfall.py <input_file.xlsx>
+
+Output
+------
+    <input_file>_backfilled.xlsx with four sheets:
+        1. Backfilled Data     — the completed timeseries
+        2. Audit Trail         — method code per filled cell (colour-coded)
+        3. Per Tenor Breakdown — fill counts by method for each tenor
+        4. Summary             — overall statistics and configuration
+
+Dependencies
+------------
+    pip install pandas openpyxl scipy scikit-learn
+"""
+
+import sys
+import numpy as np
+import pandas as pd
+from scipy.interpolate import CubicSpline
+from sklearn.linear_model import LinearRegression
+from openpyxl import load_workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CONFIGURATION — adjust these thresholds to suit your dataset
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Cross-tenor regression: minimum overlapping observations to train a model
+MIN_REGRESSION_OBSERVATIONS = 30
+
+# Cross-tenor regression: minimum R² to accept a model's predictions
+MIN_REGRESSION_R_SQUARED = 0.90
+
+# Cubic spline: minimum known data points required in a tenor to fit a spline
+MIN_SPLINE_POINTS = 4
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DATA LOADING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def load_timeseries(filepath: str) -> pd.DataFrame:
+    """
+    Read the input Excel file into a DatetimeIndex DataFrame.
+
+    Expects:
+        - Column A: dates (any Excel-recognised date format)
+        - Row 1: tenor headers (e.g. Bloomberg tickers)
+        - Body: rate values, with blanks for missing observations
+
+    Returns:
+        DataFrame with DatetimeIndex sorted ascending, tenor columns, and
+        NaN for missing values.
+    """
+    df = pd.read_excel(filepath, index_col=0, parse_dates=True)
+    df.index.name = "Date"
+    df = df.sort_index()
+
+    # Coerce any non-numeric entries (e.g. "N/A" strings) to NaN
+    df = df.apply(pd.to_numeric, errors="coerce")
+
+    return df
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PRIORITY 1: CROSS-TENOR REGRESSION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def find_best_regression_model(
+    df: pd.DataFrame,
+    target_tenor: str,
+    candidate_tenors: list[str],
+) -> tuple:
+    """
+    Find the best OLS regression model for a target tenor using other tenors
+    as predictors.
+
+    Tries all single-predictor and all two-predictor combinations from the
+    candidate list. Selects the model with the highest R² that exceeds the
+    minimum threshold.
+
+    Args:
+        df:               full DataFrame (may contain NaNs)
+        target_tenor:     column name of the tenor to predict
+        candidate_tenors: list of other tenor column names to use as features
+
+    Returns:
+        (model, feature_names, r_squared) if a valid model is found
+        (None, None, None) otherwise
+    """
+    # Dates where the target tenor has observed values (training pool)
+    target_observed = df[target_tenor].notna()
+
+    best_model = None
+    best_features = None
+    best_r2 = -1.0
+
+    # --- Single-predictor models ---
+    for predictor in candidate_tenors:
+        training_mask = target_observed & df[predictor].notna()
+        n_obs = training_mask.sum()
+
+        if n_obs < MIN_REGRESSION_OBSERVATIONS:
+            continue
+
+        X = df.loc[training_mask, [predictor]].values
+        y = df.loc[training_mask, target_tenor].values
+
+        model = LinearRegression().fit(X, y)
+        r2 = model.score(X, y)
+
+        if r2 > best_r2:
+            best_model, best_features, best_r2 = model, [predictor], r2
+
+    # --- Two-predictor models (for potentially better fit) ---
+    for i, pred_1 in enumerate(candidate_tenors):
+        for pred_2 in candidate_tenors[i + 1:]:
+            training_mask = target_observed & df[pred_1].notna() & df[pred_2].notna()
+            n_obs = training_mask.sum()
+
+            if n_obs < MIN_REGRESSION_OBSERVATIONS:
+                continue
+
+            X = df.loc[training_mask, [pred_1, pred_2]].values
+            y = df.loc[training_mask, target_tenor].values
+
+            model = LinearRegression().fit(X, y)
+            r2 = model.score(X, y)
+
+            if r2 > best_r2:
+                best_model, best_features, best_r2 = model, [pred_1, pred_2], r2
+
+    # Only return if R² meets the threshold
+    if best_r2 >= MIN_REGRESSION_R_SQUARED and best_model is not None:
+        return best_model, best_features, best_r2
+
+    return None, None, None
+
+
+def fill_via_regression(df: pd.DataFrame, audit: pd.DataFrame) -> int:
+    """
+    Priority 1: fill missing values using cross-tenor OLS regression.
+
+    For each tenor with missing data, find the best regression model from
+    other tenors. Apply predictions only on dates where the predictor tenors
+    have observed values.
+
+    Args:
+        df:    timeseries DataFrame (modified in place)
+        audit: audit trail DataFrame (modified in place)
+
+    Returns:
+        Number of cells filled.
+    """
+    tenors = df.columns.tolist()
+    total_filled = 0
+
+    for target_tenor in tenors:
+        missing_mask = df[target_tenor].isna()
+        if not missing_mask.any():
+            continue
+
+        # All other tenors are candidates
+        candidates = [t for t in tenors if t != target_tenor]
+        model, features, r2 = find_best_regression_model(df, target_tenor, candidates)
+
+        if model is None:
+            continue
+
+        # Predict only where the target is missing AND all features are observed
+        predict_mask = missing_mask.copy()
+        for feature in features:
+            predict_mask = predict_mask & df[feature].notna()
+
+        if not predict_mask.any():
+            continue
+
+        # Apply predictions
+        X_predict = df.loc[predict_mask, features].values
+        df.loc[predict_mask, target_tenor] = model.predict(X_predict)
+
+        # Record in audit trail with the R² for transparency
+        audit.loc[predict_mask, target_tenor] = f"REG (R²={r2:.3f})"
+        total_filled += predict_mask.sum()
+
+    return total_filled
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PRIORITY 2: CUBIC SPLINE INTERPOLATION (TEMPORAL)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def fill_via_spline(df: pd.DataFrame, audit: pd.DataFrame) -> int:
+    """
+    Priority 2: fill remaining interior gaps using natural cubic spline
+    interpolation along the time axis.
+
+    A 'natural' spline sets the second derivative to zero at the endpoints,
+    avoiding the wild oscillations that can occur with other boundary
+    conditions. Only interior gaps (between the first and last known value)
+    are filled — edge gaps are left for later stages.
+
+    Args:
+        df:    timeseries DataFrame (modified in place)
+        audit: audit trail DataFrame (modified in place)
+
+    Returns:
+        Number of cells filled.
+    """
+    total_filled = 0
+
+    for tenor in df.columns:
+        series = df[tenor]
+        missing_mask = series.isna()
+
+        if not missing_mask.any():
+            continue
+
+        known_positions = np.where(series.notna())[0]
+
+        # Need at least MIN_SPLINE_POINTS for a stable cubic spline
+        if len(known_positions) < MIN_SPLINE_POINTS:
+            continue
+
+        # Define the interior region (between first and last known value)
+        first_known = known_positions[0]
+        last_known = known_positions[-1]
+
+        # Identify interior missing positions only
+        all_positions = np.arange(len(series))
+        interior_missing = (
+            missing_mask
+            & (all_positions >= first_known)
+            & (all_positions <= last_known)
+        )
+        missing_positions = np.where(interior_missing)[0]
+
+        if len(missing_positions) == 0:
+            continue
+
+        # Fit natural cubic spline through known data points
+        x_known = known_positions.astype(float)
+        y_known = series.iloc[known_positions].values
+
+        try:
+            spline = CubicSpline(x_known, y_known, bc_type="natural")
+            interpolated_values = spline(missing_positions.astype(float))
+
+            # Use .iloc on the DataFrame directly to avoid copy-on-write issues
+            missing_dates = df.index[missing_positions]
+            df.loc[missing_dates, tenor] = interpolated_values
+            audit.loc[missing_dates, tenor] = "SPLINE"
+            total_filled += len(missing_positions)
+        except Exception as e:
+            # Spline fitting can fail on degenerate data; skip to next stage
+            print(f"  Warning: spline failed for {tenor}: {e}")
+            continue
+
+    return total_filled
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PRIORITY 3: LINEAR INTERPOLATION (TEMPORAL)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def fill_via_linear(df: pd.DataFrame, audit: pd.DataFrame) -> int:
+    """
+    Priority 3: fill remaining interior gaps using linear interpolation
+    along the time axis.
+
+    This catches any interior gaps that the spline stage skipped (e.g. tenors
+    with fewer than MIN_SPLINE_POINTS known values).
+
+    Args:
+        df:    timeseries DataFrame (modified in place)
+        audit: audit trail DataFrame (modified in place)
+
+    Returns:
+        Number of cells filled.
+    """
+    total_filled = 0
+
+    for tenor in df.columns:
+        series = df[tenor]
+        still_missing = series.isna()
+
+        if not still_missing.any():
+            continue
+
+        # pandas interpolate with limit_area='inside' fills interior gaps only
+        before = series.copy()
+        df[tenor] = series.interpolate(method="linear", limit_area="inside")
+
+        newly_filled = before.isna() & df[tenor].notna()
+        audit.loc[newly_filled, tenor] = "LINEAR"
+        total_filled += newly_filled.sum()
+
+    return total_filled
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PRIORITY 4: FORWARD / BACKWARD FILL (EDGE CASES ONLY)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def fill_via_flat(df: pd.DataFrame, audit: pd.DataFrame) -> int:
+    """
+    Priority 4 (last resort): fill any remaining edge gaps by carrying the
+    nearest known value forward or backward.
+
+    This only affects cells at the very start or end of a tenor's timeseries
+    where no second bounding value exists for interpolation.
+
+    Args:
+        df:    timeseries DataFrame (modified in place)
+        audit: audit trail DataFrame (modified in place)
+
+    Returns:
+        Number of cells filled.
+    """
+    still_missing = df.isna()
+    remaining_count = still_missing.sum().sum()
+
+    if remaining_count == 0:
+        return 0
+
+    df[:] = df.ffill().bfill()
+
+    # Mark newly filled cells in audit
+    for tenor in df.columns:
+        newly_filled = still_missing[tenor] & df[tenor].notna()
+        audit.loc[newly_filled, tenor] = "FLAT"
+
+    return remaining_count - df.isna().sum().sum()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# OUTPUT FORMATTING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def write_output(
+    df: pd.DataFrame,
+    audit: pd.DataFrame,
+    original_df: pd.DataFrame,
+    output_path: str,
+    fill_counts: dict,
+    empty_tenors: list = None,
+    sparse_tenors: list = None,
+):
+    """
+    Write the backfilled data, audit trail, per-tenor breakdown, and summary
+    to a formatted Excel workbook.
+
+    Audit trail cells are colour-coded by method:
+        Green  = Regression    |  Blue   = Spline
+        Gold   = Linear        |  Salmon = Flat fill
+        Red    = No data (entirely empty tenor)
+
+    Args:
+        df:            backfilled DataFrame
+        audit:         audit trail DataFrame
+        original_df:   original (pre-fill) DataFrame for comparison stats
+        output_path:   file path for output Excel
+        fill_counts:   dict mapping method name -> number of cells filled
+        empty_tenors:  list of tenor names with zero observations
+        sparse_tenors: list of (tenor_name, observation_count) tuples
+    """
+    empty_tenors = empty_tenors or []
+    sparse_tenors = sparse_tenors or []
+    tenors = df.columns.tolist()
+    n_rows = len(df)
+
+    # --- Per-tenor breakdown ---
+    tenor_rows = []
+    empty_set = set(empty_tenors)
+    sparse_dict = dict(sparse_tenors)
+    for tenor in tenors:
+        orig_missing = original_df[tenor].isna().sum()
+
+        # Flag the tenor's status for easy scanning
+        if tenor in empty_set:
+            status = "NO DATA"
+        elif tenor in sparse_dict:
+            status = f"SPARSE ({sparse_dict[tenor]} obs)"
+        else:
+            status = "OK"
+
+        tenor_rows.append({
+            "Tenor": tenor,
+            "Status": status,
+            "Total Dates": n_rows,
+            "Originally Missing": orig_missing,
+            "Missing %": round(orig_missing / n_rows * 100, 1),
+            "Regression": audit[tenor].str.startswith("REG").sum(),
+            "Spline": (audit[tenor] == "SPLINE").sum(),
+            "Linear": (audit[tenor] == "LINEAR").sum(),
+            "Flat": (audit[tenor] == "FLAT").sum(),
+        })
+    breakdown_df = pd.DataFrame(tenor_rows)
+
+    # --- Summary ---
+    total_cells = n_rows * len(tenors)
+    total_missing = original_df.isna().sum().sum()
+    summary_rows = [
+        ("Total cells", total_cells),
+        ("Originally missing", total_missing),
+        ("Missing %", f"{total_missing / total_cells * 100:.1f}%"),
+        ("", ""),
+        ("Filled by regression", fill_counts.get("regression", 0)),
+        ("Filled by cubic spline", fill_counts.get("spline", 0)),
+        ("Filled by linear interpolation", fill_counts.get("linear", 0)),
+        ("Filled by flat fill", fill_counts.get("flat", 0)),
+        ("Still missing", int(df.isna().sum().sum())),
+        ("", ""),
+        ("Empty tenors (no data)", len(empty_tenors)),
+        ("Sparse tenors (<4 obs)", len(sparse_tenors)),
+        ("", ""),
+        ("CONFIG: Min regression observations", MIN_REGRESSION_OBSERVATIONS),
+        ("CONFIG: Min regression R²", MIN_REGRESSION_R_SQUARED),
+        ("CONFIG: Min spline points", MIN_SPLINE_POINTS),
+    ]
+
+    # List the empty and sparse tenors explicitly in the summary
+    if empty_tenors:
+        summary_rows.append(("", ""))
+        summary_rows.append(("EMPTY TENORS (unfillable)", ""))
+        for t in empty_tenors:
+            summary_rows.append(("", t))
+
+    if sparse_tenors:
+        summary_rows.append(("", ""))
+        summary_rows.append(("SPARSE TENORS", ""))
+        for t, n in sparse_tenors:
+            summary_rows.append(("", f"{t} ({n} observations)"))
+
+    summary_df = pd.DataFrame(summary_rows, columns=["Metric", "Value"])
+
+    # --- Write all sheets ---
+    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+        df.to_excel(writer, sheet_name="Backfilled Data")
+        audit.to_excel(writer, sheet_name="Audit Trail")
+        breakdown_df.to_excel(writer, sheet_name="Per Tenor Breakdown", index=False)
+        summary_df.to_excel(writer, sheet_name="Summary", index=False)
+
+    # --- Apply formatting ---
+    wb = load_workbook(output_path)
+    _format_audit_sheet(wb["Audit Trail"])
+    _format_all_headers(wb)
+    wb.save(output_path)
+
+
+def _format_audit_sheet(ws):
+    """Colour-code audit trail cells and add a legend."""
+    colour_map = {
+        "REG":     PatternFill("solid", fgColor="90EE90"),  # green
+        "SPLINE":  PatternFill("solid", fgColor="87CEEB"),  # blue
+        "LINEAR":  PatternFill("solid", fgColor="FFD700"),  # gold
+        "FLAT":    PatternFill("solid", fgColor="FFA07A"),  # salmon
+        "NO DATA": PatternFill("solid", fgColor="FF6666"),  # red — no data at all
+    }
+
+    for row in ws.iter_rows(min_row=2, min_col=2):
+        for cell in row:
+            cell_text = str(cell.value) if cell.value else ""
+            for method_prefix, fill in colour_map.items():
+                if cell_text.startswith(method_prefix):
+                    cell.fill = fill
+                    break
+
+    # Legend below the data
+    legend_row = ws.max_row + 3
+    ws.cell(row=legend_row, column=1, value="Legend:").font = Font(bold=True, name="Arial")
+
+    legend_entries = [
+        ("REG",     "Cross-tenor regression (R² shown)",  "90EE90"),
+        ("SPLINE",  "Cubic spline interpolation",         "87CEEB"),
+        ("LINEAR",  "Linear interpolation",               "FFD700"),
+        ("FLAT",    "Forward/backward fill (edges only)", "FFA07A"),
+        ("NO DATA", "Tenor has zero observations",        "FF6666"),
+        ("(blank)", "Original observed data",             "FFFFFF"),
+    ]
+    for i, (code, description, hex_colour) in enumerate(legend_entries):
+        r = legend_row + 1 + i
+        ws.cell(row=r, column=1, value=code).fill = PatternFill("solid", fgColor=hex_colour)
+        ws.cell(row=r, column=2, value=description)
+
+
+def _format_all_headers(wb):
+    """Apply consistent header formatting across all sheets."""
+    header_font = Font(bold=True, name="Arial", size=11)
+    header_fill = PatternFill("solid", fgColor="D9E1F2")
+
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        for cell in ws[1]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MAIN EXECUTION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def main():
+    """
+    Entry point: load data, run the four-stage waterfall, and write results.
+    """
+    if len(sys.argv) < 2:
+        print(__doc__)
+        sys.exit(1)
+
+    input_path = sys.argv[1]
+    output_path = input_path.replace(".xlsx", "_backfilled.xlsx")
+
+    # Load
+    print(f"Loading {input_path}...")
+    df = load_timeseries(input_path)
+    original_df = df.copy()  # preserve original for comparison
+
+    n_rows, n_cols = df.shape
+    total_missing = df.isna().sum().sum()
+    print(f"  {n_rows} dates × {n_cols} tenors")
+    print(f"  {total_missing} missing cells ({total_missing / (n_rows * n_cols) * 100:.1f}%)\n")
+
+    # ── Pre-flight check: detect empty and sparse tenors ──
+    empty_tenors = []   # zero observations — cannot be filled by any method
+    sparse_tenors = []  # 1–3 observations — too few for spline, limited interpolation
+
+    for tenor in df.columns:
+        n_observed = df[tenor].notna().sum()
+        if n_observed == 0:
+            empty_tenors.append(tenor)
+        elif n_observed < MIN_SPLINE_POINTS:
+            sparse_tenors.append((tenor, n_observed))
+
+    if empty_tenors:
+        print(f"  ⚠ WARNING: {len(empty_tenors)} tenor(s) have NO data at all:")
+        for t in empty_tenors:
+            print(f"      - {t}  (will remain entirely empty in output)")
+        print()
+
+    if sparse_tenors:
+        print(f"  ⚠ WARNING: {len(sparse_tenors)} tenor(s) have very few observations:")
+        for t, n in sparse_tenors:
+            print(f"      - {t}  ({n} values — too few for spline, will use linear/flat only)")
+        print()
+
+    # Audit trail: empty string = original data, otherwise = method code
+    audit = pd.DataFrame("", index=df.index, columns=df.columns)
+
+    # Mark empty tenors in audit so they are clearly flagged in the output
+    for tenor in empty_tenors:
+        audit[tenor] = "NO DATA"
+
+    # Run waterfall
+    print("Priority 1 — Cross-tenor regression...")
+    n_reg = fill_via_regression(df, audit)
+    print(f"  → {n_reg} cells filled\n")
+
+    print("Priority 2 — Cubic spline interpolation...")
+    n_spline = fill_via_spline(df, audit)
+    print(f"  → {n_spline} cells filled\n")
+
+    print("Priority 3 — Linear interpolation...")
+    n_linear = fill_via_linear(df, audit)
+    print(f"  → {n_linear} cells filled\n")
+
+    print("Priority 4 — Forward/backward fill (edges only)...")
+    n_flat = fill_via_flat(df, audit)
+    print(f"  → {n_flat} cells filled\n")
+
+    # Results
+    still_missing = df.isna().sum().sum()
+    print(f"Complete: {total_missing} missing → {int(still_missing)} remaining")
+    if still_missing > 0:
+        unfillable = sum(n_rows for t in empty_tenors)
+        fillable_remaining = int(still_missing) - unfillable
+        print(f"  ({unfillable} unfillable from empty tenors, {fillable_remaining} other)")
+    print()
+
+    # Write
+    print(f"Writing {output_path}...")
+    fill_counts = {
+        "regression": n_reg,
+        "spline": n_spline,
+        "linear": n_linear,
+        "flat": n_flat,
+    }
+    write_output(df, audit, original_df, output_path, fill_counts, empty_tenors, sparse_tenors)
+    print(f"Done → {output_path}")
+
+
+if __name__ == "__main__":
+    main()
+```
+
