@@ -2359,3 +2359,733 @@ if __name__ == "__main__":
     main()
 ```
 
+---
+
+## Appendix C — Stage 13: Inference Console figure builders (copy-paste sync)
+
+> **Status**: Stage 13 lands the real Plotly figure builders for the three
+> chart slots on the Inference Console page. Two files touched:
+>
+> * `src/ui/apps/rade_analytics/figures/inference_charts.py` — **fully
+>   rewritten** (full source in §C.1 below).
+> * `src/ui/apps/rade_analytics/callbacks/inference_cb.py` — small **diff**
+>   in `_register_hydrate_results` (§C.2 below).
+>
+> No backend / API changes. After applying these two edits and restarting
+> the Dash UI process, the three figures populate live from the existing
+> data-plane endpoints (`/runs/{id}/portfolio` and `/runs/{id}/clusters`)
+> whenever a run terminates.
+
+### Mode → builder map
+
+| Chart slot id | Mode (segmented-control value) | Builder function |
+|---|---|---|
+| `chart_main` | `distribution` | `_pnl_distribution(portfolio_df)` — histogram with VaR / CVaR vertical markers |
+| `chart_main` | `timeseries` | `_pnl_timeseries(portfolio_df)` — line + markers, chronologically sorted |
+| `chart_main` | `overlay` | `empty_pnl_overlay()` — reserved third slot |
+| `risk_attribution_chart` | `cluster` | `_attribution_by_cluster(clusters_df)` — signed horizontal bar |
+| `risk_attribution_chart` | `risk_factor` | `_attribution_unavailable(...)` — v1 lacks shock metadata |
+| `risk_attribution_chart` | `trade_type` | `_attribution_unavailable(...)` — v1 lacks trade-attribute join |
+| `stress_tails_chart` | `fan` | `_stress_fan(portfolio_df)` — sorted-PnL curve with VaR / CVaR refs |
+| `stress_tails_chart` | `tail` | `_stress_tail(portfolio_df)` — overlapping histograms, tail rose-shaded |
+| `stress_tails_chart` | `worst` | `_stress_worst(portfolio_df, n=20)` — top-N worst horizontal bar |
+
+### Data flow
+
+```
+                  /runs/{id}/portfolio  ──►  portfolio_df  ─┐
+                                                            ├─►  build_chart_main(...)        →  chart_main figure
+                                                            └─►  build_stress_tails_chart(...) →  stress_tails figure
+
+                  /runs/{id}/clusters   ──►  clusters_df   ─►   build_risk_attribution_chart(...) →  risk_attribution figure
+```
+
+All three dispatchers are **defensive on empty input** — they fall back to
+the matching `empty_*` figure when the DataFrame is missing or doesn't
+carry the expected column, so the callback can invoke them unconditionally.
+
+### C.1 `src/ui/apps/rade_analytics/figures/inference_charts.py` — full source
+
+Replace the entire file with the source below.
+
+```python
+"""Plotly figure builders for the Inference Console page.
+
+Stage 13: real builders dispatched by the three segmented controls
+on the page.  Each top-level public dispatcher
+(:func:`build_chart_main`, :func:`build_risk_attribution_chart`,
+:func:`build_stress_tails_chart`) accepts the relevant DataFrame
+plus the current mode flag and returns a ready-to-render
+``plotly.graph_objects.Figure``.
+
+Modes
+-----
+
+``chart_main`` — set via ``INFERENCE_IDS['chart_view_mode']``::
+
+    distribution  → _pnl_distribution(portfolio_df)
+    timeseries    → _pnl_timeseries(portfolio_df)
+    overlay       → empty_pnl_overlay()           (reserved)
+
+``risk_attribution_chart`` — set via
+``INFERENCE_IDS['risk_attribution_breakdown']``::
+
+    cluster       → _attribution_by_cluster(clusters_df)
+    risk_factor   → _attribution_unavailable(...) (v1: no metadata)
+    trade_type    → _attribution_unavailable(...) (v1: no metadata)
+
+``stress_tails_chart`` — set via
+``INFERENCE_IDS['stress_tails_mode']``::
+
+    fan           → _stress_fan(portfolio_df)
+    tail          → _stress_tail(portfolio_df)
+    worst         → _stress_worst(portfolio_df, n=20)
+
+Empty-state builders (the ``empty_*`` functions) are preserved as a
+public API because the callback's ``empty_returns`` tuple uses them
+to paint the page before any run completes.  The dispatchers fall
+back to the matching empty builder when the input frame is empty or
+missing the expected column, so callbacks never have to branch on
+"have data yet" — they can call ``build_*`` unconditionally.
+
+Style
+-----
+
+Every figure goes through :func:`figures._theme.rade_layout` so the
+violet → cyan / amber / rose palette and the transparent
+plot_bgcolor stay consistent with the rest of the dashboard.  No
+chart manages its own font / margin / colour scheme — all of that
+lives in ``_theme.py``.
+"""
+from __future__ import annotations
+
+from typing import Optional
+
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+
+from ._theme import (
+    empty_figure,
+    rade_layout,
+    rgba,
+    sort_chronologically,
+)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Palette aliases (pinned here so chart code reads naturally; the
+# canonical hex values live in ``_theme.CATEGORY_PALETTE``).
+# ─────────────────────────────────────────────────────────────────────
+
+_VIOLET:    str = "#8b5cf6"   # primary series colour
+_EMERALD:   str = "#10b981"   # positive contribution
+_AMBER:     str = "#f59e0b"   # VaR marker
+_ROSE:      str = "#f43f5e"   # tail / CVaR / negative contribution
+_ZERO_LINE: str = "#475569"   # neutral grid reference
+
+# 95 % VaR convention — the 5th percentile of the PnL distribution
+# (lower tail).  Used as a literal in builder code as well so the
+# annotation label stays in sync.
+_VAR_QUANTILE:    float = 0.05
+_WORST_N_DEFAULT: int   = 20
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Empty-state builders — kept as public API
+# ═════════════════════════════════════════════════════════════════════
+
+def empty_pnl_distribution() -> go.Figure:
+    """Placeholder for *Predicted PnL distribution across scenarios*."""
+    return empty_figure("Awaiting scenario run — distribution view")
+
+
+def empty_pnl_timeseries() -> go.Figure:
+    """Placeholder for *PnL / exposure vs scenario order or time*."""
+    return empty_figure("Awaiting scenario run — timeseries view")
+
+
+def empty_pnl_overlay() -> go.Figure:
+    """Reserved third chart mode (e.g. density overlay, fan chart)."""
+    return empty_figure("Third chart mode — reserved")
+
+
+def empty_risk_attribution() -> go.Figure:
+    """Placeholder for *P&L attribution by cluster · risk-factor · trade-type*."""
+    return empty_figure("Awaiting scenario run — attribution view")
+
+
+def empty_stress_tails() -> go.Figure:
+    """Placeholder for *VaR / CVaR / tail-quantile* view."""
+    return empty_figure("Awaiting scenario run — tail-risk view")
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Shared input adapters
+# ═════════════════════════════════════════════════════════════════════
+
+def _portfolio_pnl(df: Optional[pd.DataFrame]) -> Optional[pd.Series]:
+    """Pull the canonical PnL series out of a portfolio frame.
+
+    Returns ``None`` if the frame is missing, empty, or doesn't
+    carry the expected ``sum_pnl_original`` column.  Dispatchers
+    use this to fall back to the empty-state figure cleanly.
+    """
+    if df is None or df.empty or "sum_pnl_original" not in df.columns:
+        return None
+    return df["sum_pnl_original"].astype(float)
+
+
+def _portfolio_labels(df: Optional[pd.DataFrame]) -> Optional[pd.Series]:
+    """Pull the scenario-label series out of a portfolio frame."""
+    if df is None or df.empty or "scenario_label" not in df.columns:
+        return None
+    return df["scenario_label"].astype(str)
+
+
+def _var_cvar(pnl: pd.Series) -> tuple[float, float]:
+    """Compute 95 % VaR / CVaR on a PnL series.
+
+    CVaR collapses to VaR when no observation lies at or below the
+    5th-percentile threshold (typical for very small N).  Both
+    values are returned as plain floats so callers can drop them
+    directly into annotation strings.
+    """
+    var_value = float(pnl.quantile(_VAR_QUANTILE))
+    mask = pnl <= var_value
+    cvar_value = float(pnl[mask].mean()) if mask.any() else var_value
+    return var_value, cvar_value
+
+
+# ═════════════════════════════════════════════════════════════════════
+# 1. chart_main — distribution / timeseries / overlay
+# ═════════════════════════════════════════════════════════════════════
+
+def build_chart_main(
+    df:   Optional[pd.DataFrame],
+    mode: Optional[str],
+) -> go.Figure:
+    """Top-level dispatcher for the *Charts* tab figure.
+
+    Falls back to the matching empty figure when ``df`` is empty
+    or the requested mode is the reserved ``overlay`` slot — so the
+    caller can invoke this unconditionally without branching on
+    "data ready yet".
+    """
+    mode = (mode or "distribution").lower()
+    pnl  = _portfolio_pnl(df)
+    if pnl is None or pnl.empty:
+        return {
+            "distribution": empty_pnl_distribution(),
+            "timeseries":   empty_pnl_timeseries(),
+            "overlay":      empty_pnl_overlay(),
+        }.get(mode, empty_pnl_distribution())
+
+    if mode == "distribution":
+        return _pnl_distribution(df)
+    if mode == "timeseries":
+        return _pnl_timeseries(df)
+    # overlay is reserved; keep the empty-state until the contract names it.
+    return empty_pnl_overlay()
+
+
+def _pnl_distribution(df: pd.DataFrame) -> go.Figure:
+    """Histogram of portfolio PnL across scenarios + VaR / CVaR lines.
+
+    Bin count scales with N (capped 8–40) so a 10-scenario run still
+    renders meaningfully and a 1000-scenario run doesn't blow into
+    400 hair-thin bars.
+    """
+    pnl  = _portfolio_pnl(df)
+    if pnl is None or pnl.empty:
+        return empty_pnl_distribution()
+
+    var_value, cvar_value = _var_cvar(pnl)
+    nbins = max(8, min(40, len(pnl) // 5 or 8))
+
+    fig = go.Figure()
+    fig.add_trace(go.Histogram(
+        x             = pnl,
+        nbinsx        = nbins,
+        marker        = {"color": rgba(_VIOLET, 0.85)},
+        name          = "Portfolio PnL",
+        hovertemplate = "PnL: %{x:,.2f}<br>Count: %{y}<extra></extra>",
+    ))
+    fig.add_vline(
+        x=var_value,
+        line={"color": _AMBER, "width": 1.5, "dash": "dot"},
+        annotation_text     = f"VaR 95 %: {var_value:,.0f}",
+        annotation_position = "top right",
+        annotation_font     = {"color": _AMBER, "size": 10},
+    )
+    fig.add_vline(
+        x=cvar_value,
+        line={"color": _ROSE, "width": 1.5, "dash": "dash"},
+        annotation_text     = f"CVaR 95 %: {cvar_value:,.0f}",
+        annotation_position = "bottom right",
+        annotation_font     = {"color": _ROSE, "size": 10},
+    )
+    fig.update_layout(**rade_layout(
+        hovermode = "x",
+        xaxis     = {"title": "Predicted PnL (original units)"},
+        yaxis     = {"title": "Scenarios"},
+    ))
+    return fig
+
+
+def _pnl_timeseries(df: pd.DataFrame) -> go.Figure:
+    """Line of portfolio PnL ordered by scenario label.
+
+    Uses :func:`_theme.sort_chronologically` so date-shaped
+    scenario labels render in real-time order even when the
+    upstream parquet is shuffled (legacy training-time order).
+    """
+    pnl    = _portfolio_pnl(df)
+    labels = _portfolio_labels(df)
+    if pnl is None or labels is None or pnl.empty:
+        return empty_pnl_timeseries()
+
+    ordered = sort_chronologically(df.copy())
+    y       = ordered["sum_pnl_original"].astype(float)
+    x       = ordered["scenario_label"].astype(str)
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x             = x,
+        y             = y,
+        mode          = "lines+markers",
+        line          = {"color": _VIOLET, "width": 1.6},
+        marker        = {"color": _VIOLET, "size": 4, "opacity": 0.85},
+        name          = "Portfolio PnL",
+        hovertemplate = "%{x}<br>PnL: %{y:,.2f}<extra></extra>",
+    ))
+    fig.add_hline(
+        y=0,
+        line={"color": _ZERO_LINE, "width": 1, "dash": "dot"},
+    )
+    fig.update_layout(**rade_layout(
+        hovermode = "x unified",
+        xaxis     = {"title": "Scenario"},
+        yaxis     = {"title": "PnL (original units)"},
+    ))
+    return fig
+
+
+# ═════════════════════════════════════════════════════════════════════
+# 2. risk_attribution_chart — cluster / risk_factor / trade_type
+# ═════════════════════════════════════════════════════════════════════
+
+def build_risk_attribution_chart(
+    clusters_df: Optional[pd.DataFrame],
+    breakdown:   Optional[str],
+) -> go.Figure:
+    """Top-level dispatcher for the *Risk attribution* tab figure.
+
+    Only the *cluster* axis is supported in v1 — risk-factor and
+    trade-type breakdowns need scenario-shock and trade-attribute
+    metadata that the v1 data plane doesn't expose.  Both render a
+    descriptive empty state rather than silently swallowing the
+    request, so the user understands why the chart is blank.
+    """
+    breakdown = (breakdown or "cluster").lower()
+    if clusters_df is None or clusters_df.empty:
+        return empty_risk_attribution()
+
+    if breakdown == "cluster":
+        return _attribution_by_cluster(clusters_df)
+    if breakdown == "risk_factor":
+        return _attribution_unavailable(
+            "Risk-factor breakdown requires scenario shock metadata "
+            "(not exposed by the v1 API)."
+        )
+    if breakdown == "trade_type":
+        return _attribution_unavailable(
+            "Trade-type breakdown requires a trade-attribute join "
+            "(not exposed by the v1 API)."
+        )
+    return empty_risk_attribution()
+
+
+def _attribution_unavailable(message: str) -> go.Figure:
+    """Empty-figure variant carrying a *why* explanation."""
+    return empty_figure(message)
+
+
+def _attribution_by_cluster(clusters_df: pd.DataFrame) -> go.Figure:
+    """Total signed contribution per cluster, summed across scenarios.
+
+    Aggregates ``sum_pnl_original`` over scenarios for each cluster
+    and renders a horizontal bar chart, green/positive vs rose/negative
+    so the eye lands on signs immediately.  Sorted ascending so the
+    worst clusters sit at the bottom — quickest to read.
+    """
+    if "cluster_id" not in clusters_df.columns or "sum_pnl_original" not in clusters_df.columns:
+        return empty_risk_attribution()
+
+    agg = (
+        clusters_df.groupby("cluster_id", as_index=False)["sum_pnl_original"]
+        .sum()
+        .sort_values("sum_pnl_original", ascending=True)
+    )
+    colors = [_EMERALD if v >= 0 else _ROSE for v in agg["sum_pnl_original"]]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x             = agg["sum_pnl_original"],
+        y             = agg["cluster_id"],
+        orientation   = "h",
+        marker        = {"color": colors},
+        hovertemplate = "%{y}<br>Contribution: %{x:,.2f}<extra></extra>",
+    ))
+    fig.add_vline(
+        x=0,
+        line={"color": _ZERO_LINE, "width": 1, "dash": "dot"},
+    )
+    fig.update_layout(**rade_layout(
+        hovermode = "y",
+        margin    = {"l": 120, "r": 16, "t": 8, "b": 36},
+        xaxis     = {"title": "Contribution to portfolio PnL (original units)"},
+        yaxis     = {"title": "", "automargin": True},
+    ))
+    return fig
+
+
+# ═════════════════════════════════════════════════════════════════════
+# 3. stress_tails_chart — fan / tail / worst
+# ═════════════════════════════════════════════════════════════════════
+
+def build_stress_tails_chart(
+    df:   Optional[pd.DataFrame],
+    mode: Optional[str],
+) -> go.Figure:
+    """Top-level dispatcher for the *Stress & tails* tab figure."""
+    mode = (mode or "fan").lower()
+    pnl  = _portfolio_pnl(df)
+    if pnl is None or pnl.empty:
+        return empty_stress_tails()
+
+    if mode == "fan":
+        return _stress_fan(df)
+    if mode == "tail":
+        return _stress_tail(df)
+    if mode == "worst":
+        return _stress_worst(df)
+    return empty_stress_tails()
+
+
+def _stress_fan(df: pd.DataFrame) -> go.Figure:
+    """Sorted scenario-PnL curve with VaR / CVaR annotations.
+
+    A literal "percentile fan" doesn't apply when each scenario has
+    a single realisation, so this mode shows the **sorted-PnL
+    curve** instead.  X = percentile rank (0–100 %), Y = PnL — the
+    tail shape becomes legible at a glance.  Area is filled to zero
+    so positive and negative regions read clearly.
+    """
+    pnl = _portfolio_pnl(df)
+    if pnl is None or pnl.empty:
+        return empty_stress_tails()
+
+    pnl_sorted = pnl.sort_values().reset_index(drop=True)
+    n          = len(pnl_sorted)
+    percentile = (np.arange(1, n + 1) / n) * 100.0
+
+    var_value, cvar_value = _var_cvar(pnl)
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x             = percentile,
+        y             = pnl_sorted,
+        mode          = "lines",
+        line          = {"color": _VIOLET, "width": 1.8},
+        fill          = "tozeroy",
+        fillcolor     = rgba(_VIOLET, 0.18),
+        name          = "Sorted PnL",
+        hovertemplate = "Percentile: %{x:.0f} %<br>PnL: %{y:,.2f}<extra></extra>",
+    ))
+    fig.add_vline(
+        x=_VAR_QUANTILE * 100,
+        line={"color": _AMBER, "width": 1.5, "dash": "dot"},
+        annotation_text     = f"VaR 95 %: {var_value:,.0f}",
+        annotation_position = "top right",
+        annotation_font     = {"color": _AMBER, "size": 10},
+    )
+    fig.add_hline(
+        y=cvar_value,
+        line={"color": _ROSE, "width": 1.5, "dash": "dash"},
+        annotation_text     = f"CVaR 95 %: {cvar_value:,.0f}",
+        annotation_position = "top right",
+        annotation_font     = {"color": _ROSE, "size": 10},
+    )
+    fig.update_layout(**rade_layout(
+        hovermode = "x",
+        xaxis     = {"title": "Percentile rank", "ticksuffix": " %"},
+        yaxis     = {"title": "PnL (original units)"},
+    ))
+    return fig
+
+
+def _stress_tail(df: pd.DataFrame) -> go.Figure:
+    """Histogram with the tail (PnL ≤ VaR) shaded rose.
+
+    Two overlapping histograms with shared bin width so the body
+    (violet) and tail (rose) read as one continuous distribution
+    that just happens to be colour-segmented at the VaR threshold.
+    Tail bin count scales down to keep individual tail bars
+    visible even when N is small.
+    """
+    pnl = _portfolio_pnl(df)
+    if pnl is None or pnl.empty:
+        return empty_stress_tails()
+
+    var_value, cvar_value = _var_cvar(pnl)
+    nbins_total = max(8, min(40, len(pnl) // 5 or 8))
+
+    body = pnl[pnl >  var_value]
+    tail = pnl[pnl <= var_value]
+
+    fig = go.Figure()
+    if not body.empty:
+        fig.add_trace(go.Histogram(
+            x             = body,
+            nbinsx        = nbins_total,
+            marker        = {"color": rgba(_VIOLET, 0.85)},
+            name          = "Body",
+            hovertemplate = "PnL: %{x:,.2f}<br>Count: %{y}<extra></extra>",
+        ))
+    if not tail.empty:
+        fig.add_trace(go.Histogram(
+            x             = tail,
+            nbinsx        = max(4, nbins_total // 4),
+            marker        = {"color": rgba(_ROSE, 0.9)},
+            name          = "Tail (≤ VaR)",
+            hovertemplate = "PnL: %{x:,.2f}<br>Count: %{y}<extra></extra>",
+        ))
+
+    fig.add_vline(
+        x=var_value,
+        line={"color": _AMBER, "width": 1.5, "dash": "dot"},
+        annotation_text     = f"VaR 95 %: {var_value:,.0f}",
+        annotation_position = "top right",
+        annotation_font     = {"color": _AMBER, "size": 10},
+    )
+    fig.add_vline(
+        x=cvar_value,
+        line={"color": _ROSE, "width": 1.5, "dash": "dash"},
+        annotation_text     = f"CVaR 95 %: {cvar_value:,.0f}",
+        annotation_position = "bottom right",
+        annotation_font     = {"color": _ROSE, "size": 10},
+    )
+    fig.update_layout(
+        **rade_layout(
+            show_legend = True,
+            hovermode   = "x",
+            xaxis       = {"title": "PnL (original units)"},
+            yaxis       = {"title": "Scenarios"},
+        ),
+        barmode = "overlay",
+    )
+    return fig
+
+
+def _stress_worst(df: pd.DataFrame, n: int = _WORST_N_DEFAULT) -> go.Figure:
+    """Top-N worst-loss scenarios as a horizontal bar chart.
+
+    Always rose-coloured because every bar in this mode is in the
+    loss tail by construction.  Sorted ascending so the worst-of-
+    the-worst sits at the bottom of the chart (closest to the
+    user's eye line).
+    """
+    pnl    = _portfolio_pnl(df)
+    labels = _portfolio_labels(df)
+    if pnl is None or labels is None or pnl.empty:
+        return empty_stress_tails()
+
+    sub = (
+        pd.DataFrame({"label": labels, "pnl": pnl})
+        .nsmallest(n, "pnl")
+        .sort_values("pnl", ascending=True)
+    )
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x             = sub["pnl"],
+        y             = sub["label"],
+        orientation   = "h",
+        marker        = {"color": rgba(_ROSE, 0.9)},
+        hovertemplate = "%{y}<br>PnL: %{x:,.2f}<extra></extra>",
+    ))
+    fig.add_vline(
+        x=0,
+        line={"color": _ZERO_LINE, "width": 1, "dash": "dot"},
+    )
+    fig.update_layout(**rade_layout(
+        hovermode = "y",
+        margin    = {"l": 150, "r": 16, "t": 8, "b": 36},
+        xaxis     = {"title": "PnL (original units)"},
+        yaxis     = {"title": "", "automargin": True},
+    ))
+    return fig
+
+
+__all__ = [
+    # Dispatchers (Stage 13 — primary entry points)
+    "build_chart_main",
+    "build_risk_attribution_chart",
+    "build_stress_tails_chart",
+    # Empty-state builders (still public — callbacks use them in the
+    # "no data yet" branch).
+    "empty_pnl_distribution",
+    "empty_pnl_overlay",
+    "empty_pnl_timeseries",
+    "empty_risk_attribution",
+    "empty_stress_tails",
+]
+```
+
+### C.2 `src/ui/apps/rade_analytics/callbacks/inference_cb.py` — diff
+
+Two surgical edits to `_register_hydrate_results` and one import-block
+update. Do **not** replace the whole file — just apply the three snippets
+below.
+
+**Edit 1 — replace the import block.** Find:
+
+```python
+from ..figures.inference_charts import (
+    empty_pnl_distribution,
+    empty_pnl_overlay,
+    empty_pnl_timeseries,
+    empty_risk_attribution,
+    empty_stress_tails,
+)
+```
+
+…and replace with:
+
+```python
+from ..figures.inference_charts import (
+    build_chart_main,
+    build_risk_attribution_chart,
+    build_stress_tails_chart,
+    empty_pnl_distribution,
+    empty_risk_attribution,
+    empty_stress_tails,
+)
+```
+
+(`empty_pnl_overlay` and `empty_pnl_timeseries` are no longer referenced
+in the callback — they're still public in `inference_charts.py` for
+external callers.)
+
+**Edit 2 — remove the `del` line at the top of `_hydrate`.** Find:
+
+```python
+    def _hydrate(
+        run_meta:   Optional[Dict[str, Any]],
+        chart_mode: Optional[str],
+        risk_axis:  Optional[str],
+        stress_mode: Optional[str],
+    ) -> Tuple[Any, ...]:
+        del chart_mode, risk_axis, stress_mode  # Stage 13 will dispatch on these
+```
+
+…and replace with:
+
+```python
+    def _hydrate(
+        run_meta:   Optional[Dict[str, Any]],
+        chart_mode: Optional[str],
+        risk_axis:  Optional[str],
+        stress_mode: Optional[str],
+    ) -> Tuple[Any, ...]:
+        # Stage 13: ``chart_mode``, ``risk_axis``, and ``stress_mode``
+        # now drive the three figure dispatchers in
+        # :mod:`figures.inference_charts`.  Each dispatcher falls
+        # back to the matching empty figure when no data is loaded,
+        # so the "no run yet" branch below can use the static
+        # empty builders without dispatching.
+```
+
+**Edit 3 — replace the success-path return tuple.** Find:
+
+```python
+        return (
+            _format_int(n_scenarios),
+            _format_int(n_clusters),
+            latency_txt,
+            _format_currency(portfolio_total),
+            empty_pnl_distribution(),
+            empty_risk_attribution(),
+            empty_stress_tails(),
+            _stress_kpi_block("VaR (95%)",  var_txt),
+            _stress_kpi_block("CVaR (95%)", cvar_txt),
+            _stress_kpi_block("Worst loss", worst_txt),
+            row_data,
+        )
+```
+
+…and replace with:
+
+```python
+        # Stage 13 — dispatch each figure on its segmented-control
+        # mode.  Builders defensively fall back to the matching
+        # empty figure if the upstream frame is missing the
+        # expected column, so we don't pre-branch here.
+        chart_main_fig       = build_chart_main(portfolio_df, chart_mode)
+        risk_attribution_fig = build_risk_attribution_chart(clusters_df, risk_axis)
+        stress_tails_fig     = build_stress_tails_chart(portfolio_df, stress_mode)
+
+        return (
+            _format_int(n_scenarios),
+            _format_int(n_clusters),
+            latency_txt,
+            _format_currency(portfolio_total),
+            chart_main_fig,
+            risk_attribution_fig,
+            stress_tails_fig,
+            _stress_kpi_block("VaR (95%)",  var_txt),
+            _stress_kpi_block("CVaR (95%)", cvar_txt),
+            _stress_kpi_block("Worst loss", worst_txt),
+            row_data,
+        )
+```
+
+The `empty_returns` tuple higher up in the function is **unchanged** —
+it's only used in the "no completed run yet" branch where dispatching
+would be a waste.
+
+### Verification
+
+```bash
+# 1. Lints + compile
+ruff check src/ui/apps/rade_analytics/figures/inference_charts.py \
+            src/ui/apps/rade_analytics/callbacks/inference_cb.py
+python -m py_compile src/ui/apps/rade_analytics/figures/inference_charts.py \
+                     src/ui/apps/rade_analytics/callbacks/inference_cb.py
+
+# 2. Boot the API + dashboard, hit /inference, run a scenario.
+#    After the run completes you should see:
+#    * Charts tab → violet histogram with VaR / CVaR vertical lines
+#      (Distribution mode) or violet line with markers (Timeseries mode)
+#    * Risk attribution tab → green/rose horizontal bars per cluster
+#      (Cluster mode) or "v1 doesn't expose ..." note (other modes)
+#    * Stress & tails tab → sorted-PnL violet fan (Fan mode),
+#      overlapping body/tail histogram (Tail mode),
+#      or top-20 rose bars (Worst N mode)
+#    Mode flips on each segmented control should re-render that figure
+#    only — KPI strip and AG Grid should not change.
+```
+
+### What's next
+
+Stage 13 is the last *page-internal* piece. Remaining roadmap items:
+
+| Item | Description |
+|---|---|
+| Stage 9b | Threaded `/load` + UI two-phase mount (live progress during cold-load — parked for now) |
+| Smoke test | Manual curl-through of all 14 inference endpoints against a real ensemble |
+| Page contract polish | Move `RADE_GRID_DEFAULTS` and other repeating idioms into shared helpers |
+
+Stage 13 is complete and self-contained — it does not depend on Stage 9b.
+
