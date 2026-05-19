@@ -2361,1493 +2361,878 @@ if __name__ == "__main__":
 
 ---
 
-## Appendix C — Phase 0.4: Risk Management page skeleton (copy-paste sync)
+## Appendix C — Phase 3.1: Eval pipeline `_original` parquets (copy-paste sync)
 
-> **Status**: Phase 0.4 ships a new top-level **Risk Management** page —
-> a peer of `/overview`, `/evaluation`, `/inference`, etc. — with a
-> real-data subset of Mock B (the agreed canonical layout in
-> `rade_risk_management.png`). Phase 4 then *upgrades* the same panels to
-> true RF-level granularity once Phase 2's trade-attribute API lands.
+> **Status**: Phase 3.1 extends `src/rade_ml_pt/pipelines/ensemble/eval.py` to
+> emit original-space PnL artefacts that mirror the inference pipeline's
+> output. Trade-level data lives in separate `_scaled.parquet` /
+> `_original.parquet` files per cluster (matches inference exactly);
+> aggregate parquets gain additional `_original` columns side-by-side with
+> the existing scaled columns. The manifest now declares which spaces are
+> available, so the Phase 3.2 API can discover the layout without
+> grovelling through parquet footers.
 >
-> Three new files, three modified files. No backend / API changes —
-> the page is a pure consumer of the existing
-> `GET /inference/runs/{run_id}/portfolio` and `…/clusters` endpoints
-> already exposed by Stage 10.
+> All edits are contained in **one file** —
+> `src/rade_ml_pt/pipelines/ensemble/eval.py` — so the work-env sync is a
+> single-file diff.
 
-### What ships in Phase 0.4
+### What ships in Phase 3.1
 
-| Panel | Data source | Real today? | Phase 4 upgrade |
-|---|---|:---:|---|
-| KPIs: VaR / CVaR / Skewness / Excess kurtosis | `portfolio_predictions.parquet` | ✅ | unchanged |
-| Cluster waterfall (worst scenario) | `cluster_predictions.parquet` × `sum_pnl_original` | ✅ | swap to RF-level + scenario picker |
-| Cluster tornado | aggregate by cluster | ✅ | swap to RF tornado |
-| Cluster donut (single-ring) | aggregate by cluster | ✅ | three-ring sunburst (RF group → trade type → cluster) |
-| Tail table — Scenario / Date / PnL / Top cluster / VaR contrib | `portfolio_predictions.parquet` + per-scenario argmin on `clusters_df` | ✅ | adds `Top RF` and `Top trade type` columns |
+| Artefact | Treatment | Schema |
+|---|---|:---:|
+| `portfolio_summary/portfolio_timeseries_{split}.parquet` | + 5 `*_original` cols (NaN-fill on legacy runs) | v2 → v3 |
+| `portfolio_summary/cluster_timeseries_{split}.parquet`   | + 5 `*_original` cols (per-cluster NaN-fill) | v2 → v3 |
+| `trade_predictions/{cid}/{split}_{scaled,original}.parquet` | **new family** — wide scenarios × trade_ids | v1 |
+| `manifest.json` | + `spaces_available` + `artifacts` blocks | v1 → v2 |
+| `ensemble_metrics.parquet`, `per_member_metrics.parquet`, `trade_metrics.parquet`, `group_correlations.parquet`, `graph_stats.parquet`, `quality_*.parquet` | **unchanged** (dimensionless metrics) | — |
 
-### Files added (full source below)
+### Scope cuts (deliberate)
 
-* `src/ui/apps/rade_analytics/figures/risk_management_charts.py` — figure builders (§C.1)
-* `src/ui/apps/rade_analytics/layouts/risk_management.py` — page layout (§C.2)
-* `src/ui/apps/rade_analytics/callbacks/risk_management_cb.py` — callbacks (§C.3)
+- Eval's metric parquets (RMSE / correlations / quality) stay scaled-only — they're dimensionless, so an "original" view makes no semantic sense.
+- Targets are **not** persisted at trade level in the new family — mirrors inference. Trade-level targets remain in `members/{cid}/predictions/{split}.npz` (scaled space).
+- Inference aggregates (`cluster_predictions.parquet`, `portfolio_predictions.parquet`) **not** widened in this phase — strict scope.
 
-### Files modified (wiring diffs in §C.4)
+### Single source of truth: `transform_predictions`
 
-* `src/ui/apps/rade_analytics/router.py` — new `/risk-management` route
-* `src/ui/apps/rade_analytics/components/sidebar.py` — new nav entry
-* `src/ui/apps/rade_analytics/callbacks/__init__.py` — register `risk_management_cb`
-
-### Behaviour
-
-On mount the page calls `backend.list_inference_runs()`, picks the
-**most recent run**, writes its meta into a page-local `dcc.Store`,
-and a single hydration callback fetches the portfolio + cluster
-parquets to paint every panel. The waterfall auto-pins to the
-**worst portfolio loss** scenario in the run. No run-picker or
-scenario-picker controls in Phase 0 — those land in Phase 4.
-
-When there are no inference runs the subtitle reads
-*"No inference runs available yet — run the Inference Console to
-populate this page."* and every panel stays in its empty state.
+The scaled→original transformation reuses the existing static helper
+`HybridGnnRnnInferencePipeline.transform_predictions` (which inference
+already calls inside `_post_infer_cluster`). Eval now calls it twice per
+cluster — once for predictions, once for targets — so the eval-side
+`predictions_original` / `targets_original` columns are computed
+identically to inference's per-cluster artefacts.
 
 ---
 
-### C.1 — `src/ui/apps/rade_analytics/figures/risk_management_charts.py` (NEW)
+### Edit map
+
+Nine discrete blocks inside `src/rade_ml_pt/pipelines/ensemble/eval.py`:
+
+| # | Section | Location | Change |
+|:-:|---|---|---|
+| 1 | Imports | Top of file | `+ joblib`, `+ Tuple` |
+| 2 | Schema constants | After imports | Bump v2→v3, add new `_TRADE_PREDICTIONS_*` and `_EVAL_MANIFEST_SCHEMA_VERSION` |
+| 3 | `_load_cluster_contexts` | Insert before `_save_portfolio_timeseries_parquet` | NEW helper |
+| 4 | `_transform_cluster_to_original` | Insert directly after #3 | NEW helper |
+| 5 | `_save_trade_predictions_parquet` | Insert directly after #4 | NEW helper |
+| 6 | `_save_portfolio_timeseries_parquet` | Widen signature + docstring + frame build | + 5 columns |
+| 7 | `_save_cluster_timeseries_parquet` | Widen signature + docstring + frame build | + 5 columns |
+| 8 | `_save_all_artifacts` — load contexts | After `cluster_attrs = _build_cluster_attributes(config)` | Load `cluster_contexts` once per run |
+| 9 | `_save_all_artifacts` — per-split loop | Replace the existing `cluster_pred_sums` … `_save_cluster_timeseries_parquet(...)` block | Compute originals per cluster, save trade-level parquets, pass originals to widened writers |
+| 10 | `_save_all_artifacts` — manifest | Replace the existing `_write_json(eval_dir / "manifest.json", {...})` call | Add `spaces_available` + `artifacts` blocks |
+
+---
+
+### Phase 3.1.1 — Imports
+
+Replace the top-of-file imports block with:
 
 ```python
-"""Plotly figure builders for the Risk Management page (Phase 0.4).
+import json
+import logging
+import shutil
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
-Three "real" builders cover the page's hero panels:
-
-* :func:`build_cluster_waterfall` — scenario-pinned P&L decomposition
-  by cluster.  Each bar = one cluster's contribution to that
-  scenario's portfolio total.  Phase 4 swaps in a risk-factor-level
-  waterfall once trade attributes land.
-* :func:`build_cluster_tornado` — clusters ranked by absolute
-  contribution across all scenarios.  Same visual idiom as the
-  Inference tab's risk-attribution-by-cluster but sorted by ``|x|``
-  instead of signed ``x`` so the biggest movers (positive or
-  negative) sit at the top of the chart.
-* :func:`build_cluster_donut` — single-ring breakdown of |signed
-  contribution| per cluster, with sign-coloured slices.  Phase 4
-  upgrades this into a three-ring sunburst (RF group → trade type →
-  cluster).
-
-Every figure is run through :func:`figures._theme.rade_layout` so the
-violet → cyan / amber / rose palette stays consistent with the
-Inference and Overview pages.
-
-The ``empty_*`` builders return placeholders that the layout uses at
-mount time (before the auto-load callback has fetched real data).
-"""
-from __future__ import annotations
-
-from typing import Optional
-
+import joblib
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
-
-from ._theme import empty_figure, rade_layout, rgba
-
-
-# ─────────────────────────────────────────────────────────────────────
-# Palette aliases (kept local so chart code reads naturally; canonical
-# hex values live in ``_theme.CATEGORY_PALETTE``).
-# ─────────────────────────────────────────────────────────────────────
-
-_VIOLET:    str = "#8b5cf6"
-_EMERALD:   str = "#10b981"
-_ROSE:      str = "#f43f5e"
-_AMBER:     str = "#f59e0b"
-_ZERO_LINE: str = "#475569"
-_SLATE:     str = "#64748b"
-
-# How many bars the cluster-waterfall keeps visible by default.  The
-# user typically cares about the top-N magnitude contributors; the
-# remainder are folded into an "Other" terminal bar so the chart
-# stays readable on a ~25-cluster portfolio.
-_WATERFALL_TOP_N: int = 7
-
-
-# ═════════════════════════════════════════════════════════════════════
-# Empty-state builders — kept as public API so the layout can paint
-# placeholders before data is fetched.
-# ═════════════════════════════════════════════════════════════════════
-
-def empty_cluster_waterfall() -> go.Figure:
-    """Placeholder for the cluster-level P&L waterfall."""
-    return empty_figure("Awaiting inference run — P&L decomposition")
-
-
-def empty_cluster_tornado() -> go.Figure:
-    """Placeholder for the cluster-level tornado chart."""
-    return empty_figure("Awaiting inference run — cluster sensitivity")
-
-
-def empty_cluster_donut() -> go.Figure:
-    """Placeholder for the cluster-level contribution donut."""
-    return empty_figure("Awaiting inference run — contribution donut")
-
-
-# ═════════════════════════════════════════════════════════════════════
-# Shared adapters
-# ═════════════════════════════════════════════════════════════════════
-
-def _portfolio_pnl(df: Optional[pd.DataFrame]) -> Optional[pd.Series]:
-    """Pull the canonical portfolio-PnL series from a frame.
-
-    Returns ``None`` if the frame is empty / missing the expected
-    column, so callers can fall back to the matching empty figure.
-    """
-    if df is None or df.empty or "sum_pnl_original" not in df.columns:
-        return None
-    return df["sum_pnl_original"].astype(float)
-
-
-def _aggregate_cluster_contributions(
-    clusters_df: Optional[pd.DataFrame],
-) -> Optional[pd.DataFrame]:
-    """Aggregate per-cluster signed contribution across all scenarios.
-
-    Returns a frame with two columns (``cluster_id``,
-    ``sum_pnl_original``) or ``None`` when the input frame is empty
-    or lacking the required columns.
-    """
-    if clusters_df is None or clusters_df.empty:
-        return None
-    if not {"cluster_id", "sum_pnl_original"}.issubset(clusters_df.columns):
-        return None
-    return (
-        clusters_df.groupby("cluster_id", as_index=False)["sum_pnl_original"]
-        .sum()
-    )
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 1. Cluster waterfall — scenario-pinned P&L decomposition
-# ═════════════════════════════════════════════════════════════════════
-
-def build_cluster_waterfall(
-    clusters_df:    Optional[pd.DataFrame],
-    scenario_label: Optional[str] = None,
-    *,
-    top_n:          int = _WATERFALL_TOP_N,
-) -> go.Figure:
-    """P&L waterfall for a single scenario, broken down by cluster.
-
-    The chart shows how each cluster's contribution to the chosen
-    scenario stacks up step-by-step to the portfolio total.  Top
-    ``top_n`` clusters (by absolute contribution) get individual
-    bars; everything else is folded into a single "Other" bar so
-    the chart stays legible on 25+ cluster portfolios.
-
-    When ``scenario_label`` is None or not present in the data, the
-    builder defaults to the **worst** scenario — i.e. the scenario
-    with the largest negative portfolio PnL — which is almost always
-    what the user wants to land on first.
-
-    Parameters
-    ----------
-    clusters_df
-        Long-format cluster summary parquet (one row per cluster ×
-        scenario), with at least ``cluster_id``, ``scenario_label``,
-        ``sum_pnl_original`` columns.
-    scenario_label
-        Scenario to decompose.  None → worst portfolio PnL.
-    top_n
-        How many top-magnitude clusters keep their own bar.
-    """
-    if clusters_df is None or clusters_df.empty:
-        return empty_cluster_waterfall()
-    needed = {"cluster_id", "scenario_label", "sum_pnl_original"}
-    if not needed.issubset(clusters_df.columns):
-        return empty_cluster_waterfall()
-
-    # Resolve scenario_label — default to the worst portfolio loss.
-    portfolio_by_scenario = (
-        clusters_df.groupby("scenario_label", as_index=False)[
-            "sum_pnl_original"
-        ].sum()
-    )
-    if scenario_label is None or scenario_label not in set(portfolio_by_scenario["scenario_label"]):
-        worst_idx = portfolio_by_scenario["sum_pnl_original"].idxmin()
-        scenario_label = str(portfolio_by_scenario.loc[worst_idx, "scenario_label"])
-
-    sub = clusters_df.loc[
-        clusters_df["scenario_label"].astype(str) == str(scenario_label),
-        ["cluster_id", "sum_pnl_original"],
-    ].copy()
-    if sub.empty:
-        return empty_cluster_waterfall()
-    sub["sum_pnl_original"] = sub["sum_pnl_original"].astype(float)
-
-    # Rank by |contribution| and split top_n vs rest.
-    sub = sub.assign(abs_pnl=sub["sum_pnl_original"].abs()).sort_values(
-        "abs_pnl", ascending=False,
-    )
-    top    = sub.head(top_n)
-    rest   = sub.iloc[top_n:]
-    other  = float(rest["sum_pnl_original"].sum()) if not rest.empty else 0.0
-    total  = float(sub["sum_pnl_original"].sum())
-
-    # Keep top bars in their |contribution| order so the biggest
-    # movers land at the LEFT (most-read position).
-    cluster_labels  = list(top["cluster_id"].astype(str))
-    cluster_values  = list(top["sum_pnl_original"].astype(float))
-    if not rest.empty:
-        cluster_labels.append(f"Other ({len(rest)} clusters)")
-        cluster_values.append(other)
-
-    # Waterfall measure: every cluster bar is relative; final bar is total.
-    measures = ["relative"] * len(cluster_values) + ["total"]
-    x_labels = [*cluster_labels, "Portfolio PnL"]
-    y_values = [*cluster_values, total]
-    text     = [f"{v:,.0f}" for v in y_values]
-
-    fig = go.Figure()
-    fig.add_trace(go.Waterfall(
-        name           = scenario_label,
-        orientation    = "v",
-        measure        = measures,
-        x              = x_labels,
-        y              = y_values,
-        text           = text,
-        textposition   = "outside",
-        textfont       = {"size": 10, "color": "#e2e8f0"},
-        connector      = {"line": {"color": rgba(_ZERO_LINE, 0.6)}},
-        increasing     = {"marker": {"color": _EMERALD}},
-        decreasing     = {"marker": {"color": _ROSE}},
-        totals         = {"marker": {"color": _VIOLET}},
-        hovertemplate  = "%{x}<br>Contribution: %{y:,.2f}<extra></extra>",
-    ))
-    fig.add_hline(
-        y=0,
-        line={"color": _ZERO_LINE, "width": 1, "dash": "dot"},
-    )
-    fig.update_layout(**rade_layout(
-        hovermode = "x",
-        margin    = {"l": 36, "r": 16, "t": 20, "b": 56},
-        xaxis     = {"title": "", "tickangle": -25, "automargin": True},
-        yaxis     = {"title": "PnL contribution (original units)"},
-    ))
-    return fig
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 2. Cluster tornado — magnitude-ranked sensitivity bars
-# ═════════════════════════════════════════════════════════════════════
-
-def build_cluster_tornado(
-    clusters_df: Optional[pd.DataFrame],
-    *,
-    top_n:       int = 12,
-) -> go.Figure:
-    """Horizontal bar chart of clusters ranked by |contribution|.
-
-    Same data source as the cluster donut but sorted by absolute
-    value (descending), so the biggest movers — regardless of sign —
-    land at the top of the chart.  Phase 4 swaps this for a true
-    risk-factor tornado once trade-RF mappings exist.
-
-    Parameters
-    ----------
-    clusters_df
-        Long-format cluster summary parquet.
-    top_n
-        Cap on visible bars.  Beyond this, the rest are aggregated
-        into an "Other" bar so the chart stays scannable.
-    """
-    agg = _aggregate_cluster_contributions(clusters_df)
-    if agg is None:
-        return empty_cluster_tornado()
-
-    agg = agg.assign(abs_pnl=agg["sum_pnl_original"].abs()).sort_values(
-        "abs_pnl", ascending=False,
-    )
-    top  = agg.head(top_n)
-    rest = agg.iloc[top_n:]
-    rows = list(top[["cluster_id", "sum_pnl_original"]].itertuples(index=False))
-    if not rest.empty:
-        rows.append(("Other (%d)" % len(rest), float(rest["sum_pnl_original"].sum())))
-
-    # Plotly horizontal bars draw bottom-up; reverse so biggest is on top.
-    rows = list(reversed(rows))
-    y_labels = [str(r[0]) for r in rows]
-    x_values = [float(r[1]) for r in rows]
-    colors   = [_EMERALD if v >= 0 else _ROSE for v in x_values]
-
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x             = x_values,
-        y             = y_labels,
-        orientation   = "h",
-        marker        = {"color": colors, "opacity": 0.9},
-        text          = [f"{v:,.0f}" for v in x_values],
-        textposition  = "outside",
-        textfont      = {"size": 10, "color": "#cbd5e1"},
-        hovertemplate = "%{y}<br>Contribution: %{x:,.2f}<extra></extra>",
-    ))
-    fig.add_vline(
-        x=0,
-        line={"color": _ZERO_LINE, "width": 1, "dash": "dot"},
-    )
-    fig.update_layout(**rade_layout(
-        hovermode = "y",
-        margin    = {"l": 140, "r": 56, "t": 8, "b": 36},
-        xaxis     = {"title": "Contribution (original units)"},
-        yaxis     = {"title": "", "automargin": True},
-    ))
-    return fig
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 3. Cluster donut — single-ring contribution breakdown
-# ═════════════════════════════════════════════════════════════════════
-
-def build_cluster_donut(
-    clusters_df: Optional[pd.DataFrame],
-    *,
-    top_n:       int = 8,
-) -> go.Figure:
-    """Donut of |contribution| share per cluster, slice-coloured by sign.
-
-    Phase 0 deliberately stays single-ring; Phase 4 upgrades to the
-    full RF-group / trade-type / cluster sunburst once Phase 2's
-    trade attribute API lands.
-
-    Parameters
-    ----------
-    clusters_df
-        Long-format cluster summary parquet.
-    top_n
-        Slice count cap.  The rest are folded into a single "Other"
-        slice so the chart doesn't degenerate into a hairline pie on
-        large portfolios.
-    """
-    agg = _aggregate_cluster_contributions(clusters_df)
-    if agg is None:
-        return empty_cluster_donut()
-
-    agg = agg.assign(abs_pnl=agg["sum_pnl_original"].abs()).sort_values(
-        "abs_pnl", ascending=False,
-    )
-    top  = agg.head(top_n)
-    rest = agg.iloc[top_n:]
-
-    labels:  list[str]   = list(top["cluster_id"].astype(str))
-    signed:  list[float] = list(top["sum_pnl_original"].astype(float))
-    values:  list[float] = list(top["abs_pnl"].astype(float))
-    if not rest.empty:
-        labels.append(f"Other ({len(rest)})")
-        signed.append(float(rest["sum_pnl_original"].sum()))
-        values.append(float(rest["abs_pnl"].sum()))
-
-    if not values or sum(values) <= 0:
-        return empty_cluster_donut()
-
-    colors = [_EMERALD if s >= 0 else _ROSE for s in signed]
-
-    fig = go.Figure()
-    fig.add_trace(go.Pie(
-        labels        = labels,
-        values        = values,
-        customdata    = [[s] for s in signed],
-        hole          = 0.55,
-        sort          = False,
-        marker        = {"colors": colors, "line": {"color": "#0f172a", "width": 1}},
-        textinfo      = "label+percent",
-        textfont      = {"size": 11, "color": "#e2e8f0"},
-        hovertemplate = (
-            "%{label}<br>"
-            "|Contribution|: %{value:,.2f}<br>"
-            "Signed: %{customdata[0]:,.2f}"
-            "<extra></extra>"
-        ),
-    ))
-    total_signed = float(sum(signed))
-    fig.update_layout(
-        **rade_layout(
-            show_legend = False,
-            margin      = {"l": 8, "r": 8, "t": 8, "b": 8},
-        ),
-        annotations = [
-            {
-                "text":      (
-                    f"<b>{total_signed:,.0f}</b><br>"
-                    f"<span style='font-size:11px;color:#94a3b8'>"
-                    f"net contribution</span>"
-                ),
-                "showarrow": False,
-                "x":         0.5, "y": 0.5,
-                "font":      {"size": 18, "color": "#e2e8f0"},
-            },
-        ],
-    )
-    return fig
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 4. KPI helpers (stats only — the tile DOM is built in the callback)
-# ═════════════════════════════════════════════════════════════════════
-
-def compute_tail_stats(
-    portfolio_df: Optional[pd.DataFrame],
-    *,
-    var_quantile: float = 0.05,
-) -> dict[str, Optional[float]]:
-    """Compute VaR / CVaR / skew / excess-kurtosis on portfolio PnL.
-
-    Single-shot helper so the callback doesn't have to duplicate the
-    quantile / mean / scipy-equivalents arithmetic.  Returns a dict
-    keyed by metric name with ``None`` for any metric we can't
-    derive from the input (e.g. empty frame).
-    """
-    pnl = _portfolio_pnl(portfolio_df)
-    if pnl is None or pnl.empty:
-        return {"var": None, "cvar": None, "skew": None, "kurt": None}
-
-    var_value  = float(pnl.quantile(var_quantile))
-    mask       = pnl <= var_value
-    cvar_value = float(pnl[mask].mean()) if mask.any() else var_value
-    # Pandas' ``skew`` / ``kurtosis`` use the bias-corrected
-    # Fisher-Pearson estimators — same convention as scipy.stats so
-    # downstream comparisons match.  Excess kurtosis ⇒ Gaussian = 0.
-    skew_value = float(pnl.skew()) if len(pnl) > 2 else None
-    kurt_value = float(pnl.kurtosis()) if len(pnl) > 3 else None
-
-    return {
-        "var":  var_value,
-        "cvar": cvar_value,
-        "skew": skew_value,
-        "kurt": kurt_value,
-    }
-
-
-def compute_tail_table(
-    portfolio_df: Optional[pd.DataFrame],
-    clusters_df:  Optional[pd.DataFrame],
-    *,
-    n:            int = 10,
-    var_quantile: float = 0.05,
-) -> pd.DataFrame:
-    """Build the tail-conditional table — the worst-N scenarios.
-
-    Columns (Phase 0 — what we can compute without Phase 2 attrs):
-
-    * ``scenario_label`` — scenario identifier (string).
-    * ``portfolio_pnl`` — total PnL for the scenario.
-    * ``top_cluster`` — cluster with the largest negative contribution.
-    * ``top_cluster_pnl`` — that cluster's contribution to this scenario.
-    * ``var_contribution_pct`` — |scenario_pnl| / |CVaR| × 100, for
-      colour-bar shading in the UI.
-
-    Phase 4 swaps in ``top_rf`` and ``top_trade_type`` columns once
-    the trade-attribute API ships.
-    """
-    pnl = _portfolio_pnl(portfolio_df)
-    if pnl is None or pnl.empty or "scenario_label" not in portfolio_df.columns:
-        return pd.DataFrame(columns=[
-            "scenario_label", "portfolio_pnl",
-            "top_cluster", "top_cluster_pnl",
-            "var_contribution_pct",
-        ])
-
-    portfolio_sub = portfolio_df[["scenario_label", "sum_pnl_original"]].copy()
-    portfolio_sub.columns = ["scenario_label", "portfolio_pnl"]
-    portfolio_sub = portfolio_sub.nsmallest(n, "portfolio_pnl")
-
-    # Per-scenario worst cluster (most negative contribution).
-    top_cluster_lookup: dict[str, tuple[str, float]] = {}
-    if clusters_df is not None and not clusters_df.empty and {
-        "cluster_id", "scenario_label", "sum_pnl_original",
-    }.issubset(clusters_df.columns):
-        cl = clusters_df[["cluster_id", "scenario_label", "sum_pnl_original"]]
-        cl = cl[cl["scenario_label"].isin(set(portfolio_sub["scenario_label"]))]
-        # idxmin per scenario → cluster_id with smallest sum_pnl_original.
-        for label, grp in cl.groupby("scenario_label", sort=False):
-            row = grp.loc[grp["sum_pnl_original"].idxmin()]
-            top_cluster_lookup[str(label)] = (
-                str(row["cluster_id"]),
-                float(row["sum_pnl_original"]),
-            )
-
-    portfolio_sub["top_cluster"] = portfolio_sub["scenario_label"].map(
-        lambda lbl: top_cluster_lookup.get(str(lbl), ("—", np.nan))[0]
-    )
-    portfolio_sub["top_cluster_pnl"] = portfolio_sub["scenario_label"].map(
-        lambda lbl: top_cluster_lookup.get(str(lbl), ("—", np.nan))[1]
-    )
-
-    # VaR-contribution % — gives the UI's mini-bar a 0–100 scale.
-    var_value = float(pnl.quantile(var_quantile))
-    cvar_mask = pnl <= var_value
-    cvar_abs  = abs(float(pnl[cvar_mask].mean())) if cvar_mask.any() else abs(var_value)
-    cvar_abs  = cvar_abs if cvar_abs > 0 else 1.0
-    portfolio_sub["var_contribution_pct"] = (
-        portfolio_sub["portfolio_pnl"].abs() / cvar_abs * 100.0
-    ).clip(lower=0.0, upper=200.0)
-
-    return portfolio_sub.reset_index(drop=True)
-
-
-__all__ = [
-    # Dispatchers
-    "build_cluster_waterfall",
-    "build_cluster_tornado",
-    "build_cluster_donut",
-    # Empty-state builders
-    "empty_cluster_waterfall",
-    "empty_cluster_tornado",
-    "empty_cluster_donut",
-    # KPI/stats helpers
-    "compute_tail_stats",
-    "compute_tail_table",
-]
+import pyarrow as pa
+import pyarrow.parquet as pq
+```
+
+Diff: `+ Tuple` in `typing` import, `+ import joblib`.
+
+---
+
+### Phase 3.1.2 — Schema-version constants
+
+Replace the existing schema-version block (just below imports) with:
+
+```python
+_PORTFOLIO_TIMESERIES_SCHEMA_VERSION = 3  # v3: +predictions_original / targets_original / *_original cols (Phase 3.1)
+_CLUSTER_TIMESERIES_SCHEMA_VERSION   = 3  # v3: +predictions_original / targets_original / *_original cols (Phase 3.1)
+_TRADE_METRICS_SCHEMA_VERSION = 1
+_ENSEMBLE_METRICS_SCHEMA_VERSION = 1
+_PER_MEMBER_METRICS_SCHEMA_VERSION = 1
+_GROUP_CORRELATIONS_SCHEMA_VERSION = 1
+_CLUSTER_ATTRIBUTES_SCHEMA_VERSION = 1
+_GRAPH_STATS_SCHEMA_VERSION = 1
+_COMPLETENESS_SCHEMA_VERSION = 1
+_FEATURE_SUMMARY_SCHEMA_VERSION = 1
+_TRADE_PREDICTIONS_SCHEMA_VERSION = 1     # Phase 3.1: per-cluster trade-level prediction parquets
+
+# Per-cluster trade-level family (Phase 3.1).  Mirrors the inference
+# pipeline's ``trade_predictions/<cid>_<space>.parquet`` layout but adds
+# a per-cluster subdirectory because eval emits one prediction matrix
+# per (cluster, split) pair, not one per run.
+_TRADE_PREDICTIONS_DIRNAME = "trade_predictions"
+
+# Manifest schema version — bumped to v2 to reflect the new
+# ``spaces_available`` / ``artifacts`` blocks that Phase 3.1 added.  v1
+# consumers (legacy) read the file as before — the extra keys are
+# additive and don't disturb the canonical entry points.
+_EVAL_MANIFEST_SCHEMA_VERSION = 2
 ```
 
 ---
 
-### C.2 — `src/ui/apps/rade_analytics/layouts/risk_management.py` (NEW)
+### Phase 3.1.3 — `_load_cluster_contexts` helper
+
+Insert **directly before** `_save_portfolio_timeseries_parquet` (which is currently the first function under the "Module-level helpers (stateless, no self)" block):
 
 ```python
-"""Risk Management page layout (Phase 0.4 skeleton).
+# ----------------------------------------------------------------------
+# Phase 3.1 — original-space helpers
+# ----------------------------------------------------------------------
 
-Top-level page for tail-risk decomposition and shock attribution.
-Phase 0 ships a real-data subset (KPIs, cluster waterfall, tornado,
-donut, tail table); Phase 4 then *upgrades* the same panels to true
-risk-factor / trade-type granularity once Phase 2's trade-attribute
-API lands.
+def _load_cluster_contexts(
+    config: EnsembleConfig,
+    member_versions: Optional[Dict[str, str]],
+) -> Dict[str, Any]:
+    """Build per-cluster ``InferenceContext`` instances for scaled→original transforms.
 
-Page anatomy
-------------
+    Only the two fields the inference-side ``transform_predictions`` static
+    helper reads are populated:
 
-* **Page header** — title + subtitle (page-mount-time copy).
-* **Run-info banner** — subtitle line populated with the
-  most-recent run ID / ensemble version once the auto-load
-  callback resolves the run.
-* **KPI strip** — four tiles (VaR / CVaR / Skewness /
-  Excess-kurtosis) computed from ``portfolio_predictions.parquet``.
-* **Cluster waterfall** — scenario-pinned P&L decomposition.
-  Defaults to the worst portfolio scenario; Phase 4 adds a scenario
-  picker.
-* **Tornado + donut grid** — clusters ranked by |contribution| on
-  the left, single-ring contribution donut on the right.
-* **Tail-conditional table** — top-N worst scenarios with
-  cluster-level enrichment columns.  ``top_rf`` / ``top_trade_type``
-  columns are placeholdered (``—``) until Phase 4 lands those data.
-* **Footer** — source manifest path (mirrors the Inference tab
-  footer line for visual continuity).
+    * ``target_scaler`` — sklearn-compatible scaler (with
+      ``feature_names_in_`` and ``inverse_transform``) loaded from each
+      member's ``target_scaler.pkl`` under the registry.
+    * ``target_attributes`` — dict carrying ``trade_id`` and
+      ``NotionalSign`` lists, loaded from ``target_attributes.json``.
 
-Data flow
----------
+    All other context fields stay ``None`` because eval doesn't need
+    graph builders / cluster assets / elementary PnL for the inverse
+    transform.
 
-Single mount-time callback (``callbacks/risk_management_cb._on_mount``)
-fetches the most-recent inference run via
-``backend.list_inference_runs()`` and writes its ``run_id`` into
-:data:`RISK_MANAGEMENT_IDS["run_meta_store"]`.  Every panel then
-hydrates from a follow-up callback that fetches portfolio + cluster
-parquets and renders KPIs / figures / table.
+    Clusters whose member-version artefacts are missing or unreadable
+    are silently dropped from the returned mapping with a warning;
+    downstream writers fall back to scaled-only output for those
+    clusters rather than failing the whole eval run.
 
-Design-spec anchors
--------------------
-* §1 — typography & palette (Inter UI text, JetBrains-Mono numerics,
-  violet → cyan brand).
-* §5 — page anatomy (KPI strip on top, hero chart, supporting grid,
-  tabular content, footer caption).
-* §6 — ``rade-card`` / ``rade-stress-mini-kpi`` shared utilities.
-* §11 — top-level nav taxonomy (Risk Management is a peer of
-  Overview, Evaluation, Inference, etc.).
-"""
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
-
-import dash_mantine_components as dmc
-from dash import dcc, html
-from dash_iconify import DashIconify
-
-from ..components.chart_container import ChartContainer
-from ..figures.risk_management_charts import (
-    empty_cluster_donut,
-    empty_cluster_tornado,
-    empty_cluster_waterfall,
-)
-
-if TYPE_CHECKING:
-    from ..data.session import Session
-
-
-# ─────────────────────────────────────────────────────────────────────
-# DOM identifiers — every dynamic id used by the page lives here so
-# callbacks never hard-code strings.
-# ─────────────────────────────────────────────────────────────────────
-
-RISK_MANAGEMENT_IDS: Dict[str, str] = {
-    "root":                 "risk-management-root",
-    "subtitle":             "risk-management-subtitle",
-
-    # Page-wide Store: ``{run_id, ensemble_version, generated_at, ...}``.
-    # Hydrated on page mount; every panel keys off it.
-    "run_meta_store":       "risk-management-run-meta-store",
-
-    # KPI tiles (4-card row at top of page).
-    "kpi_var_value":        "risk-management-kpi-var-value",
-    "kpi_cvar_value":       "risk-management-kpi-cvar-value",
-    "kpi_skew_value":       "risk-management-kpi-skew-value",
-    "kpi_kurt_value":       "risk-management-kpi-kurt-value",
-
-    # Hero chart — cluster-level P&L waterfall for the worst scenario.
-    "waterfall_chart":      "risk-management-waterfall-chart",
-    "waterfall_caption":    "risk-management-waterfall-caption",
-
-    # Supporting grid — magnitude-ranked tornado + signed donut.
-    "tornado_chart":        "risk-management-tornado-chart",
-    "donut_chart":          "risk-management-donut-chart",
-
-    # Tail-conditional table — populated by the callback.
-    "tail_table_container": "risk-management-tail-table-container",
-
-    # Footer — source manifest line.
-    "footer_caption":       "risk-management-footer-caption",
-}
-
-
-_PLACEHOLDER: str = "—"
-
-
-_PAGE_SUBTITLE_DEFAULT: str = (
-    "Tail-risk decomposition & shock attribution — auto-loaded "
-    "from the most recent inference run."
-)
-
-
-# ─────────────────────────────────────────────────────────────────────
-# KPI strip — small label-over-value tiles (NOT the spark KpiCard).
-# ─────────────────────────────────────────────────────────────────────
-
-
-def _kpi_tile(label: str, value_id: str) -> html.Div:
-    """One KPI tile (label + big mono value).
-
-    Uses ``rade-stress-mini-kpi`` styling for visual continuity with
-    the Inference page's stress tiles; the parent grid lays four of
-    them in a row.
+    Resolution of ``member_versions``: prefers the explicit argument, then
+    falls back to ``config.metadata["job"]["member_versions"]`` — mirrors
+    the fallback chain in :func:`_load_scenario_labels_by_split` so legacy
+    runs with implicit member versioning still work.
     """
-    return html.Div(
-        className="rade-stress-mini-kpi",
-        children=[
-            html.Div(label.upper(), className="rade-stress-mini-label"),
-            html.Div(
-                _PLACEHOLDER,
-                id=value_id,
-                className="rade-stress-mini-value font-mono",
-            ),
-        ],
-    )
-
-
-def _kpi_strip() -> html.Div:
-    return html.Div(
-        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3",
-        children=[
-            _kpi_tile("VaR (95%)",     RISK_MANAGEMENT_IDS["kpi_var_value"]),
-            _kpi_tile("CVaR (95%)",    RISK_MANAGEMENT_IDS["kpi_cvar_value"]),
-            _kpi_tile("Skewness",      RISK_MANAGEMENT_IDS["kpi_skew_value"]),
-            _kpi_tile("Excess kurtosis", RISK_MANAGEMENT_IDS["kpi_kurt_value"]),
-        ],
-    )
-
-
-# ─────────────────────────────────────────────────────────────────────
-# Cards — waterfall (hero), tornado + donut (supporting), tail table
-# ─────────────────────────────────────────────────────────────────────
-
-
-def _waterfall_card() -> html.Div:
-    return html.Div(
-        className="flex flex-col gap-2",
-        children=[
-            ChartContainer(
-                title="P&L decomposition — by cluster",
-                subtitle=(
-                    "How each cluster contributes to the portfolio total "
-                    "for the worst scenario in the run.  Phase 4 swaps "
-                    "this for a risk-factor-level waterfall."
-                ),
-                graph_id=RISK_MANAGEMENT_IDS["waterfall_chart"],
-                figure=empty_cluster_waterfall(),
-                height=360,
-                actions=[
-                    html.Div(
-                        id=RISK_MANAGEMENT_IDS["waterfall_caption"],
-                        className="text-[11px] text-slate-500 italic",
-                        children="Awaiting run — scenario pin appears once data loads.",
-                    ),
-                ],
-            ),
-        ],
-    )
-
-
-def _tornado_card() -> html.Div:
-    return ChartContainer(
-        title="Cluster sensitivity",
-        subtitle=(
-            "Clusters ranked by absolute contribution across all "
-            "scenarios.  Sign-coloured: emerald = positive, rose = "
-            "negative."
-        ),
-        graph_id=RISK_MANAGEMENT_IDS["tornado_chart"],
-        figure=empty_cluster_tornado(),
-        height=360,
-    )
-
-
-def _donut_card() -> html.Div:
-    return ChartContainer(
-        title="Contribution share",
-        subtitle=(
-            "|Contribution| share per cluster; signed colour. "
-            "Phase 4 nests this into a three-ring "
-            "RF-group → trade-type → cluster sunburst."
-        ),
-        graph_id=RISK_MANAGEMENT_IDS["donut_chart"],
-        figure=empty_cluster_donut(),
-        height=360,
-    )
-
-
-def _tornado_donut_row() -> html.Div:
-    return html.Div(
-        className="grid grid-cols-1 lg:grid-cols-2 gap-3",
-        children=[
-            html.Div(className="min-w-0", children=[_tornado_card()]),
-            html.Div(className="min-w-0", children=[_donut_card()]),
-        ],
-    )
-
-
-def _tail_table_placeholder() -> List[Any]:
-    return [
-        html.Div("Tail-conditional table",
-                 className="text-sm font-semibold text-slate-200"),
-        html.Div(
-            "Scenarios at or below the 5th-percentile portfolio loss. "
-            "``Top RF`` and ``Top trade type`` columns light up in "
-            "Phase 4 once trade attributes are exposed.",
-            className="text-xs text-slate-500",
-        ),
-        html.Div(
-            "Awaiting inference run — the table will appear here.",
-            className="text-xs text-slate-500 italic px-2 py-3",
-        ),
-    ]
-
-
-def _tail_table_card() -> html.Div:
-    return html.Div(
-        id=RISK_MANAGEMENT_IDS["tail_table_container"],
-        className="rade-card flex flex-col gap-2 min-w-0",
-        children=_tail_table_placeholder(),
-    )
-
-
-# ─────────────────────────────────────────────────────────────────────
-# Page composition
-# ─────────────────────────────────────────────────────────────────────
-
-
-def _page_header() -> html.Div:
-    """Title row mirrored on every Rade top-level page."""
-    return html.Div(
-        className="flex flex-col gap-1 mb-2",
-        children=[
-            html.Div(
-                "Risk Management",
-                className="text-2xl font-semibold text-slate-100",
-            ),
-            html.Div(
-                _PAGE_SUBTITLE_DEFAULT,
-                id=RISK_MANAGEMENT_IDS["subtitle"],
-                className="text-sm text-slate-400",
-            ),
-        ],
-    )
-
-
-def _page_footer() -> html.Div:
-    """Subtle source-of-truth line at page bottom.
-
-    Hydrated by the auto-load callback to show the inference run's
-    manifest path; placeholder text until then.
-    """
-    return html.Div(
-        className="flex justify-end mt-6",
-        children=[
-            html.Span(
-                "Source: awaiting inference run …",
-                id=RISK_MANAGEMENT_IDS["footer_caption"],
-                className="text-xs text-slate-500 font-mono",
-            ),
-        ],
-    )
-
-
-def _page_stores() -> List[Any]:
-    """``dcc.Store`` instances driving the page's state."""
-    return [
-        dcc.Store(
-            id=RISK_MANAGEMENT_IDS["run_meta_store"],
-            data=None,
-            storage_type="memory",
-        ),
-    ]
-
-
-def build_risk_management(
-    *,
-    session: Optional["Session"] = None,
-) -> html.Div:
-    """Compose the Risk Management page.
-
-    Follows Page Contract §2.1 (uniform ``build_*(session=...)``
-    signature); ``session`` is accepted for parity with every other
-    page builder and is currently unused — the page hydrates entirely
-    from the API rather than the session store.
-    """
-    del session  # unused — page loads its own most-recent run
-
-    return html.Div(
-        id=RISK_MANAGEMENT_IDS["root"],
-        className="rade-page flex flex-col gap-4 p-4",
-        children=[
-            *_page_stores(),
-            _page_header(),
-            _kpi_strip(),
-            _waterfall_card(),
-            _tornado_donut_row(),
-            _tail_table_card(),
-            _page_footer(),
-        ],
-    )
-
-
-__all__ = [
-    "RISK_MANAGEMENT_IDS",
-    "build_risk_management",
-]
-```
-
----
-
-### C.3 — `src/ui/apps/rade_analytics/callbacks/risk_management_cb.py` (NEW)
-
-```python
-"""Risk Management page callbacks (Phase 0.4 skeleton).
-
-Two callbacks drive the page:
-
-1. **on_mount** — fires when the URL hits ``/risk-management``.
-   Resolves the most-recent inference run via
-   ``backend.list_inference_runs()`` and writes its meta into
-   :data:`RISK_MANAGEMENT_IDS["run_meta_store"]`.  Pre-empts the
-   page render's empty-state with a real run_id reference.
-
-2. **hydrate** — fires on ``run_meta_store`` writes.  Fetches the
-   manifest + portfolio + cluster parquets, computes VaR / CVaR /
-   skew / kurtosis from the portfolio frame, and emits real figures
-   for the waterfall / tornado / donut, plus the tail-conditional
-   table.
-
-Auto-pinning
-------------
-
-Phase 0 deliberately ships *without* run-picker or scenario-picker
-controls.  The page always auto-resolves to the most-recent run and
-the worst-portfolio-loss scenario inside that run.  Phase 4 swaps
-both for real interactive controls when the Risk Management tab
-becomes a first-class drill-down surface.
-
-Tail-table shape
-----------------
-
-The tail table renders five columns today (``Scenario``, ``Date``,
-``Portfolio PnL``, ``Top cluster``, ``VaR contribution``); Phase 4
-appends ``Top RF`` and ``Top trade type`` once trade attributes are
-exposed by Phase 2.  The placeholder em-dash cells today hint at
-where those values will appear so the user gets a stable visual
-shape across the upgrade.
-"""
-from __future__ import annotations
-
-import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
-
-import pandas as pd
-from dash import Input, Output, html
-from dash.exceptions import PreventUpdate
-
-from ..figures.risk_management_charts import (
-    build_cluster_donut,
-    build_cluster_tornado,
-    build_cluster_waterfall,
-    compute_tail_stats,
-    compute_tail_table,
-    empty_cluster_donut,
-    empty_cluster_tornado,
-    empty_cluster_waterfall,
-)
-from ..layouts.risk_management import RISK_MANAGEMENT_IDS
-from ..layouts.shell import SHELL_IDS
-
-if TYPE_CHECKING:
-    from dash import Dash
-
-    from ..data.backend import RadeBackend
-
-
-logger = logging.getLogger(__name__)
-
-
-# ─────────────────────────────────────────────────────────────────────
-# Constants
-# ─────────────────────────────────────────────────────────────────────
-
-_PLACEHOLDER:        str = "—"
-_RISK_MGMT_ROUTE:    str = "/risk-management"
-
-
-# ─────────────────────────────────────────────────────────────────────
-# Public entry point
-# ─────────────────────────────────────────────────────────────────────
-
-def register(app: "Dash", backend: "RadeBackend") -> None:
-    """Attach the Risk Management callbacks to ``app``.
-
-    Mirrors the Inference page's capture/render split: one callback
-    writes the run-meta Store, a second hydrates every panel from it.
-    """
-    _register_on_mount(app, backend)
-    _register_hydrate(app, backend)
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 1. on_mount — URL hits /risk-management → resolve most recent run
-# ═════════════════════════════════════════════════════════════════════
-
-def _register_on_mount(app: "Dash", backend: "RadeBackend") -> None:
-    """Resolve the most-recent inference run on page mount.
-
-    Idempotent on the API side (a no-op when no runs exist).  We
-    surface the empty case to the user by leaving the placeholder
-    subtitle in place; the hydrate callback won't fire either, so
-    the page reads as "nothing to show yet" rather than crashing
-    on missing data.
-    """
-
-    @app.callback(
-        Output(RISK_MANAGEMENT_IDS["run_meta_store"], "data"),
-        Output(RISK_MANAGEMENT_IDS["subtitle"],       "children"),
-        Input(SHELL_IDS["url"],                       "pathname"),
-        prevent_initial_call=False,
-    )
-    def _on_mount(
-        pathname: Optional[str],
-    ) -> Tuple[Optional[Dict[str, Any]], Any]:
-        if pathname != _RISK_MGMT_ROUTE:
-            raise PreventUpdate
-
-        runs_res = backend.list_inference_runs()
-        if not runs_res.ok or runs_res.data is None or not runs_res.data.runs:
-            logger.info(
-                "Risk Management mount: no inference runs available "
-                "(error=%s).",
-                runs_res.error,
-            )
-            return None, _empty_subtitle()
-
-        latest = runs_res.data.runs[0]
-        meta: Dict[str, Any] = {
-            "run_id":           latest.run_id,
-            "ensemble_version": latest.ensemble_version,
-            "generated_at":     latest.generated_at,
-            "n_scenarios":      latest.n_scenarios,
-            "n_clusters":       latest.n_clusters,
-            "manifest_path":    latest.manifest_path,
-        }
-        return meta, _populated_subtitle(meta)
-
-
-def _empty_subtitle() -> str:
-    return (
-        "No inference runs available yet — run the Inference Console "
-        "to populate this page."
-    )
-
-
-def _populated_subtitle(meta: Dict[str, Any]) -> Any:
-    """Subtitle line shown once a run is resolved."""
-    parts = [
-        html.Span("Run ", className="text-slate-500"),
-        html.Span(str(meta.get("run_id") or _PLACEHOLDER),
-                  className="font-mono text-violet-300"),
-        html.Span(" · ensemble ", className="text-slate-500"),
-        html.Span(str(meta.get("ensemble_version") or _PLACEHOLDER),
-                  className="font-mono text-slate-300"),
-    ]
-    n_scenarios = meta.get("n_scenarios")
-    if n_scenarios:
-        parts.extend([
-            html.Span(" · ", className="text-slate-500"),
-            html.Span(f"{int(n_scenarios):,} scenarios",
-                      className="text-slate-300"),
-        ])
-    return html.Span(parts)
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 2. hydrate — run_meta_store → KPIs + figures + tail table + footer
-# ═════════════════════════════════════════════════════════════════════
-
-def _register_hydrate(app: "Dash", backend: "RadeBackend") -> None:
-    """Fetch portfolio + cluster parquets and paint every panel."""
-
-    @app.callback(
-        # KPI strip (4 values)
-        Output(RISK_MANAGEMENT_IDS["kpi_var_value"],   "children"),
-        Output(RISK_MANAGEMENT_IDS["kpi_cvar_value"],  "children"),
-        Output(RISK_MANAGEMENT_IDS["kpi_skew_value"],  "children"),
-        Output(RISK_MANAGEMENT_IDS["kpi_kurt_value"],  "children"),
-        # Three figures
-        Output(RISK_MANAGEMENT_IDS["waterfall_chart"], "figure"),
-        Output(RISK_MANAGEMENT_IDS["tornado_chart"],   "figure"),
-        Output(RISK_MANAGEMENT_IDS["donut_chart"],     "figure"),
-        # Hero chart caption
-        Output(RISK_MANAGEMENT_IDS["waterfall_caption"], "children"),
-        # Tail table
-        Output(RISK_MANAGEMENT_IDS["tail_table_container"], "children"),
-        # Footer source line
-        Output(RISK_MANAGEMENT_IDS["footer_caption"], "children"),
-        Input(RISK_MANAGEMENT_IDS["run_meta_store"], "data"),
-        prevent_initial_call=False,
-    )
-    def _hydrate(
-        run_meta: Optional[Dict[str, Any]],
-    ) -> Tuple[Any, ...]:
-        empty_returns: Tuple[Any, ...] = (
-            _PLACEHOLDER, _PLACEHOLDER, _PLACEHOLDER, _PLACEHOLDER,
-            empty_cluster_waterfall(),
-            empty_cluster_tornado(),
-            empty_cluster_donut(),
-            "Awaiting run — scenario pin appears once data loads.",
-            _tail_table_placeholder(),
-            "Source: awaiting inference run …",
+    # Local import keeps the torch-transitive cost out of module load —
+    # eval's lightweight metrics-only branch never hits this code path.
+    from src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer import InferenceContext
+
+    if not member_versions:
+        member_versions = (
+            config.metadata.get("job", {}).get("member_versions", {}) or {}
         )
+    if not isinstance(member_versions, dict):
+        return {}
 
-        if not run_meta:
-            return empty_returns
-        run_id = run_meta.get("run_id")
-        if not run_id:
-            return empty_returns
+    contexts: Dict[str, Any] = {}
+    for cid in config.cluster_ids:
+        member_version = member_versions.get(cid)
+        if not member_version:
+            continue
+        version_dir = Path(config.registry_dir) / str(member_version)
+        scaler_path = version_dir / "target_scaler.pkl"
+        attrs_path  = version_dir / "target_attributes.json"
 
-        # Data-plane fetches.  Both calls are cached at the backend
-        # layer so a route flip back to the page doesn't trigger
-        # re-reads.
-        portfolio_res = backend.inference_portfolio_df(run_id)
-        clusters_res  = backend.inference_clusters_df(run_id)
-
-        if not portfolio_res.ok or portfolio_res.data is None:
+        if not scaler_path.exists() or not attrs_path.exists():
             logger.warning(
-                "Risk Management hydrate: portfolio fetch failed for "
-                "%s: %s", run_id, portfolio_res.error,
+                "Original-space artefacts skipped for cluster '%s' — missing "
+                "target_scaler.pkl or target_attributes.json under %s",
+                cid, version_dir,
             )
-            return empty_returns
+            continue
 
-        portfolio_df = portfolio_res.data
-        clusters_df  = (
-            clusters_res.data
-            if clusters_res.ok and clusters_res.data is not None
-            else pd.DataFrame()
+        try:
+            scaler = joblib.load(scaler_path)
+        except Exception as exc:
+            logger.warning(
+                "Could not load target_scaler.pkl for cluster '%s': %s — "
+                "original-space skipped.", cid, exc,
+            )
+            continue
+        try:
+            with open(attrs_path) as f:
+                attrs = json.load(f)
+        except Exception as exc:
+            logger.warning(
+                "Could not load target_attributes.json for cluster '%s': %s — "
+                "original-space skipped.", cid, exc,
+            )
+            continue
+
+        contexts[cid] = InferenceContext(
+            target_scaler     = scaler,
+            target_attributes = attrs,
         )
 
-        # --- KPI strip ----------------------------------------------
-        stats = compute_tail_stats(portfolio_df)
-        var_txt  = _format_currency(stats["var"])
-        cvar_txt = _format_currency(stats["cvar"])
-        skew_txt = _format_signed(stats["skew"], digits=2)
-        kurt_txt = _format_signed(stats["kurt"], digits=2)
-
-        # --- Waterfall ----------------------------------------------
-        worst_scenario = _resolve_worst_scenario(portfolio_df)
-        waterfall_fig  = build_cluster_waterfall(
-            clusters_df,
-            scenario_label=worst_scenario,
-        )
-        waterfall_caption = _waterfall_caption_text(
-            portfolio_df,
-            worst_scenario,
-        )
-
-        # --- Tornado + donut -----------------------------------------
-        tornado_fig = build_cluster_tornado(clusters_df)
-        donut_fig   = build_cluster_donut(clusters_df)
-
-        # --- Tail table ----------------------------------------------
-        tail_df = compute_tail_table(portfolio_df, clusters_df, n=10)
-        tail_card = _tail_table_card_body(tail_df, stats=stats)
-
-        # --- Footer --------------------------------------------------
-        footer = _format_footer(run_meta)
-
-        return (
-            var_txt, cvar_txt, skew_txt, kurt_txt,
-            waterfall_fig, tornado_fig, donut_fig,
-            waterfall_caption,
-            tail_card,
-            footer,
-        )
-
-
-# ─────────────────────────────────────────────────────────────────────
-# Formatting helpers
-# ─────────────────────────────────────────────────────────────────────
-
-def _format_currency(value: Optional[float], *, digits: int = 0) -> str:
-    """Pretty-print a PnL-style number; ``—`` for missing/NaN."""
-    if value is None:
-        return _PLACEHOLDER
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return _PLACEHOLDER
-    if pd.isna(v):
-        return _PLACEHOLDER
-    return f"{v:,.{digits}f}"
-
-
-def _format_signed(value: Optional[float], *, digits: int = 2) -> str:
-    """Pretty-print a unitless statistic (e.g. skew, kurt); ``—`` if NaN."""
-    if value is None:
-        return _PLACEHOLDER
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return _PLACEHOLDER
-    if pd.isna(v):
-        return _PLACEHOLDER
-    return f"{v:+.{digits}f}"
-
-
-def _resolve_worst_scenario(portfolio_df: pd.DataFrame) -> Optional[str]:
-    """Find the worst-portfolio-loss scenario label.
-
-    Returns ``None`` for an empty / malformed frame so the figure
-    builder can fall back to its empty placeholder.
-    """
-    if (
-        portfolio_df is None
-        or portfolio_df.empty
-        or "sum_pnl_original" not in portfolio_df.columns
-        or "scenario_label" not in portfolio_df.columns
-    ):
-        return None
-    worst_idx = portfolio_df["sum_pnl_original"].idxmin()
-    return str(portfolio_df.loc[worst_idx, "scenario_label"])
-
-
-def _waterfall_caption_text(
-    portfolio_df: pd.DataFrame,
-    worst_scenario: Optional[str],
-) -> Any:
-    """One-line note under the waterfall stating the pinned scenario."""
-    if worst_scenario is None:
-        return "Awaiting run — scenario pin appears once data loads."
-    if (
-        portfolio_df is None
-        or portfolio_df.empty
-        or "scenario_label" not in portfolio_df.columns
-    ):
-        return f"Pinned: {worst_scenario}"
-    row = portfolio_df.loc[
-        portfolio_df["scenario_label"].astype(str) == str(worst_scenario)
-    ]
-    if row.empty or "sum_pnl_original" not in row.columns:
-        return f"Pinned: {worst_scenario}"
-    total = float(row["sum_pnl_original"].iloc[0])
-    return html.Span([
-        html.Span("Pinned: ", className="text-slate-500"),
-        html.Span(str(worst_scenario), className="font-mono text-violet-300"),
-        html.Span(" · portfolio PnL ", className="text-slate-500"),
-        html.Span(
-            f"{total:,.0f}",
-            className="font-mono " + (
-                "text-rose-300" if total < 0 else "text-emerald-300"
-            ),
-        ),
-        html.Span(
-            " · Phase 4 enables scenario pick + RF-level decomposition.",
-            className="text-slate-600",
-        ),
-    ])
-
-
-def _format_footer(run_meta: Dict[str, Any]) -> str:
-    manifest_path = run_meta.get("manifest_path") or _PLACEHOLDER
-    return f"Source: {manifest_path}"
-
-
-# ─────────────────────────────────────────────────────────────────────
-# Tail table — HTML table builder
-# ─────────────────────────────────────────────────────────────────────
-
-def _tail_table_placeholder() -> List[Any]:
-    """Pre-run state — single-line italic note."""
-    return [
-        html.Div("Tail-conditional table",
-                 className="text-sm font-semibold text-slate-200"),
-        html.Div(
-            "Scenarios at or below the 5th-percentile portfolio loss. "
-            "``Top RF`` and ``Top trade type`` columns light up in "
-            "Phase 4 once trade attributes are exposed.",
-            className="text-xs text-slate-500",
-        ),
-        html.Div(
-            "Awaiting inference run — the table will appear here.",
-            className="text-xs text-slate-500 italic px-2 py-3",
-        ),
-    ]
-
-
-def _tail_table_card_body(
-    tail_df: pd.DataFrame,
-    *,
-    stats:   Dict[str, Optional[float]],
-) -> List[Any]:
-    """Populated tail table.
-
-    Five real columns (``Scenario``, ``Date``, ``PnL``, ``Top
-    cluster``, ``VaR contribution``) plus two placeholder columns
-    (``Top RF``, ``Top trade type``) rendered as em-dash so the
-    layout is stable when Phase 4 fills them.
-    """
-    header_block: List[Any] = [
-        html.Div("Tail-conditional table",
-                 className="text-sm font-semibold text-slate-200"),
-        html.Div(
-            f"Scenarios at or below the 5th-percentile portfolio loss · "
-            f"showing top {len(tail_df)} worst.",
-            className="text-xs text-slate-500",
-        ),
-    ]
-
-    if tail_df is None or tail_df.empty:
-        header_block.append(html.Div(
-            "No tail scenarios — portfolio PnL series did not yield any "
-            "below-quantile observations.",
-            className="text-xs text-slate-500 italic px-2 py-3",
-        ))
-        return header_block
-
-    header = html.Thead(html.Tr(className="rade-diag-header", children=[
-        html.Th("Scenario",
-            className="text-left  px-2 py-1.5 text-xs font-semibold text-slate-300"),
-        html.Th("Date",
-            className="text-left  px-2 py-1.5 text-xs font-semibold text-slate-300"),
-        html.Th("Portfolio PnL",
-            className="text-right px-2 py-1.5 text-xs font-semibold text-slate-300"),
-        html.Th("Top cluster",
-            className="text-left  px-2 py-1.5 text-xs font-semibold text-slate-300"),
-        html.Th("Cluster PnL",
-            className="text-right px-2 py-1.5 text-xs font-semibold text-slate-300"),
-        html.Th("Top RF",
-            className="text-left  px-2 py-1.5 text-xs font-semibold text-slate-500"),
-        html.Th("Top trade type",
-            className="text-left  px-2 py-1.5 text-xs font-semibold text-slate-500"),
-        html.Th("VaR contrib %",
-            className="text-right px-2 py-1.5 text-xs font-semibold text-slate-300"),
-    ]))
-
-    body_rows: List[Any] = []
-    for _, row in tail_df.iterrows():
-        scenario = str(row.get("scenario_label", ""))
-        date_str = _date_from_scenario_label(scenario)
-        pnl_value = float(row.get("portfolio_pnl") or 0.0)
-        top_cluster = str(row.get("top_cluster") or _PLACEHOLDER)
-        cluster_pnl = float(row.get("top_cluster_pnl") or 0.0) if pd.notna(row.get("top_cluster_pnl")) else None
-        var_pct = float(row.get("var_contribution_pct") or 0.0)
-
-        body_rows.append(html.Tr(
-            className="rade-diag-row border-t border-slate-800",
-            children=[
-                html.Td(scenario,
-                    className="rade-grid-mono px-2 py-1.5 text-xs text-violet-300",
-                ),
-                html.Td(date_str,
-                    className="px-2 py-1.5 text-xs text-slate-400",
-                ),
-                html.Td(f"{pnl_value:,.0f}",
-                    className=(
-                        "rade-grid-mono px-2 py-1.5 text-xs text-right " +
-                        ("text-rose-300" if pnl_value < 0 else "text-emerald-300")
-                    ),
-                ),
-                html.Td(top_cluster,
-                    className="rade-grid-mono px-2 py-1.5 text-xs text-slate-300",
-                ),
-                html.Td(
-                    f"{cluster_pnl:,.0f}" if cluster_pnl is not None else _PLACEHOLDER,
-                    className=(
-                        "rade-grid-mono px-2 py-1.5 text-xs text-right " +
-                        ("text-rose-300" if (cluster_pnl or 0) < 0 else "text-slate-400")
-                    ),
-                ),
-                html.Td(_PLACEHOLDER,
-                    className="px-2 py-1.5 text-xs text-slate-600 italic",
-                ),
-                html.Td(_PLACEHOLDER,
-                    className="px-2 py-1.5 text-xs text-slate-600 italic",
-                ),
-                html.Td(_var_contribution_cell(var_pct),
-                    className="px-2 py-1.5",
-                ),
-            ],
-        ))
-
-    table = html.Table(
-        className="w-full text-xs",
-        children=[header, html.Tbody(body_rows)],
-    )
-
-    return header_block + [
-        html.Div(
-            className="overflow-y-auto min-w-0",
-            style={"maxHeight": "360px"},
-            children=table,
-        ),
-    ]
-
-
-def _var_contribution_cell(pct: float) -> Any:
-    """Mini horizontal bar with the VaR-contribution percentage."""
-    width = max(0.0, min(pct, 100.0))
-    return html.Div(
-        className="flex items-center gap-2 justify-end",
-        children=[
-            html.Span(
-                f"{pct:.1f}%",
-                className="rade-grid-mono text-xs text-slate-300",
-            ),
-            html.Div(
-                className=(
-                    "h-1.5 rounded-full bg-slate-800 overflow-hidden"
-                ),
-                style={"width": "60px"},
-                children=html.Div(
-                    style={
-                        "width":      f"{width}%",
-                        "background": "#f43f5e",
-                        "height":     "100%",
-                    },
-                ),
-            ),
-        ],
-    )
-
-
-def _date_from_scenario_label(label: str) -> str:
-    """Best-effort date extraction from a scenario label.
-
-    Many of our scenario labels follow a ``yyyy-mm-dd``-shaped
-    convention (eval splits + new-scenario folder names from the
-    data pipeline).  If the input doesn't parse, we silently fall
-    back to ``—`` so the column reads cleanly across mixed schemes.
-    """
-    if not label:
-        return _PLACEHOLDER
-    try:
-        ts = pd.to_datetime(label, errors="coerce")
-    except Exception:  # pragma: no cover — defensive
-        return _PLACEHOLDER
-    if pd.isna(ts):
-        return _PLACEHOLDER
-    return ts.strftime("%Y-%m-%d")
-
-
-__all__ = ["register"]
+    return contexts
 ```
 
 ---
 
-### C.4 — Wiring diffs (three small edits)
+### Phase 3.1.4 — `_transform_cluster_to_original` helper
 
-#### C.4.1 — `src/ui/apps/rade_analytics/router.py`
-
-**Add to imports** (alongside the other `from .layouts.* import build_*` lines):
+Insert directly after `_load_cluster_contexts`:
 
 ```python
-from .layouts.risk_management import build_risk_management
+def _transform_cluster_to_original(
+    cluster_id:      str,
+    preds_2d:        np.ndarray,
+    targets_2d:      np.ndarray,
+    scenario_labels: List[str],
+    ctx:             Any,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Inverse-scale + notional-sign restore a single cluster's preds + targets.
+
+    Reuses :meth:`HybridGnnRnnInferencePipeline.transform_predictions` —
+    the single source of truth for the scaled→original transformation
+    chain across the codebase.  We call it twice (once for predictions,
+    once for targets) because the helper treats its array argument as
+    "predictions" and we need the same math applied to targets so the
+    eval-side ``predictions_original`` / ``targets_original`` columns
+    are computed identically to inference's per-cluster artefacts.
+
+    Returns
+    -------
+    preds_scaled_wide : pd.DataFrame
+        Shape ``[n_scenarios, n_trades]`` — model output in z-space.
+        Suitable for direct parquet write as ``<cid>/{split}_scaled.parquet``.
+    preds_original_wide : pd.DataFrame
+        Same shape — inverse-scaled + notional-sign-restored predictions.
+        Suitable for direct parquet write as ``<cid>/{split}_original.parquet``.
+    targets_original_wide : pd.DataFrame
+        Same shape — inverse-scaled + notional-sign-restored targets.
+        **Not** persisted at trade level (mirrors inference, which has no
+        targets at all); used only to compute aggregate
+        ``targets_original`` columns for the cluster / portfolio
+        timeseries parquets.
+    """
+    from src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer import (
+        HybridGnnRnnInferencePipeline,
+    )
+
+    preds_scaled_wide, preds_original_wide, _ = (
+        HybridGnnRnnInferencePipeline.transform_predictions(
+            cluster_id      = cluster_id,
+            cluster_preds   = preds_2d,
+            scenario_labels = scenario_labels,
+            ctx             = ctx,
+        )
+    )
+    _, targets_original_wide, _ = (
+        HybridGnnRnnInferencePipeline.transform_predictions(
+            cluster_id      = cluster_id,
+            cluster_preds   = targets_2d,
+            scenario_labels = scenario_labels,
+            ctx             = ctx,
+        )
+    )
+    return preds_scaled_wide, preds_original_wide, targets_original_wide
 ```
 
-**Add to the `ROUTES` dict**, after the existing `/inference` entry:
+---
+
+### Phase 3.1.5 — `_save_trade_predictions_parquet` helper
+
+Insert directly after `_transform_cluster_to_original`:
 
 ```python
-"/risk-management": PageSpec(
-    path="/risk-management",
-    title="Risk Management",
-    build=build_risk_management,
-),
+def _save_trade_predictions_parquet(
+    eval_dir:       Path,
+    cluster_id:     str,
+    split:          str,
+    *,
+    scaled_wide:    pd.DataFrame,
+    original_wide:  pd.DataFrame,
+) -> Tuple[Path, Path]:
+    """Write a cluster's trade-level prediction matrix in both spaces.
+
+    Layout (Phase 3.1) ::
+
+        trade_predictions/{cluster_id}/
+            {split}_scaled.parquet     # [scenarios × trade_ids] z-space
+            {split}_original.parquet   # [scenarios × trade_ids] notional units
+
+    Mirrors the inference pipeline's
+    ``trade_predictions/<cid>_<space>.parquet`` family with an extra
+    ``{cluster_id}/`` directory level because eval emits one matrix per
+    (cluster, split) pair, not one per run.  Wide format
+    (scenarios as rows, trade IDs as columns) matches inference exactly,
+    so the dashboard's per-cluster trade drill-down can use the same
+    parquet-reader code path across the two pipelines.
+
+    Returns the (scaled_path, original_path) tuple so the caller can
+    record both in the run manifest.
+    """
+    out_dir = eval_dir / _TRADE_PREDICTIONS_DIRNAME / cluster_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    scaled_path   = out_dir / f"{split}_scaled.parquet"
+    original_path = out_dir / f"{split}_original.parquet"
+
+    scaled_wide.to_parquet(scaled_path)
+    original_wide.to_parquet(original_path)
+
+    return scaled_path, original_path
 ```
 
-#### C.4.2 — `src/ui/apps/rade_analytics/components/sidebar.py`
+---
 
-**Insert into the `NAV_ITEMS` list**, after the `/inference` entry:
+### Phase 3.1.6 — Widen `_save_portfolio_timeseries_parquet`
+
+**Signature + docstring**: replace just the signature line and the existing v2 docstring with the v3 versions below. The body changes only in the frame-construction block (see further down).
+
+OLD signature:
+```python
+def _save_portfolio_timeseries_parquet(
+    eval_dir: Path,
+    split: str,
+    preds_1d: np.ndarray,
+    targets_1d: np.ndarray,
+    scenario_labels: List[str],
+) -> None:
+```
+
+NEW signature:
+```python
+def _save_portfolio_timeseries_parquet(
+    eval_dir: Path,
+    split: str,
+    preds_1d: np.ndarray,
+    targets_1d: np.ndarray,
+    scenario_labels: List[str],
+    *,
+    preds_1d_original:   Optional[np.ndarray] = None,
+    targets_1d_original: Optional[np.ndarray] = None,
+) -> None:
+    """Write ``portfolio_timeseries_{split}.parquet`` (PRISM contract §11.15.2, B1).
+
+    Long-format columnar time series for portfolio-level predictions /
+    actuals, with precomputed error fields.  Replaces the legacy
+    ``portfolio_summary/{split}.npz`` for API consumption.
+
+    Schema (v3):
+
+    - ``scenario_idx``           int32   — 0-based within this split
+    - ``scenario_label``         string  — date-like label from elementary PnL index
+    - ``split``                  string  — "train" / "val" / "test"
+    - ``predictions``            float32 — portfolio predicted PnL (scaled space)
+    - ``targets``                float32 — portfolio actual PnL (scaled space)
+    - ``error``                  float32 — predictions − targets (scaled)
+    - ``abs_error``              float32 — |error|
+    - ``squared_error``          float32 — error²
+    - ``predictions_original``   float32 — portfolio predicted PnL in original (notional) units (Phase 3.1, NaN if no scaler)
+    - ``targets_original``       float32 — portfolio actual PnL in original units (Phase 3.1, NaN if no scaler)
+    - ``error_original``         float32 — predictions_original − targets_original (Phase 3.1)
+    - ``abs_error_original``     float32 — |error_original| (Phase 3.1)
+    - ``squared_error_original`` float32 — error_original² (Phase 3.1)
+
+    File-level metadata: ``_schema_version`` = ``3``, ``split``.
+
+    Schema-change history
+    ---------------------
+    v2: ``predicted`` → ``predictions``, ``actual`` → ``targets`` so the
+    column convention matches the per-member NPZ shards and the SQLite
+    ``portfolio_summary`` table downstream.
+
+    v3 (current, Phase 3.1): add five ``*_original`` columns carrying the
+    inverse-scaled + notional-sign-restored portfolio PnL.  The legacy
+    scaled columns are preserved unchanged for backwards compatibility;
+    readers that pre-date Phase 3.1 see the new columns as extras.  When
+    a caller can't compute original-space (no scaler for any cluster),
+    the new columns are filled with NaN — schema stays canonical.
+
+    Raises
+    ------
+    RuntimeError
+        If ``scenario_labels`` is non-empty but its length does not match
+        ``preds_1d``.  An empty ``scenario_labels`` list is treated as a
+        legacy-run fallback: positional labels (``str(i)``) are used.
+    """
+```
+
+**Frame-construction block**: replace the existing block that starts with `preds_f32 = preds_1d.astype(...)` through the closing `}).astype({...})` with:
 
 ```python
-NavItem("/risk-management", "Risk Management", "tabler:shield-half"),
+    preds_f32   = preds_1d.astype(np.float32, copy=False)
+    targets_f32 = targets_1d.astype(np.float32, copy=False)
+    error       = preds_f32 - targets_f32
+
+    # Original-space columns (Phase 3.1).  NaN-fill when the caller can't
+    # compute original-space — this keeps the schema canonical (v3) so
+    # readers always see the same column list and can detect "no
+    # original" via column-wide NaN rather than column-presence checks.
+    if preds_1d_original is not None and targets_1d_original is not None:
+        preds_orig_f32   = preds_1d_original.astype(np.float32, copy=False)
+        targets_orig_f32 = targets_1d_original.astype(np.float32, copy=False)
+    else:
+        preds_orig_f32   = np.full(n, np.nan, dtype=np.float32)
+        targets_orig_f32 = np.full(n, np.nan, dtype=np.float32)
+    error_orig = preds_orig_f32 - targets_orig_f32
+
+    df = pd.DataFrame({
+        "scenario_idx":            np.arange(n, dtype=np.int32),
+        "scenario_label":          labels,
+        "split":                   [split] * n,
+        "predictions":             preds_f32,
+        "targets":                 targets_f32,
+        "error":                   error,
+        "abs_error":               np.abs(error),
+        "squared_error":           error * error,
+        "predictions_original":    preds_orig_f32,
+        "targets_original":        targets_orig_f32,
+        "error_original":          error_orig,
+        "abs_error_original":      np.abs(error_orig),
+        "squared_error_original":  error_orig * error_orig,
+    }).astype({
+        "scenario_idx":            np.int32,
+        "scenario_label":          "string",
+        "split":                   "string",
+        "predictions":             np.float32,
+        "targets":                 np.float32,
+        "error":                   np.float32,
+        "abs_error":               np.float32,
+        "squared_error":           np.float32,
+        "predictions_original":    np.float32,
+        "targets_original":        np.float32,
+        "error_original":          np.float32,
+        "abs_error_original":      np.float32,
+        "squared_error_original":  np.float32,
+    })
 ```
 
-#### C.4.3 — `src/ui/apps/rade_analytics/callbacks/__init__.py`
+Everything below (the `table = pa.table(df)` block and the file-write block) stays unchanged — the bumped `_PORTFOLIO_TIMESERIES_SCHEMA_VERSION` from §3.1.2 propagates automatically.
 
-**Add to the `from . import (...)` block**:
+---
+
+### Phase 3.1.7 — Widen `_save_cluster_timeseries_parquet`
+
+**Signature + docstring**: replace just the signature and v2 docstring with the v3 versions:
 
 ```python
-from . import (
-    cluster_deep_dive_cb,
-    evaluation_cb,
-    inference_cb,
-    overview_cb,
-    portfolio_cb,
-    risk_management_cb,          # ← new
-    splash_cb,
-    trade_graph_cb,
-)
+def _save_cluster_timeseries_parquet(
+    eval_dir: Path,
+    split: str,
+    cluster_pred_sums: Dict[str, np.ndarray],
+    cluster_target_sums: Dict[str, np.ndarray],
+    scenario_labels: List[str],
+    *,
+    cluster_pred_sums_original:   Optional[Dict[str, np.ndarray]] = None,
+    cluster_target_sums_original: Optional[Dict[str, np.ndarray]] = None,
+) -> None:
+    """Write ``cluster_timeseries_{split}.parquet`` (PRISM contract §11.15.2, B2).
+
+    Long-format per-cluster × per-scenario portfolio sums.  One row per
+    ``(cluster_id, scenario_idx)``; replaces the wide-format
+    ``cluster_summary/{split}.npz`` for API consumption.
+
+    Schema (v3):
+
+    - ``cluster_id``             string  — e.g. "cluster_0"
+    - ``scenario_idx``           int32   — 0-based within this split
+    - ``scenario_label``         string  — date-like label from elementary PnL index
+    - ``split``                  string  — "train" / "val" / "test"
+    - ``predictions``            float32 — cluster portfolio predicted PnL (scaled)
+    - ``targets``                float32 — cluster portfolio actual PnL (scaled)
+    - ``error``                  float32 — predictions − targets (scaled)
+    - ``abs_error``              float32 — |error|
+    - ``squared_error``          float32 — error²
+    - ``predictions_original``   float32 — cluster predicted PnL in original (notional) units (Phase 3.1)
+    - ``targets_original``       float32 — cluster actual PnL in original units (Phase 3.1)
+    - ``error_original``         float32 — predictions_original − targets_original (Phase 3.1)
+    - ``abs_error_original``     float32 — |error_original| (Phase 3.1)
+    - ``squared_error_original`` float32 — error_original² (Phase 3.1)
+
+    Rows are sorted by ``(cluster_id, scenario_idx)`` for read locality
+    under the dominant filter-by-cluster access pattern.  File metadata:
+    ``_schema_version`` = ``3``, ``split``.
+
+    Schema-change history
+    ---------------------
+    v2: ``predicted`` → ``predictions``, ``actual`` → ``targets`` so the
+    column convention matches the per-member NPZ shards.
+
+    v3 (current, Phase 3.1): five ``*_original`` columns carrying the
+    inverse-scaled + notional-sign-restored cluster PnL.  Per-cluster
+    NaN-fill is supported: a cluster with no scaler in
+    ``cluster_pred_sums_original`` / ``cluster_target_sums_original``
+    still emits its rows but with NaN in the original columns.  This
+    keeps the schema canonical and makes the "no original data"
+    detectable client-side via column-wide NaN.
+
+    Raises
+    ------
+    RuntimeError
+        If ``scenario_labels`` is non-empty and any cluster's series
+        length disagrees with it, or if cluster pred/target lengths
+        disagree with each other.  Empty ``scenario_labels`` triggers a
+        warning and positional fallback (``str(i)``).
+    """
 ```
 
-**Add to `register_all()`**, right after the `inference_cb` line:
+**Frame-construction block**: replace the existing block that starts with `preds = np.concatenate([...])` through the closing `}).astype({...})` with:
 
 ```python
-inference_cb.register(app, backend)
-risk_management_cb.register(app, backend)   # ← new
+    preds = np.concatenate([
+        cluster_pred_sums[cid].astype(np.float32, copy=False)
+        for cid in cluster_ids
+    ])
+    actuals = np.concatenate([
+        cluster_target_sums[cid].astype(np.float32, copy=False)
+        for cid in cluster_ids
+    ])
+    error = preds - actuals
+
+    # Original-space columns (Phase 3.1).  NaN-fill per-cluster when no
+    # scaler was available — preserves the canonical v3 schema while
+    # letting partial-coverage runs still emit a valid parquet.
+    def _stack_or_nan(
+        sums_by_cid: Optional[Dict[str, np.ndarray]],
+    ) -> np.ndarray:
+        if sums_by_cid is None:
+            return np.full(n_rows, np.nan, dtype=np.float32)
+        out = np.empty(n_rows, dtype=np.float32)
+        for i, cid in enumerate(cluster_ids):
+            block = sums_by_cid.get(cid)
+            start = i * n_scenarios
+            end   = start + n_scenarios
+            if block is None:
+                out[start:end] = np.nan
+            else:
+                out[start:end] = np.asarray(block, dtype=np.float32)
+        return out
+
+    preds_orig   = _stack_or_nan(cluster_pred_sums_original)
+    targets_orig = _stack_or_nan(cluster_target_sums_original)
+    error_orig   = preds_orig - targets_orig
+
+    df = pd.DataFrame({
+        "cluster_id":              cluster_col,
+        "scenario_idx":            scenario_idx_col,
+        "scenario_label":          scenario_label_col,
+        "split":                   np.full(n_rows, split, dtype=object),
+        "predictions":             preds,
+        "targets":                 actuals,
+        "error":                   error,
+        "abs_error":               np.abs(error),
+        "squared_error":           error * error,
+        "predictions_original":    preds_orig,
+        "targets_original":        targets_orig,
+        "error_original":          error_orig,
+        "abs_error_original":      np.abs(error_orig),
+        "squared_error_original":  error_orig * error_orig,
+    }).astype({
+        "cluster_id":              "string",
+        "scenario_idx":            np.int32,
+        "scenario_label":          "string",
+        "split":                   "string",
+        "predictions":             np.float32,
+        "targets":                 np.float32,
+        "error":                   np.float32,
+        "abs_error":               np.float32,
+        "squared_error":           np.float32,
+        "predictions_original":    np.float32,
+        "targets_original":        np.float32,
+        "error_original":          np.float32,
+        "abs_error_original":      np.float32,
+        "squared_error_original":  np.float32,
+    })
 ```
+
+Everything below (the `table = pa.table(df)` block and the file-write block) stays unchanged.
+
+---
+
+### Phase 3.1.8 — `_save_all_artifacts`: load cluster contexts once per run
+
+Inside the `_save_all_artifacts` method, **immediately after** the existing block:
+
+```python
+        # Shared inputs — computed once, reused across multiple writers.
+        scenario_labels_by_split = _load_scenario_labels_by_split(
+            config, member_versions,
+        )
+        cluster_attrs = _build_cluster_attributes(config)
+```
+
+…insert the following:
+
+```python
+        # Phase 3.1 — per-cluster (target_scaler, target_attributes) for
+        # scaled→original transforms.  Loaded *once* (a single deserialise
+        # per member, not per split) and reused across all three splits.
+        # Empty mapping for legacy runs without scaler artefacts; per-split
+        # logic falls back to NaN-filled original columns in that case.
+        cluster_contexts = _load_cluster_contexts(config, member_versions)
+        if not cluster_contexts:
+            logger.warning(
+                "No per-cluster scaler artefacts found — eval will emit "
+                "scaled-space only (Phase 3.1 original columns will be NaN)."
+            )
+```
+
+---
+
+### Phase 3.1.9 — `_save_all_artifacts`: per-split loop changes
+
+Inside the `for split in all_split_results:` loop, **replace** the block that currently runs from:
+
+```python
+            # Cluster / portfolio sums — computed once, reused by B1/B2/B6.
+            cluster_pred_sums: Dict[str, np.ndarray] = {
+                ...
+            }
+            ...
+            _save_cluster_timeseries_parquet(
+                eval_dir, split,
+                cluster_pred_sums=cluster_pred_sums,
+                cluster_target_sums=cluster_target_sums,
+                scenario_labels=scenario_labels,
+            )
+```
+
+…down to and including the closing `_save_cluster_timeseries_parquet(...)` call — with this expanded block:
+
+```python
+            # Cluster / portfolio sums — computed once, reused by B1/B2/B6.
+            cluster_pred_sums: Dict[str, np.ndarray] = {
+                cid: preds_by_cluster[cid].sum(axis=1)
+                for cid in sorted(preds_by_cluster)
+            }
+            cluster_target_sums: Dict[str, np.ndarray] = {
+                cid: targets_by_cluster[cid].sum(axis=1)
+                for cid in sorted(targets_by_cluster)
+            }
+            if cluster_pred_sums:
+                preds_1d = np.add.reduce(list(cluster_pred_sums.values()))
+                targets_1d = np.add.reduce(list(cluster_target_sums.values()))
+            else:
+                preds_1d = np.zeros(0, dtype=np.float32)
+                targets_1d = np.zeros(0, dtype=np.float32)
+
+            scenario_labels = scenario_labels_by_split.get(split, [])
+
+            # ── Phase 3.1 — original-space transforms ─────────────────
+            #
+            # For every cluster carrying a scaler context, run the canonical
+            # inverse-scale + notional-sign-restore chain once for predictions
+            # and once for targets.  Two outputs:
+            #
+            # (a) Per-cluster wide DataFrames (scenarios × trade_ids) for
+            #     trade-level parquets — mirrors inference's
+            #     ``trade_predictions/<cid>_<space>.parquet`` layout.
+            # (b) Per-cluster 1-D sums used by the cluster / portfolio
+            #     timeseries writers to fill the new ``*_original`` columns.
+            #
+            # Clusters with no scaler context are silently skipped here
+            # (logged once at startup); the writers NaN-fill their rows so
+            # the v3 schema stays canonical regardless of coverage.
+            cluster_pred_sums_original:   Dict[str, np.ndarray] = {}
+            cluster_target_sums_original: Dict[str, np.ndarray] = {}
+            t_orig = time.perf_counter()
+            for cid in sorted(preds_by_cluster):
+                ctx = cluster_contexts.get(cid)
+                if ctx is None:
+                    continue
+                try:
+                    (
+                        preds_scaled_wide,
+                        preds_original_wide,
+                        targets_original_wide,
+                    ) = _transform_cluster_to_original(
+                        cluster_id      = cid,
+                        preds_2d        = preds_by_cluster[cid],
+                        targets_2d      = targets_by_cluster[cid],
+                        scenario_labels = scenario_labels or None,
+                        ctx             = ctx,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "  [%s] cluster '%s' original-space transform "
+                        "failed: %s — falling back to scaled-only for "
+                        "this cluster.", split, cid, exc,
+                    )
+                    continue
+
+                _save_trade_predictions_parquet(
+                    eval_dir, cid, split,
+                    scaled_wide   = preds_scaled_wide,
+                    original_wide = preds_original_wide,
+                )
+
+                cluster_pred_sums_original[cid] = (
+                    preds_original_wide.to_numpy().sum(axis=1)
+                )
+                cluster_target_sums_original[cid] = (
+                    targets_original_wide.to_numpy().sum(axis=1)
+                )
+            if cluster_pred_sums_original:
+                logger.info(
+                    "  [%s] original-space transforms: %.1fs (%d clusters)",
+                    split, time.perf_counter() - t_orig,
+                    len(cluster_pred_sums_original),
+                )
+
+            # Portfolio-level original-space sum across clusters.  ``+`` over
+            # the values fans out per-scenario across the cluster axis, so
+            # the result lines up 1-for-1 with the scaled ``preds_1d``
+            # ordering.  ``None`` propagates when no cluster had original
+            # data, which the writer translates to a NaN-filled column.
+            if cluster_pred_sums_original:
+                preds_1d_original = np.add.reduce(
+                    list(cluster_pred_sums_original.values())
+                )
+                targets_1d_original = np.add.reduce(
+                    list(cluster_target_sums_original.values())
+                )
+            else:
+                preds_1d_original   = None
+                targets_1d_original = None
+
+            _save_portfolio_timeseries_parquet(
+                eval_dir, split,
+                preds_1d=preds_1d,
+                targets_1d=targets_1d,
+                scenario_labels=scenario_labels,
+                preds_1d_original=preds_1d_original,
+                targets_1d_original=targets_1d_original,
+            )
+            _save_cluster_timeseries_parquet(
+                eval_dir, split,
+                cluster_pred_sums=cluster_pred_sums,
+                cluster_target_sums=cluster_target_sums,
+                scenario_labels=scenario_labels,
+                cluster_pred_sums_original=(
+                    cluster_pred_sums_original or None
+                ),
+                cluster_target_sums_original=(
+                    cluster_target_sums_original or None
+                ),
+            )
+```
+
+The remainder of the per-split loop (`_save_trade_metrics_parquet`, `_save_group_correlations_parquet`, `_save_quality_parquets_for_split`, the trailing log line) stays unchanged.
+
+---
+
+### Phase 3.1.10 — Manifest extension
+
+Inside `_save_all_artifacts`, replace the existing `_write_json(eval_dir / "manifest.json", {...})` call with:
+
+```python
+        # Manifest written *upfront* so a partial / failing run still
+        # leaves a structurally-valid manifest behind.  The ``artifacts``
+        # block enumerates which families this writer produces; the
+        # Phase 3.2 API uses this to discover the available spaces /
+        # paths without having to peek at every parquet's footer.
+        _write_json(eval_dir / "manifest.json", {
+            "_schema_version": _EVAL_MANIFEST_SCHEMA_VERSION,
+            "version": version,
+            "evaluated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "trade_ids": config.all_trade_ids,
+            "cluster_ids": config.cluster_ids,
+            "cluster_trade_indices": {
+                k: v.tolist() if isinstance(v, np.ndarray) else list(v)
+                for k, v in cluster_trade_indices.items()
+            },
+            "splits_available": sorted(all_split_results.keys()),
+            # Phase 3.1 — declared at manifest level so a single read of
+            # the manifest tells the API which spaces are available
+            # without grovelling through every parquet's column list.
+            "spaces_available": ["scaled", "original"],
+            "artifacts": {
+                "portfolio_timeseries": {
+                    "schema_version": _PORTFOLIO_TIMESERIES_SCHEMA_VERSION,
+                    "path_template":  "portfolio_summary/portfolio_timeseries_{split}.parquet",
+                    "spaces": ["scaled", "original"],
+                    "columns": {
+                        "scaled":   ["predictions", "targets", "error", "abs_error", "squared_error"],
+                        "original": [
+                            "predictions_original", "targets_original",
+                            "error_original", "abs_error_original",
+                            "squared_error_original",
+                        ],
+                    },
+                },
+                "cluster_timeseries": {
+                    "schema_version": _CLUSTER_TIMESERIES_SCHEMA_VERSION,
+                    "path_template":  "portfolio_summary/cluster_timeseries_{split}.parquet",
+                    "spaces": ["scaled", "original"],
+                    "columns": {
+                        "scaled":   ["predictions", "targets", "error", "abs_error", "squared_error"],
+                        "original": [
+                            "predictions_original", "targets_original",
+                            "error_original", "abs_error_original",
+                            "squared_error_original",
+                        ],
+                    },
+                },
+                "trade_predictions": {
+                    "schema_version": _TRADE_PREDICTIONS_SCHEMA_VERSION,
+                    "path_template":  (
+                        _TRADE_PREDICTIONS_DIRNAME
+                        + "/{cluster_id}/{split}_{space}.parquet"
+                    ),
+                    "spaces": ["scaled", "original"],
+                    "shape": "wide_scenarios_x_trades",
+                    "note": "Predictions only (no targets) — mirrors inference output.",
+                },
+            },
+        })
+```
+
+The `_write_json(eval_dir / "trade_cluster_map.json", ...)` call directly below stays unchanged.
 
 ---
 
 ### Sanity checks after applying
 
-1. Sidebar shows a new "Risk Management" entry between "Inference" and "Scenario Lab".
-2. Clicking it navigates to `/risk-management` and the page header reads "Risk Management".
-3. **With at least one completed inference run on disk**: KPI strip, waterfall, tornado, donut and tail table all populate.
-4. **With no runs on disk**: subtitle reads *"No inference runs available yet — run the Inference Console to populate this page."* and panels stay in their empty state. No crash.
-5. The tail table shows `Top RF` and `Top trade type` columns as `—` (em-dash) — these light up in Phase 4.
+Run the eval pipeline against a registered ensemble and verify:
+
+1. **Manifest is v2 with the new blocks**:
+   ```bash
+   jq '._schema_version, .spaces_available, (.artifacts | keys)' artifacts/ensemble/<version>/evaluation/manifest.json
+   # → 2
+   #   ["scaled", "original"]
+   #   ["cluster_timeseries", "portfolio_timeseries", "trade_predictions"]
+   ```
+
+2. **`portfolio_timeseries_{split}.parquet` is v3 with the new columns**:
+   ```python
+   import pandas as pd
+   df = pd.read_parquet("artifacts/ensemble/<version>/evaluation/portfolio_summary/portfolio_timeseries_test.parquet")
+   assert {"predictions_original","targets_original","error_original",
+           "abs_error_original","squared_error_original"}.issubset(df.columns)
+   assert not df["predictions_original"].isna().all()   # populated, not NaN-fill
+   ```
+
+3. **`cluster_timeseries_{split}.parquet` is v3 with the new columns** — same check on the cluster file.
+
+4. **New trade-level family exists per cluster × split × space**:
+   ```bash
+   ls artifacts/ensemble/<version>/evaluation/trade_predictions/
+   # → cluster_0/  cluster_1/  cluster_2/  ...
+   ls artifacts/ensemble/<version>/evaluation/trade_predictions/cluster_0/
+   # → test_original.parquet  test_scaled.parquet  train_original.parquet  ...
+   ```
+
+5. **Wide layout matches inference**:
+   ```python
+   wide = pd.read_parquet("artifacts/ensemble/<version>/evaluation/trade_predictions/cluster_0/test_scaled.parquet")
+   # Row index → scenario_label (a single named column after to_parquet)
+   # Other columns → trade_ids in the scaler's canonical order
+   ```
+
+6. **Legacy-run fallback (no scalers)**: if `target_scaler.pkl` is missing for every member, eval still runs to completion; the new `*_original` columns are all NaN; no `trade_predictions/` directory is created; the manifest still declares `spaces_available: ["scaled","original"]` (advertised even when the data is NaN — readers detect this via column-wide NaN).
 
 ### What's next
 
-Phase 0 is now complete (0.1 KPI rounding · 0.2 cluster zero-pad · 0.3 Diagnostics sub-tab · 0.4 Risk Management skeleton). The plan continues with:
+Phase 3.2 — API `?space=scaled|original` on Overview / Eval endpoints:
 
-| Phase | Description |
-|---|---|
-| **Phase 1a** | Sensitivity sub-tab + RF attribution Approach B (cluster intersection share) — no new data needed |
-| **Phase 3** | Scaled / Original toggle on Overview + Evaluation (Eval pipeline emits `_original` parquets, API `?space=…`, UI app-shell toggle) |
-| **Phase 2** | `GET /runs/{run_id}/clusters/{cid}/trade_attributes` API |
-| **Phase 1b** | Risk attribution by `product` / `currency` / `desk` / `trade_type` (uses Phase 2) |
-| **Phase 4** | Risk Management upgrade — RF-level waterfall, three-ring donut, tail-table Top RF / Top trade type columns |
+- Adds a `space: Literal["scaled","original"] = "scaled"` query param to the relevant endpoints.
+- Server-side projects the requested space's columns onto a canonical schema (e.g. `predictions` always means "the value in the chosen space") so the UI stays oblivious to suffixes.
+- New endpoint family for the trade-level parquets:
+  `GET /eval/runs/{version}/clusters/{cid}/trade_predictions/{split}?space=…`.
+- Pydantic response models updated to the canonical shape.
