@@ -2361,20 +2361,65 @@ if __name__ == "__main__":
 
 ---
 
-## Appendix C — Phase 3.1: Eval pipeline `_original` parquets (copy-paste sync)
+## Appendix C — Phase 3.1: Eval pipeline `_original` parquets (clean cross-pipeline architecture)
 
-> **Status**: Phase 3.1 extends `src/rade_ml_pt/pipelines/ensemble/eval.py` to
-> emit original-space PnL artefacts that mirror the inference pipeline's
-> output. Trade-level data lives in separate `_scaled.parquet` /
-> `_original.parquet` files per cluster (matches inference exactly);
-> aggregate parquets gain additional `_original` columns side-by-side with
-> the existing scaled columns. The manifest now declares which spaces are
-> available, so the Phase 3.2 API can discover the layout without
-> grovelling through parquet footers.
->
-> All edits are contained in **one file** —
-> `src/rade_ml_pt/pipelines/ensemble/eval.py` — so the work-env sync is a
-> single-file diff.
+> **Status**: Phase 3.1 extends `src/rade_ml_pt/pipelines/ensemble/eval.py`
+> to emit original-space PnL artefacts that mirror the inference
+> pipeline's output, **without** the two pipelines depending on each
+> other. The scaled → original math lives in a single neutral utility
+> module — `src/rade_ml_pt/utilities/predictions_transform.py` — and both
+> the inference and eval pipelines call into it via thin facades.
+> Eval reads its training artefacts (`target_scaler.pkl`,
+> `target_attributes.json`) directly from the model store as plain
+> `(scaler, attributes)` tuples; there is **no** `InferenceContext`
+> wrapper anywhere in eval.
+
+### Architectural rationale
+
+The previous Phase 3.1 draft routed eval through `HybridGnnRnnInferencePipeline.transform_predictions` via a stub `InferenceContext` populated only with `target_scaler` and `target_attributes`. Two problems:
+
+1. **Wrong data structure.** An `InferenceContext` with 2 of 12 fields populated isn't a context — it's a tuple wearing a costume. Eval doesn't need `graph_builder`, `cluster_assets`, `elementary_pnl`, etc.
+2. **Wrong pipeline boundary.** Eval importing `HybridGnnRnnInferencePipeline` makes the eval module depend on the inference pipeline's surface area for math it doesn't conceptually own.
+
+The clean architecture is:
+
+```
+                ┌─────────────────────────────────────────────────────────┐
+                │  src/rade_ml_pt/utilities/predictions_transform.py     │
+                │  (neutral, stateless, pure-functions)                  │
+                │                                                         │
+                │    inverse_scale_predictions(preds, scaler)             │
+                │    apply_notional_signs(df, attrs, strict=...)          │
+                │    build_scenario_summary(cid, scaled, original)        │
+                │    transform_to_original(cid, preds, labels, ...)       │
+                └────────────────────┬─────────────────┬─────────────────┘
+                                     │                  │
+                  ┌──────────────────┴───┐    ┌─────────┴────────────────┐
+                  │  hybrid_gnn_rnn/      │    │  pipelines/ensemble/      │
+                  │  infer.py             │    │  eval.py                  │
+                  │                       │    │                           │
+                  │  HybridGnnRnnInfer-   │    │  _load_member_target_     │
+                  │    encePipeline       │    │    artifacts(cfg, vers)   │
+                  │    .transform_predict-│    │     → {cid: (scaler,      │
+                  │      ions(cid,…,ctx)  │    │             attrs)}       │
+                  │    [THIN FACADE]      │    │                           │
+                  │                       │    │  _transform_cluster_to_   │
+                  │  Calls util.transform-│    │    original(cid, preds,   │
+                  │  _to_original(ctx     │    │      targets, labels,     │
+                  │  .target_scaler, ctx  │    │      scaler, attrs)       │
+                  │  .target_attributes)  │    │   [Calls util directly]   │
+                  └───────────────────────┘    └───────────────────────────┘
+                            ▲                            ▲
+                            │                            │
+                  ┌─────────┴────────┐         ┌─────────┴────────────────┐
+                  │  EnsembleInfer-  │         │  EnsembleEvalPipeline    │
+                  │  encePipeline    │         │   (per-split loop calls  │
+                  │   _post_infer_   │         │    _transform_cluster_   │
+                  │   cluster()      │         │    to_original)          │
+                  └──────────────────┘         └──────────────────────────┘
+```
+
+**Eval and inference never import each other.** They share *math*, not *types*. The utility module has zero dependencies on either pipeline (only numpy + pandas).
 
 ### What ships in Phase 3.1
 
@@ -2382,144 +2427,585 @@ if __name__ == "__main__":
 |---|---|:---:|
 | `portfolio_summary/portfolio_timeseries_{split}.parquet` | + 5 `*_original` cols (NaN-fill on legacy runs) | v2 → v3 |
 | `portfolio_summary/cluster_timeseries_{split}.parquet`   | + 5 `*_original` cols (per-cluster NaN-fill) | v2 → v3 |
-| `trade_predictions/{cid}/{split}_{scaled,original}.parquet` | **new family** — wide scenarios × trade_ids | v1 |
-| `manifest.json` | + `spaces_available` + `artifacts` blocks | v1 → v2 |
-| `ensemble_metrics.parquet`, `per_member_metrics.parquet`, `trade_metrics.parquet`, `group_correlations.parquet`, `graph_stats.parquet`, `quality_*.parquet` | **unchanged** (dimensionless metrics) | — |
+| `trade_predictions/{cluster_id}/{split}_scaled.parquet`  | **new** wide trade matrix (z-space)         | v1 (new) |
+| `trade_predictions/{cluster_id}/{split}_original.parquet`| **new** wide trade matrix (original units)  | v1 (new) |
+| `manifest.json` | + `spaces_available` and `artifacts.*` blocks | v1 → v2 |
 
-### Scope cuts (deliberate)
+### Files touched
 
-- Eval's metric parquets (RMSE / correlations / quality) stay scaled-only — they're dimensionless, so an "original" view makes no semantic sense.
-- Targets are **not** persisted at trade level in the new family — mirrors inference. Trade-level targets remain in `members/{cid}/predictions/{split}.npz` (scaled space).
-- Inference aggregates (`cluster_predictions.parquet`, `portfolio_predictions.parquet`) **not** widened in this phase — strict scope.
-
-### Single source of truth: `transform_predictions`
-
-The scaled→original transformation reuses the existing static helper
-`HybridGnnRnnInferencePipeline.transform_predictions` (which inference
-already calls inside `_post_infer_cluster`). Eval now calls it twice per
-cluster — once for predictions, once for targets — so the eval-side
-`predictions_original` / `targets_original` columns are computed
-identically to inference's per-cluster artefacts.
+| Path | Purpose | Change |
+|---|---|---|
+| `src/rade_ml_pt/utilities/predictions_transform.py` | New utility module — math single source of truth | **NEW FILE** |
+| `src/rade_ml_pt/pipelines/hybrid_gnn_rnn/infer.py` | `HybridGnnRnnInferencePipeline.transform_predictions` | **Thin facade** over the utility (signature unchanged) |
+| `src/rade_ml_pt/pipelines/hybrid_gnn_rnn/eval.py` | `_inverse_target_transforms`, `_inverse_target_notional` | **Thin facades** over the utility (signatures unchanged, legacy soft-failure preserved) |
+| `src/rade_ml_pt/pipelines/ensemble/eval.py` | Phase 3.1 extension (loader + transform + writers + manifest) | Drop `_load_cluster_contexts`; add `_load_member_target_artifacts`; refactor `_transform_cluster_to_original` to call the utility directly; per-split loop updated |
 
 ---
 
-### Edit map
+### C.1 — `src/rade_ml_pt/utilities/predictions_transform.py` (NEW)
 
-Nine discrete blocks inside `src/rade_ml_pt/pipelines/ensemble/eval.py`:
-
-| # | Section | Location | Change |
-|:-:|---|---|---|
-| 1 | Imports | Top of file | `+ joblib`, `+ Tuple` |
-| 2 | Schema constants | After imports | Bump v2→v3, add new `_TRADE_PREDICTIONS_*` and `_EVAL_MANIFEST_SCHEMA_VERSION` |
-| 3 | `_load_cluster_contexts` | Insert before `_save_portfolio_timeseries_parquet` | NEW helper |
-| 4 | `_transform_cluster_to_original` | Insert directly after #3 | NEW helper |
-| 5 | `_save_trade_predictions_parquet` | Insert directly after #4 | NEW helper |
-| 6 | `_save_portfolio_timeseries_parquet` | Widen signature + docstring + frame build | + 5 columns |
-| 7 | `_save_cluster_timeseries_parquet` | Widen signature + docstring + frame build | + 5 columns |
-| 8 | `_save_all_artifacts` — load contexts | After `cluster_attrs = _build_cluster_attributes(config)` | Load `cluster_contexts` once per run |
-| 9 | `_save_all_artifacts` — per-split loop | Replace the existing `cluster_pred_sums` … `_save_cluster_timeseries_parquet(...)` block | Compute originals per cluster, save trade-level parquets, pass originals to widened writers |
-| 10 | `_save_all_artifacts` — manifest | Replace the existing `_write_json(eval_dir / "manifest.json", {...})` call | Add `spaces_available` + `artifacts` blocks |
-
----
-
-### Phase 3.1.1 — Imports
-
-Replace the top-of-file imports block with:
+Drop-in new file. Two pure primitives (inverse-scale, notional-sign), a summary builder, and one composite. No torch / sklearn / pipeline imports at module level — `numpy` and `pandas` only.
 
 ```python
-import json
-import logging
-import shutil
-import time
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
+"""Predictions post-processing — scaled ↔ original PnL space.
 
-import joblib
+Single source of truth for the *scaled → original* conversion of cluster-
+level model output.  The chain is two stateless steps applied to a
+``[n_scenarios, n_trades]`` numpy matrix:
+
+  1. **Inverse-scale**     — undo the standardisation applied during
+                             training (z-space → p-space).  Handles the
+                             case where the cluster carries a reduced /
+                             expanded trade population vs the scaler.
+  2. **Restore notional**  — re-apply per-trade ``NotionalSign`` so the
+                             output values match the user's reporting
+                             convention.
+
+Why a neutral module
+--------------------
+Inference and evaluation are separate runtime processes with separate
+data-loading conventions; coupling them at the data-structure level
+(e.g. via an ``InferenceContext`` wrapper) is wrong.  Sharing the *math*
+via a neutral utility keeps the two pipelines fully decoupled — neither
+imports the other — while guaranteeing a single, well-tested definition
+of "original-space PnL" across the codebase.
+
+Both the inference pipeline
+(:meth:`~src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer.HybridGnnRnnInferencePipeline.transform_predictions`)
+and the ensemble eval pipeline
+(:mod:`~src.rade_ml_pt.pipelines.ensemble.eval`) call into this module
+so the dashboard's *scaled* / *original* toggle reads consistent
+numbers regardless of which pipeline produced the artifact.
+
+Public surface
+--------------
+* :func:`inverse_scale_predictions`  — one ``inverse_transform`` call
+                                       with dimension-mismatch handling.
+* :func:`apply_notional_signs`       — per-trade sign restoration on a
+                                       wide PnL frame.
+* :func:`build_scenario_summary`     — per-scenario aggregate stats.
+* :func:`transform_to_original`      — end-to-end composite
+                                       (preds_2d → 3 wide frames).
+"""
+from __future__ import annotations
+
+import logging
+from typing import Any, Dict, List, Optional, Tuple
+
 import numpy as np
 import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
-```
 
-Diff: `+ Tuple` in `typing` import, `+ import joblib`.
+logger = logging.getLogger(__name__)
+
+
+# ----------------------------------------------------------------------
+# Step 1 — inverse-scale (z-space → p-space)
+# ----------------------------------------------------------------------
+
+def inverse_scale_predictions(
+    preds:  np.ndarray,
+    scaler: Any,
+) -> Tuple[np.ndarray, List[str]]:
+    """Invert standardisation on a ``[n_scenarios, n_trades]`` matrix.
+
+    The scaler's ``feature_names_in_`` defines the canonical trade-id
+    ordering for the cluster's output columns.  If the input width
+    doesn't match the scaler width the function pads / slices safely:
+
+    * ``n_trades == scaler_width`` — direct ``inverse_transform``.
+    * ``n_trades <  scaler_width`` — zero-pad to the scaler width,
+      inverse-transform, slice back.  Trailing columns are dropped.
+    * ``n_trades >  scaler_width`` — inverse-transform the head, pass
+      the tail through unchanged.  Unknown columns get
+      ``unknown_{i}`` trade IDs.
+
+    Parameters
+    ----------
+    preds : np.ndarray
+        2-D, shape ``[n_scenarios, n_trades]``.
+    scaler : object
+        sklearn-compatible scaler with ``feature_names_in_`` and
+        ``inverse_transform`` methods.  Must not be ``None``.
+
+    Returns
+    -------
+    unscaled : np.ndarray
+        Same shape as ``preds``, in original (post-``inverse_transform``)
+        space.
+    trade_ids : list of str
+        Column labels for ``unscaled`` in the order matching the
+        scaler's canonical training order, with ``unknown_{i}``
+        fallbacks for any columns past the scaler width.
+
+    Raises
+    ------
+    ValueError
+        If ``preds`` is not 2-D.
+    RuntimeError
+        If ``scaler`` is ``None`` or has no ``feature_names_in_``.
+    """
+    arr = np.asarray(preds)
+    if arr.ndim != 2:
+        raise ValueError(
+            f"inverse_scale_predictions: expected 2-D predictions "
+            f"[n_scenarios, n_trades]; got shape {arr.shape}."
+        )
+    if scaler is None:
+        raise RuntimeError(
+            "inverse_scale_predictions: scaler is None — cannot invert "
+            "standardisation."
+        )
+
+    trade_ids_canonical = list(getattr(scaler, "feature_names_in_", []))
+    if not trade_ids_canonical:
+        raise RuntimeError(
+            "inverse_scale_predictions: scaler has no feature_names_in_ — "
+            "refit on a DataFrame at training time so the canonical "
+            "trade-id ordering is preserved on disk."
+        )
+
+    n_scenarios, n_trades = arr.shape
+    n_scaler_features     = len(trade_ids_canonical)
+
+    if n_trades == n_scaler_features:
+        unscaled  = scaler.inverse_transform(arr)
+        trade_ids = trade_ids_canonical
+
+    elif n_trades < n_scaler_features:
+        padded                = np.zeros((n_scenarios, n_scaler_features), dtype=arr.dtype)
+        padded[:, :n_trades]  = arr
+        unscaled_full         = scaler.inverse_transform(padded)
+        unscaled              = unscaled_full[:, :n_trades]
+        trade_ids             = trade_ids_canonical[:n_trades]
+
+    else:  # n_trades > n_scaler_features
+        head     = scaler.inverse_transform(arr[:, :n_scaler_features])
+        unscaled = np.concatenate([head, arr[:, n_scaler_features:]], axis=1)
+        trade_ids = (
+            trade_ids_canonical
+            + [f"unknown_{i}" for i in range(n_trades - n_scaler_features)]
+        )
+
+    return unscaled, trade_ids
+
+
+# ----------------------------------------------------------------------
+# Step 2 — restore per-trade notional sign
+# ----------------------------------------------------------------------
+
+def apply_notional_signs(
+    pnl_df:            pd.DataFrame,
+    target_attributes: Optional[Dict[str, Any]],
+    *,
+    key_field:  str  = "TradeKey",
+    sign_field: str  = "NotionalSign",
+    strict:     bool = True,
+    cluster_id: Optional[str] = None,
+) -> pd.DataFrame:
+    """Restore per-trade ``NotionalSign`` on a wide PnL frame.
+
+    Training stores PnL with ``|notional|`` (sign stripped) so trades of
+    opposite direction can share a scaler.  At inference / eval time we
+    re-apply each trade's sign so the output matches the user's reporting
+    convention.
+
+    Parameters
+    ----------
+    pnl_df : pd.DataFrame
+        Wide PnL frame, shape ``[n_scenarios, n_trades]``; columns are
+        trade IDs.  Typically the output of
+        :func:`inverse_scale_predictions` wrapped in a DataFrame.
+    target_attributes : dict or None
+        Per-trade attribute table.  Must contain a trade-key column
+        (``key_field`` or ``trade_id`` as fallback) and a ``sign_field``
+        of the same length.
+    key_field, sign_field : str
+        Names of the attribute keys to read.  Defaults match the
+        ``target_attributes.json`` convention written at training time.
+    strict : bool, default True
+        If ``True``, raise ``RuntimeError`` on any missing / misaligned
+        attribute.  If ``False``, log a warning and return ``pnl_df``
+        unchanged.  Inference and ensemble eval keep this ``True`` (a
+        missing sign is a hard contract violation); only the legacy
+        per-member eval lowers it for backward compatibility.
+    cluster_id : str, optional
+        Used only to enrich error / warning messages.
+
+    Returns
+    -------
+    pd.DataFrame
+        Same shape / index / columns as ``pnl_df``; each column
+        multiplied by its ``NotionalSign``.
+    """
+    ctx_tag = f" (cluster '{cluster_id}')" if cluster_id else ""
+
+    def _fail(msg: str) -> pd.DataFrame:
+        full = f"apply_notional_signs{ctx_tag}: {msg}"
+        if strict:
+            raise RuntimeError(full)
+        logger.warning("%s — returning PnL unchanged.", full)
+        return pnl_df
+
+    if target_attributes is None:
+        return _fail("target_attributes is None")
+
+    keys  = target_attributes.get(key_field) or target_attributes.get("trade_id")
+    signs = target_attributes.get(sign_field)
+    if keys is None or signs is None:
+        return _fail(
+            f"missing required attribute(s) {key_field!r} and/or "
+            f"{sign_field!r}"
+        )
+
+    sign_series = pd.Series(list(signs), index=list(keys), dtype=np.float32)
+    try:
+        aligned = sign_series.reindex(pnl_df.columns)
+    except Exception as exc:
+        return _fail(
+            f"could not align {sign_field!r} to PnL columns ({exc})"
+        )
+
+    if aligned.isna().any():
+        missing = aligned[aligned.isna()].index.tolist()
+        return _fail(
+            f"{len(missing)} trade(s) missing {sign_field!r} "
+            f"(first 5: {missing[:5]})"
+        )
+
+    return pnl_df.mul(aligned, axis=1)
+
+
+# ----------------------------------------------------------------------
+# Step 3 — per-scenario aggregate summary
+# ----------------------------------------------------------------------
+
+def build_scenario_summary(
+    cluster_id:    str,
+    scaled_wide:   pd.DataFrame,
+    original_wide: pd.DataFrame,
+) -> pd.DataFrame:
+    """Per-scenario aggregate stats — one row per scenario.
+
+    Cheap to compute here, cheap to stack across clusters downstream
+    (``sum_pnl_*`` sums cleanly across clusters per scenario for the
+    portfolio roll-up).
+
+    Returned columns
+    ----------------
+    * ``scenario_label``     — from the wide frames' index
+    * ``cluster_id``         — constant per call
+    * ``sum_pnl_scaled``     — preds.sum(axis=1) in z-space
+    * ``sum_pnl_original``   — preds.sum(axis=1) in original notional
+    * ``mean_pnl_original``  — preds.mean(axis=1) in original notional
+    * ``std_pnl_original``   — preds.std(axis=1) in original notional
+    * ``min_pnl_original``   — preds.min(axis=1) in original notional
+    * ``max_pnl_original``   — preds.max(axis=1) in original notional
+    """
+    scaled_vals   = scaled_wide.to_numpy()
+    original_vals = original_wide.to_numpy()
+    return pd.DataFrame({
+        "scenario_label":    list(scaled_wide.index),
+        "cluster_id":        cluster_id,
+        "sum_pnl_scaled":    scaled_vals.sum(axis=1),
+        "sum_pnl_original":  original_vals.sum(axis=1),
+        "mean_pnl_original": original_vals.mean(axis=1),
+        "std_pnl_original":  original_vals.std(axis=1),
+        "min_pnl_original":  original_vals.min(axis=1),
+        "max_pnl_original":  original_vals.max(axis=1),
+    })
+
+
+# ----------------------------------------------------------------------
+# Composite — end-to-end scaled → original
+# ----------------------------------------------------------------------
+
+def transform_to_original(
+    cluster_id:        str,
+    cluster_preds:     np.ndarray,
+    scenario_labels:   Optional[List[str]],
+    scaler:            Any,
+    target_attributes: Dict[str, Any],
+    *,
+    strict_notional:   bool = True,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """End-to-end scaled → original for a single cluster's predictions.
+
+    Composes :func:`inverse_scale_predictions`, the wide-frame
+    assembly step, and :func:`apply_notional_signs`, then materialises
+    the per-scenario summary via :func:`build_scenario_summary`.  This
+    is the public entry point both inference and eval call.
+
+    Parameters
+    ----------
+    cluster_id : str
+        Used to tag the summary frame and enrich error messages.
+    cluster_preds : np.ndarray
+        Raw model output for the cluster.  Shape
+        ``[n_scenarios, n_trades]`` — rows are scenarios, columns are
+        trades.  Mirrors the convention used everywhere in
+        ``ensemble/aggregation``, ``ensemble/session``, and
+        ``pipelines/ensemble/eval``.
+    scenario_labels : list of str or None
+        Per-row labels (length ``n_scenarios``); used as the row index
+        of both wide frames and the ``scenario_label`` column of the
+        summary frame.  ``None`` ⇒ positional ``0..n_scenarios-1``
+        index.
+    scaler : object
+        sklearn-compatible scaler with ``feature_names_in_`` and
+        ``inverse_transform``.  Loaded by the caller from the cluster's
+        ``target_scaler.pkl`` under the registry — *not* wrapped in any
+        context object.
+    target_attributes : dict
+        Per-trade attribute table loaded from ``target_attributes.json``.
+        Must contain ``TradeKey`` (or ``trade_id``) and ``NotionalSign``
+        lists.
+    strict_notional : bool, default True
+        Forwarded to :func:`apply_notional_signs`.  Inference and
+        ensemble eval keep this ``True`` (missing sign ⇒ hard error);
+        only legacy per-member eval lowers it.
+
+    Returns
+    -------
+    scaled_wide : pd.DataFrame
+        Shape ``[n_scenarios, n_trades]``.  Predictions in **scaled**
+        (model-output) space.  Index = ``scenario_label``; columns =
+        trade IDs in canonical scaler order.
+    original_wide : pd.DataFrame
+        Same shape / index / columns — inverse-scaled AND
+        notional-sign-restored predictions in **original** notional
+        space.
+    summary_df : pd.DataFrame
+        One row per scenario.  See :func:`build_scenario_summary`.
+
+    Raises
+    ------
+    ValueError
+        If ``cluster_preds`` is not 2-D or ``scenario_labels`` length
+        doesn't match ``n_scenarios``.
+    RuntimeError
+        If ``scaler`` is ``None`` / missing ``feature_names_in_``, or
+        ``strict_notional`` is ``True`` and ``target_attributes`` is
+        missing / misaligned.
+    """
+    preds = np.asarray(cluster_preds)
+    if preds.ndim != 2:
+        raise ValueError(
+            f"transform_to_original: expected 2-D predictions "
+            f"[n_scenarios, n_trades]; got shape {preds.shape}."
+        )
+    n_scenarios, _ = preds.shape
+
+    if scenario_labels is not None and len(scenario_labels) != n_scenarios:
+        raise ValueError(
+            f"transform_to_original: len(scenario_labels)="
+            f"{len(scenario_labels)} != n_scenarios={n_scenarios}."
+        )
+
+    # Step 1: inverse-scale (z-space → p-space).
+    unscaled, trade_ids = inverse_scale_predictions(preds, scaler)
+
+    # Step 2: assemble wide frames keyed by scenario_label.
+    scenario_index = (
+        list(scenario_labels) if scenario_labels is not None
+        else list(range(n_scenarios))
+    )
+
+    scaled_wide = pd.DataFrame(preds, index=scenario_index, columns=trade_ids)
+    scaled_wide.index.name = "scenario_label"
+
+    unscaled_wide = pd.DataFrame(unscaled, index=scenario_index, columns=trade_ids)
+    unscaled_wide.index.name = "scenario_label"
+
+    # Step 3: notional-sign restoration.
+    original_wide = apply_notional_signs(
+        unscaled_wide, target_attributes,
+        strict     = strict_notional,
+        cluster_id = cluster_id,
+    )
+    original_wide.index.name = "scenario_label"
+
+    # Step 4: per-scenario summary for downstream stacking.
+    summary_df = build_scenario_summary(cluster_id, scaled_wide, original_wide)
+
+    return scaled_wide, original_wide, summary_df
+
+
+__all__ = [
+    "inverse_scale_predictions",
+    "apply_notional_signs",
+    "build_scenario_summary",
+    "transform_to_original",
+]
+```
 
 ---
 
-### Phase 3.1.2 — Schema-version constants
+### C.2 — `src/rade_ml_pt/pipelines/hybrid_gnn_rnn/infer.py` (inference facade)
 
-Replace the existing schema-version block (just below imports) with:
+Replace the body of `HybridGnnRnnInferencePipeline.transform_predictions` with a thin facade. **Signature unchanged.** All existing inference call sites — `EnsembleInferencePipeline._post_infer_cluster`, the chunked streaming path, etc. — keep working.
+
+**Before** (the ~110-line implementation that did inverse-scale + notional-sign + frame assembly + summary inline) is replaced by:
+
+```python
+    # ==================================================================
+    # Post-prediction transforms
+    #
+    # The scaled → original math lives in the neutral utility module
+    # ``src.rade_ml_pt.utilities.predictions_transform`` so it can be
+    # shared with the eval pipeline *without* the eval side having to
+    # import inference (or wrap a stub ``InferenceContext`` around a
+    # scaler + attribute dict).  The static method below is kept on
+    # the pipeline class as a thin facade so every existing inference
+    # call site keeps its ``ctx``-shaped contract.
+    # ==================================================================
+
+    @staticmethod
+    def transform_predictions(
+        cluster_id:      str,
+        cluster_preds:   np.ndarray,
+        scenario_labels: Optional[List[str]],
+        ctx:             InferenceContext,
+    ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """Per-cluster post-prediction transformation: scaled → original.
+
+        Thin facade over
+        :func:`src.rade_ml_pt.utilities.predictions_transform.transform_to_original`.
+        Pulls ``target_scaler`` and ``target_attributes`` off the
+        :class:`InferenceContext` and forwards everything else verbatim,
+        so :meth:`EnsembleInferencePipeline._post_infer_cluster` and the
+        rest of the inference stack keep their existing call sites
+        unchanged.
+        """
+        # Local import — keeps utilities free of inference-pipeline cycles
+        # and avoids importing the utility at module load time for callers
+        # that don't transform predictions.
+        from src.rade_ml_pt.utilities.predictions_transform import (
+            transform_to_original,
+        )
+
+        return transform_to_original(
+            cluster_id        = cluster_id,
+            cluster_preds     = cluster_preds,
+            scenario_labels   = scenario_labels,
+            scaler            = ctx.target_scaler,
+            target_attributes = ctx.target_attributes,
+            strict_notional   = True,
+        )
+```
+
+---
+
+### C.3 — `src/rade_ml_pt/pipelines/hybrid_gnn_rnn/eval.py` (per-member eval facades)
+
+Both eval-side helpers become thin facades. **Signatures unchanged.** Legacy soft-failure semantics preserved (per-member eval's `post_eval` path keeps working even on registry entries without scaler artefacts).
+
+```python
+    @staticmethod
+    def _inverse_target_transforms(
+            predictions: np.ndarray, targets: np.ndarray, transformer: Any
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Invert standardisation of target trades.
+
+        Thin facade over
+        :func:`src.rade_ml_pt.utilities.predictions_transform.inverse_scale_predictions`
+        so the inverse-scale math has a single definition shared with
+        the inference pipeline.  Preserves the legacy behaviour of
+        returning inputs unchanged when ``transformer`` is ``None``
+        (older registry entries with no scaler artefact) rather than
+        raising — so existing per-member eval callers keep working.
+        """
+        if transformer is None:
+            return predictions, targets
+
+        from src.rade_ml_pt.utilities.predictions_transform import (
+            inverse_scale_predictions,
+        )
+        predictions_unscaled, _ = inverse_scale_predictions(predictions, transformer)
+        targets_unscaled, _     = inverse_scale_predictions(targets, transformer)
+        return predictions_unscaled, targets_unscaled
+
+    @staticmethod
+    def _inverse_target_notional(
+            target_pnl: pd.DataFrame, target_attributes: Dict[str, Any],
+            req_cols: List[str] = ["TradeKey", "NotionalSign"]
+    ) -> pd.DataFrame:
+        """Apply per-trade ``NotionalSign`` to an unscaled PnL frame.
+
+        Thin facade over
+        :func:`src.rade_ml_pt.utilities.predictions_transform.apply_notional_signs`
+        so the notional-sign-restoration math has a single definition
+        shared with the inference pipeline.  Preserves the original
+        *soft* failure mode (warn + return input unchanged on missing /
+        misaligned attributes) for backward compatibility with legacy
+        per-member eval callers — the strict inference / ensemble-eval
+        path uses ``strict=True`` via the utility directly.
+        """
+        from src.rade_ml_pt.utilities.predictions_transform import (
+            apply_notional_signs,
+        )
+        return apply_notional_signs(
+            pnl_df            = target_pnl,
+            target_attributes = target_attributes,
+            key_field         = req_cols[0],
+            sign_field        = req_cols[1],
+            strict            = False,
+        )
+```
+
+---
+
+### C.4 — `src/rade_ml_pt/pipelines/ensemble/eval.py` (Phase 3.1 — clean version)
+
+Three changes in this file. Drop the `InferenceContext`-based loader, add a plain-tuple loader, and refactor the per-cluster transform to call the utility directly. **No inference-pipeline imports anywhere.**
+
+#### C.4.1 — Imports
+
+Already in place from the original Phase 3.1 patch — `joblib` and `Tuple` stay. **Remove** any `from src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer import InferenceContext` or `HybridGnnRnnInferencePipeline` import you might have added (the clean version has neither).
+
+#### C.4.2 — Constants
+
+Unchanged from the original Phase 3.1 patch:
 
 ```python
 _PORTFOLIO_TIMESERIES_SCHEMA_VERSION = 3  # v3: +predictions_original / targets_original / *_original cols (Phase 3.1)
 _CLUSTER_TIMESERIES_SCHEMA_VERSION   = 3  # v3: +predictions_original / targets_original / *_original cols (Phase 3.1)
-_TRADE_METRICS_SCHEMA_VERSION = 1
-_ENSEMBLE_METRICS_SCHEMA_VERSION = 1
-_PER_MEMBER_METRICS_SCHEMA_VERSION = 1
-_GROUP_CORRELATIONS_SCHEMA_VERSION = 1
-_CLUSTER_ATTRIBUTES_SCHEMA_VERSION = 1
-_GRAPH_STATS_SCHEMA_VERSION = 1
-_COMPLETENESS_SCHEMA_VERSION = 1
-_FEATURE_SUMMARY_SCHEMA_VERSION = 1
 _TRADE_PREDICTIONS_SCHEMA_VERSION = 1     # Phase 3.1: per-cluster trade-level prediction parquets
-
-# Per-cluster trade-level family (Phase 3.1).  Mirrors the inference
-# pipeline's ``trade_predictions/<cid>_<space>.parquet`` layout but adds
-# a per-cluster subdirectory because eval emits one prediction matrix
-# per (cluster, split) pair, not one per run.
-_TRADE_PREDICTIONS_DIRNAME = "trade_predictions"
-
-# Manifest schema version — bumped to v2 to reflect the new
-# ``spaces_available`` / ``artifacts`` blocks that Phase 3.1 added.  v1
-# consumers (legacy) read the file as before — the extra keys are
-# additive and don't disturb the canonical entry points.
-_EVAL_MANIFEST_SCHEMA_VERSION = 2
+_TRADE_PREDICTIONS_DIRNAME        = "trade_predictions"
+_EVAL_MANIFEST_SCHEMA_VERSION     = 2     # v2 declares spaces_available + artifacts blocks (Phase 3.1)
 ```
 
----
+#### C.4.3 — Replacement helper: `_load_member_target_artifacts`
 
-### Phase 3.1.3 — `_load_cluster_contexts` helper
-
-Insert **directly before** `_save_portfolio_timeseries_parquet` (which is currently the first function under the "Module-level helpers (stateless, no self)" block):
+**Replaces** the previous `_load_cluster_contexts`. Returns plain `(scaler, attributes)` tuples — no `InferenceContext`, no inference import.
 
 ```python
 # ----------------------------------------------------------------------
 # Phase 3.1 — original-space helpers
 # ----------------------------------------------------------------------
 
-def _load_cluster_contexts(
+def _load_member_target_artifacts(
     config: EnsembleConfig,
     member_versions: Optional[Dict[str, str]],
-) -> Dict[str, Any]:
-    """Build per-cluster ``InferenceContext`` instances for scaled→original transforms.
+) -> Dict[str, Tuple[Any, Dict[str, Any]]]:
+    """Read each cluster's ``(target_scaler, target_attributes)`` from the model store.
 
-    Only the two fields the inference-side ``transform_predictions`` static
-    helper reads are populated:
+    Returns a plain mapping of ``cluster_id → (scaler, attributes)``
+    pairs — no ``InferenceContext`` wrapper, no inference-pipeline
+    dependency.  The eval pipeline reads training artefacts from each
+    member's version_dir on its own terms, mirroring how
+    :meth:`HybridGnnRnnEvalPipeline._load_cached_data` loads the same
+    files in the per-member flow.
 
-    * ``target_scaler`` — sklearn-compatible scaler (with
-      ``feature_names_in_`` and ``inverse_transform``) loaded from each
-      member's ``target_scaler.pkl`` under the registry.
-    * ``target_attributes`` — dict carrying ``trade_id`` and
-      ``NotionalSign`` lists, loaded from ``target_attributes.json``.
+    Resolution of ``member_versions`` prefers the explicit argument,
+    then falls back to ``config.metadata["job"]["member_versions"]`` —
+    same chain as :func:`_load_scenario_labels_by_split` so legacy runs
+    with implicit member versioning still work.
 
-    All other context fields stay ``None`` because eval doesn't need
-    graph builders / cluster assets / elementary PnL for the inverse
-    transform.
-
-    Clusters whose member-version artefacts are missing or unreadable
-    are silently dropped from the returned mapping with a warning;
-    downstream writers fall back to scaled-only output for those
-    clusters rather than failing the whole eval run.
-
-    Resolution of ``member_versions``: prefers the explicit argument, then
-    falls back to ``config.metadata["job"]["member_versions"]`` — mirrors
-    the fallback chain in :func:`_load_scenario_labels_by_split` so legacy
-    runs with implicit member versioning still work.
+    Clusters whose artefacts are missing or unreadable are silently
+    dropped from the returned mapping (a warning is logged); the
+    per-split loop falls back to scaled-only output for those clusters
+    rather than failing the whole eval run.
     """
-    # Local import keeps the torch-transitive cost out of module load —
-    # eval's lightweight metrics-only branch never hits this code path.
-    from src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer import InferenceContext
-
     if not member_versions:
         member_versions = (
             config.metadata.get("job", {}).get("member_versions", {}) or {}
@@ -2527,7 +3013,7 @@ def _load_cluster_contexts(
     if not isinstance(member_versions, dict):
         return {}
 
-    contexts: Dict[str, Any] = {}
+    artefacts: Dict[str, Tuple[Any, Dict[str, Any]]] = {}
     for cid in config.cluster_ids:
         member_version = member_versions.get(cid)
         if not member_version:
@@ -2562,480 +3048,101 @@ def _load_cluster_contexts(
             )
             continue
 
-        contexts[cid] = InferenceContext(
-            target_scaler     = scaler,
-            target_attributes = attrs,
-        )
+        artefacts[cid] = (scaler, attrs)
 
-    return contexts
+    return artefacts
 ```
 
----
+#### C.4.4 — Replacement helper: `_transform_cluster_to_original`
 
-### Phase 3.1.4 — `_transform_cluster_to_original` helper
-
-Insert directly after `_load_cluster_contexts`:
+**Replaces** the previous `_transform_cluster_to_original` (which routed through `HybridGnnRnnInferencePipeline.transform_predictions`). New version calls the neutral utility directly. **No inference import.**
 
 ```python
 def _transform_cluster_to_original(
     cluster_id:      str,
     preds_2d:        np.ndarray,
     targets_2d:      np.ndarray,
-    scenario_labels: List[str],
-    ctx:             Any,
+    scenario_labels: Optional[List[str]],
+    scaler:          Any,
+    attributes:      Dict[str, Any],
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Inverse-scale + notional-sign restore a single cluster's preds + targets.
+    """Inverse-scale + notional-sign-restore one cluster's preds + targets.
 
-    Reuses :meth:`HybridGnnRnnInferencePipeline.transform_predictions` —
-    the single source of truth for the scaled→original transformation
-    chain across the codebase.  We call it twice (once for predictions,
-    once for targets) because the helper treats its array argument as
-    "predictions" and we need the same math applied to targets so the
-    eval-side ``predictions_original`` / ``targets_original`` columns
-    are computed identically to inference's per-cluster artefacts.
+    Routes both predictions and targets through the neutral
+    :func:`src.rade_ml_pt.utilities.predictions_transform.transform_to_original`
+    helper.  No inference-pipeline imports: the eval pipeline reads its
+    scaler / attributes directly from the model store (see
+    :func:`_load_member_target_artifacts`) and calls the shared utility
+    — so the cross-pipeline math definition stays in *one* place
+    without crossing pipeline boundaries.
 
     Returns
     -------
     preds_scaled_wide : pd.DataFrame
         Shape ``[n_scenarios, n_trades]`` — model output in z-space.
-        Suitable for direct parquet write as ``<cid>/{split}_scaled.parquet``.
+        Suitable for direct parquet write as
+        ``<cid>/{split}_scaled.parquet``.
     preds_original_wide : pd.DataFrame
-        Same shape — inverse-scaled + notional-sign-restored predictions.
-        Suitable for direct parquet write as ``<cid>/{split}_original.parquet``.
+        Same shape — inverse-scaled + notional-sign-restored
+        predictions.  Suitable for direct parquet write as
+        ``<cid>/{split}_original.parquet``.
     targets_original_wide : pd.DataFrame
         Same shape — inverse-scaled + notional-sign-restored targets.
-        **Not** persisted at trade level (mirrors inference, which has no
-        targets at all); used only to compute aggregate
-        ``targets_original`` columns for the cluster / portfolio
-        timeseries parquets.
+        **Not** persisted at trade level (mirrors inference, which has
+        no targets at all); used only to compute the cluster / portfolio
+        timeseries' ``targets_original`` columns.
     """
-    from src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer import (
-        HybridGnnRnnInferencePipeline,
+    from src.rade_ml_pt.utilities.predictions_transform import (
+        transform_to_original,
     )
 
-    preds_scaled_wide, preds_original_wide, _ = (
-        HybridGnnRnnInferencePipeline.transform_predictions(
-            cluster_id      = cluster_id,
-            cluster_preds   = preds_2d,
-            scenario_labels = scenario_labels,
-            ctx             = ctx,
-        )
+    preds_scaled_wide, preds_original_wide, _ = transform_to_original(
+        cluster_id        = cluster_id,
+        cluster_preds     = preds_2d,
+        scenario_labels   = scenario_labels,
+        scaler            = scaler,
+        target_attributes = attributes,
     )
-    _, targets_original_wide, _ = (
-        HybridGnnRnnInferencePipeline.transform_predictions(
-            cluster_id      = cluster_id,
-            cluster_preds   = targets_2d,
-            scenario_labels = scenario_labels,
-            ctx             = ctx,
-        )
+    _, targets_original_wide, _ = transform_to_original(
+        cluster_id        = cluster_id,
+        cluster_preds     = targets_2d,
+        scenario_labels   = scenario_labels,
+        scaler            = scaler,
+        target_attributes = attributes,
     )
     return preds_scaled_wide, preds_original_wide, targets_original_wide
 ```
 
----
+#### C.4.5 — Per-split loop call-site updates
 
-### Phase 3.1.5 — `_save_trade_predictions_parquet` helper
+In `_save_all_artifacts`, two patches.
 
-Insert directly after `_transform_cluster_to_original`:
-
-```python
-def _save_trade_predictions_parquet(
-    eval_dir:       Path,
-    cluster_id:     str,
-    split:          str,
-    *,
-    scaled_wide:    pd.DataFrame,
-    original_wide:  pd.DataFrame,
-) -> Tuple[Path, Path]:
-    """Write a cluster's trade-level prediction matrix in both spaces.
-
-    Layout (Phase 3.1) ::
-
-        trade_predictions/{cluster_id}/
-            {split}_scaled.parquet     # [scenarios × trade_ids] z-space
-            {split}_original.parquet   # [scenarios × trade_ids] notional units
-
-    Mirrors the inference pipeline's
-    ``trade_predictions/<cid>_<space>.parquet`` family with an extra
-    ``{cluster_id}/`` directory level because eval emits one matrix per
-    (cluster, split) pair, not one per run.  Wide format
-    (scenarios as rows, trade IDs as columns) matches inference exactly,
-    so the dashboard's per-cluster trade drill-down can use the same
-    parquet-reader code path across the two pipelines.
-
-    Returns the (scaled_path, original_path) tuple so the caller can
-    record both in the run manifest.
-    """
-    out_dir = eval_dir / _TRADE_PREDICTIONS_DIRNAME / cluster_id
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    scaled_path   = out_dir / f"{split}_scaled.parquet"
-    original_path = out_dir / f"{split}_original.parquet"
-
-    scaled_wide.to_parquet(scaled_path)
-    original_wide.to_parquet(original_path)
-
-    return scaled_path, original_path
-```
-
----
-
-### Phase 3.1.6 — Widen `_save_portfolio_timeseries_parquet`
-
-**Signature + docstring**: replace just the signature line and the existing v2 docstring with the v3 versions below. The body changes only in the frame-construction block (see further down).
-
-OLD signature:
-```python
-def _save_portfolio_timeseries_parquet(
-    eval_dir: Path,
-    split: str,
-    preds_1d: np.ndarray,
-    targets_1d: np.ndarray,
-    scenario_labels: List[str],
-) -> None:
-```
-
-NEW signature:
-```python
-def _save_portfolio_timeseries_parquet(
-    eval_dir: Path,
-    split: str,
-    preds_1d: np.ndarray,
-    targets_1d: np.ndarray,
-    scenario_labels: List[str],
-    *,
-    preds_1d_original:   Optional[np.ndarray] = None,
-    targets_1d_original: Optional[np.ndarray] = None,
-) -> None:
-    """Write ``portfolio_timeseries_{split}.parquet`` (PRISM contract §11.15.2, B1).
-
-    Long-format columnar time series for portfolio-level predictions /
-    actuals, with precomputed error fields.  Replaces the legacy
-    ``portfolio_summary/{split}.npz`` for API consumption.
-
-    Schema (v3):
-
-    - ``scenario_idx``           int32   — 0-based within this split
-    - ``scenario_label``         string  — date-like label from elementary PnL index
-    - ``split``                  string  — "train" / "val" / "test"
-    - ``predictions``            float32 — portfolio predicted PnL (scaled space)
-    - ``targets``                float32 — portfolio actual PnL (scaled space)
-    - ``error``                  float32 — predictions − targets (scaled)
-    - ``abs_error``              float32 — |error|
-    - ``squared_error``          float32 — error²
-    - ``predictions_original``   float32 — portfolio predicted PnL in original (notional) units (Phase 3.1, NaN if no scaler)
-    - ``targets_original``       float32 — portfolio actual PnL in original units (Phase 3.1, NaN if no scaler)
-    - ``error_original``         float32 — predictions_original − targets_original (Phase 3.1)
-    - ``abs_error_original``     float32 — |error_original| (Phase 3.1)
-    - ``squared_error_original`` float32 — error_original² (Phase 3.1)
-
-    File-level metadata: ``_schema_version`` = ``3``, ``split``.
-
-    Schema-change history
-    ---------------------
-    v2: ``predicted`` → ``predictions``, ``actual`` → ``targets`` so the
-    column convention matches the per-member NPZ shards and the SQLite
-    ``portfolio_summary`` table downstream.
-
-    v3 (current, Phase 3.1): add five ``*_original`` columns carrying the
-    inverse-scaled + notional-sign-restored portfolio PnL.  The legacy
-    scaled columns are preserved unchanged for backwards compatibility;
-    readers that pre-date Phase 3.1 see the new columns as extras.  When
-    a caller can't compute original-space (no scaler for any cluster),
-    the new columns are filled with NaN — schema stays canonical.
-
-    Raises
-    ------
-    RuntimeError
-        If ``scenario_labels`` is non-empty but its length does not match
-        ``preds_1d``.  An empty ``scenario_labels`` list is treated as a
-        legacy-run fallback: positional labels (``str(i)``) are used.
-    """
-```
-
-**Frame-construction block**: replace the existing block that starts with `preds_f32 = preds_1d.astype(...)` through the closing `}).astype({...})` with:
-
-```python
-    preds_f32   = preds_1d.astype(np.float32, copy=False)
-    targets_f32 = targets_1d.astype(np.float32, copy=False)
-    error       = preds_f32 - targets_f32
-
-    # Original-space columns (Phase 3.1).  NaN-fill when the caller can't
-    # compute original-space — this keeps the schema canonical (v3) so
-    # readers always see the same column list and can detect "no
-    # original" via column-wide NaN rather than column-presence checks.
-    if preds_1d_original is not None and targets_1d_original is not None:
-        preds_orig_f32   = preds_1d_original.astype(np.float32, copy=False)
-        targets_orig_f32 = targets_1d_original.astype(np.float32, copy=False)
-    else:
-        preds_orig_f32   = np.full(n, np.nan, dtype=np.float32)
-        targets_orig_f32 = np.full(n, np.nan, dtype=np.float32)
-    error_orig = preds_orig_f32 - targets_orig_f32
-
-    df = pd.DataFrame({
-        "scenario_idx":            np.arange(n, dtype=np.int32),
-        "scenario_label":          labels,
-        "split":                   [split] * n,
-        "predictions":             preds_f32,
-        "targets":                 targets_f32,
-        "error":                   error,
-        "abs_error":               np.abs(error),
-        "squared_error":           error * error,
-        "predictions_original":    preds_orig_f32,
-        "targets_original":        targets_orig_f32,
-        "error_original":          error_orig,
-        "abs_error_original":      np.abs(error_orig),
-        "squared_error_original":  error_orig * error_orig,
-    }).astype({
-        "scenario_idx":            np.int32,
-        "scenario_label":          "string",
-        "split":                   "string",
-        "predictions":             np.float32,
-        "targets":                 np.float32,
-        "error":                   np.float32,
-        "abs_error":               np.float32,
-        "squared_error":           np.float32,
-        "predictions_original":    np.float32,
-        "targets_original":        np.float32,
-        "error_original":          np.float32,
-        "abs_error_original":      np.float32,
-        "squared_error_original":  np.float32,
-    })
-```
-
-Everything below (the `table = pa.table(df)` block and the file-write block) stays unchanged — the bumped `_PORTFOLIO_TIMESERIES_SCHEMA_VERSION` from §3.1.2 propagates automatically.
-
----
-
-### Phase 3.1.7 — Widen `_save_cluster_timeseries_parquet`
-
-**Signature + docstring**: replace just the signature and v2 docstring with the v3 versions:
-
-```python
-def _save_cluster_timeseries_parquet(
-    eval_dir: Path,
-    split: str,
-    cluster_pred_sums: Dict[str, np.ndarray],
-    cluster_target_sums: Dict[str, np.ndarray],
-    scenario_labels: List[str],
-    *,
-    cluster_pred_sums_original:   Optional[Dict[str, np.ndarray]] = None,
-    cluster_target_sums_original: Optional[Dict[str, np.ndarray]] = None,
-) -> None:
-    """Write ``cluster_timeseries_{split}.parquet`` (PRISM contract §11.15.2, B2).
-
-    Long-format per-cluster × per-scenario portfolio sums.  One row per
-    ``(cluster_id, scenario_idx)``; replaces the wide-format
-    ``cluster_summary/{split}.npz`` for API consumption.
-
-    Schema (v3):
-
-    - ``cluster_id``             string  — e.g. "cluster_0"
-    - ``scenario_idx``           int32   — 0-based within this split
-    - ``scenario_label``         string  — date-like label from elementary PnL index
-    - ``split``                  string  — "train" / "val" / "test"
-    - ``predictions``            float32 — cluster portfolio predicted PnL (scaled)
-    - ``targets``                float32 — cluster portfolio actual PnL (scaled)
-    - ``error``                  float32 — predictions − targets (scaled)
-    - ``abs_error``              float32 — |error|
-    - ``squared_error``          float32 — error²
-    - ``predictions_original``   float32 — cluster predicted PnL in original (notional) units (Phase 3.1)
-    - ``targets_original``       float32 — cluster actual PnL in original units (Phase 3.1)
-    - ``error_original``         float32 — predictions_original − targets_original (Phase 3.1)
-    - ``abs_error_original``     float32 — |error_original| (Phase 3.1)
-    - ``squared_error_original`` float32 — error_original² (Phase 3.1)
-
-    Rows are sorted by ``(cluster_id, scenario_idx)`` for read locality
-    under the dominant filter-by-cluster access pattern.  File metadata:
-    ``_schema_version`` = ``3``, ``split``.
-
-    Schema-change history
-    ---------------------
-    v2: ``predicted`` → ``predictions``, ``actual`` → ``targets`` so the
-    column convention matches the per-member NPZ shards.
-
-    v3 (current, Phase 3.1): five ``*_original`` columns carrying the
-    inverse-scaled + notional-sign-restored cluster PnL.  Per-cluster
-    NaN-fill is supported: a cluster with no scaler in
-    ``cluster_pred_sums_original`` / ``cluster_target_sums_original``
-    still emits its rows but with NaN in the original columns.  This
-    keeps the schema canonical and makes the "no original data"
-    detectable client-side via column-wide NaN.
-
-    Raises
-    ------
-    RuntimeError
-        If ``scenario_labels`` is non-empty and any cluster's series
-        length disagrees with it, or if cluster pred/target lengths
-        disagree with each other.  Empty ``scenario_labels`` triggers a
-        warning and positional fallback (``str(i)``).
-    """
-```
-
-**Frame-construction block**: replace the existing block that starts with `preds = np.concatenate([...])` through the closing `}).astype({...})` with:
-
-```python
-    preds = np.concatenate([
-        cluster_pred_sums[cid].astype(np.float32, copy=False)
-        for cid in cluster_ids
-    ])
-    actuals = np.concatenate([
-        cluster_target_sums[cid].astype(np.float32, copy=False)
-        for cid in cluster_ids
-    ])
-    error = preds - actuals
-
-    # Original-space columns (Phase 3.1).  NaN-fill per-cluster when no
-    # scaler was available — preserves the canonical v3 schema while
-    # letting partial-coverage runs still emit a valid parquet.
-    def _stack_or_nan(
-        sums_by_cid: Optional[Dict[str, np.ndarray]],
-    ) -> np.ndarray:
-        if sums_by_cid is None:
-            return np.full(n_rows, np.nan, dtype=np.float32)
-        out = np.empty(n_rows, dtype=np.float32)
-        for i, cid in enumerate(cluster_ids):
-            block = sums_by_cid.get(cid)
-            start = i * n_scenarios
-            end   = start + n_scenarios
-            if block is None:
-                out[start:end] = np.nan
-            else:
-                out[start:end] = np.asarray(block, dtype=np.float32)
-        return out
-
-    preds_orig   = _stack_or_nan(cluster_pred_sums_original)
-    targets_orig = _stack_or_nan(cluster_target_sums_original)
-    error_orig   = preds_orig - targets_orig
-
-    df = pd.DataFrame({
-        "cluster_id":              cluster_col,
-        "scenario_idx":            scenario_idx_col,
-        "scenario_label":          scenario_label_col,
-        "split":                   np.full(n_rows, split, dtype=object),
-        "predictions":             preds,
-        "targets":                 actuals,
-        "error":                   error,
-        "abs_error":               np.abs(error),
-        "squared_error":           error * error,
-        "predictions_original":    preds_orig,
-        "targets_original":        targets_orig,
-        "error_original":          error_orig,
-        "abs_error_original":      np.abs(error_orig),
-        "squared_error_original":  error_orig * error_orig,
-    }).astype({
-        "cluster_id":              "string",
-        "scenario_idx":            np.int32,
-        "scenario_label":          "string",
-        "split":                   "string",
-        "predictions":             np.float32,
-        "targets":                 np.float32,
-        "error":                   np.float32,
-        "abs_error":               np.float32,
-        "squared_error":           np.float32,
-        "predictions_original":    np.float32,
-        "targets_original":        np.float32,
-        "error_original":          np.float32,
-        "abs_error_original":      np.float32,
-        "squared_error_original":  np.float32,
-    })
-```
-
-Everything below (the `table = pa.table(df)` block and the file-write block) stays unchanged.
-
----
-
-### Phase 3.1.8 — `_save_all_artifacts`: load cluster contexts once per run
-
-Inside the `_save_all_artifacts` method, **immediately after** the existing block:
-
-```python
-        # Shared inputs — computed once, reused across multiple writers.
-        scenario_labels_by_split = _load_scenario_labels_by_split(
-            config, member_versions,
-        )
-        cluster_attrs = _build_cluster_attributes(config)
-```
-
-…insert the following:
+**Load artefacts (~line 698, replacing the `cluster_contexts = …` call):**
 
 ```python
         # Phase 3.1 — per-cluster (target_scaler, target_attributes) for
         # scaled→original transforms.  Loaded *once* (a single deserialise
         # per member, not per split) and reused across all three splits.
-        # Empty mapping for legacy runs without scaler artefacts; per-split
-        # logic falls back to NaN-filled original columns in that case.
-        cluster_contexts = _load_cluster_contexts(config, member_versions)
-        if not cluster_contexts:
+        # Plain ``(scaler, attrs)`` tuples — no InferenceContext wrapper,
+        # no inference-pipeline imports.  Empty mapping for legacy runs
+        # without scaler artefacts; per-split logic falls back to
+        # NaN-filled original columns in that case.
+        cluster_artefacts = _load_member_target_artifacts(config, member_versions)
+        if not cluster_artefacts:
             logger.warning(
                 "No per-cluster scaler artefacts found — eval will emit "
                 "scaled-space only (Phase 3.1 original columns will be NaN)."
             )
 ```
 
----
-
-### Phase 3.1.9 — `_save_all_artifacts`: per-split loop changes
-
-Inside the `for split in all_split_results:` loop, **replace** the block that currently runs from:
+**Call the transform helper (~line 790, inside the per-cluster loop):**
 
 ```python
-            # Cluster / portfolio sums — computed once, reused by B1/B2/B6.
-            cluster_pred_sums: Dict[str, np.ndarray] = {
-                ...
-            }
-            ...
-            _save_cluster_timeseries_parquet(
-                eval_dir, split,
-                cluster_pred_sums=cluster_pred_sums,
-                cluster_target_sums=cluster_target_sums,
-                scenario_labels=scenario_labels,
-            )
-```
-
-…down to and including the closing `_save_cluster_timeseries_parquet(...)` call — with this expanded block:
-
-```python
-            # Cluster / portfolio sums — computed once, reused by B1/B2/B6.
-            cluster_pred_sums: Dict[str, np.ndarray] = {
-                cid: preds_by_cluster[cid].sum(axis=1)
-                for cid in sorted(preds_by_cluster)
-            }
-            cluster_target_sums: Dict[str, np.ndarray] = {
-                cid: targets_by_cluster[cid].sum(axis=1)
-                for cid in sorted(targets_by_cluster)
-            }
-            if cluster_pred_sums:
-                preds_1d = np.add.reduce(list(cluster_pred_sums.values()))
-                targets_1d = np.add.reduce(list(cluster_target_sums.values()))
-            else:
-                preds_1d = np.zeros(0, dtype=np.float32)
-                targets_1d = np.zeros(0, dtype=np.float32)
-
-            scenario_labels = scenario_labels_by_split.get(split, [])
-
-            # ── Phase 3.1 — original-space transforms ─────────────────
-            #
-            # For every cluster carrying a scaler context, run the canonical
-            # inverse-scale + notional-sign-restore chain once for predictions
-            # and once for targets.  Two outputs:
-            #
-            # (a) Per-cluster wide DataFrames (scenarios × trade_ids) for
-            #     trade-level parquets — mirrors inference's
-            #     ``trade_predictions/<cid>_<space>.parquet`` layout.
-            # (b) Per-cluster 1-D sums used by the cluster / portfolio
-            #     timeseries writers to fill the new ``*_original`` columns.
-            #
-            # Clusters with no scaler context are silently skipped here
-            # (logged once at startup); the writers NaN-fill their rows so
-            # the v3 schema stays canonical regardless of coverage.
-            cluster_pred_sums_original:   Dict[str, np.ndarray] = {}
-            cluster_target_sums_original: Dict[str, np.ndarray] = {}
-            t_orig = time.perf_counter()
             for cid in sorted(preds_by_cluster):
-                ctx = cluster_contexts.get(cid)
-                if ctx is None:
+                pair = cluster_artefacts.get(cid)
+                if pair is None:
                     continue
+                scaler, attrs = pair
                 try:
                     (
                         preds_scaled_wide,
@@ -3046,7 +3153,8 @@ Inside the `for split in all_split_results:` loop, **replace** the block that cu
                         preds_2d        = preds_by_cluster[cid],
                         targets_2d      = targets_by_cluster[cid],
                         scenario_labels = scenario_labels or None,
-                        ctx             = ctx,
+                        scaler          = scaler,
+                        attributes      = attrs,
                     )
                 except Exception as exc:
                     logger.warning(
@@ -3068,164 +3176,81 @@ Inside the `for split in all_split_results:` loop, **replace** the block that cu
                 cluster_target_sums_original[cid] = (
                     targets_original_wide.to_numpy().sum(axis=1)
                 )
-            if cluster_pred_sums_original:
-                logger.info(
-                    "  [%s] original-space transforms: %.1fs (%d clusters)",
-                    split, time.perf_counter() - t_orig,
-                    len(cluster_pred_sums_original),
-                )
-
-            # Portfolio-level original-space sum across clusters.  ``+`` over
-            # the values fans out per-scenario across the cluster axis, so
-            # the result lines up 1-for-1 with the scaled ``preds_1d``
-            # ordering.  ``None`` propagates when no cluster had original
-            # data, which the writer translates to a NaN-filled column.
-            if cluster_pred_sums_original:
-                preds_1d_original = np.add.reduce(
-                    list(cluster_pred_sums_original.values())
-                )
-                targets_1d_original = np.add.reduce(
-                    list(cluster_target_sums_original.values())
-                )
-            else:
-                preds_1d_original   = None
-                targets_1d_original = None
-
-            _save_portfolio_timeseries_parquet(
-                eval_dir, split,
-                preds_1d=preds_1d,
-                targets_1d=targets_1d,
-                scenario_labels=scenario_labels,
-                preds_1d_original=preds_1d_original,
-                targets_1d_original=targets_1d_original,
-            )
-            _save_cluster_timeseries_parquet(
-                eval_dir, split,
-                cluster_pred_sums=cluster_pred_sums,
-                cluster_target_sums=cluster_target_sums,
-                scenario_labels=scenario_labels,
-                cluster_pred_sums_original=(
-                    cluster_pred_sums_original or None
-                ),
-                cluster_target_sums_original=(
-                    cluster_target_sums_original or None
-                ),
-            )
 ```
 
-The remainder of the per-split loop (`_save_trade_metrics_parquet`, `_save_group_correlations_parquet`, `_save_quality_parquets_for_split`, the trailing log line) stays unchanged.
+#### C.4.6 — Writers and manifest
+
+`_save_trade_predictions_parquet`, the widened `_save_portfolio_timeseries_parquet`, the widened `_save_cluster_timeseries_parquet`, the orchestration in `_save_all_artifacts`, and the v2 manifest extension — **unchanged** from the original Phase 3.1 patch. Only the upstream loader + transform helper changed.
 
 ---
 
-### Phase 3.1.10 — Manifest extension
+### C.5 — Verification snippet
 
-Inside `_save_all_artifacts`, replace the existing `_write_json(eval_dir / "manifest.json", {...})` call with:
+After applying all four file changes, run this smoke check (no pytest dependency, no real model required) to confirm the refactor round-trips correctly:
 
 ```python
-        # Manifest written *upfront* so a partial / failing run still
-        # leaves a structurally-valid manifest behind.  The ``artifacts``
-        # block enumerates which families this writer produces; the
-        # Phase 3.2 API uses this to discover the available spaces /
-        # paths without having to peek at every parquet's footer.
-        _write_json(eval_dir / "manifest.json", {
-            "_schema_version": _EVAL_MANIFEST_SCHEMA_VERSION,
-            "version": version,
-            "evaluated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "trade_ids": config.all_trade_ids,
-            "cluster_ids": config.cluster_ids,
-            "cluster_trade_indices": {
-                k: v.tolist() if isinstance(v, np.ndarray) else list(v)
-                for k, v in cluster_trade_indices.items()
-            },
-            "splits_available": sorted(all_split_results.keys()),
-            # Phase 3.1 — declared at manifest level so a single read of
-            # the manifest tells the API which spaces are available
-            # without grovelling through every parquet's column list.
-            "spaces_available": ["scaled", "original"],
-            "artifacts": {
-                "portfolio_timeseries": {
-                    "schema_version": _PORTFOLIO_TIMESERIES_SCHEMA_VERSION,
-                    "path_template":  "portfolio_summary/portfolio_timeseries_{split}.parquet",
-                    "spaces": ["scaled", "original"],
-                    "columns": {
-                        "scaled":   ["predictions", "targets", "error", "abs_error", "squared_error"],
-                        "original": [
-                            "predictions_original", "targets_original",
-                            "error_original", "abs_error_original",
-                            "squared_error_original",
-                        ],
-                    },
-                },
-                "cluster_timeseries": {
-                    "schema_version": _CLUSTER_TIMESERIES_SCHEMA_VERSION,
-                    "path_template":  "portfolio_summary/cluster_timeseries_{split}.parquet",
-                    "spaces": ["scaled", "original"],
-                    "columns": {
-                        "scaled":   ["predictions", "targets", "error", "abs_error", "squared_error"],
-                        "original": [
-                            "predictions_original", "targets_original",
-                            "error_original", "abs_error_original",
-                            "squared_error_original",
-                        ],
-                    },
-                },
-                "trade_predictions": {
-                    "schema_version": _TRADE_PREDICTIONS_SCHEMA_VERSION,
-                    "path_template":  (
-                        _TRADE_PREDICTIONS_DIRNAME
-                        + "/{cluster_id}/{split}_{space}.parquet"
-                    ),
-                    "spaces": ["scaled", "original"],
-                    "shape": "wide_scenarios_x_trades",
-                    "note": "Predictions only (no targets) — mirrors inference output.",
-                },
-            },
-        })
+import numpy as np
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
+
+# 1) Utility primitives in isolation -------------------------------------
+from src.rade_ml_pt.utilities.predictions_transform import (
+    inverse_scale_predictions,
+    apply_notional_signs,
+    transform_to_original,
+)
+
+np.random.seed(0)
+trade_ids = ['t_a', 't_b', 't_c']
+scaler = StandardScaler().fit(
+    pd.DataFrame(np.random.randn(100, 3).astype(np.float32), columns=trade_ids)
+)
+attrs = {'TradeKey': trade_ids, 'NotionalSign': [1.0, -1.0, 1.0]}
+preds = np.random.randn(5, 3).astype(np.float32)
+
+scaled, original, summary = transform_to_original(
+    cluster_id='c1',
+    cluster_preds=preds,
+    scenario_labels=[f's_{i}' for i in range(5)],
+    scaler=scaler,
+    target_attributes=attrs,
+)
+expected = scaler.inverse_transform(preds) * np.array([1, -1, 1])[None, :]
+np.testing.assert_allclose(original.to_numpy(), expected, rtol=1e-5)
+print('OK: utility composite matches hand-computed expected')
+
+# 2) Inference facade (signature unchanged) ------------------------------
+from src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer import (
+    HybridGnnRnnInferencePipeline, InferenceContext,
+)
+ctx = InferenceContext(target_scaler=scaler, target_attributes=attrs)
+_, original_facade, _ = HybridGnnRnnInferencePipeline.transform_predictions(
+    cluster_id='c1', cluster_preds=preds, scenario_labels=None, ctx=ctx,
+)
+np.testing.assert_allclose(original_facade.to_numpy(), expected, rtol=1e-5)
+print('OK: inference facade matches utility')
+
+# 3) Ensemble-eval helper (no inference import) --------------------------
+from src.rade_ml_pt.pipelines.ensemble.eval import _transform_cluster_to_original
+ps, po, _ = _transform_cluster_to_original(
+    cluster_id='c1', preds_2d=preds, targets_2d=preds * 0.5,
+    scenario_labels=None, scaler=scaler, attributes=attrs,
+)
+np.testing.assert_allclose(po.to_numpy(), expected, rtol=1e-5)
+print('OK: ensemble eval _transform_cluster_to_original matches utility')
+
+# 4) Confirm ensemble eval has NO inference-pipeline import --------------
+import src.rade_ml_pt.pipelines.ensemble.eval as ens_eval, inspect
+src = inspect.getsource(ens_eval)
+assert 'from src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer' not in src
+print('OK: ensemble eval module does NOT import the inference pipeline')
+
+print('All Phase 3.1 (clean architecture) checks passed.')
 ```
 
-The `_write_json(eval_dir / "trade_cluster_map.json", ...)` call directly below stays unchanged.
+Expected output is five `OK:` lines.
 
 ---
-
-### Sanity checks after applying
-
-Run the eval pipeline against a registered ensemble and verify:
-
-1. **Manifest is v2 with the new blocks**:
-   ```bash
-   jq '._schema_version, .spaces_available, (.artifacts | keys)' artifacts/ensemble/<version>/evaluation/manifest.json
-   # → 2
-   #   ["scaled", "original"]
-   #   ["cluster_timeseries", "portfolio_timeseries", "trade_predictions"]
-   ```
-
-2. **`portfolio_timeseries_{split}.parquet` is v3 with the new columns**:
-   ```python
-   import pandas as pd
-   df = pd.read_parquet("artifacts/ensemble/<version>/evaluation/portfolio_summary/portfolio_timeseries_test.parquet")
-   assert {"predictions_original","targets_original","error_original",
-           "abs_error_original","squared_error_original"}.issubset(df.columns)
-   assert not df["predictions_original"].isna().all()   # populated, not NaN-fill
-   ```
-
-3. **`cluster_timeseries_{split}.parquet` is v3 with the new columns** — same check on the cluster file.
-
-4. **New trade-level family exists per cluster × split × space**:
-   ```bash
-   ls artifacts/ensemble/<version>/evaluation/trade_predictions/
-   # → cluster_0/  cluster_1/  cluster_2/  ...
-   ls artifacts/ensemble/<version>/evaluation/trade_predictions/cluster_0/
-   # → test_original.parquet  test_scaled.parquet  train_original.parquet  ...
-   ```
-
-5. **Wide layout matches inference**:
-   ```python
-   wide = pd.read_parquet("artifacts/ensemble/<version>/evaluation/trade_predictions/cluster_0/test_scaled.parquet")
-   # Row index → scenario_label (a single named column after to_parquet)
-   # Other columns → trade_ids in the scaler's canonical order
-   ```
-
-6. **Legacy-run fallback (no scalers)**: if `target_scaler.pkl` is missing for every member, eval still runs to completion; the new `*_original` columns are all NaN; no `trade_predictions/` directory is created; the manifest still declares `spaces_available: ["scaled","original"]` (advertised even when the data is NaN — readers detect this via column-wide NaN).
 
 ### What's next
 
