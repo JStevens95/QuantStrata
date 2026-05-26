@@ -252,3012 +252,1305 @@ No mock, no merge.
 
 ---
 
-## Appendix A — Inference Console UI wiring (Stages 12 + 14, copy-paste sync)
+## Appendix A — Phase M.1: Monitoring drift primitives (copy-paste sync)
 
-> **Status**: All four files below land in this repo in the
-> `src/ui/apps/rade_analytics/` tree. Verified compiling and lint-clean. The
-> Stage 11 `RadeApiClient` extensions + Stage 12 `RadeBackend` wrappers
-> together with the eight callbacks in A.3 turn the Inference Console page
-> into a live, threaded inference driver against the API built in Stages
-> 7-10.
+> **Status**: Five files below land in the repo under
+> `src/rade_ml_pt/monitoring/` (production code) and
+> `tests/rade_ml_pt/monitoring/` (tests). 53 unit + smoke tests pass,
+> lint-clean. This appendix is the single source of truth for M.1 —
+> copy verbatim into work env.
 >
-> The previous **Stages 1-10 appendix** (the pipeline + API source) has
-> been retired now that the work env is aligned on that base. The canonical
-> reference for Stages 1-10 lives in
-> `docs/inference_pipeline_contract.md`. This new appendix covers only
-> the UI wiring built on top.
+> **Scope**: Pure NumPy / pandas. No I/O beyond `pd.read_parquet`. No
+> dependency on the inference pipeline. M.2 (the
+> `EnsembleMonitoringPipeline` that wires drift into the artifact
+> layout) consumes only the public symbols re-exported from
+> `monitoring/__init__.py` — keep that surface stable.
+>
+> **What the M.1 primitives compute** (per cluster, per feature in the
+> training-time scaled space):
+> * `psi` — Population Stability Index against the persisted histogram
+>   (51 edges + 50 counts) saved by `monitoring.baselines.save_feature_baseline`.
+>   Outlier handling: today's values are clipped into the outermost
+>   bins so an unseen tail value can't blow PSI up to infinity.
+> * `js_divergence` — Jensen-Shannon divergence (log base 2 so bounded
+>   `[0, 1]`) on the same paired histograms.
+> * `mean_shift` — `(μ_today - μ_train) / max(σ_train, ε)`, i.e. a
+>   z-score in training-std units (good for traders who want
+>   "how many sigmas off are we?").
+> * `std_ratio` — `σ_today / max(σ_train, ε)`. Volatility regime
+>   indicator; >1 → wider, <1 → tighter than calibration.
+> * `severity` — `info` (PSI < 0.10) / `warn` (0.10 ≤ PSI < 0.25) /
+>   `critical` (PSI ≥ 0.25) / `no_data` (NaN or unscoreable). Industry
+>   defaults; consumed by every downstream colour scale.
+>
+> **What the portfolio aggregator returns** (consumed by the M.2
+> manifest writer and the M.5 health-strip): clusters seen, severity
+> counts, mean/max PSI, worst cluster + feature, portfolio severity.
 
-### Reading guide
-
-Four files, in dependency order. Three are diffs (existing files, narrow
-edits) and one is a NEW file with its full source.
-
-| § | File | Change | Stage |
-|---|---|---|---|
-| A.1 | `src/ui/apps/rade_analytics/layouts/inference.py` | +2 IDs, +2 Stores in `_page_stores()` | 14 |
-| A.2 | `src/ui/apps/rade_analytics/data/backend.py` | +13 imports, +7 cache bindings, +7 fetchers, +14 public methods | 12 |
-| A.3 | `src/ui/apps/rade_analytics/callbacks/inference_cb.py` | **NEW file** — 8 callbacks | 12 |
-| A.4 | `src/ui/apps/rade_analytics/callbacks/__init__.py` | +1 import, +1 `register(...)` call | 12 |
-
-**Suggested copy order**: A.1 → A.2 → A.3 → A.4. Each step compiles
-independently; you can boot the app after any of them and verify the prior
-ones haven't regressed.
-
-**Architecture recap (Stage 12 control flow)**:
-
-```
-                                URL hits /inference
-                                       │
-                                       ▼
-              on_mount  ───────────►  POST /load    (or adopt existing run)
-                                       │
-                                       ▼
-              on_upload  ──────────►  POST /scenarios
-                                       │
-                                       ▼
-              on_validate  ────────►  POST /validate    (gates Run button)
-                                       │
-                                       ▼
-              on_run  ─────────────►  POST /run    (returns 'running' immediately)
-                                       │ arms polling
-                                       ▼
-              on_poll  ─ 1Hz tick ─►  GET /events?cursor=N  +  GET /status
-                                       │ until terminal
-                                       ▼
-              hydrate_results  ────►  GET /runs/{id}/portfolio + /clusters + /manifest
-                                       │
-                                       ▼
-                       KPIs + figures + AG Grid populated
-```
-
-The polling pair (`polling_store` + `poll_interval`, added in §A.1) is the
-only piece of bespoke client state; every other store flows from server
-state on demand.
-
----
-
-### A.1 `src/ui/apps/rade_analytics/layouts/inference.py` — Stage 14 fold-in
-
-Two surgical edits to an existing file. **Do not replace the file** — add
-the two snippets below into the locations indicated.
-
-**Edit 1** — Add two keys to `INFERENCE_IDS` (inside the "Row 0 — page-level
-data Stores" block):
+### File 1: `src/rade_ml_pt/monitoring/drift.py` (full source)
 
 ```python
-    # Row 0 — page-level data Stores driving the state machine.
-    "activity_log_store":         "inference-activity-log-store",
-    "ingest_meta_store":          "inference-ingest-meta-store",
-    "run_meta_store":             "inference-run-meta-store",
-    "selected_scenario_store":    "inference-selected-scenario-store",
-
-    # Row 0 — polling primitives (Stage 12 / 14).  ``polling_store``
-    # carries the live run cursor + run_id + armed flag so the poll
-    # callback can advance ``/events`` page-by-page without flicker;
-    # ``poll_interval`` is disabled at mount and flipped on by the
-    # ``on_run`` callback the moment a run is dispatched.
-    "polling_store":              "inference-polling-store",
-    "poll_interval":              "inference-poll-interval",
-```
-
-**Edit 2** — Replace the body of `_page_stores()` with the version below
-(adds a `dcc.Store` and a `dcc.Interval` plus an explanatory docstring;
-preserves all five existing stores in their existing order):
-
-```python
-def _page_stores() -> List[Any]:
-    """All ``dcc.Store`` mounts driving the page state machine.
-
-    Kept as a list so ``build_inference`` can splat them at the top of
-    the page tree without tracking individual ids.
-
-    The ``polling_store`` + ``poll_interval`` pair powers the live
-    activity-log drain documented in :func:`callbacks.inference_cb.on_poll`:
-    ``on_run`` flips ``polling_store.data['armed']`` to ``True`` and
-    enables ``poll_interval``; each interval tick reads the current
-    cursor, calls ``/events?cursor=N`` + ``/status``, advances the
-    cursor, and disarms the polling pair when the API reports a
-    terminal status.  Decoupling the cursor from the interval lets a
-    completed run pause polling without losing its place if the user
-    re-arms (e.g. for re-runs).
-    """
-    return [
-        dcc.Store(
-            id=INFERENCE_IDS["mount_signal"],
-            data=True,
-            storage_type="memory",
-        ),
-        dcc.Store(
-            id=INFERENCE_IDS["activity_log_store"],
-            data=[],
-            storage_type="memory",
-        ),
-        dcc.Store(
-            id=INFERENCE_IDS["ingest_meta_store"],
-            data=None,
-            storage_type="memory",
-        ),
-        dcc.Store(
-            id=INFERENCE_IDS["run_meta_store"],
-            data=None,
-            storage_type="memory",
-        ),
-        dcc.Store(
-            id=INFERENCE_IDS["selected_scenario_store"],
-            data=None,
-            storage_type="memory",
-        ),
-        dcc.Store(
-            id=INFERENCE_IDS["polling_store"],
-            # Initial shape mirrors the on-the-wire contract the
-            # poll callback expects.  ``armed=False`` means the
-            # interval will short-circuit even if its disabled flag
-            # ever drifts out of sync (defence in depth).
-            data={"armed": False, "run_id": None, "cursor": 0},
-            storage_type="memory",
-        ),
-        dcc.Interval(
-            id=INFERENCE_IDS["poll_interval"],
-            # 1 Hz is a comfortable trade-off between perceived
-            # liveness (one new line per second when the worker is
-            # busy) and server load (the events endpoint is cheap;
-            # /status is a single dict read).  The interval stays
-            # disabled until ``on_run`` arms it — pages that never
-            # dispatch a run pay zero polling cost.
-            interval=1000,
-            n_intervals=0,
-            disabled=True,
-        ),
-    ]
-```
-
-**Polling store contract**:
-
-| Key | Type | Meaning |
-|---|---|---|
-| `armed` | `bool` | `True` between `on_run` dispatch and terminal-state detection |
-| `run_id` | `str \| None` | Active run_id (kept in sync with `StatusResponse.run_id`) |
-| `cursor` | `int` | Number of events the UI has already drained |
-
----
-
-### A.2 `src/ui/apps/rade_analytics/data/backend.py` — Step 2 wrappers
-
-Three surgical edits. **Do not replace the file** — add the snippets below
-into the locations indicated. New lines total ~240; net diff is purely
-additive.
-
-**Edit 1** — Add inference Pydantic model imports alongside the existing
-model imports near the top of the file:
-
-```python
-from src.rade_ml_pt.ensemble.api.client import RadeApiClient, RadeApiError
-from src.rade_ml_pt.ensemble.api.models.clusters import ClustersResponse
-from src.rade_ml_pt.ensemble.api.models.governance import (
-    GovernanceRegistryResponse,
-)
-from src.rade_ml_pt.ensemble.api.models.inference import (
-    EventsResponse,
-    LoadResponse,
-    LoadScenariosResponse,
-    ManifestResponse,
-    RunResponse,
-    RunsListResponse,
-    ScenariosSnapshotResponse,
-    StatusResponse,
-    ValidateResponse,
-    ValidationSnapshotResponse,
-)
-from src.rade_ml_pt.ensemble.api.models.meta import HealthResponse, VersionsResponse
-from src.rade_ml_pt.ensemble.api.models.overview import OverviewResponse
-from src.rade_ml_pt.ensemble.api.models.trade_graph import TradeGraphResponse
-```
-
-**Edit 2** — Append seven cache bindings to `_bind_cached_methods()` just
-before the "Predictions are intentionally NOT cached" comment:
-
-```python
-        # Inference (Stage 12) — only the *data-plane* GETs are cached.
-        # Per-run artifacts are immutable on disk, so a long TTL is
-        # safe and dramatically reduces flicker when the user pivots
-        # between tabs.  /runs has a shorter TTL because new runs
-        # land continuously while the dashboard is open.  Control-
-        # plane endpoints are uncached by design (live state).
-        self._inference_runs_list_cached       = cache.memoize(timeout=30)(
-            self._fetch_inference_runs_list
-        )
-        self._inference_run_manifest_cached    = cache.memoize(timeout=ttl)(
-            self._fetch_inference_run_manifest
-        )
-        self._inference_portfolio_df_cached    = cache.memoize(timeout=ttl)(
-            self._fetch_inference_portfolio_df
-        )
-        self._inference_clusters_df_cached     = cache.memoize(timeout=ttl)(
-            self._fetch_inference_clusters_df
-        )
-        self._inference_cluster_trades_cached  = cache.memoize(timeout=ttl)(
-            self._fetch_inference_cluster_trades_df
-        )
-        self._inference_validation_cached      = cache.memoize(timeout=ttl)(
-            self._fetch_inference_validation
-        )
-        self._inference_scenarios_cached       = cache.memoize(timeout=ttl)(
-            self._fetch_inference_scenarios
-        )
-```
-
-**Edit 3** — Append the new section (fetchers + public methods) at the very
-end of the `RadeBackend` class. If you've already removed the legacy
-`run_inference()` method, just paste this after the last remaining public
-method:
-
-```python
-    # ══════════════════════════════════════════════════════════════
-    # Inference (Stage 12) — API-driven control plane + data plane
-    #
-    # Thin wrappers over the corresponding :class:`RadeApiClient`
-    # methods, wrapped in :class:`BackendResult` for the standard
-    # tri-state envelope.  Two design lines kept very deliberately:
-    #
-    #   * **Control plane is uncached.**  The pipeline state machine
-    #     advances on every call — caching it would silently break
-    #     the activity-log narrative (stale events) and the gate
-    #     between stages (stale ``is_valid`` flag).
-    #   * **Data plane is cached.**  Once a run finishes, its
-    #     artifacts are immutable, so per-run reads can sit on a
-    #     long TTL.  ``/runs`` (the discovery list) uses a shorter
-    #     TTL because new runs continue to land while the dashboard
-    #     is open.
-    # ══════════════════════════════════════════════════════════════
-
-    # ── Raw fetchers — control plane (uncached) ──────────────────
-
-    def _fetch_inference_load(self) -> LoadResponse:
-        return self._client.load_ensemble()
-
-    def _fetch_inference_load_scenarios(
-        self, new_scenario_dir: str,
-    ) -> LoadScenariosResponse:
-        return self._client.load_scenarios(new_scenario_dir)
-
-    def _fetch_inference_validate(self) -> ValidateResponse:
-        return self._client.validate_scenarios()
-
-    def _fetch_inference_start(
-        self, artifacts_dir: Optional[str],
-    ) -> RunResponse:
-        return self._client.run_inference(artifacts_dir=artifacts_dir)
-
-    def _fetch_inference_status(self) -> StatusResponse:
-        return self._client.inference_status()
-
-    def _fetch_inference_events(self, cursor: int) -> EventsResponse:
-        return self._client.inference_events(cursor=cursor)
-
-    def _fetch_inference_manifest(self) -> ManifestResponse:
-        return self._client.inference_manifest()
-
-    # ── Raw fetchers — data plane (cached above) ─────────────────
-
-    def _fetch_inference_runs_list(self) -> RunsListResponse:
-        return self._client.list_inference_runs()
-
-    def _fetch_inference_run_manifest(self, run_id: str) -> ManifestResponse:
-        return self._client.inference_run_manifest(run_id)
-
-    def _fetch_inference_portfolio_df(self, run_id: str) -> pd.DataFrame:
-        """Portfolio long-format frame — one row per scenario.
-
-        Columns: ``scenario_label``, ``sum_pnl_scaled``,
-        ``sum_pnl_original``, ``n_clusters``.  ``run_id`` is stashed
-        on ``df.attrs`` so callers can defensively cross-check.
-        """
-        resp = self._client.inference_portfolio(run_id)
-        df = pd.DataFrame([r.model_dump() for r in resp.rows])
-        df.attrs["run_id"]      = resp.run_id
-        df.attrs["n_scenarios"] = resp.n_scenarios
-        return df
-
-    def _fetch_inference_clusters_df(self, run_id: str) -> pd.DataFrame:
-        """Cluster-summary long-format frame — one row per (cluster, scenario).
-
-        Columns match :class:`ClusterSummaryRow`: scenario_label,
-        cluster_id, sum/mean/std/min/max_pnl_{scaled,original}.
-        """
-        resp = self._client.inference_clusters_summary(run_id)
-        df = pd.DataFrame([r.model_dump() for r in resp.rows])
-        df.attrs["run_id"]      = resp.run_id
-        df.attrs["n_clusters"]  = resp.n_clusters
-        df.attrs["n_scenarios"] = resp.n_scenarios
-        return df
-
-    def _fetch_inference_cluster_trades_df(
-        self,
-        run_id:     str,
-        cluster_id: str,
-        space:      str,
-    ) -> pd.DataFrame:
-        """Per-cluster trade-level wide frame.
-
-        Index = scenario_labels, columns = trade_ids, values = PnL
-        in the requested ``space``.  Matches the parquet layout
-        :meth:`HybridGnnRnnInferencePipeline.transform_predictions`
-        emits.
-        """
-        resp = self._client.inference_cluster_trades(
-            run_id, cluster_id, space=space,
-        )
-        df = pd.DataFrame(
-            data    = resp.values,
-            index   = pd.Index(resp.scenario_labels, name="scenario_label"),
-            columns = pd.Index(resp.trade_ids,       name="trade_id"),
-        )
-        df.attrs["run_id"]     = resp.run_id
-        df.attrs["cluster_id"] = resp.cluster_id
-        df.attrs["space"]      = resp.space
-        return df
-
-    def _fetch_inference_validation(
-        self, run_id: str,
-    ) -> ValidationSnapshotResponse:
-        return self._client.inference_validation(run_id)
-
-    def _fetch_inference_scenarios(
-        self, run_id: str,
-    ) -> ScenariosSnapshotResponse:
-        return self._client.inference_scenarios(run_id)
-
-    # ── Public — control plane (always live; never cached) ──────
-
-    def inference_load(self) -> BackendResult[LoadResponse]:
-        """Cold-load the ensemble + per-cluster contexts on the server."""
-        return self._wrap(self._fetch_inference_load)
-
-    def inference_load_scenarios(
-        self, new_scenario_dir: str,
-    ) -> BackendResult[LoadScenariosResponse]:
-        """Parse a folder of shock CSVs into the active run state."""
-        return self._wrap(self._fetch_inference_load_scenarios, new_scenario_dir)
-
-    def inference_validate(self) -> BackendResult[ValidateResponse]:
-        """Compute the per-cluster routing decisions + run-level checks."""
-        return self._wrap(self._fetch_inference_validate)
-
-    def inference_start(
-        self,
-        *,
-        artifacts_dir: Optional[str] = None,
-    ) -> BackendResult[RunResponse]:
-        """Dispatch the inference run onto the API's worker thread.
-
-        Returns immediately with ``status='running'`` — caller is
-        expected to arm the polling loop and drain
-        :meth:`inference_events` until terminal state.
-        """
-        return self._wrap(self._fetch_inference_start, artifacts_dir)
-
-    def inference_status(self) -> BackendResult[StatusResponse]:
-        """Cheap probe used to gate the next-button in the UI."""
-        return self._wrap(self._fetch_inference_status)
-
-    def inference_events(
-        self, *, cursor: int = 0,
-    ) -> BackendResult[EventsResponse]:
-        """Cursor-paginated tail of the activity log for the live run."""
-        return self._wrap(self._fetch_inference_events, cursor)
-
-    def inference_manifest(self) -> BackendResult[ManifestResponse]:
-        """Active run's ``manifest.json`` — available once status=complete."""
-        return self._wrap(self._fetch_inference_manifest)
-
-    # ── Public — data plane (cached) ─────────────────────────────
-
-    def list_inference_runs(self) -> BackendResult[RunsListResponse]:
-        """Discover every inference run on disk, most recent first."""
-        return self._wrap(self._inference_runs_list_cached)
-
-    def inference_run_manifest(
-        self, run_id: str,
-    ) -> BackendResult[ManifestResponse]:
-        """Read ``manifest.json`` for a historical run."""
-        return self._wrap(self._inference_run_manifest_cached, run_id)
-
-    def inference_portfolio_df(
-        self, run_id: str,
-    ) -> BackendResult[pd.DataFrame]:
-        """Portfolio-level summary frame for ``run_id``."""
-        return self._wrap(self._inference_portfolio_df_cached, run_id)
-
-    def inference_clusters_df(
-        self, run_id: str,
-    ) -> BackendResult[pd.DataFrame]:
-        """Cluster-level summary frame for ``run_id``."""
-        return self._wrap(self._inference_clusters_df_cached, run_id)
-
-    def inference_cluster_trades_df(
-        self,
-        run_id:     str,
-        cluster_id: str,
-        *,
-        space:      str = "original",
-    ) -> BackendResult[pd.DataFrame]:
-        """Per-cluster trade-level wide frame for ``run_id``."""
-        return self._wrap(
-            self._inference_cluster_trades_cached,
-            run_id, cluster_id, space,
-        )
-
-    def inference_validation(
-        self, run_id: str,
-    ) -> BackendResult[ValidationSnapshotResponse]:
-        """``ValidationReport`` snapshot embedded in ``run_id``'s manifest."""
-        return self._wrap(self._inference_validation_cached, run_id)
-
-    def inference_scenarios(
-        self, run_id: str,
-    ) -> BackendResult[ScenariosSnapshotResponse]:
-        """``LoadedScenariosReport`` snapshot embedded in ``run_id``'s manifest."""
-        return self._wrap(self._inference_scenarios_cached, run_id)
-```
-
-**Caching policy** (single source of truth, mirrored in the cache bindings):
-
-| Method group | Cached? | TTL |
-|---|---|---|
-| Control plane (7 methods) | No | — |
-| `list_inference_runs` | Yes | 30s |
-| Per-run data plane (6 methods) | Yes | 300s (default) |
-
----
-
-### A.3 `src/ui/apps/rade_analytics/callbacks/inference_cb.py` — NEW file
-
-**Copy the full source below into a new file at this path.** The file is
-the entire Stage 12 wiring: 8 callbacks across `_register_capture` and
-`_register_render`, plus two private layout helpers.
-
-```python
-"""Inference Console callbacks — Stage 12 (API-driven, threaded ``/run``).
-
-Wires the inference page's eight gestures to the
-:mod:`~src.rade_ml_pt.ensemble.api.routers.inference` endpoints via
-:class:`~src.ui.apps.rade_analytics.data.backend.RadeBackend`.
-
-State machine
--------------
-
-The page is a thin client over the API's run-state machine.  Each
-gesture either advances the server-side state or polls it:
-
-    on_mount     ─ url=/inference ──────────►  POST /load        (cold-load)
-                                               │
-                                               ▼
-    on_upload    ─ Upload btn ──────────────►  POST /scenarios
-                                               │
-                                               ▼
-    on_validate  ─ Validate btn ────────────►  POST /validate    (gates run)
-                                               │
-                                               ▼
-    on_run       ─ Run btn ─────────────────►  POST /run         (async)
-                                               │
-                                               ▼  arms polling
-    on_poll      ─ Interval tick ────┬──────►  GET  /events?cursor=N
-                                     └──────►  GET  /status
-                                               │
-                                               ▼  terminal state
-                                               hydrate run_meta_store
-                                               │
-                                               ▼
-    hydrate_results  ─ run_meta_store ───────►  GET /runs/{id}/portfolio,
-                                                GET /runs/{id}/clusters
-                                                renders KPIs + figures + grid
-
-Two ancillary callbacks decouple display from data flow:
-
-    render_activity  ─ activity_log_store ──►  rebuilds the feed DOM
-    on_row_select    ─ AG Grid click ───────►  writes selected_scenario_store
-
-The polling pair (``polling_store`` + ``poll_interval``) is the only
-piece of bespoke client state; everything else flows from server
-state on demand.
-
-Activity-log delivery
----------------------
-
-Server events are emitted by :class:`EventCollector` on the pipeline
-and exposed via ``GET /events?cursor=N``.  ``EventModel`` is shape-
-compatible with the layout's ``ActivityEntry`` dict, so events flow
-through with ``model_dump()`` and need no further mapping.  Local
-events (e.g. *"Ensemble loaded"* on mount) use :func:`_local_event`
-to keep the timestamp + UUID conventions consistent.
-
-Page Contract anchors
----------------------
-
-* §2.1 — capture/render split: capture writes Stores + side effects,
-  render reads Stores + emits children/figures.  Both sections are
-  registered through :func:`register`, mirroring ``overview_cb`` /
-  ``portfolio_cb``.
-* §3 Rule L4 — page identity is the URL pathname, not a per-page
-  mount tripwire; ``on_mount`` keys on ``Input(SHELL_IDS["url"], …)``.
-* §6 — long-running side effects (the ``/run`` dispatch) write the
-  ``polling_store`` *before* the user navigates away; if they
-  revisit, ``on_mount`` re-syncs via ``GET /status``.
+"""Drift metrics: PSI, JS divergence, per-feature drift table.
+
+Pure numerical helpers — no I/O.  Callers (eval pipeline, inference
+pipeline, monitoring pipeline) are responsible for loading baseline
+parquets and current feature matrices.
+
+Schema and thresholds follow the design in
+``docs/platform_designs/prism_retool_migration.md`` §11.15 / Phase 4
+(E-series artifacts).  See ``monitoring.baselines`` for the writer side
+(training-time histograms with persisted edges) and
+``monitoring.loaders.load_baseline`` for decoding those parquets back
+into NumPy-ready DataFrames.
 """
 from __future__ import annotations
 
 import logging
-import uuid
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence
 
-import dash_mantine_components as dmc
+import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
-from dash import Input, Output, State, html, no_update
-from dash.exceptions import PreventUpdate
-from dash_iconify import DashIconify
-
-from ..figures.inference_charts import (
-    empty_pnl_distribution,
-    empty_pnl_overlay,
-    empty_pnl_timeseries,
-    empty_risk_attribution,
-    empty_stress_tails,
-)
-from ..layouts.inference import INFERENCE_IDS, render_activity_entries
-from ..layouts.shell import SHELL_IDS
-
-if TYPE_CHECKING:
-    from dash import Dash
-
-    from ..data.backend import RadeBackend
-
 
 logger = logging.getLogger(__name__)
 
 
-# ─────────────────────────────────────────────────────────────────────
-# Constants
-# ─────────────────────────────────────────────────────────────────────
+SCHEMA_VERSION: int = 1
 
-_PLACEHOLDER:        str = "—"
-_INFERENCE_ROUTE:    str = "/inference"
+# Industry-standard PSI severity thresholds.  Single source of truth
+# for this module + every downstream consumer (UI colour scales, alert
+# rules, etc.).  Boundaries are inclusive on the upper side
+# (``psi == 0.10`` → ``"warn"``;  ``psi == 0.25`` → ``"critical"``).
+PSI_WARN_THRESHOLD:     float = 0.10
+PSI_CRITICAL_THRESHOLD: float = 0.25
 
-# API run statuses that mean the worker thread has finished — the
-# poll callback uses this to disarm the polling pair.
-_TERMINAL_STATUSES: set[str] = {"complete", "failed"}
-
-# Statuses the API reports while a run is in flight (worker thread
-# alive).  Anything outside this set + the terminal set means the
-# state machine is idle and the run button should be re-enabled.
-_RUNNING_STATUS:     str = "running"
+# Sentinel labels returned by ``classify_severity`` so the UI can
+# distinguish missing-data cells from genuinely-stable features.
+SEVERITY_INFO:     str = "info"
+SEVERITY_WARN:     str = "warn"
+SEVERITY_CRITICAL: str = "critical"
+SEVERITY_NO_DATA:  str = "no_data"
 
 
-# ─────────────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════
+# Single-feature primitives — PSI + JSD
+# ═════════════════════════════════════════════════════════════════════
 
-def _local_event(
-    stage:  str,
-    phase:  str,
+def population_stability_index(
+    baseline_counts: np.ndarray,
+    baseline_edges:  np.ndarray,
+    current_values:  np.ndarray,
     *,
-    status: str           = "ok",
-    target: Optional[str] = None,
-    detail: Optional[str] = None,
-) -> Dict[str, Any]:
-    """Construct an activity-log entry locally.
-
-    Used by callbacks that want to narrate a client-side gesture
-    (e.g. *"Ensemble load requested"*) without waiting for the
-    server's confirmation event.  Shape matches
-    :class:`~src.rade_ml_pt.ensemble.api.models.inference.EventModel`
-    so the local entry can sit alongside server events in the
-    activity-log store without a mapping layer.
-    """
-    return {
-        "id":     uuid.uuid4().hex,
-        "stage":  stage,
-        "phase":  phase,
-        "status": status,
-        "ts":     datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "target": target,
-        "detail": detail,
-    }
-
-
-def _format_currency(value: Any, *, digits: int = 2) -> str:
-    """Pretty-print a PnL-style number; ``—`` on missing / NaN."""
-    if value is None:
-        return _PLACEHOLDER
-    try:
-        val = float(value)
-    except (TypeError, ValueError):
-        return _PLACEHOLDER
-    if pd.isna(val):
-        return _PLACEHOLDER
-    return f"{val:,.{digits}f}"
-
-
-def _format_int(value: Any) -> str:
-    if value is None:
-        return _PLACEHOLDER
-    try:
-        return f"{int(value):,}"
-    except (TypeError, ValueError):
-        return _PLACEHOLDER
-
-
-def _status_icon(status: str) -> DashIconify:
-    """Render an ingest-status icon matching the activity log's
-    semantic-colour palette so the two feedback channels stay
-    visually coherent."""
-    mapping = {
-        "ok":      ("tabler:circle-check",   "#34d399"),
-        "fail":    ("tabler:circle-x",       "#fb7185"),
-        "running": ("tabler:loader-2",       "#a78bfa"),
-        "pending": ("tabler:circle-dashed",  "#94a3b8"),
-    }
-    icon, colour = mapping.get(status, mapping["pending"])
-    return DashIconify(icon=icon, width=18, color=colour)
-
-
-# ─────────────────────────────────────────────────────────────────────
-# Public entry point
-# ─────────────────────────────────────────────────────────────────────
-
-def register(app: "Dash", backend: "RadeBackend") -> None:
-    """Attach every Inference Console callback to ``app``.
-
-    Mirrors the Page Contract §2 capture/render split — same shape
-    every other page module follows (``overview_cb``, ``portfolio_cb``,
-    ``cluster_deep_dive_cb``).
-    """
-    _register_capture(app, backend)
-    _register_render(app, backend)
-
-
-# ─────────────────────────────────────────────────────────────────────
-# Section dispatchers
-# ─────────────────────────────────────────────────────────────────────
-
-def _register_capture(app: "Dash", backend: "RadeBackend") -> None:
-    """Capture-side callbacks (gestures → Stores + API side effects)."""
-    _register_on_mount(app, backend)
-    _register_on_upload(app, backend)
-    _register_on_validate(app, backend)
-    _register_on_run(app, backend)
-    _register_on_poll(app, backend)
-    _register_on_row_select(app)
-
-
-def _register_render(app: "Dash", backend: "RadeBackend") -> None:
-    """Render-side callbacks (Stores → DOM, no Store writes)."""
-    _register_render_activity(app)
-    _register_hydrate_results(app, backend)
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 1. on_mount — URL hits /inference → POST /load
-# ═════════════════════════════════════════════════════════════════════
-
-def _register_on_mount(app: "Dash", backend: "RadeBackend") -> None:
-    """Cold-load the ensemble whenever the page first mounts.
-
-    Idempotent on the server side: an already-loaded API silently
-    replaces its state.  We still gate with a ``/status`` probe to
-    avoid the full registry walk on every route flip.
-    """
-
-    @app.callback(
-        Output(INFERENCE_IDS["subtitle"],          "children"),
-        Output(INFERENCE_IDS["activity_log_store"], "data"),
-        Output(INFERENCE_IDS["ingest_meta_store"],  "data"),
-        Output(INFERENCE_IDS["run_meta_store"],     "data"),
-        Output(INFERENCE_IDS["polling_store"],      "data"),
-        Output(INFERENCE_IDS["poll_interval"],      "disabled"),
-        Input(SHELL_IDS["url"],                     "pathname"),
-        prevent_initial_call=False,
-    )
-    def _on_mount(
-        pathname: Optional[str],
-    ) -> Tuple[Any, List[Dict[str, Any]], Optional[Any], Optional[Any], Dict[str, Any], bool]:
-        if pathname != _INFERENCE_ROUTE:
-            raise PreventUpdate
-
-        # Fresh page mount → reset every page Store to its initial
-        # shape.  This is intentional: stale data from a prior visit
-        # would otherwise leak into the new render before /status
-        # has a chance to refresh it.
-        polling_initial = {"armed": False, "run_id": None, "cursor": 0}
-
-        # /status: cheap, no-side-effect probe.  Tells us whether
-        # the API already has an active run we should adopt or
-        # whether we need to do a cold /load.
-        status_res = backend.inference_status()
-        if status_res.ok and status_res.data is not None and status_res.data.has_active_run:
-            status = status_res.data
-            subtitle = (
-                f"Run {status.run_id} · ensemble {status.ensemble_version} "
-                f"· state '{status.status}'"
-            )
-            log: List[Dict[str, Any]] = [
-                _local_event(
-                    "inference",
-                    "Resumed existing run",
-                    target=status.run_id,
-                    detail=f"State: {status.status}",
-                )
-            ]
-            # Adopt the existing run_id so subsequent ``/events`` polls
-            # advance the same cursor.  Arm only if the run is still
-            # in flight; otherwise leave disarmed so the user must
-            # explicitly re-arm via the Run button.
-            armed = status.status == _RUNNING_STATUS
-            polling_initial = {
-                "armed":   armed,
-                "run_id":  status.run_id,
-                "cursor":  status.n_events or 0,
-            }
-            interval_disabled = not armed
-            return subtitle, log, None, None, polling_initial, interval_disabled
-
-        # No active run → cold-load.  Failures here are surfaced via
-        # the activity log so the user sees *why* nothing else works.
-        load_res = backend.inference_load()
-        if not load_res.ok:
-            logger.warning("/load failed: %s", load_res.error)
-            return (
-                "Failed to load ensemble — check API logs.",
-                [_local_event(
-                    "inference",
-                    "Ensemble load failed",
-                    status="fail",
-                    detail=load_res.error,
-                )],
-                None,
-                None,
-                polling_initial,
-                True,
-            )
-
-        load = load_res.data
-        subtitle = (
-            f"Loaded ensemble {load.ensemble_version} "
-            f"({load.n_clusters} clusters) — upload scenarios to begin."
-        )
-        log = [_local_event(
-            "inference",
-            "Ensemble loaded",
-            target=load.ensemble_version,
-            detail=f"{load.n_clusters} clusters",
-        )]
-        return subtitle, log, None, None, polling_initial, True
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 2. on_upload — Upload scenarios btn → POST /scenarios
-# ═════════════════════════════════════════════════════════════════════
-
-def _register_on_upload(app: "Dash", backend: "RadeBackend") -> None:
-    """Submit the typed folder path to the API's scenario loader."""
-
-    @app.callback(
-        Output(INFERENCE_IDS["ingest_meta_store"],   "data", allow_duplicate=True),
-        Output(INFERENCE_IDS["ingest_status"],       "children"),
-        Output(INFERENCE_IDS["activity_log_store"],  "data", allow_duplicate=True),
-        Output(INFERENCE_IDS["upload_scenarios_btn"], "loading"),
-        Input(INFERENCE_IDS["upload_scenarios_btn"], "n_clicks"),
-        State(INFERENCE_IDS["scenario_folder_path"], "value"),
-        State(INFERENCE_IDS["activity_log_store"],   "data"),
-        prevent_initial_call=True,
-    )
-    def _on_upload(
-        n_clicks:    Optional[int],
-        folder_path: Optional[str],
-        log:         Optional[List[Dict[str, Any]]],
-    ) -> Tuple[Any, Any, List[Dict[str, Any]], bool]:
-        if not n_clicks:
-            raise PreventUpdate
-
-        log = list(log or [])
-
-        # Defensive empty-input check.  The button is always
-        # clickable but a no-text submission is a no-op.
-        if not folder_path or not folder_path.strip():
-            log.append(_local_event(
-                "ingest",
-                "Empty scenario folder path",
-                status="fail",
-                detail="Type a server-readable folder path before uploading.",
-            ))
-            return no_update, _status_icon("fail"), log, False
-
-        log.append(_local_event(
-            "ingest",
-            "Uploading scenarios",
-            status="running",
-            target=folder_path,
-        ))
-
-        # The actual API call.  Synchronous on the server side
-        # (parsing a folder of CSVs is fast), so the loading state
-        # on the button only ever shows briefly.
-        res = backend.inference_load_scenarios(folder_path)
-        if not res.ok:
-            logger.warning("/scenarios failed: %s", res.error)
-            log.append(_local_event(
-                "ingest",
-                "Scenario load failed",
-                status="fail",
-                target=folder_path,
-                detail=res.error,
-            ))
-            return no_update, _status_icon("fail"), log, False
-
-        scenarios = res.data
-        ingest_meta: Dict[str, Any] = {
-            "source":            folder_path,
-            "n_risk_factors":    scenarios.n_risk_factors,
-            "n_scenarios":       scenarios.n_scenarios,
-            "risk_factor_names": list(scenarios.risk_factor_names),
-            "scenario_labels":   list(scenarios.scenario_labels),
-            "completed_ts":      datetime.now(timezone.utc).isoformat(
-                timespec="seconds",
-            ),
-        }
-        log.append(_local_event(
-            "ingest",
-            "Scenarios ingested",
-            target=folder_path,
-            detail=(
-                f"{scenarios.n_scenarios} scenarios across "
-                f"{scenarios.n_risk_factors} risk factors"
-            ),
-        ))
-        return ingest_meta, _status_icon("ok"), log, False
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 3. on_validate — Validate-only btn → POST /validate
-# ═════════════════════════════════════════════════════════════════════
-
-def _register_on_validate(app: "Dash", backend: "RadeBackend") -> None:
-    """Validate the loaded scenarios and gate the Run button on success."""
-
-    @app.callback(
-        Output(INFERENCE_IDS["manifest_preview_container"], "children"),
-        Output(INFERENCE_IDS["run_btn"],                    "disabled"),
-        Output(INFERENCE_IDS["activity_log_store"],         "data", allow_duplicate=True),
-        Output(INFERENCE_IDS["validate_only_btn"],          "loading"),
-        Input(INFERENCE_IDS["validate_only_btn"],           "n_clicks"),
-        State(INFERENCE_IDS["activity_log_store"],          "data"),
-        prevent_initial_call=True,
-    )
-    def _on_validate(
-        n_clicks: Optional[int],
-        log:      Optional[List[Dict[str, Any]]],
-    ) -> Tuple[List[Any], bool, List[Dict[str, Any]], bool]:
-        if not n_clicks:
-            raise PreventUpdate
-
-        log = list(log or [])
-        log.append(_local_event("validate", "Validation requested", status="running"))
-
-        res = backend.inference_validate()
-        if not res.ok:
-            logger.warning("/validate failed: %s", res.error)
-            log.append(_local_event(
-                "validate",
-                "Validation failed",
-                status="fail",
-                detail=res.error,
-            ))
-            return (
-                [_manifest_card_error(res.error or "Unknown error")],
-                True,
-                log,
-                False,
-            )
-
-        report = res.data
-        is_valid = bool(report.is_valid)
-        log.append(_local_event(
-            "validate",
-            "Validation complete" if is_valid else "Validation failed",
-            status="ok" if is_valid else "fail",
-            detail=(
-                f"{report.affected_count} affected / "
-                f"{report.unaffected_count} unaffected clusters"
-            ),
-        ))
-        return (
-            _manifest_card_for_validation(report),
-            not is_valid,
-            log,
-            False,
-        )
-
-
-def _manifest_card_for_validation(report: Any) -> List[Any]:
-    """Render a compact validation summary into the manifest card."""
-    rows: List[Any] = [
-        html.Div(
-            f"Ensemble · {report.ensemble_version}",
-            className="text-xs font-semibold text-slate-200",
-        ),
-        html.Div(
-            f"{report.n_scenarios} scenarios across "
-            f"{len(report.cluster_decisions)} clusters",
-            className="text-xs text-slate-400",
-        ),
-        html.Div(
-            f"Affected: {report.affected_count} · "
-            f"Unaffected: {report.unaffected_count} · "
-            f"Cheap path: {'yes' if report.cheap_path_used else 'no'}",
-            className="text-xs text-slate-400",
-        ),
-    ]
-    if report.errors:
-        rows.append(html.Div(
-            "Errors:",
-            className="text-xs font-semibold text-rose-300 mt-2",
-        ))
-        for err in report.errors:
-            rows.append(html.Div(f"• {err}", className="text-xs text-rose-300"))
-    if report.warnings:
-        rows.append(html.Div(
-            "Warnings:",
-            className="text-xs font-semibold text-amber-300 mt-2",
-        ))
-        for warn in report.warnings:
-            rows.append(html.Div(f"• {warn}", className="text-xs text-amber-300"))
-    return rows
-
-
-def _manifest_card_error(message: str) -> Any:
-    """Render an error state in the manifest card."""
-    return html.Div(
-        className="flex flex-col gap-1 text-rose-300",
-        children=[
-            html.Div("Validation failed", className="text-xs font-semibold"),
-            html.Div(message, className="text-xs"),
-        ],
-    )
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 4. on_run — Run btn → POST /run + arm polling
-# ═════════════════════════════════════════════════════════════════════
-
-def _register_on_run(app: "Dash", backend: "RadeBackend") -> None:
-    """Dispatch the inference run and arm the polling pair.
-
-    The API's ``/run`` returns immediately with ``status='running'``;
-    the worker thread does the actual forward pass.  We mark the
-    polling store armed and disable=False the interval so the next
-    tick (1Hz later) starts draining ``/events``.
-    """
-
-    @app.callback(
-        Output(INFERENCE_IDS["polling_store"],        "data", allow_duplicate=True),
-        Output(INFERENCE_IDS["poll_interval"],        "disabled", allow_duplicate=True),
-        Output(INFERENCE_IDS["activity_log_store"],   "data", allow_duplicate=True),
-        Output(INFERENCE_IDS["run_btn"],              "loading"),
-        Input(INFERENCE_IDS["run_btn"],               "n_clicks"),
-        State(INFERENCE_IDS["polling_store"],         "data"),
-        State(INFERENCE_IDS["activity_log_store"],    "data"),
-        prevent_initial_call=True,
-    )
-    def _on_run(
-        n_clicks:   Optional[int],
-        polling:    Optional[Dict[str, Any]],
-        log:        Optional[List[Dict[str, Any]]],
-    ) -> Tuple[Dict[str, Any], bool, List[Dict[str, Any]], bool]:
-        if not n_clicks:
-            raise PreventUpdate
-
-        log = list(log or [])
-        log.append(_local_event("inference", "Run dispatched", status="running"))
-
-        res = backend.inference_start()
-        if not res.ok:
-            logger.warning("/run failed: %s", res.error)
-            log.append(_local_event(
-                "inference",
-                "Run dispatch failed",
-                status="fail",
-                detail=res.error,
-            ))
-            return polling or {"armed": False, "run_id": None, "cursor": 0}, True, log, False
-
-        run = res.data
-        # Cursor=0 — the worker thread may have already emitted a
-        # few events before our HTTP response landed; the first
-        # /events poll picks those up.
-        new_polling = {
-            "armed":  True,
-            "run_id": run.run_id,
-            "cursor": 0,
-        }
-        # Interval ``disabled=False`` flips polling on; the next
-        # ``on_poll`` tick (≤1s later) will start the drain.
-        return new_polling, False, log, True
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 5. on_poll — Interval tick → GET /events + GET /status
-# ═════════════════════════════════════════════════════════════════════
-
-def _register_on_poll(app: "Dash", backend: "RadeBackend") -> None:
-    """Drain events + watch for terminal state once per interval tick.
-
-    Heart of the live-update story.  Runs at 1 Hz when armed.  Two
-    invariants worth highlighting:
-
-    * ``polling_store.cursor`` is the single source of truth for
-      pagination.  We never trust the interval's ``n_intervals``.
-    * Terminal-state hydration (writing ``run_meta_store``) happens
-      *here*, not in :func:`_on_run`, because only the poll knows
-      when the worker thread actually finishes.
-    """
-
-    @app.callback(
-        Output(INFERENCE_IDS["activity_log_store"],  "data", allow_duplicate=True),
-        Output(INFERENCE_IDS["polling_store"],       "data", allow_duplicate=True),
-        Output(INFERENCE_IDS["poll_interval"],       "disabled", allow_duplicate=True),
-        Output(INFERENCE_IDS["run_meta_store"],      "data", allow_duplicate=True),
-        Output(INFERENCE_IDS["run_btn"],             "loading", allow_duplicate=True),
-        Input(INFERENCE_IDS["poll_interval"],        "n_intervals"),
-        State(INFERENCE_IDS["polling_store"],        "data"),
-        State(INFERENCE_IDS["activity_log_store"],   "data"),
-        prevent_initial_call=True,
-    )
-    def _on_poll(
-        n_intervals: Optional[int],
-        polling:     Optional[Dict[str, Any]],
-        log:         Optional[List[Dict[str, Any]]],
-    ) -> Tuple[Any, Any, Any, Any, Any]:
-        polling = polling or {"armed": False, "run_id": None, "cursor": 0}
-        if not polling.get("armed"):
-            # Defence-in-depth: the interval should be disabled when
-            # disarmed, but a stale tick can still land in-flight.
-            # PreventUpdate is the cheapest way to short-circuit
-            # without firing six no-ops on every output.
-            raise PreventUpdate
-
-        cursor = int(polling.get("cursor", 0))
-        log = list(log or [])
-
-        # 1. Drain new events.  EventModel is shape-compatible with
-        #    the layout's activity-entry contract, so model_dump()
-        #    is a direct passthrough.
-        events_res = backend.inference_events(cursor=cursor)
-        if events_res.ok and events_res.data is not None:
-            new_events = events_res.data.events
-            for ev in new_events:
-                log.append(ev.model_dump())
-            cursor = int(events_res.data.next_cursor)
-
-        # 2. Probe terminal state.  We do this every tick (even if
-        #    no new events landed) so a fast run that completes
-        #    between ticks still gets hydrated promptly.
-        status_res = backend.inference_status()
-        if not status_res.ok or status_res.data is None:
-            # Transport hiccup — keep polling, the next tick may
-            # succeed.  Don't disarm here; that would silently
-            # strand the page on a temporary network blip.
-            logger.debug("/status hiccup: %s", status_res.error)
-            return (
-                log,
-                {**polling, "cursor": cursor},
-                no_update,
-                no_update,
-                no_update,
-            )
-
-        status = status_res.data
-        if status.status in _TERMINAL_STATUSES:
-            # Terminal state — disarm, snapshot run_meta_store, and
-            # stop the interval.  The hydrate_results callback fires
-            # off run_meta_store and pulls the data-plane artifacts.
-            run_meta = {
-                "run_id":           status.run_id,
-                "ensemble_version": status.ensemble_version,
-                "status":           status.status,
-                "manifest_path":    status.manifest_path,
-                "completed_ts":     datetime.now(timezone.utc).isoformat(
-                    timespec="seconds",
-                ),
-            }
-            disarmed = {**polling, "armed": False, "cursor": cursor}
-            return log, disarmed, True, run_meta, False
-
-        # Still running — bump the cursor, keep polling.
-        return (
-            log,
-            {**polling, "cursor": cursor},
-            no_update,
-            no_update,
-            no_update,
-        )
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 6. render_activity — activity_log_store → activity-feed DOM
-# ═════════════════════════════════════════════════════════════════════
-
-def _register_render_activity(app: "Dash") -> None:
-    """Rebuild the activity feed whenever its Store mutates.
-
-    The activity log is the user-visible heart of the page during a
-    run — every other callback advances it indirectly via
-    ``allow_duplicate=True`` writes; this single render callback
-    converts the store payload to DOM children.
-    """
-
-    @app.callback(
-        Output(INFERENCE_IDS["activity_log_container"], "children"),
-        Input(INFERENCE_IDS["activity_log_store"],      "data"),
-        prevent_initial_call=False,
-    )
-    def _render(entries: Optional[List[Dict[str, Any]]]) -> List[Any]:
-        return render_activity_entries(entries)
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 7. hydrate_results — run_meta_store → KPIs + figures + AG Grid
-# ═════════════════════════════════════════════════════════════════════
-
-def _register_hydrate_results(app: "Dash", backend: "RadeBackend") -> None:
-    """Pull data-plane artifacts when a run completes and paint the page.
-
-    Fires on:
-      * ``run_meta_store`` write (terminal-state hydration from
-        :func:`_on_poll`), and
-      * each of the three segmented controls so users can switch
-        chart modes without re-running.
-
-    Stage 12 still uses :mod:`figures.inference_charts`'s empty-state
-    builders for the three figures; Stage 13 swaps them in place.
-    Everything else (KPIs, AG Grid, stress mini-KPIs) is live data.
-    """
-
-    @app.callback(
-        # KPI strip
-        Output(INFERENCE_IDS["kpi_scenarios_value"], "children"),
-        Output(INFERENCE_IDS["kpi_clusters_value"],  "children"),
-        Output(INFERENCE_IDS["kpi_latency_value"],   "children"),
-        Output(INFERENCE_IDS["kpi_portfolio_value"], "children"),
-        # Three figures
-        Output(INFERENCE_IDS["chart_main"],              "figure"),
-        Output(INFERENCE_IDS["risk_attribution_chart"],  "figure"),
-        Output(INFERENCE_IDS["stress_tails_chart"],      "figure"),
-        # Stress mini-KPIs
-        Output(INFERENCE_IDS["stress_kpi_var"],   "children"),
-        Output(INFERENCE_IDS["stress_kpi_cvar"],  "children"),
-        Output(INFERENCE_IDS["stress_kpi_worst"], "children"),
-        # AG Grid rows
-        Output(INFERENCE_IDS["scenario_results_grid"], "rowData"),
-        # Triggers
-        Input(INFERENCE_IDS["run_meta_store"],            "data"),
-        Input(INFERENCE_IDS["chart_view_mode"],           "value"),
-        Input(INFERENCE_IDS["risk_attribution_breakdown"], "value"),
-        Input(INFERENCE_IDS["stress_tails_mode"],         "value"),
-        prevent_initial_call=False,
-    )
-    def _hydrate(
-        run_meta:   Optional[Dict[str, Any]],
-        chart_mode: Optional[str],
-        risk_axis:  Optional[str],
-        stress_mode: Optional[str],
-    ) -> Tuple[Any, ...]:
-        del chart_mode, risk_axis, stress_mode  # Stage 13 will dispatch on these
-
-        empty_returns: Tuple[Any, ...] = (
-            _PLACEHOLDER, _PLACEHOLDER, _PLACEHOLDER, _PLACEHOLDER,
-            empty_pnl_distribution(),
-            empty_risk_attribution(),
-            empty_stress_tails(),
-            _stress_kpi_block("VaR (95%)",  _PLACEHOLDER),
-            _stress_kpi_block("CVaR (95%)", _PLACEHOLDER),
-            _stress_kpi_block("Worst loss", _PLACEHOLDER),
-            [],
-        )
-
-        # No completed run yet — keep the empty-state painting in
-        # place but don't waste an API call.
-        if not run_meta or run_meta.get("status") != "complete":
-            return empty_returns
-
-        run_id = run_meta.get("run_id")
-        if not run_id:
-            return empty_returns
-
-        # Portfolio + cluster summary parquets.  Both are tiny
-        # (one row per scenario / cluster×scenario) and cached at
-        # the backend layer, so re-firing on segmented-control flips
-        # is cheap.
-        portfolio_res = backend.inference_portfolio_df(run_id)
-        clusters_res  = backend.inference_clusters_df(run_id)
-
-        if not portfolio_res.ok or portfolio_res.data is None:
-            logger.warning("portfolio fetch failed: %s", portfolio_res.error)
-            return empty_returns
-
-        portfolio_df = portfolio_res.data
-        clusters_df  = (
-            clusters_res.data
-            if clusters_res.ok and clusters_res.data is not None
-            else pd.DataFrame()
-        )
-
-        # --- KPI strip ---------------------------------------------------
-        n_scenarios = int(len(portfolio_df))
-        n_clusters  = int(
-            clusters_df["cluster_id"].nunique()
-            if not clusters_df.empty and "cluster_id" in clusters_df.columns
-            else 0
-        )
-        portfolio_total = float(
-            portfolio_df["sum_pnl_original"].sum()
-            if "sum_pnl_original" in portfolio_df.columns
-            else 0.0
-        )
-        # Latency comes from the manifest — fetch it lazily here
-        # rather than passing through ``run_meta`` so a refresh of
-        # the manifest after the run (rare but possible) is picked
-        # up automatically.
-        manifest_res = backend.inference_run_manifest(run_id)
-        latency_s    = (
-            manifest_res.data.manifest.get("latency_seconds")
-            if manifest_res.ok and manifest_res.data is not None else None
-        )
-        latency_txt  = (
-            f"{float(latency_s):.2f}s"
-            if latency_s is not None else _PLACEHOLDER
-        )
-
-        # --- Stress mini-KPIs --------------------------------------------
-        # VaR / CVaR on the portfolio's sum_pnl_original — quick
-        # quantile arithmetic, no extra API roundtrip.
-        var_txt   = _PLACEHOLDER
-        cvar_txt  = _PLACEHOLDER
-        worst_txt = _PLACEHOLDER
-        if "sum_pnl_original" in portfolio_df.columns and not portfolio_df.empty:
-            pnl = portfolio_df["sum_pnl_original"].astype(float)
-            var_value  = float(pnl.quantile(0.05))
-            cvar_value = float(pnl[pnl <= var_value].mean()) if (pnl <= var_value).any() else var_value
-            worst_value = float(pnl.min())
-            var_txt   = _format_currency(var_value)
-            cvar_txt  = _format_currency(cvar_value)
-            worst_txt = _format_currency(worst_value)
-
-        # --- AG Grid rows -----------------------------------------------
-        # Map portfolio rows onto the column defs the layout
-        # declares: ``scenario_id`` / ``cluster`` / ``predicted`` /
-        # ``p95_band`` / ``confidence``.  Two columns have no
-        # natural source from portfolio summary (``p95_band``,
-        # ``confidence``); we leave them None so the grid renders
-        # them as the ``—`` placeholder defined in the column
-        # ``valueFormatter``.
-        row_data: List[Dict[str, Any]] = [
-            {
-                "scenario_id": str(row.get("scenario_label", "")),
-                "cluster":     f'{int(row.get("n_clusters", 0))} clusters',
-                "predicted":   float(row.get("sum_pnl_original", 0.0)),
-                "p95_band":    None,
-                "confidence":  None,
-            }
-            for _, row in portfolio_df.iterrows()
-        ]
-
-        return (
-            _format_int(n_scenarios),
-            _format_int(n_clusters),
-            latency_txt,
-            _format_currency(portfolio_total),
-            empty_pnl_distribution(),
-            empty_risk_attribution(),
-            empty_stress_tails(),
-            _stress_kpi_block("VaR (95%)",  var_txt),
-            _stress_kpi_block("CVaR (95%)", cvar_txt),
-            _stress_kpi_block("Worst loss", worst_txt),
-            row_data,
-        )
-
-
-def _stress_kpi_block(label: str, value: str) -> List[Any]:
-    """Re-render one stress-tile body (label + value).
-
-    Kept in this module rather than ``layouts/inference.py`` because
-    the original layout helper builds the *outer* tile div; this
-    helper builds only the children that the callback owns.
-    """
-    return [
-        html.Div(label, className="rade-stress-mini-label"),
-        html.Div(value, className="rade-stress-mini-value"),
-    ]
-
-
-# ═════════════════════════════════════════════════════════════════════
-# 8. on_row_select — AG Grid row click → selected_scenario_store
-# ═════════════════════════════════════════════════════════════════════
-
-def _register_on_row_select(app: "Dash") -> None:
-    """Capture the active scenario when the user clicks a grid row.
-
-    Stage 12 only writes the store; chart-level filtering keys off
-    this in Stage 13 once the figure builders are real.
-    """
-
-    @app.callback(
-        Output(INFERENCE_IDS["selected_scenario_store"], "data"),
-        Input(INFERENCE_IDS["scenario_results_grid"],    "selectedRows"),
-        prevent_initial_call=True,
-    )
-    def _on_row_select(
-        selected: Optional[List[Dict[str, Any]]],
-    ) -> Optional[str]:
-        if not selected:
-            return None
-        # Single-row selection (``rowSelection='single'`` per layout)
-        # — first entry is the only one we care about.
-        row = selected[0]
-        return row.get("scenario_id")
-
-
-__all__ = ["register"]
-```
-
----
-
-### A.4 `src/ui/apps/rade_analytics/callbacks/__init__.py` — Step 4 registration
-
-Two tiny edits — add `inference_cb` to the import block and call
-`inference_cb.register(app, backend)` in `register_all`.
-
-**Edit 1** — Add to the existing `from . import (...)` block (alphabetical order):
-
-```python
-from . import (
-    cluster_deep_dive_cb,
-    evaluation_cb,
-    inference_cb,
-    overview_cb,
-    portfolio_cb,
-    splash_cb,
-    trade_graph_cb,
-)
-```
-
-**Edit 2** — Add the registration call inside `register_all` (after the
-existing `cluster_deep_dive_cb` line, before the `governance_cb` comment):
-
-```python
-    register_router(app, backend)
-    splash_cb.register(app, backend)
-    overview_cb.register(app, backend)
-    evaluation_cb.register(app, backend)
-    portfolio_cb.register(app, backend)
-    trade_graph_cb.register(app, backend)
-    cluster_deep_dive_cb.register(app, backend)
-    inference_cb.register(app, backend)
-    # governance_cb intentionally not registered — see import block.
-```
-
----
-
-### Verification
-
-After applying A.1–A.4 (or after each step independently — every one is
-self-contained), confirm the integration:
-
-```bash
-# 1. Lints + compile
-ruff check src/ui/apps/rade_analytics/
-python -m py_compile src/ui/apps/rade_analytics/callbacks/inference_cb.py
-python -m py_compile src/ui/apps/rade_analytics/data/backend.py
-python -m py_compile src/ui/apps/rade_analytics/layouts/inference.py
-python -m py_compile src/ui/apps/rade_analytics/callbacks/__init__.py
-
-# 2. Boot the API + dashboard
-uvicorn src.rade_ml_pt.ensemble.api.app:create_app --factory --port 8000 &
-python -m src.ui.apps.rade_analytics.app
-
-# 3. Hit the page in a browser → /inference
-#    Expected behaviour:
-#    * Page mounts → "Loaded ensemble <ver> (N clusters)" appears in subtitle
-#    * Activity log shows "Ensemble loaded" green-tick row
-#    * Type a scenario folder path → click "Upload scenarios" →
-#      activity log narrates ingest; ingest-status slot turns green-tick
-#    * Click "Validate only" → manifest card populates with
-#      affected/unaffected counts; Run button enables
-#    * Click "Run" → button shows loading spinner; activity log
-#      narrates each cluster's progress at 1 Hz; on completion,
-#      KPI tiles + stress mini-KPIs + AG Grid populate
-#    * Three figures remain empty-state until Stage 13 lands
-
-# 4. Programmatic smoke (no UI)
-python -c "
-from src.rade_ml_pt.ensemble.api.client import RadeApiClient
-import time
-with RadeApiClient('http://localhost:8000') as c:
-    c.load_ensemble()
-    c.load_scenarios('/path/to/shocks/')
-    rep = c.validate_scenarios()
-    assert rep.is_valid
-    run = c.run_inference()
-    while True:
-        s = c.inference_status()
-        if s.status in ('complete','failed'):
-            break
-        time.sleep(1)
-    print('Run:', run.run_id, '→ status:', s.status)
-    print('Portfolio rows:', len(c.inference_portfolio(run.run_id).rows))
-"
-```
-
-If all four files compile, the FastAPI app boots without errors, and the
-inference page renders the empty-state on first visit, Stage 12 is done.
-Stage 13 (real Plotly figure builders) is the next piece — purely a swap
-of the three `empty_*` functions in `figures/inference_charts.py` with no
-callback-side changes required.
-
----
-
-## Appendix B — Tenor timeseries waterfall backfill (ad-hoc utility)
-
-> **Status**: Self-contained standalone script. Not part of the Rade /
-> ensemble pipeline — pasted here purely as the copy-paste destination for
-> the ad-hoc tenor-backfill request. Run from the command line against a
-> Bloomberg-style tenor sheet; outputs a colour-coded backfilled workbook.
->
-> **Dependencies**: `pip install pandas openpyxl scipy scikit-learn`
->
-> **Usage**:
->
-> ```bash
-> python backfill_waterfall.py <input_file.xlsx>
-> # → <input_file>_backfilled.xlsx
-> ```
-
-### Waterfall priority order
-
-| Priority | Method | When it applies |
-|---|---|---|
-| 1 | Cross-tenor OLS regression | Missing date has observed values in correlated tenors (R² ≥ 0.90 from ≥ 30 overlap points) |
-| 2 | Natural cubic spline | Interior gap with ≥ 4 surrounding known values in the same tenor |
-| 3 | Linear interpolation | Interior gap where the spline can't fit (< 4 known values) |
-| 4 | Forward / backward fill | Edge cases only — before first or after last observation |
-
-### Source
-
-```python
-"""
-Tenor Timeseries Waterfall Backfill
-====================================
-Backfills missing rates in a Bloomberg tenor timeseries using a four-stage
-waterfall that prioritises the most market-informed method available for each
-missing cell:
-
-    Priority 1 — Cross-tenor regression
-        If correlated tenors have observed values on the missing date, predict
-        the missing rate via OLS regression trained on the overlapping history.
-        This exploits the strong co-movement between tenors (typical R² > 0.99
-        for adjacent swap rates).
-
-    Priority 2 — Cubic spline interpolation (temporal)
-        For interior gaps (bounded by known values in the same tenor), fit a
-        natural cubic spline through surrounding observations. Preserves local
-        curvature and avoids the sharp kinks of linear interpolation.
-
-    Priority 3 — Linear interpolation (temporal)
-        Fallback for interior gaps where too few surrounding points exist for a
-        stable spline (e.g. fewer than 4 known values in the tenor).
-
-    Priority 4 — Forward / backward fill
-        Last resort for edge cases only — missing dates before the first
-        observation or after the last observation in a tenor.
-
-Usage
------
-    python backfill_waterfall.py <input_file.xlsx>
-
-Output
-------
-    <input_file>_backfilled.xlsx with four sheets:
-        1. Backfilled Data     — the completed timeseries
-        2. Audit Trail         — method code per filled cell (colour-coded)
-        3. Per Tenor Breakdown — fill counts by method for each tenor
-        4. Summary             — overall statistics and configuration
-
-Dependencies
-------------
-    pip install pandas openpyxl scipy scikit-learn
-"""
-
-import sys
-import numpy as np
-import pandas as pd
-from scipy.interpolate import CubicSpline
-from sklearn.linear_model import LinearRegression
-from openpyxl import load_workbook
-from openpyxl.styles import Font, PatternFill, Alignment
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# CONFIGURATION — adjust these thresholds to suit your dataset
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# Cross-tenor regression: minimum overlapping observations to train a model
-MIN_REGRESSION_OBSERVATIONS = 30
-
-# Cross-tenor regression: minimum R² to accept a model's predictions
-MIN_REGRESSION_R_SQUARED = 0.90
-
-# Cubic spline: minimum known data points required in a tenor to fit a spline
-MIN_SPLINE_POINTS = 4
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# DATA LOADING
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def load_timeseries(filepath: str) -> pd.DataFrame:
-    """
-    Read the input Excel file into a DatetimeIndex DataFrame.
-
-    Expects:
-        - Column A: dates (any Excel-recognised date format)
-        - Row 1: tenor headers (e.g. Bloomberg tickers)
-        - Body: rate values, with blanks for missing observations
-
-    Returns:
-        DataFrame with DatetimeIndex sorted ascending, tenor columns, and
-        NaN for missing values.
-    """
-    df = pd.read_excel(filepath, index_col=0, parse_dates=True)
-    df.index.name = "Date"
-    df = df.sort_index()
-
-    # Coerce any non-numeric entries (e.g. "N/A" strings) to NaN
-    df = df.apply(pd.to_numeric, errors="coerce")
-
-    return df
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# PRIORITY 1: CROSS-TENOR REGRESSION
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def find_best_regression_model(
-    df: pd.DataFrame,
-    target_tenor: str,
-    candidate_tenors: list[str],
-) -> tuple:
-    """
-    Find the best OLS regression model for a target tenor using other tenors
-    as predictors.
-
-    Tries all single-predictor and all two-predictor combinations from the
-    candidate list. Selects the model with the highest R² that exceeds the
-    minimum threshold.
-
-    Args:
-        df:               full DataFrame (may contain NaNs)
-        target_tenor:     column name of the tenor to predict
-        candidate_tenors: list of other tenor column names to use as features
-
-    Returns:
-        (model, feature_names, r_squared) if a valid model is found
-        (None, None, None) otherwise
-    """
-    # Dates where the target tenor has observed values (training pool)
-    target_observed = df[target_tenor].notna()
-
-    best_model = None
-    best_features = None
-    best_r2 = -1.0
-
-    # --- Single-predictor models ---
-    for predictor in candidate_tenors:
-        training_mask = target_observed & df[predictor].notna()
-        n_obs = training_mask.sum()
-
-        if n_obs < MIN_REGRESSION_OBSERVATIONS:
-            continue
-
-        X = df.loc[training_mask, [predictor]].values
-        y = df.loc[training_mask, target_tenor].values
-
-        model = LinearRegression().fit(X, y)
-        r2 = model.score(X, y)
-
-        if r2 > best_r2:
-            best_model, best_features, best_r2 = model, [predictor], r2
-
-    # --- Two-predictor models (for potentially better fit) ---
-    for i, pred_1 in enumerate(candidate_tenors):
-        for pred_2 in candidate_tenors[i + 1:]:
-            training_mask = target_observed & df[pred_1].notna() & df[pred_2].notna()
-            n_obs = training_mask.sum()
-
-            if n_obs < MIN_REGRESSION_OBSERVATIONS:
-                continue
-
-            X = df.loc[training_mask, [pred_1, pred_2]].values
-            y = df.loc[training_mask, target_tenor].values
-
-            model = LinearRegression().fit(X, y)
-            r2 = model.score(X, y)
-
-            if r2 > best_r2:
-                best_model, best_features, best_r2 = model, [pred_1, pred_2], r2
-
-    # Only return if R² meets the threshold
-    if best_r2 >= MIN_REGRESSION_R_SQUARED and best_model is not None:
-        return best_model, best_features, best_r2
-
-    return None, None, None
-
-
-def fill_via_regression(df: pd.DataFrame, audit: pd.DataFrame) -> int:
-    """
-    Priority 1: fill missing values using cross-tenor OLS regression.
-
-    For each tenor with missing data, find the best regression model from
-    other tenors. Apply predictions only on dates where the predictor tenors
-    have observed values.
-
-    Args:
-        df:    timeseries DataFrame (modified in place)
-        audit: audit trail DataFrame (modified in place)
-
-    Returns:
-        Number of cells filled.
-    """
-    tenors = df.columns.tolist()
-    total_filled = 0
-
-    for target_tenor in tenors:
-        missing_mask = df[target_tenor].isna()
-        if not missing_mask.any():
-            continue
-
-        # All other tenors are candidates
-        candidates = [t for t in tenors if t != target_tenor]
-        model, features, r2 = find_best_regression_model(df, target_tenor, candidates)
-
-        if model is None:
-            continue
-
-        # Predict only where the target is missing AND all features are observed
-        predict_mask = missing_mask.copy()
-        for feature in features:
-            predict_mask = predict_mask & df[feature].notna()
-
-        if not predict_mask.any():
-            continue
-
-        # Apply predictions
-        X_predict = df.loc[predict_mask, features].values
-        df.loc[predict_mask, target_tenor] = model.predict(X_predict)
-
-        # Record in audit trail with the R² for transparency
-        audit.loc[predict_mask, target_tenor] = f"REG (R²={r2:.3f})"
-        total_filled += predict_mask.sum()
-
-    return total_filled
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# PRIORITY 2: CUBIC SPLINE INTERPOLATION (TEMPORAL)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def fill_via_spline(df: pd.DataFrame, audit: pd.DataFrame) -> int:
-    """
-    Priority 2: fill remaining interior gaps using natural cubic spline
-    interpolation along the time axis.
-
-    A 'natural' spline sets the second derivative to zero at the endpoints,
-    avoiding the wild oscillations that can occur with other boundary
-    conditions. Only interior gaps (between the first and last known value)
-    are filled — edge gaps are left for later stages.
-
-    Args:
-        df:    timeseries DataFrame (modified in place)
-        audit: audit trail DataFrame (modified in place)
-
-    Returns:
-        Number of cells filled.
-    """
-    total_filled = 0
-
-    for tenor in df.columns:
-        series = df[tenor]
-        missing_mask = series.isna()
-
-        if not missing_mask.any():
-            continue
-
-        known_positions = np.where(series.notna())[0]
-
-        # Need at least MIN_SPLINE_POINTS for a stable cubic spline
-        if len(known_positions) < MIN_SPLINE_POINTS:
-            continue
-
-        # Define the interior region (between first and last known value)
-        first_known = known_positions[0]
-        last_known = known_positions[-1]
-
-        # Identify interior missing positions only
-        all_positions = np.arange(len(series))
-        interior_missing = (
-            missing_mask
-            & (all_positions >= first_known)
-            & (all_positions <= last_known)
-        )
-        missing_positions = np.where(interior_missing)[0]
-
-        if len(missing_positions) == 0:
-            continue
-
-        # Fit natural cubic spline through known data points
-        x_known = known_positions.astype(float)
-        y_known = series.iloc[known_positions].values
-
-        try:
-            spline = CubicSpline(x_known, y_known, bc_type="natural")
-            interpolated_values = spline(missing_positions.astype(float))
-
-            # Use .iloc on the DataFrame directly to avoid copy-on-write issues
-            missing_dates = df.index[missing_positions]
-            df.loc[missing_dates, tenor] = interpolated_values
-            audit.loc[missing_dates, tenor] = "SPLINE"
-            total_filled += len(missing_positions)
-        except Exception as e:
-            # Spline fitting can fail on degenerate data; skip to next stage
-            print(f"  Warning: spline failed for {tenor}: {e}")
-            continue
-
-    return total_filled
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# PRIORITY 3: LINEAR INTERPOLATION (TEMPORAL)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def fill_via_linear(df: pd.DataFrame, audit: pd.DataFrame) -> int:
-    """
-    Priority 3: fill remaining interior gaps using linear interpolation
-    along the time axis.
-
-    This catches any interior gaps that the spline stage skipped (e.g. tenors
-    with fewer than MIN_SPLINE_POINTS known values).
-
-    Args:
-        df:    timeseries DataFrame (modified in place)
-        audit: audit trail DataFrame (modified in place)
-
-    Returns:
-        Number of cells filled.
-    """
-    total_filled = 0
-
-    for tenor in df.columns:
-        series = df[tenor]
-        still_missing = series.isna()
-
-        if not still_missing.any():
-            continue
-
-        # pandas interpolate with limit_area='inside' fills interior gaps only
-        before = series.copy()
-        df[tenor] = series.interpolate(method="linear", limit_area="inside")
-
-        newly_filled = before.isna() & df[tenor].notna()
-        audit.loc[newly_filled, tenor] = "LINEAR"
-        total_filled += newly_filled.sum()
-
-    return total_filled
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# PRIORITY 4: FORWARD / BACKWARD FILL (EDGE CASES ONLY)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def fill_via_flat(df: pd.DataFrame, audit: pd.DataFrame) -> int:
-    """
-    Priority 4 (last resort): fill any remaining edge gaps by carrying the
-    nearest known value forward or backward.
-
-    This only affects cells at the very start or end of a tenor's timeseries
-    where no second bounding value exists for interpolation.
-
-    Args:
-        df:    timeseries DataFrame (modified in place)
-        audit: audit trail DataFrame (modified in place)
-
-    Returns:
-        Number of cells filled.
-    """
-    still_missing = df.isna()
-    remaining_count = still_missing.sum().sum()
-
-    if remaining_count == 0:
-        return 0
-
-    df[:] = df.ffill().bfill()
-
-    # Mark newly filled cells in audit
-    for tenor in df.columns:
-        newly_filled = still_missing[tenor] & df[tenor].notna()
-        audit.loc[newly_filled, tenor] = "FLAT"
-
-    return remaining_count - df.isna().sum().sum()
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# OUTPUT FORMATTING
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def write_output(
-    df: pd.DataFrame,
-    audit: pd.DataFrame,
-    original_df: pd.DataFrame,
-    output_path: str,
-    fill_counts: dict,
-    empty_tenors: list = None,
-    sparse_tenors: list = None,
-):
-    """
-    Write the backfilled data, audit trail, per-tenor breakdown, and summary
-    to a formatted Excel workbook.
-
-    Audit trail cells are colour-coded by method:
-        Green  = Regression    |  Blue   = Spline
-        Gold   = Linear        |  Salmon = Flat fill
-        Red    = No data (entirely empty tenor)
-
-    Args:
-        df:            backfilled DataFrame
-        audit:         audit trail DataFrame
-        original_df:   original (pre-fill) DataFrame for comparison stats
-        output_path:   file path for output Excel
-        fill_counts:   dict mapping method name -> number of cells filled
-        empty_tenors:  list of tenor names with zero observations
-        sparse_tenors: list of (tenor_name, observation_count) tuples
-    """
-    empty_tenors = empty_tenors or []
-    sparse_tenors = sparse_tenors or []
-    tenors = df.columns.tolist()
-    n_rows = len(df)
-
-    # --- Per-tenor breakdown ---
-    tenor_rows = []
-    empty_set = set(empty_tenors)
-    sparse_dict = dict(sparse_tenors)
-    for tenor in tenors:
-        orig_missing = original_df[tenor].isna().sum()
-
-        # Flag the tenor's status for easy scanning
-        if tenor in empty_set:
-            status = "NO DATA"
-        elif tenor in sparse_dict:
-            status = f"SPARSE ({sparse_dict[tenor]} obs)"
-        else:
-            status = "OK"
-
-        tenor_rows.append({
-            "Tenor": tenor,
-            "Status": status,
-            "Total Dates": n_rows,
-            "Originally Missing": orig_missing,
-            "Missing %": round(orig_missing / n_rows * 100, 1),
-            "Regression": audit[tenor].str.startswith("REG").sum(),
-            "Spline": (audit[tenor] == "SPLINE").sum(),
-            "Linear": (audit[tenor] == "LINEAR").sum(),
-            "Flat": (audit[tenor] == "FLAT").sum(),
-        })
-    breakdown_df = pd.DataFrame(tenor_rows)
-
-    # --- Summary ---
-    total_cells = n_rows * len(tenors)
-    total_missing = original_df.isna().sum().sum()
-    summary_rows = [
-        ("Total cells", total_cells),
-        ("Originally missing", total_missing),
-        ("Missing %", f"{total_missing / total_cells * 100:.1f}%"),
-        ("", ""),
-        ("Filled by regression", fill_counts.get("regression", 0)),
-        ("Filled by cubic spline", fill_counts.get("spline", 0)),
-        ("Filled by linear interpolation", fill_counts.get("linear", 0)),
-        ("Filled by flat fill", fill_counts.get("flat", 0)),
-        ("Still missing", int(df.isna().sum().sum())),
-        ("", ""),
-        ("Empty tenors (no data)", len(empty_tenors)),
-        ("Sparse tenors (<4 obs)", len(sparse_tenors)),
-        ("", ""),
-        ("CONFIG: Min regression observations", MIN_REGRESSION_OBSERVATIONS),
-        ("CONFIG: Min regression R²", MIN_REGRESSION_R_SQUARED),
-        ("CONFIG: Min spline points", MIN_SPLINE_POINTS),
-    ]
-
-    # List the empty and sparse tenors explicitly in the summary
-    if empty_tenors:
-        summary_rows.append(("", ""))
-        summary_rows.append(("EMPTY TENORS (unfillable)", ""))
-        for t in empty_tenors:
-            summary_rows.append(("", t))
-
-    if sparse_tenors:
-        summary_rows.append(("", ""))
-        summary_rows.append(("SPARSE TENORS", ""))
-        for t, n in sparse_tenors:
-            summary_rows.append(("", f"{t} ({n} observations)"))
-
-    summary_df = pd.DataFrame(summary_rows, columns=["Metric", "Value"])
-
-    # --- Write all sheets ---
-    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-        df.to_excel(writer, sheet_name="Backfilled Data")
-        audit.to_excel(writer, sheet_name="Audit Trail")
-        breakdown_df.to_excel(writer, sheet_name="Per Tenor Breakdown", index=False)
-        summary_df.to_excel(writer, sheet_name="Summary", index=False)
-
-    # --- Apply formatting ---
-    wb = load_workbook(output_path)
-    _format_audit_sheet(wb["Audit Trail"])
-    _format_all_headers(wb)
-    wb.save(output_path)
-
-
-def _format_audit_sheet(ws):
-    """Colour-code audit trail cells and add a legend."""
-    colour_map = {
-        "REG":     PatternFill("solid", fgColor="90EE90"),  # green
-        "SPLINE":  PatternFill("solid", fgColor="87CEEB"),  # blue
-        "LINEAR":  PatternFill("solid", fgColor="FFD700"),  # gold
-        "FLAT":    PatternFill("solid", fgColor="FFA07A"),  # salmon
-        "NO DATA": PatternFill("solid", fgColor="FF6666"),  # red — no data at all
-    }
-
-    for row in ws.iter_rows(min_row=2, min_col=2):
-        for cell in row:
-            cell_text = str(cell.value) if cell.value else ""
-            for method_prefix, fill in colour_map.items():
-                if cell_text.startswith(method_prefix):
-                    cell.fill = fill
-                    break
-
-    # Legend below the data
-    legend_row = ws.max_row + 3
-    ws.cell(row=legend_row, column=1, value="Legend:").font = Font(bold=True, name="Arial")
-
-    legend_entries = [
-        ("REG",     "Cross-tenor regression (R² shown)",  "90EE90"),
-        ("SPLINE",  "Cubic spline interpolation",         "87CEEB"),
-        ("LINEAR",  "Linear interpolation",               "FFD700"),
-        ("FLAT",    "Forward/backward fill (edges only)", "FFA07A"),
-        ("NO DATA", "Tenor has zero observations",        "FF6666"),
-        ("(blank)", "Original observed data",             "FFFFFF"),
-    ]
-    for i, (code, description, hex_colour) in enumerate(legend_entries):
-        r = legend_row + 1 + i
-        ws.cell(row=r, column=1, value=code).fill = PatternFill("solid", fgColor=hex_colour)
-        ws.cell(row=r, column=2, value=description)
-
-
-def _format_all_headers(wb):
-    """Apply consistent header formatting across all sheets."""
-    header_font = Font(bold=True, name="Arial", size=11)
-    header_fill = PatternFill("solid", fgColor="D9E1F2")
-
-    for sheet_name in wb.sheetnames:
-        ws = wb[sheet_name]
-        for cell in ws[1]:
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = Alignment(horizontal="center")
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# MAIN EXECUTION
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def main():
-    """
-    Entry point: load data, run the four-stage waterfall, and write results.
-    """
-    if len(sys.argv) < 2:
-        print(__doc__)
-        sys.exit(1)
-
-    input_path = sys.argv[1]
-    output_path = input_path.replace(".xlsx", "_backfilled.xlsx")
-
-    # Load
-    print(f"Loading {input_path}...")
-    df = load_timeseries(input_path)
-    original_df = df.copy()  # preserve original for comparison
-
-    n_rows, n_cols = df.shape
-    total_missing = df.isna().sum().sum()
-    print(f"  {n_rows} dates × {n_cols} tenors")
-    print(f"  {total_missing} missing cells ({total_missing / (n_rows * n_cols) * 100:.1f}%)\n")
-
-    # ── Pre-flight check: detect empty and sparse tenors ──
-    empty_tenors = []   # zero observations — cannot be filled by any method
-    sparse_tenors = []  # 1–3 observations — too few for spline, limited interpolation
-
-    for tenor in df.columns:
-        n_observed = df[tenor].notna().sum()
-        if n_observed == 0:
-            empty_tenors.append(tenor)
-        elif n_observed < MIN_SPLINE_POINTS:
-            sparse_tenors.append((tenor, n_observed))
-
-    if empty_tenors:
-        print(f"  ⚠ WARNING: {len(empty_tenors)} tenor(s) have NO data at all:")
-        for t in empty_tenors:
-            print(f"      - {t}  (will remain entirely empty in output)")
-        print()
-
-    if sparse_tenors:
-        print(f"  ⚠ WARNING: {len(sparse_tenors)} tenor(s) have very few observations:")
-        for t, n in sparse_tenors:
-            print(f"      - {t}  ({n} values — too few for spline, will use linear/flat only)")
-        print()
-
-    # Audit trail: empty string = original data, otherwise = method code
-    audit = pd.DataFrame("", index=df.index, columns=df.columns)
-
-    # Mark empty tenors in audit so they are clearly flagged in the output
-    for tenor in empty_tenors:
-        audit[tenor] = "NO DATA"
-
-    # Run waterfall
-    print("Priority 1 — Cross-tenor regression...")
-    n_reg = fill_via_regression(df, audit)
-    print(f"  → {n_reg} cells filled\n")
-
-    print("Priority 2 — Cubic spline interpolation...")
-    n_spline = fill_via_spline(df, audit)
-    print(f"  → {n_spline} cells filled\n")
-
-    print("Priority 3 — Linear interpolation...")
-    n_linear = fill_via_linear(df, audit)
-    print(f"  → {n_linear} cells filled\n")
-
-    print("Priority 4 — Forward/backward fill (edges only)...")
-    n_flat = fill_via_flat(df, audit)
-    print(f"  → {n_flat} cells filled\n")
-
-    # Results
-    still_missing = df.isna().sum().sum()
-    print(f"Complete: {total_missing} missing → {int(still_missing)} remaining")
-    if still_missing > 0:
-        unfillable = sum(n_rows for t in empty_tenors)
-        fillable_remaining = int(still_missing) - unfillable
-        print(f"  ({unfillable} unfillable from empty tenors, {fillable_remaining} other)")
-    print()
-
-    # Write
-    print(f"Writing {output_path}...")
-    fill_counts = {
-        "regression": n_reg,
-        "spline": n_spline,
-        "linear": n_linear,
-        "flat": n_flat,
-    }
-    write_output(df, audit, original_df, output_path, fill_counts, empty_tenors, sparse_tenors)
-    print(f"Done → {output_path}")
-
-
-if __name__ == "__main__":
-    main()
-```
-
----
-
-## Appendix C — Phase 3.1: Eval pipeline `_original` parquets (clean cross-pipeline architecture)
-
-> **Status**: Phase 3.1 extends `src/rade_ml_pt/pipelines/ensemble/eval.py`
-> to emit original-space PnL artefacts that mirror the inference
-> pipeline's output, **without** the two pipelines depending on each
-> other. The scaled → original math lives in a single neutral utility
-> module — `src/rade_ml_pt/utilities/predictions_transform.py` — and both
-> the inference and eval pipelines call into it via thin facades.
-> Eval reads its training artefacts (`target_scaler.pkl`,
-> `target_attributes.json`) directly from the model store as plain
-> `(scaler, attributes)` tuples; there is **no** `InferenceContext`
-> wrapper anywhere in eval.
-
-### Architectural rationale
-
-The previous Phase 3.1 draft routed eval through `HybridGnnRnnInferencePipeline.transform_predictions` via a stub `InferenceContext` populated only with `target_scaler` and `target_attributes`. Two problems:
-
-1. **Wrong data structure.** An `InferenceContext` with 2 of 12 fields populated isn't a context — it's a tuple wearing a costume. Eval doesn't need `graph_builder`, `cluster_assets`, `elementary_pnl`, etc.
-2. **Wrong pipeline boundary.** Eval importing `HybridGnnRnnInferencePipeline` makes the eval module depend on the inference pipeline's surface area for math it doesn't conceptually own.
-
-The clean architecture is:
-
-```
-                ┌─────────────────────────────────────────────────────────┐
-                │  src/rade_ml_pt/utilities/predictions_transform.py     │
-                │  (neutral, stateless, pure-functions)                  │
-                │                                                         │
-                │    inverse_scale_predictions(preds, scaler)             │
-                │    apply_notional_signs(df, attrs, strict=...)          │
-                │    build_scenario_summary(cid, scaled, original)        │
-                │    transform_to_original(cid, preds, labels, ...)       │
-                └────────────────────┬─────────────────┬─────────────────┘
-                                     │                  │
-                  ┌──────────────────┴───┐    ┌─────────┴────────────────┐
-                  │  hybrid_gnn_rnn/      │    │  pipelines/ensemble/      │
-                  │  infer.py             │    │  eval.py                  │
-                  │                       │    │                           │
-                  │  HybridGnnRnnInfer-   │    │  _load_member_target_     │
-                  │    encePipeline       │    │    artifacts(cfg, vers)   │
-                  │    .transform_predict-│    │     → {cid: (scaler,      │
-                  │      ions(cid,…,ctx)  │    │             attrs)}       │
-                  │    [THIN FACADE]      │    │                           │
-                  │                       │    │  _transform_cluster_to_   │
-                  │  Calls util.transform-│    │    original(cid, preds,   │
-                  │  _to_original(ctx     │    │      targets, labels,     │
-                  │  .target_scaler, ctx  │    │      scaler, attrs)       │
-                  │  .target_attributes)  │    │   [Calls util directly]   │
-                  └───────────────────────┘    └───────────────────────────┘
-                            ▲                            ▲
-                            │                            │
-                  ┌─────────┴────────┐         ┌─────────┴────────────────┐
-                  │  EnsembleInfer-  │         │  EnsembleEvalPipeline    │
-                  │  encePipeline    │         │   (per-split loop calls  │
-                  │   _post_infer_   │         │    _transform_cluster_   │
-                  │   cluster()      │         │    to_original)          │
-                  └──────────────────┘         └──────────────────────────┘
-```
-
-**Eval and inference never import each other.** They share *math*, not *types*. The utility module has zero dependencies on either pipeline (only numpy + pandas).
-
-### What ships in Phase 3.1
-
-| Artefact | Treatment | Schema |
-|---|---|:---:|
-| `portfolio_summary/portfolio_timeseries_{split}.parquet` | + 5 `*_original` cols (NaN-fill on legacy runs) | v2 → v3 |
-| `portfolio_summary/cluster_timeseries_{split}.parquet`   | + 5 `*_original` cols (per-cluster NaN-fill) | v2 → v3 |
-| `trade_predictions/{cluster_id}/{split}_scaled.parquet`  | **new** wide trade matrix (z-space)         | v1 (new) |
-| `trade_predictions/{cluster_id}/{split}_original.parquet`| **new** wide trade matrix (original units)  | v1 (new) |
-| `manifest.json` | + `spaces_available` and `artifacts.*` blocks | v1 → v2 |
-
-### Files touched
-
-| Path | Purpose | Change |
-|---|---|---|
-| `src/rade_ml_pt/utilities/predictions_transform.py` | New utility module — math single source of truth | **NEW FILE** |
-| `src/rade_ml_pt/pipelines/hybrid_gnn_rnn/infer.py` | `HybridGnnRnnInferencePipeline.transform_predictions` | **Thin facade** over the utility (signature unchanged) |
-| `src/rade_ml_pt/pipelines/hybrid_gnn_rnn/eval.py` | `_inverse_target_transforms`, `_inverse_target_notional` | **Thin facades** over the utility (signatures unchanged, legacy soft-failure preserved) |
-| `src/rade_ml_pt/pipelines/ensemble/eval.py` | Phase 3.1 extension (loader + transform + writers + manifest) | Drop `_load_cluster_contexts`; add `_load_member_target_artifacts`; refactor `_transform_cluster_to_original` to call the utility directly; per-split loop updated |
-
----
-
-### C.1 — `src/rade_ml_pt/utilities/predictions_transform.py` (NEW)
-
-Drop-in new file. Two pure primitives (inverse-scale, notional-sign), a summary builder, and one composite. No torch / sklearn / pipeline imports at module level — `numpy` and `pandas` only.
-
-```python
-"""Predictions post-processing — scaled ↔ original PnL space.
-
-Single source of truth for the *scaled → original* conversion of cluster-
-level model output.  The chain is two stateless steps applied to a
-``[n_scenarios, n_trades]`` numpy matrix:
-
-  1. **Inverse-scale**     — undo the standardisation applied during
-                             training (z-space → p-space).  Handles the
-                             case where the cluster carries a reduced /
-                             expanded trade population vs the scaler.
-  2. **Restore notional**  — re-apply per-trade ``NotionalSign`` so the
-                             output values match the user's reporting
-                             convention.
-
-Why a neutral module
---------------------
-Inference and evaluation are separate runtime processes with separate
-data-loading conventions; coupling them at the data-structure level
-(e.g. via an ``InferenceContext`` wrapper) is wrong.  Sharing the *math*
-via a neutral utility keeps the two pipelines fully decoupled — neither
-imports the other — while guaranteeing a single, well-tested definition
-of "original-space PnL" across the codebase.
-
-Both the inference pipeline
-(:meth:`~src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer.HybridGnnRnnInferencePipeline.transform_predictions`)
-and the ensemble eval pipeline
-(:mod:`~src.rade_ml_pt.pipelines.ensemble.eval`) call into this module
-so the dashboard's *scaled* / *original* toggle reads consistent
-numbers regardless of which pipeline produced the artifact.
-
-Public surface
---------------
-* :func:`inverse_scale_predictions`  — one ``inverse_transform`` call
-                                       with dimension-mismatch handling.
-* :func:`apply_notional_signs`       — per-trade sign restoration on a
-                                       wide PnL frame.
-* :func:`build_scenario_summary`     — per-scenario aggregate stats.
-* :func:`transform_to_original`      — end-to-end composite
-                                       (preds_2d → 3 wide frames).
-"""
-from __future__ import annotations
-
-import logging
-from typing import Any, Dict, List, Optional, Tuple
-
-import numpy as np
-import pandas as pd
-
-logger = logging.getLogger(__name__)
-
-
-# ----------------------------------------------------------------------
-# Step 1 — inverse-scale (z-space → p-space)
-# ----------------------------------------------------------------------
-
-def inverse_scale_predictions(
-    preds:  np.ndarray,
-    scaler: Any,
-) -> Tuple[np.ndarray, List[str]]:
-    """Invert standardisation on a ``[n_scenarios, n_trades]`` matrix.
-
-    The scaler's ``feature_names_in_`` defines the canonical trade-id
-    ordering for the cluster's output columns.  If the input width
-    doesn't match the scaler width the function pads / slices safely:
-
-    * ``n_trades == scaler_width`` — direct ``inverse_transform``.
-    * ``n_trades <  scaler_width`` — zero-pad to the scaler width,
-      inverse-transform, slice back.  Trailing columns are dropped.
-    * ``n_trades >  scaler_width`` — inverse-transform the head, pass
-      the tail through unchanged.  Unknown columns get
-      ``unknown_{i}`` trade IDs.
+    epsilon: float = 1e-6,
+) -> float:
+    """Population Stability Index between a baseline histogram and current obs.
+
+    .. math::
+
+        \\text{PSI} = \\sum_i (p_{\\text{curr},i} - p_{\\text{base},i})
+                     \\times \\ln\\!\\left(\\frac{p_{\\text{curr},i}}
+                                                 {p_{\\text{base},i}}\\right)
+
+    Each bin proportion is smoothed by ``epsilon`` to avoid div-by-zero
+    and ``log(0)`` when the baseline or current has empty bins.  Current
+    observations that fall outside
+    ``[baseline_edges[0], baseline_edges[-1]]`` are clipped into the
+    outermost bin — this matches the PSI convention of "lump outliers
+    into the tail" and prevents PSI from spuriously spiking just
+    because today saw a value the baseline never did.
+
+    Non-finite ``current_values`` (NaN / inf) are dropped before
+    binning, so callers don't have to do that themselves.
 
     Parameters
     ----------
-    preds : np.ndarray
-        2-D, shape ``[n_scenarios, n_trades]``.
-    scaler : object
-        sklearn-compatible scaler with ``feature_names_in_`` and
-        ``inverse_transform`` methods.  Must not be ``None``.
+    baseline_counts
+        Histogram counts at training time (length ``n_bins``).
+    baseline_edges
+        Histogram edges (length ``n_bins + 1``).
+    current_values
+        Today's raw observations.  No prior binning expected.
+    epsilon
+        Bin proportion floor to prevent log(0) / divide-by-zero.
 
     Returns
     -------
-    unscaled : np.ndarray
-        Same shape as ``preds``, in original (post-``inverse_transform``)
-        space.
-    trade_ids : list of str
-        Column labels for ``unscaled`` in the order matching the
-        scaler's canonical training order, with ``unknown_{i}``
-        fallbacks for any columns past the scaler width.
-
-    Raises
-    ------
-    ValueError
-        If ``preds`` is not 2-D.
-    RuntimeError
-        If ``scaler`` is ``None`` or has no ``feature_names_in_``.
+    float
+        PSI value.  Returns ``np.nan`` when either side is degenerate
+        (all-zero counts, mismatched shapes, empty current observations).
     """
-    arr = np.asarray(preds)
-    if arr.ndim != 2:
-        raise ValueError(
-            f"inverse_scale_predictions: expected 2-D predictions "
-            f"[n_scenarios, n_trades]; got shape {arr.shape}."
-        )
-    if scaler is None:
-        raise RuntimeError(
-            "inverse_scale_predictions: scaler is None — cannot invert "
-            "standardisation."
-        )
+    counts = np.asarray(baseline_counts, dtype=np.float64)
+    edges  = np.asarray(baseline_edges,  dtype=np.float64)
+    cur    = np.asarray(current_values,  dtype=np.float64)
+    cur    = cur[np.isfinite(cur)]
 
-    trade_ids_canonical = list(getattr(scaler, "feature_names_in_", []))
-    if not trade_ids_canonical:
-        raise RuntimeError(
-            "inverse_scale_predictions: scaler has no feature_names_in_ — "
-            "refit on a DataFrame at training time so the canonical "
-            "trade-id ordering is preserved on disk."
-        )
+    if counts.size == 0 or edges.size != counts.size + 1:
+        return float("nan")
+    if cur.size == 0:
+        return float("nan")
+    if counts.sum() <= 0:
+        return float("nan")
 
-    n_scenarios, n_trades = arr.shape
-    n_scaler_features     = len(trade_ids_canonical)
+    cur_clipped   = np.clip(cur, edges[0], edges[-1])
+    cur_counts, _ = np.histogram(cur_clipped, bins=edges)
+    if cur_counts.sum() <= 0:
+        return float("nan")
 
-    if n_trades == n_scaler_features:
-        unscaled  = scaler.inverse_transform(arr)
-        trade_ids = trade_ids_canonical
+    p_base = counts     / counts.sum()
+    p_curr = cur_counts / cur_counts.sum()
 
-    elif n_trades < n_scaler_features:
-        padded                = np.zeros((n_scenarios, n_scaler_features), dtype=arr.dtype)
-        padded[:, :n_trades]  = arr
-        unscaled_full         = scaler.inverse_transform(padded)
-        unscaled              = unscaled_full[:, :n_trades]
-        trade_ids             = trade_ids_canonical[:n_trades]
+    p_base = p_base + epsilon
+    p_curr = p_curr + epsilon
 
-    else:  # n_trades > n_scaler_features
-        head     = scaler.inverse_transform(arr[:, :n_scaler_features])
-        unscaled = np.concatenate([head, arr[:, n_scaler_features:]], axis=1)
-        trade_ids = (
-            trade_ids_canonical
-            + [f"unknown_{i}" for i in range(n_trades - n_scaler_features)]
-        )
-
-    return unscaled, trade_ids
+    return float(np.sum((p_curr - p_base) * np.log(p_curr / p_base)))
 
 
-# ----------------------------------------------------------------------
-# Step 2 — restore per-trade notional sign
-# ----------------------------------------------------------------------
-
-def apply_notional_signs(
-    pnl_df:            pd.DataFrame,
-    target_attributes: Optional[Dict[str, Any]],
+def js_divergence(
+    baseline_counts: np.ndarray,
+    current_counts:  np.ndarray,
     *,
-    key_field:  str  = "TradeKey",
-    sign_field: str  = "NotionalSign",
-    strict:     bool = True,
-    cluster_id: Optional[str] = None,
-) -> pd.DataFrame:
-    """Restore per-trade ``NotionalSign`` on a wide PnL frame.
+    epsilon: float = 1e-6,
+) -> float:
+    """Jensen-Shannon divergence between two histograms (log base 2).
 
-    Training stores PnL with ``|notional|`` (sign stripped) so trades of
-    opposite direction can share a scaler.  At inference / eval time we
-    re-apply each trade's sign so the output matches the user's reporting
-    convention.
+    .. math::
+
+        \\text{JSD}(P \\| Q) = \\tfrac{1}{2}\\text{KL}(P \\| M)
+                             + \\tfrac{1}{2}\\text{KL}(Q \\| M),
+        \\quad M = \\tfrac{1}{2}(P + Q)
+
+    Bounded ``[0, 1]`` when log base 2 is used (which is the convention
+    used here); symmetric in ``P``, ``Q``.  Both inputs are normalised
+    to probability mass functions and smoothed by ``epsilon`` to avoid
+    ``log(0)`` on empty bins.
 
     Parameters
     ----------
-    pnl_df : pd.DataFrame
-        Wide PnL frame, shape ``[n_scenarios, n_trades]``; columns are
-        trade IDs.  Typically the output of
-        :func:`inverse_scale_predictions` wrapped in a DataFrame.
-    target_attributes : dict or None
-        Per-trade attribute table.  Must contain a trade-key column
-        (``key_field`` or ``trade_id`` as fallback) and a ``sign_field``
-        of the same length.
-    key_field, sign_field : str
-        Names of the attribute keys to read.  Defaults match the
-        ``target_attributes.json`` convention written at training time.
-    strict : bool, default True
-        If ``True``, raise ``RuntimeError`` on any missing / misaligned
-        attribute.  If ``False``, log a warning and return ``pnl_df``
-        unchanged.  Inference and ensemble eval keep this ``True`` (a
-        missing sign is a hard contract violation); only the legacy
-        per-member eval lowers it for backward compatibility.
-    cluster_id : str, optional
-        Used only to enrich error / warning messages.
+    baseline_counts, current_counts
+        Histogram counts.  Must share the same bin layout (same
+        length) — the caller is responsible for ensuring they were
+        binned against identical edges.
+    epsilon
+        Probability floor to prevent ``log(0)``.
+
+    Returns
+    -------
+    float
+        JSD value in ``[0, 1]``.  Returns ``np.nan`` on shape mismatch
+        or degenerate inputs (either array all-zero).
+    """
+    p = np.asarray(baseline_counts, dtype=np.float64)
+    q = np.asarray(current_counts,  dtype=np.float64)
+    if p.shape != q.shape or p.size == 0:
+        return float("nan")
+    if p.sum() <= 0 or q.sum() <= 0:
+        return float("nan")
+
+    p = p / p.sum()
+    q = q / q.sum()
+    m = 0.5 * (p + q)
+
+    p_safe = p + epsilon
+    q_safe = q + epsilon
+    m_safe = m + epsilon
+
+    kl_pm = float(np.sum(p_safe * np.log2(p_safe / m_safe)))
+    kl_qm = float(np.sum(q_safe * np.log2(q_safe / m_safe)))
+    return 0.5 * kl_pm + 0.5 * kl_qm
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Severity classifier
+# ═════════════════════════════════════════════════════════════════════
+
+def classify_severity(psi: Optional[float]) -> str:
+    """Map a PSI value to ``info`` / ``warn`` / ``critical`` / ``no_data``.
+
+    ====================  ================  ============
+    PSI range             Severity           UI colour
+    ====================  ================  ============
+    ``[0, 0.10)``         ``info``           green
+    ``[0.10, 0.25)``      ``warn``           amber
+    ``[0.25, ∞)``         ``critical``       red
+    ``NaN / None / <0``   ``no_data``        grey
+    ====================  ================  ============
+
+    Non-numeric or otherwise unparseable inputs return ``no_data``
+    rather than raising, so the classifier is safe to apply
+    row-by-row across a DataFrame containing transient nulls.
+    """
+    if psi is None:
+        return SEVERITY_NO_DATA
+    try:
+        v = float(psi)
+    except (TypeError, ValueError):
+        return SEVERITY_NO_DATA
+    if not np.isfinite(v) or v < 0:
+        return SEVERITY_NO_DATA
+    if v < PSI_WARN_THRESHOLD:
+        return SEVERITY_INFO
+    if v < PSI_CRITICAL_THRESHOLD:
+        return SEVERITY_WARN
+    return SEVERITY_CRITICAL
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Per-cluster drift table builder
+# ═════════════════════════════════════════════════════════════════════
+
+_DRIFT_TABLE_COLUMNS: Sequence[str] = (
+    "cluster_id",
+    "feature_name",
+    "psi",
+    "js_divergence",
+    "mean_shift",
+    "std_ratio",
+    "severity",
+)
+
+_DRIFT_TABLE_DTYPES: Dict[str, Any] = {
+    "cluster_id":    "string",
+    "feature_name":  "string",
+    "psi":           np.float32,
+    "js_divergence": np.float32,
+    "mean_shift":    np.float32,
+    "std_ratio":     np.float32,
+    "severity":      "string",
+}
+
+
+def build_drift_table(
+    baseline_df:      pd.DataFrame,
+    current_features: pd.DataFrame,
+    *,
+    cluster_id:       str,
+    epsilon:          float = 1e-6,
+) -> pd.DataFrame:
+    """Compute drift for every feature in ``baseline_df`` vs ``current_features``.
+
+    The baseline is the **anchor** — every feature it tracks gets a row
+    in the output:
+
+    * Features present in **both** baseline and current → PSI + JSD +
+      mean_shift + std_ratio computed, severity classified.
+    * Features in baseline but **missing / all-NaN** in current → row
+      emitted with NaN metrics and ``severity = "no_data"`` so the UI
+      heatmap shows a grey cell rather than collapsing the column.
+    * Features in current but **not** in baseline → silently ignored
+      (we cannot score drift without a baseline anchor).
+
+    Output schema (long-format, one row per baseline feature):
+
+    | column          | dtype     | meaning                              |
+    |-----------------|-----------|--------------------------------------|
+    | ``cluster_id``  | string    | owning cluster                       |
+    | ``feature_name``| string    | feature column name                  |
+    | ``psi``         | float32   | population stability index           |
+    | ``js_divergence`` | float32 | Jensen-Shannon divergence ``[0, 1]`` |
+    | ``mean_shift``  | float32   | ``(μ_curr - μ_base) / max(σ_base, ε)`` (z-score units) |
+    | ``std_ratio``   | float32   | ``σ_curr / max(σ_base, ε)`` — vol regime indicator |
+    | ``severity``    | string    | ``info``/``warn``/``critical``/``no_data`` |
+
+    Parameters
+    ----------
+    baseline_df
+        ``load_baseline``-decoded DataFrame.  Must have ``feature_name``,
+        ``mean``, ``std``, ``hist_edges`` (ndarray) and ``hist_counts``
+        (ndarray) columns.
+    current_features
+        Today's features in the **same coordinate system** the baseline
+        was built in (i.e. already pushed through the frozen training
+        scaler).  Rows = observations, cols = feature names.
+    cluster_id
+        Stamped on every output row so multi-cluster tables can be
+        ``pd.concat``-ed freely.
+    epsilon
+        Numerical floor used by PSI / std-ratio to avoid div-by-zero
+        on degenerate near-constant baselines.
 
     Returns
     -------
     pd.DataFrame
-        Same shape / index / columns as ``pnl_df``; each column
-        multiplied by its ``NotionalSign``.
+        Long-format drift table (one row per baseline feature).
     """
-    ctx_tag = f" (cluster '{cluster_id}')" if cluster_id else ""
+    if baseline_df is None or baseline_df.empty:
+        return _empty_drift_table()
 
-    def _fail(msg: str) -> pd.DataFrame:
-        full = f"apply_notional_signs{ctx_tag}: {msg}"
-        if strict:
-            raise RuntimeError(full)
-        logger.warning("%s — returning PnL unchanged.", full)
-        return pnl_df
-
-    if target_attributes is None:
-        return _fail("target_attributes is None")
-
-    keys  = target_attributes.get(key_field) or target_attributes.get("trade_id")
-    signs = target_attributes.get(sign_field)
-    if keys is None or signs is None:
-        return _fail(
-            f"missing required attribute(s) {key_field!r} and/or "
-            f"{sign_field!r}"
-        )
-
-    sign_series = pd.Series(list(signs), index=list(keys), dtype=np.float32)
-    try:
-        aligned = sign_series.reindex(pnl_df.columns)
-    except Exception as exc:
-        return _fail(
-            f"could not align {sign_field!r} to PnL columns ({exc})"
-        )
-
-    if aligned.isna().any():
-        missing = aligned[aligned.isna()].index.tolist()
-        return _fail(
-            f"{len(missing)} trade(s) missing {sign_field!r} "
-            f"(first 5: {missing[:5]})"
-        )
-
-    return pnl_df.mul(aligned, axis=1)
-
-
-# ----------------------------------------------------------------------
-# Step 3 — per-scenario aggregate summary
-# ----------------------------------------------------------------------
-
-def build_scenario_summary(
-    cluster_id:    str,
-    scaled_wide:   pd.DataFrame,
-    original_wide: pd.DataFrame,
-) -> pd.DataFrame:
-    """Per-scenario aggregate stats — one row per scenario.
-
-    Cheap to compute here, cheap to stack across clusters downstream
-    (``sum_pnl_*`` sums cleanly across clusters per scenario for the
-    portfolio roll-up).
-
-    Returned columns
-    ----------------
-    * ``scenario_label``     — from the wide frames' index
-    * ``cluster_id``         — constant per call
-    * ``sum_pnl_scaled``     — preds.sum(axis=1) in z-space
-    * ``sum_pnl_original``   — preds.sum(axis=1) in original notional
-    * ``mean_pnl_original``  — preds.mean(axis=1) in original notional
-    * ``std_pnl_original``   — preds.std(axis=1) in original notional
-    * ``min_pnl_original``   — preds.min(axis=1) in original notional
-    * ``max_pnl_original``   — preds.max(axis=1) in original notional
-    """
-    scaled_vals   = scaled_wide.to_numpy()
-    original_vals = original_wide.to_numpy()
-    return pd.DataFrame({
-        "scenario_label":    list(scaled_wide.index),
-        "cluster_id":        cluster_id,
-        "sum_pnl_scaled":    scaled_vals.sum(axis=1),
-        "sum_pnl_original":  original_vals.sum(axis=1),
-        "mean_pnl_original": original_vals.mean(axis=1),
-        "std_pnl_original":  original_vals.std(axis=1),
-        "min_pnl_original":  original_vals.min(axis=1),
-        "max_pnl_original":  original_vals.max(axis=1),
-    })
-
-
-# ----------------------------------------------------------------------
-# Composite — end-to-end scaled → original
-# ----------------------------------------------------------------------
-
-def transform_to_original(
-    cluster_id:        str,
-    cluster_preds:     np.ndarray,
-    scenario_labels:   Optional[List[str]],
-    scaler:            Any,
-    target_attributes: Dict[str, Any],
-    *,
-    strict_notional:   bool = True,
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """End-to-end scaled → original for a single cluster's predictions.
-
-    Composes :func:`inverse_scale_predictions`, the wide-frame
-    assembly step, and :func:`apply_notional_signs`, then materialises
-    the per-scenario summary via :func:`build_scenario_summary`.  This
-    is the public entry point both inference and eval call.
-
-    Parameters
-    ----------
-    cluster_id : str
-        Used to tag the summary frame and enrich error messages.
-    cluster_preds : np.ndarray
-        Raw model output for the cluster.  Shape
-        ``[n_scenarios, n_trades]`` — rows are scenarios, columns are
-        trades.  Mirrors the convention used everywhere in
-        ``ensemble/aggregation``, ``ensemble/session``, and
-        ``pipelines/ensemble/eval``.
-    scenario_labels : list of str or None
-        Per-row labels (length ``n_scenarios``); used as the row index
-        of both wide frames and the ``scenario_label`` column of the
-        summary frame.  ``None`` ⇒ positional ``0..n_scenarios-1``
-        index.
-    scaler : object
-        sklearn-compatible scaler with ``feature_names_in_`` and
-        ``inverse_transform``.  Loaded by the caller from the cluster's
-        ``target_scaler.pkl`` under the registry — *not* wrapped in any
-        context object.
-    target_attributes : dict
-        Per-trade attribute table loaded from ``target_attributes.json``.
-        Must contain ``TradeKey`` (or ``trade_id``) and ``NotionalSign``
-        lists.
-    strict_notional : bool, default True
-        Forwarded to :func:`apply_notional_signs`.  Inference and
-        ensemble eval keep this ``True`` (missing sign ⇒ hard error);
-        only legacy per-member eval lowers it.
-
-    Returns
-    -------
-    scaled_wide : pd.DataFrame
-        Shape ``[n_scenarios, n_trades]``.  Predictions in **scaled**
-        (model-output) space.  Index = ``scenario_label``; columns =
-        trade IDs in canonical scaler order.
-    original_wide : pd.DataFrame
-        Same shape / index / columns — inverse-scaled AND
-        notional-sign-restored predictions in **original** notional
-        space.
-    summary_df : pd.DataFrame
-        One row per scenario.  See :func:`build_scenario_summary`.
-
-    Raises
-    ------
-    ValueError
-        If ``cluster_preds`` is not 2-D or ``scenario_labels`` length
-        doesn't match ``n_scenarios``.
-    RuntimeError
-        If ``scaler`` is ``None`` / missing ``feature_names_in_``, or
-        ``strict_notional`` is ``True`` and ``target_attributes`` is
-        missing / misaligned.
-    """
-    preds = np.asarray(cluster_preds)
-    if preds.ndim != 2:
+    required = {"feature_name", "mean", "std", "hist_edges", "hist_counts"}
+    missing  = required - set(baseline_df.columns)
+    if missing:
         raise ValueError(
-            f"transform_to_original: expected 2-D predictions "
-            f"[n_scenarios, n_trades]; got shape {preds.shape}."
-        )
-    n_scenarios, _ = preds.shape
-
-    if scenario_labels is not None and len(scenario_labels) != n_scenarios:
-        raise ValueError(
-            f"transform_to_original: len(scenario_labels)="
-            f"{len(scenario_labels)} != n_scenarios={n_scenarios}."
+            f"baseline_df is missing required columns: {sorted(missing)}.  "
+            f"Did you forget to call monitoring.loaders.load_baseline?"
         )
 
-    # Step 1: inverse-scale (z-space → p-space).
-    unscaled, trade_ids = inverse_scale_predictions(preds, scaler)
+    rows: List[Dict[str, Any]] = []
+    for _, brow in baseline_df.iterrows():
+        feature_name    = str(brow["feature_name"])
+        baseline_edges  = np.asarray(brow["hist_edges"],  dtype=np.float64)
+        baseline_counts = np.asarray(brow["hist_counts"], dtype=np.float64)
+        baseline_mean   = float(brow["mean"]) if pd.notna(brow["mean"]) else np.nan
+        baseline_std    = float(brow["std"])  if pd.notna(brow["std"])  else np.nan
 
-    # Step 2: assemble wide frames keyed by scenario_label.
-    scenario_index = (
-        list(scenario_labels) if scenario_labels is not None
-        else list(range(n_scenarios))
-    )
+        if feature_name not in current_features.columns:
+            rows.append(_no_data_row(cluster_id, feature_name))
+            continue
 
-    scaled_wide = pd.DataFrame(preds, index=scenario_index, columns=trade_ids)
-    scaled_wide.index.name = "scenario_label"
+        current_raw   = current_features[feature_name].to_numpy(dtype=np.float64)
+        current_valid = current_raw[np.isfinite(current_raw)]
+        if current_valid.size == 0 or baseline_counts.size == 0:
+            rows.append(_no_data_row(cluster_id, feature_name))
+            continue
 
-    unscaled_wide = pd.DataFrame(unscaled, index=scenario_index, columns=trade_ids)
-    unscaled_wide.index.name = "scenario_label"
+        psi = population_stability_index(
+            baseline_counts, baseline_edges, current_valid, epsilon=epsilon,
+        )
 
-    # Step 3: notional-sign restoration.
-    original_wide = apply_notional_signs(
-        unscaled_wide, target_attributes,
-        strict     = strict_notional,
-        cluster_id = cluster_id,
-    )
-    original_wide.index.name = "scenario_label"
+        # JSD needs paired histograms on the same edges — bin today's
+        # values with the persisted baseline edges first.  We reuse
+        # the same outlier-clipping convention as PSI so the two
+        # numbers tell a consistent story.
+        clipped = np.clip(current_valid, baseline_edges[0], baseline_edges[-1])
+        current_counts, _ = np.histogram(clipped, bins=baseline_edges)
+        jsd = js_divergence(baseline_counts, current_counts, epsilon=epsilon)
 
-    # Step 4: per-scenario summary for downstream stacking.
-    summary_df = build_scenario_summary(cluster_id, scaled_wide, original_wide)
+        # Mean shift in baseline-std units; std ratio in raw scale.
+        # ``epsilon`` guards against degenerate near-constant baselines
+        # (std ≈ 0) — the resulting numbers are noisy by definition in
+        # that regime, but better than divide-by-zero.
+        std_floor = (
+            max(baseline_std, epsilon)
+            if np.isfinite(baseline_std) and baseline_std > 0
+            else epsilon
+        )
+        current_mean = float(np.mean(current_valid))
+        current_std  = float(np.std(current_valid, ddof=0))
+        mean_shift   = (
+            (current_mean - baseline_mean) / std_floor
+            if np.isfinite(baseline_mean) else np.nan
+        )
+        std_ratio = current_std / std_floor
 
-    return scaled_wide, original_wide, summary_df
+        rows.append({
+            "cluster_id":    cluster_id,
+            "feature_name":  feature_name,
+            "psi":           psi,
+            "js_divergence": jsd,
+            "mean_shift":    mean_shift,
+            "std_ratio":     std_ratio,
+            "severity":      classify_severity(psi),
+        })
+
+    return _to_drift_dataframe(rows)
+
+
+def _empty_drift_table() -> pd.DataFrame:
+    """Empty long-format drift table with the canonical dtype schema."""
+    return _to_drift_dataframe([])
+
+
+def _no_data_row(cluster_id: str, feature_name: str) -> Dict[str, Any]:
+    """Drift-table row for a feature we cannot score (missing / all-NaN)."""
+    return {
+        "cluster_id":    cluster_id,
+        "feature_name":  feature_name,
+        "psi":           np.nan,
+        "js_divergence": np.nan,
+        "mean_shift":    np.nan,
+        "std_ratio":     np.nan,
+        "severity":      SEVERITY_NO_DATA,
+    }
+
+
+def _to_drift_dataframe(rows: List[Dict[str, Any]]) -> pd.DataFrame:
+    """Coerce a row list to the canonical drift-table dtype schema.
+
+    Centralised so empty + populated tables share the same dtype
+    fingerprint — important for ``pd.concat`` to work without dtype
+    promotion warnings when callers stitch per-cluster tables together.
+    """
+    df = pd.DataFrame(rows, columns=list(_DRIFT_TABLE_COLUMNS))
+    return df.astype(_DRIFT_TABLE_DTYPES)
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Portfolio-level summary
+# ═════════════════════════════════════════════════════════════════════
+
+def build_portfolio_drift_summary(
+    drift_tables: Sequence[pd.DataFrame],
+) -> Dict[str, Any]:
+    """Aggregate per-cluster drift tables into portfolio-level KPIs.
+
+    Consumed by the monitoring run manifest (``drift_summary.json``) and
+    the Monitoring tab health-strip KPIs.  Severity is classified off
+    ``mean_psi`` using the same thresholds applied to individual
+    features, so the portfolio's "warn" line matches the per-feature
+    severity boundary the user already sees in the heatmap.
+
+    Returns a dict with:
+
+    ===================  =================================================
+    key                  meaning
+    ===================  =================================================
+    ``n_clusters``        clusters represented across the tables
+    ``n_features_total``  scoreable features (excluding ``no_data`` rows)
+    ``n_features_info``   features with severity ``info``
+    ``n_features_warn``   features with severity ``warn``
+    ``n_features_crit``   features with severity ``critical``
+    ``n_features_nodata`` features that could not be scored
+    ``mean_psi``          mean PSI across all scoreable features
+    ``max_psi``           max PSI across all scoreable features
+    ``worst_cluster``     ``cluster_id`` holding the max-PSI feature
+    ``worst_feature``     ``feature_name`` holding the max PSI
+    ``severity``          portfolio-level severity, classified off ``mean_psi``
+    ===================  =================================================
+
+    Tolerates empty / ``None`` inputs by returning an empty-state dict
+    with zero counts and ``severity == "no_data"`` so callers don't have
+    to gate on row counts.
+    """
+    if drift_tables is None or len(drift_tables) == 0:
+        return _empty_summary()
+
+    nonempty = [t for t in drift_tables if t is not None and not t.empty]
+    if not nonempty:
+        return _empty_summary()
+
+    combined   = pd.concat(nonempty, ignore_index=True)
+    n_clusters = int(combined["cluster_id"].nunique())
+
+    sev_counts = combined["severity"].value_counts().to_dict()
+    n_info   = int(sev_counts.get(SEVERITY_INFO,     0))
+    n_warn   = int(sev_counts.get(SEVERITY_WARN,     0))
+    n_crit   = int(sev_counts.get(SEVERITY_CRITICAL, 0))
+    n_nodata = int(sev_counts.get(SEVERITY_NO_DATA,  0))
+    n_total  = n_info + n_warn + n_crit
+
+    scoreable = combined[combined["severity"] != SEVERITY_NO_DATA]
+    if scoreable.empty:
+        mean_psi:      float          = float("nan")
+        max_psi:       float          = float("nan")
+        worst_cluster: Optional[str]  = None
+        worst_feature: Optional[str]  = None
+    else:
+        mean_psi      = float(scoreable["psi"].mean())
+        idx_max       = scoreable["psi"].idxmax()
+        max_psi       = float(scoreable.loc[idx_max, "psi"])
+        worst_cluster = str(scoreable.loc[idx_max, "cluster_id"])
+        worst_feature = str(scoreable.loc[idx_max, "feature_name"])
+
+    return {
+        "n_clusters":         n_clusters,
+        "n_features_total":   n_total,
+        "n_features_info":    n_info,
+        "n_features_warn":    n_warn,
+        "n_features_crit":    n_crit,
+        "n_features_nodata":  n_nodata,
+        "mean_psi":           mean_psi,
+        "max_psi":            max_psi,
+        "worst_cluster":      worst_cluster,
+        "worst_feature":      worst_feature,
+        "severity":           classify_severity(mean_psi),
+    }
+
+
+def _empty_summary() -> Dict[str, Any]:
+    """Empty-state portfolio summary; keeps every key the manifest writer expects."""
+    return {
+        "n_clusters":         0,
+        "n_features_total":   0,
+        "n_features_info":    0,
+        "n_features_warn":    0,
+        "n_features_crit":    0,
+        "n_features_nodata":  0,
+        "mean_psi":           float("nan"),
+        "max_psi":            float("nan"),
+        "worst_cluster":      None,
+        "worst_feature":      None,
+        "severity":           SEVERITY_NO_DATA,
+    }
 
 
 __all__ = [
-    "inverse_scale_predictions",
-    "apply_notional_signs",
-    "build_scenario_summary",
-    "transform_to_original",
+    # constants
+    "SCHEMA_VERSION",
+    "PSI_WARN_THRESHOLD", "PSI_CRITICAL_THRESHOLD",
+    "SEVERITY_INFO", "SEVERITY_WARN", "SEVERITY_CRITICAL", "SEVERITY_NO_DATA",
+    # primitives
+    "population_stability_index",
+    "js_divergence",
+    "classify_severity",
+    # builders
+    "build_drift_table",
+    "build_portfolio_drift_summary",
 ]
 ```
 
----
-
-### C.2 — `src/rade_ml_pt/pipelines/hybrid_gnn_rnn/infer.py` (inference facade)
-
-Replace the body of `HybridGnnRnnInferencePipeline.transform_predictions` with a thin facade. **Signature unchanged.** All existing inference call sites — `EnsembleInferencePipeline._post_infer_cluster`, the chunked streaming path, etc. — keep working.
-
-**Before** (the ~110-line implementation that did inverse-scale + notional-sign + frame assembly + summary inline) is replaced by:
+### File 2: `src/rade_ml_pt/monitoring/loaders.py` (full source)
 
 ```python
-    # ==================================================================
-    # Post-prediction transforms
-    #
-    # The scaled → original math lives in the neutral utility module
-    # ``src.rade_ml_pt.utilities.predictions_transform`` so it can be
-    # shared with the eval pipeline *without* the eval side having to
-    # import inference (or wrap a stub ``InferenceContext`` around a
-    # scaler + attribute dict).  The static method below is kept on
-    # the pipeline class as a thin facade so every existing inference
-    # call site keeps its ``ctx``-shaped contract.
-    # ==================================================================
+"""Loaders for monitoring baseline parquets.
 
-    @staticmethod
-    def transform_predictions(
-        cluster_id:      str,
-        cluster_preds:   np.ndarray,
-        scenario_labels: Optional[List[str]],
-        ctx:             InferenceContext,
-    ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-        """Per-cluster post-prediction transformation: scaled → original.
+Decode the JSON-encoded ``hist_edges_json`` / ``hist_counts_json``
+columns produced by :func:`monitoring.baselines.save_feature_baseline`
+into ready-to-use NumPy arrays so callers (drift computation, UI
+distribution overlays) don't have to repeat the ``json.loads`` dance.
 
-        Thin facade over
-        :func:`src.rade_ml_pt.utilities.predictions_transform.transform_to_original`.
-        Pulls ``target_scaler`` and ``target_attributes`` off the
-        :class:`InferenceContext` and forwards everything else verbatim,
-        so :meth:`EnsembleInferencePipeline._post_infer_cluster` and the
-        rest of the inference stack keep their existing call sites
-        unchanged.
-        """
-        # Local import — keeps utilities free of inference-pipeline cycles
-        # and avoids importing the utility at module load time for callers
-        # that don't transform predictions.
-        from src.rade_ml_pt.utilities.predictions_transform import (
-            transform_to_original,
-        )
+Kept deliberately small — this module is just the reader half of the
+training/inference symmetry; the writer half lives in ``baselines.py``.
+"""
+from __future__ import annotations
 
-        return transform_to_original(
-            cluster_id        = cluster_id,
-            cluster_preds     = cluster_preds,
-            scenario_labels   = scenario_labels,
-            scaler            = ctx.target_scaler,
-            target_attributes = ctx.target_attributes,
-            strict_notional   = True,
-        )
-```
+import json
+import logging
+from pathlib import Path
+from typing import Union
 
----
+import numpy as np
+import pandas as pd
 
-### C.3 — `src/rade_ml_pt/pipelines/hybrid_gnn_rnn/eval.py` (per-member eval facades)
+logger = logging.getLogger(__name__)
 
-Both eval-side helpers become thin facades. **Signatures unchanged.** Legacy soft-failure semantics preserved (per-member eval's `post_eval` path keeps working even on registry entries without scaler artefacts).
+# Columns that MUST be present in any baseline parquet we're prepared
+# to consume.  Hoisted to module scope so the assertion + the error
+# message stay in sync (one source of truth).
+_REQUIRED_COLUMNS = (
+    "feature_name",
+    "mean",
+    "std",
+    "hist_edges_json",
+    "hist_counts_json",
+)
 
-```python
-    @staticmethod
-    def _inverse_target_transforms(
-            predictions: np.ndarray, targets: np.ndarray, transformer: Any
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """Invert standardisation of target trades.
 
-        Thin facade over
-        :func:`src.rade_ml_pt.utilities.predictions_transform.inverse_scale_predictions`
-        so the inverse-scale math has a single definition shared with
-        the inference pipeline.  Preserves the legacy behaviour of
-        returning inputs unchanged when ``transformer`` is ``None``
-        (older registry entries with no scaler artefact) rather than
-        raising — so existing per-member eval callers keep working.
-        """
-        if transformer is None:
-            return predictions, targets
+def load_baseline(parquet_path: Union[str, Path]) -> pd.DataFrame:
+    """Read a ``baseline_feature_stats.parquet`` and decode its JSON columns.
 
-        from src.rade_ml_pt.utilities.predictions_transform import (
-            inverse_scale_predictions,
-        )
-        predictions_unscaled, _ = inverse_scale_predictions(predictions, transformer)
-        targets_unscaled, _     = inverse_scale_predictions(targets, transformer)
-        return predictions_unscaled, targets_unscaled
-
-    @staticmethod
-    def _inverse_target_notional(
-            target_pnl: pd.DataFrame, target_attributes: Dict[str, Any],
-            req_cols: List[str] = ["TradeKey", "NotionalSign"]
-    ) -> pd.DataFrame:
-        """Apply per-trade ``NotionalSign`` to an unscaled PnL frame.
-
-        Thin facade over
-        :func:`src.rade_ml_pt.utilities.predictions_transform.apply_notional_signs`
-        so the notional-sign-restoration math has a single definition
-        shared with the inference pipeline.  Preserves the original
-        *soft* failure mode (warn + return input unchanged on missing /
-        misaligned attributes) for backward compatibility with legacy
-        per-member eval callers — the strict inference / ensemble-eval
-        path uses ``strict=True`` via the utility directly.
-        """
-        from src.rade_ml_pt.utilities.predictions_transform import (
-            apply_notional_signs,
-        )
-        return apply_notional_signs(
-            pnl_df            = target_pnl,
-            target_attributes = target_attributes,
-            key_field         = req_cols[0],
-            sign_field        = req_cols[1],
-            strict            = False,
-        )
-```
-
----
-
-### C.4 — `src/rade_ml_pt/pipelines/ensemble/eval.py` (Phase 3.1 — clean version)
-
-Three changes in this file. Drop the `InferenceContext`-based loader, add a plain-tuple loader, and refactor the per-cluster transform to call the utility directly. **No inference-pipeline imports anywhere.**
-
-#### C.4.1 — Imports
-
-Already in place from the original Phase 3.1 patch — `joblib` and `Tuple` stay. **Remove** any `from src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer import InferenceContext` or `HybridGnnRnnInferencePipeline` import you might have added (the clean version has neither).
-
-#### C.4.2 — Constants
-
-Unchanged from the original Phase 3.1 patch:
-
-```python
-_PORTFOLIO_TIMESERIES_SCHEMA_VERSION = 3  # v3: +predictions_original / targets_original / *_original cols (Phase 3.1)
-_CLUSTER_TIMESERIES_SCHEMA_VERSION   = 3  # v3: +predictions_original / targets_original / *_original cols (Phase 3.1)
-_TRADE_PREDICTIONS_SCHEMA_VERSION = 1     # Phase 3.1: per-cluster trade-level prediction parquets
-_TRADE_PREDICTIONS_DIRNAME        = "trade_predictions"
-_EVAL_MANIFEST_SCHEMA_VERSION     = 2     # v2 declares spaces_available + artifacts blocks (Phase 3.1)
-```
-
-#### C.4.3 — Replacement helper: `_load_member_target_artifacts`
-
-**Replaces** the previous `_load_cluster_contexts`. Returns plain `(scaler, attributes)` tuples — no `InferenceContext`, no inference import.
-
-```python
-# ----------------------------------------------------------------------
-# Phase 3.1 — original-space helpers
-# ----------------------------------------------------------------------
-
-def _load_member_target_artifacts(
-    config: EnsembleConfig,
-    member_versions: Optional[Dict[str, str]],
-) -> Dict[str, Tuple[Any, Dict[str, Any]]]:
-    """Read each cluster's ``(target_scaler, target_attributes)`` from the model store.
-
-    Returns a plain mapping of ``cluster_id → (scaler, attributes)``
-    pairs — no ``InferenceContext`` wrapper, no inference-pipeline
-    dependency.  The eval pipeline reads training artefacts from each
-    member's version_dir on its own terms, mirroring how
-    :meth:`HybridGnnRnnEvalPipeline._load_cached_data` loads the same
-    files in the per-member flow.
-
-    Resolution of ``member_versions`` prefers the explicit argument,
-    then falls back to ``config.metadata["job"]["member_versions"]`` —
-    same chain as :func:`_load_scenario_labels_by_split` so legacy runs
-    with implicit member versioning still work.
-
-    Clusters whose artefacts are missing or unreadable are silently
-    dropped from the returned mapping (a warning is logged); the
-    per-split loop falls back to scaled-only output for those clusters
-    rather than failing the whole eval run.
-    """
-    if not member_versions:
-        member_versions = (
-            config.metadata.get("job", {}).get("member_versions", {}) or {}
-        )
-    if not isinstance(member_versions, dict):
-        return {}
-
-    artefacts: Dict[str, Tuple[Any, Dict[str, Any]]] = {}
-    for cid in config.cluster_ids:
-        member_version = member_versions.get(cid)
-        if not member_version:
-            continue
-        version_dir = Path(config.registry_dir) / str(member_version)
-        scaler_path = version_dir / "target_scaler.pkl"
-        attrs_path  = version_dir / "target_attributes.json"
-
-        if not scaler_path.exists() or not attrs_path.exists():
-            logger.warning(
-                "Original-space artefacts skipped for cluster '%s' — missing "
-                "target_scaler.pkl or target_attributes.json under %s",
-                cid, version_dir,
-            )
-            continue
-
-        try:
-            scaler = joblib.load(scaler_path)
-        except Exception as exc:
-            logger.warning(
-                "Could not load target_scaler.pkl for cluster '%s': %s — "
-                "original-space skipped.", cid, exc,
-            )
-            continue
-        try:
-            with open(attrs_path) as f:
-                attrs = json.load(f)
-        except Exception as exc:
-            logger.warning(
-                "Could not load target_attributes.json for cluster '%s': %s — "
-                "original-space skipped.", cid, exc,
-            )
-            continue
-
-        artefacts[cid] = (scaler, attrs)
-
-    return artefacts
-```
-
-#### C.4.4 — Replacement helper: `_transform_cluster_to_original`
-
-**Replaces** the previous `_transform_cluster_to_original` (which routed through `HybridGnnRnnInferencePipeline.transform_predictions`). New version calls the neutral utility directly. **No inference import.**
-
-```python
-def _transform_cluster_to_original(
-    cluster_id:      str,
-    preds_2d:        np.ndarray,
-    targets_2d:      np.ndarray,
-    scenario_labels: Optional[List[str]],
-    scaler:          Any,
-    attributes:      Dict[str, Any],
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Inverse-scale + notional-sign-restore one cluster's preds + targets.
-
-    Routes both predictions and targets through the neutral
-    :func:`src.rade_ml_pt.utilities.predictions_transform.transform_to_original`
-    helper.  No inference-pipeline imports: the eval pipeline reads its
-    scaler / attributes directly from the model store (see
-    :func:`_load_member_target_artifacts`) and calls the shared utility
-    — so the cross-pipeline math definition stays in *one* place
-    without crossing pipeline boundaries.
+    Parameters
+    ----------
+    parquet_path
+        Path to the parquet file produced by
+        :func:`monitoring.baselines.save_feature_baseline`.
 
     Returns
     -------
-    preds_scaled_wide : pd.DataFrame
-        Shape ``[n_scenarios, n_trades]`` — model output in z-space.
-        Suitable for direct parquet write as
-        ``<cid>/{split}_scaled.parquet``.
-    preds_original_wide : pd.DataFrame
-        Same shape — inverse-scaled + notional-sign-restored
-        predictions.  Suitable for direct parquet write as
-        ``<cid>/{split}_original.parquet``.
-    targets_original_wide : pd.DataFrame
-        Same shape — inverse-scaled + notional-sign-restored targets.
-        **Not** persisted at trade level (mirrors inference, which has
-        no targets at all); used only to compute the cluster / portfolio
-        timeseries' ``targets_original`` columns.
+    pd.DataFrame
+        The original parquet schema (``feature_name``, ``mean``, ``std``,
+        ``min``, ``max``, ``p05``…``p95``, ``hist_edges_json``,
+        ``hist_counts_json``) plus **two new in-memory columns**:
+
+        * ``hist_edges``  — ``np.ndarray[float64]`` of length 51 (or
+          empty when the feature was all-NaN at training time).
+        * ``hist_counts`` — ``np.ndarray[int64]``  of length 50 (or
+          empty in the same case).
+
+        The two JSON-string columns are kept on the frame for
+        traceability / debugging — drop them yourself if not needed
+        downstream.
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``parquet_path`` does not exist.
+    ValueError
+        If the parquet is missing the expected ``hist_edges_json`` /
+        ``hist_counts_json`` (or any other required column).
     """
-    from src.rade_ml_pt.utilities.predictions_transform import (
-        transform_to_original,
-    )
+    parquet_path = Path(parquet_path)
+    if not parquet_path.exists():
+        raise FileNotFoundError(f"baseline parquet not found: {parquet_path}")
 
-    preds_scaled_wide, preds_original_wide, _ = transform_to_original(
-        cluster_id        = cluster_id,
-        cluster_preds     = preds_2d,
-        scenario_labels   = scenario_labels,
-        scaler            = scaler,
-        target_attributes = attributes,
-    )
-    _, targets_original_wide, _ = transform_to_original(
-        cluster_id        = cluster_id,
-        cluster_preds     = targets_2d,
-        scenario_labels   = scenario_labels,
-        scaler            = scaler,
-        target_attributes = attributes,
-    )
-    return preds_scaled_wide, preds_original_wide, targets_original_wide
+    df = pd.read_parquet(parquet_path)
+
+    missing = set(_REQUIRED_COLUMNS) - set(df.columns)
+    if missing:
+        raise ValueError(
+            f"baseline parquet at {parquet_path} is missing required columns "
+            f"{sorted(missing)}.  Was it written by an older version of "
+            f"monitoring.baselines.save_feature_baseline (or by something else "
+            f"entirely)?"
+        )
+
+    df = df.copy()
+    df["hist_edges"]  = df["hist_edges_json"].map(_decode_json_array_f64)
+    df["hist_counts"] = df["hist_counts_json"].map(_decode_json_array_i64)
+    return df
+
+
+def _decode_json_array_f64(s: object) -> np.ndarray:
+    """JSON-string-of-floats → ``np.ndarray[float64]`` (empty on error/empty).
+
+    Defensive: tolerates ``None`` / ``NaN`` / malformed JSON by
+    returning an empty array, so a single corrupt row in the baseline
+    parquet can't poison an entire run.  Pair with the ``hist_edges``
+    length checks downstream in drift code which already treat
+    ``size == 0`` as "no_data".
+    """
+    if s is None:
+        return np.empty(0, dtype=np.float64)
+    if isinstance(s, float) and np.isnan(s):
+        return np.empty(0, dtype=np.float64)
+    try:
+        parsed = json.loads(s)
+    except (json.JSONDecodeError, TypeError):
+        return np.empty(0, dtype=np.float64)
+    return np.asarray(parsed, dtype=np.float64)
+
+
+def _decode_json_array_i64(s: object) -> np.ndarray:
+    """JSON-string-of-ints → ``np.ndarray[int64]`` (empty on error/empty)."""
+    if s is None:
+        return np.empty(0, dtype=np.int64)
+    if isinstance(s, float) and np.isnan(s):
+        return np.empty(0, dtype=np.int64)
+    try:
+        parsed = json.loads(s)
+    except (json.JSONDecodeError, TypeError):
+        return np.empty(0, dtype=np.int64)
+    return np.asarray(parsed, dtype=np.int64)
+
+
+__all__ = ["load_baseline"]
 ```
 
-#### C.4.5 — Per-split loop call-site updates
-
-In `_save_all_artifacts`, two patches.
-
-**Load artefacts (~line 698, replacing the `cluster_contexts = …` call):**
+### File 3: `src/rade_ml_pt/monitoring/__init__.py` (replace existing)
 
 ```python
-        # Phase 3.1 — per-cluster (target_scaler, target_attributes) for
-        # scaled→original transforms.  Loaded *once* (a single deserialise
-        # per member, not per split) and reused across all three splits.
-        # Plain ``(scaler, attrs)`` tuples — no InferenceContext wrapper,
-        # no inference-pipeline imports.  Empty mapping for legacy runs
-        # without scaler artefacts; per-split logic falls back to
-        # NaN-filled original columns in that case.
-        cluster_artefacts = _load_member_target_artifacts(config, member_versions)
-        if not cluster_artefacts:
-            logger.warning(
-                "No per-cluster scaler artefacts found — eval will emit "
-                "scaled-space only (Phase 3.1 original columns will be NaN)."
-            )
+"""Drift monitoring artifacts for the PRISM Model Monitoring surface.
+
+This package houses:
+
+* :mod:`monitoring.baselines` — training-time histogram + summary
+  statistics writer (``save_feature_baseline``).
+* :mod:`monitoring.loaders`   — reader that decodes baseline parquets
+  back into NumPy-ready DataFrames (``load_baseline``).
+* :mod:`monitoring.drift`     — pure-NumPy drift primitives + per-cluster
+  / portfolio aggregators (PSI, JSD, severity classifier).
+
+See ``docs/platform_designs/prism_retool_migration.md`` Phase 4 for the
+full design and ``RADE_UI_DESIGN.md`` for the Monitoring tab consumer.
+"""
+from .drift import (  # noqa: F401  (re-exported public API)
+    PSI_CRITICAL_THRESHOLD,
+    PSI_WARN_THRESHOLD,
+    SEVERITY_CRITICAL,
+    SEVERITY_INFO,
+    SEVERITY_NO_DATA,
+    SEVERITY_WARN,
+    build_drift_table,
+    build_portfolio_drift_summary,
+    classify_severity,
+    js_divergence,
+    population_stability_index,
+)
+from .loaders import load_baseline  # noqa: F401
+
+__all__ = [
+    # constants
+    "PSI_WARN_THRESHOLD", "PSI_CRITICAL_THRESHOLD",
+    "SEVERITY_INFO", "SEVERITY_WARN", "SEVERITY_CRITICAL", "SEVERITY_NO_DATA",
+    # primitives
+    "population_stability_index",
+    "js_divergence",
+    "classify_severity",
+    # builders
+    "build_drift_table",
+    "build_portfolio_drift_summary",
+    # IO
+    "load_baseline",
+]
 ```
 
-**Call the transform helper (~line 790, inside the per-cluster loop):**
+### File 4: `tests/rade_ml_pt/monitoring/__init__.py` (empty file, but create it)
 
 ```python
-            for cid in sorted(preds_by_cluster):
-                pair = cluster_artefacts.get(cid)
-                if pair is None:
-                    continue
-                scaler, attrs = pair
-                try:
-                    (
-                        preds_scaled_wide,
-                        preds_original_wide,
-                        targets_original_wide,
-                    ) = _transform_cluster_to_original(
-                        cluster_id      = cid,
-                        preds_2d        = preds_by_cluster[cid],
-                        targets_2d      = targets_by_cluster[cid],
-                        scenario_labels = scenario_labels or None,
-                        scaler          = scaler,
-                        attributes      = attrs,
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        "  [%s] cluster '%s' original-space transform "
-                        "failed: %s — falling back to scaled-only for "
-                        "this cluster.", split, cid, exc,
-                    )
-                    continue
-
-                _save_trade_predictions_parquet(
-                    eval_dir, cid, split,
-                    scaled_wide   = preds_scaled_wide,
-                    original_wide = preds_original_wide,
-                )
-
-                cluster_pred_sums_original[cid] = (
-                    preds_original_wide.to_numpy().sum(axis=1)
-                )
-                cluster_target_sums_original[cid] = (
-                    targets_original_wide.to_numpy().sum(axis=1)
-                )
 ```
 
-#### C.4.6 — Writers and manifest
+> Empty `__init__.py` — needed only so pytest discovers the test
+> package under the existing `tests/rade_ml_pt/...` layout.
 
-`_save_trade_predictions_parquet`, the widened `_save_portfolio_timeseries_parquet`, the widened `_save_cluster_timeseries_parquet`, the orchestration in `_save_all_artifacts`, and the v2 manifest extension — **unchanged** from the original Phase 3.1 patch. Only the upstream loader + transform helper changed.
-
----
-
-### C.5 — Verification snippet
-
-After applying all four file changes, run this smoke check (no pytest dependency, no real model required) to confirm the refactor round-trips correctly:
+### File 5: `tests/rade_ml_pt/monitoring/test_drift.py` (full source)
 
 ```python
+"""Unit tests for ``rade_ml_pt.monitoring.drift``.
+
+Three rings of coverage:
+* Single-feature primitives (PSI, JSD, severity classifier).
+* Per-cluster ``build_drift_table`` shape + edge cases.
+* Portfolio summary aggregator.
+"""
+from __future__ import annotations
+
+from typing import List
+
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
+import pytest
 
-# 1) Utility primitives in isolation -------------------------------------
-from src.rade_ml_pt.utilities.predictions_transform import (
-    inverse_scale_predictions,
-    apply_notional_signs,
-    transform_to_original,
+from src.rade_ml_pt.monitoring.drift import (
+    PSI_CRITICAL_THRESHOLD,
+    PSI_WARN_THRESHOLD,
+    SEVERITY_CRITICAL,
+    SEVERITY_INFO,
+    SEVERITY_NO_DATA,
+    SEVERITY_WARN,
+    build_drift_table,
+    build_portfolio_drift_summary,
+    classify_severity,
+    js_divergence,
+    population_stability_index,
 )
 
-np.random.seed(0)
-trade_ids = ['t_a', 't_b', 't_c']
-scaler = StandardScaler().fit(
-    pd.DataFrame(np.random.randn(100, 3).astype(np.float32), columns=trade_ids)
-)
-attrs = {'TradeKey': trade_ids, 'NotionalSign': [1.0, -1.0, 1.0]}
-preds = np.random.randn(5, 3).astype(np.float32)
 
-scaled, original, summary = transform_to_original(
-    cluster_id='c1',
-    cluster_preds=preds,
-    scenario_labels=[f's_{i}' for i in range(5)],
-    scaler=scaler,
-    target_attributes=attrs,
-)
-expected = scaler.inverse_transform(preds) * np.array([1, -1, 1])[None, :]
-np.testing.assert_allclose(original.to_numpy(), expected, rtol=1e-5)
-print('OK: utility composite matches hand-computed expected')
+# ═════════════════════════════════════════════════════════════════════
+# Helpers
+# ═════════════════════════════════════════════════════════════════════
 
-# 2) Inference facade (signature unchanged) ------------------------------
-from src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer import (
-    HybridGnnRnnInferencePipeline, InferenceContext,
-)
-ctx = InferenceContext(target_scaler=scaler, target_attributes=attrs)
-_, original_facade, _ = HybridGnnRnnInferencePipeline.transform_predictions(
-    cluster_id='c1', cluster_preds=preds, scenario_labels=None, ctx=ctx,
-)
-np.testing.assert_allclose(original_facade.to_numpy(), expected, rtol=1e-5)
-print('OK: inference facade matches utility')
+def _hist(values: np.ndarray, edges: np.ndarray) -> np.ndarray:
+    counts, _ = np.histogram(values, bins=edges)
+    return counts
 
-# 3) Ensemble-eval helper (no inference import) --------------------------
-from src.rade_ml_pt.pipelines.ensemble.eval import _transform_cluster_to_original
-ps, po, _ = _transform_cluster_to_original(
-    cluster_id='c1', preds_2d=preds, targets_2d=preds * 0.5,
-    scenario_labels=None, scaler=scaler, attributes=attrs,
-)
-np.testing.assert_allclose(po.to_numpy(), expected, rtol=1e-5)
-print('OK: ensemble eval _transform_cluster_to_original matches utility')
 
-# 4) Confirm ensemble eval has NO inference-pipeline import --------------
-import src.rade_ml_pt.pipelines.ensemble.eval as ens_eval, inspect
-src = inspect.getsource(ens_eval)
-assert 'from src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer' not in src
-print('OK: ensemble eval module does NOT import the inference pipeline')
+def _baseline_row(name: str, values: np.ndarray, n_bins: int = 50) -> dict:
+    """Build a single baseline-DataFrame row in the same shape ``load_baseline`` produces."""
+    edges  = np.linspace(values.min(), values.max(), n_bins + 1)
+    counts = _hist(values, edges)
+    return {
+        "feature_name": name,
+        "mean":         float(values.mean()),
+        "std":          float(values.std(ddof=0)),
+        "hist_edges":   edges,
+        "hist_counts":  counts,
+    }
 
-print('All Phase 3.1 (clean architecture) checks passed.')
+
+# ═════════════════════════════════════════════════════════════════════
+# population_stability_index
+# ═════════════════════════════════════════════════════════════════════
+
+class TestPSI:
+    def test_identical_distributions_returns_near_zero(self):
+        rng    = np.random.default_rng(0)
+        x      = rng.normal(0, 1, 5000)
+        edges  = np.linspace(-4, 4, 51)
+        counts = _hist(x, edges)
+        psi    = population_stability_index(counts, edges, x)
+        assert psi < 0.01
+
+    def test_disjoint_distributions_returns_large(self):
+        rng         = np.random.default_rng(1)
+        base        = rng.normal(-3, 0.5, 5000)
+        cur         = rng.normal(+3, 0.5, 5000)
+        edges       = np.linspace(-5, 5, 51)
+        base_counts = _hist(base, edges)
+        psi         = population_stability_index(base_counts, edges, cur)
+        assert psi > 1.0
+
+    def test_one_sigma_shift_lands_in_warn_or_critical(self):
+        rng         = np.random.default_rng(2)
+        base        = rng.normal(0, 1, 5000)
+        cur         = rng.normal(1, 1, 5000)
+        edges       = np.linspace(-4, 5, 51)
+        base_counts = _hist(base, edges)
+        psi         = population_stability_index(base_counts, edges, cur)
+        assert psi > PSI_WARN_THRESHOLD
+        assert psi < 2.0  # sanity ceiling for 1-sigma shift
+
+    def test_empty_current_returns_nan(self):
+        edges  = np.linspace(-1, 1, 51)
+        counts = np.ones(50, dtype=np.int64)
+        assert np.isnan(population_stability_index(counts, edges, np.array([])))
+
+    def test_zero_baseline_counts_returns_nan(self):
+        edges  = np.linspace(-1, 1, 51)
+        counts = np.zeros(50, dtype=np.int64)
+        assert np.isnan(population_stability_index(counts, edges, np.array([0.0, 0.1])))
+
+    def test_mismatched_shapes_returns_nan(self):
+        # 50-element counts paired with 50-element edges (should be 51)
+        edges  = np.linspace(-1, 1, 50)
+        counts = np.ones(50, dtype=np.int64)
+        assert np.isnan(population_stability_index(counts, edges, np.array([0.0])))
+
+    def test_outlier_current_values_clipped_not_dropped(self):
+        rng         = np.random.default_rng(3)
+        base        = rng.normal(0, 1, 5000)
+        edges       = np.linspace(-3, 3, 51)
+        base_counts = _hist(base, edges)
+        # Current values entirely outside the baseline range — naive
+        # np.histogram would silently drop them.  The clip step lumps
+        # them into the outermost bin, so PSI still reflects "today
+        # looks nothing like training".
+        cur = rng.normal(10, 1, 5000)
+        psi = population_stability_index(base_counts, edges, cur)
+        assert np.isfinite(psi)
+        assert psi > 1.0
+
+    def test_non_finite_current_values_dropped(self):
+        rng         = np.random.default_rng(4)
+        base        = rng.normal(0, 1, 5000)
+        edges       = np.linspace(-4, 4, 51)
+        base_counts = _hist(base, edges)
+        # Half NaN, half OK; should still return a finite (small) PSI
+        cur = np.concatenate([rng.normal(0, 1, 2500), np.full(2500, np.nan)])
+        psi = population_stability_index(base_counts, edges, cur)
+        assert np.isfinite(psi)
+        assert psi < 0.05
+
+
+# ═════════════════════════════════════════════════════════════════════
+# js_divergence
+# ═════════════════════════════════════════════════════════════════════
+
+class TestJSD:
+    def test_identical_returns_near_zero(self):
+        rng    = np.random.default_rng(5)
+        edges  = np.linspace(-3, 3, 51)
+        counts = _hist(rng.normal(0, 1, 5000), edges)
+        assert js_divergence(counts, counts) < 1e-3
+
+    def test_symmetric(self):
+        rng   = np.random.default_rng(6)
+        edges = np.linspace(-3, 3, 51)
+        a     = _hist(rng.normal(0, 1, 5000), edges)
+        b     = _hist(rng.normal(1, 1, 5000), edges)
+        assert js_divergence(a, b) == pytest.approx(js_divergence(b, a), abs=1e-9)
+
+    def test_bounded_in_unit_interval(self):
+        rng   = np.random.default_rng(7)
+        edges = np.linspace(-3, 3, 51)
+        a     = _hist(rng.normal(-2, 0.5, 5000), edges)
+        b     = _hist(rng.normal(+2, 0.5, 5000), edges)
+        jsd   = js_divergence(a, b)
+        assert 0.0 <= jsd <= 1.0
+
+    def test_shape_mismatch_returns_nan(self):
+        assert np.isnan(js_divergence(np.ones(10), np.ones(20)))
+
+    def test_zero_inputs_return_nan(self):
+        assert np.isnan(js_divergence(np.zeros(10), np.ones(10)))
+        assert np.isnan(js_divergence(np.ones(10), np.zeros(10)))
+
+
+# ═════════════════════════════════════════════════════════════════════
+# classify_severity
+# ═════════════════════════════════════════════════════════════════════
+
+class TestSeverity:
+    @pytest.mark.parametrize("psi,expected", [
+        (0.0,                                 SEVERITY_INFO),
+        (0.09,                                SEVERITY_INFO),
+        (PSI_WARN_THRESHOLD - 1e-9,           SEVERITY_INFO),
+        (PSI_WARN_THRESHOLD,                  SEVERITY_WARN),
+        (0.20,                                SEVERITY_WARN),
+        (PSI_CRITICAL_THRESHOLD - 1e-9,       SEVERITY_WARN),
+        (PSI_CRITICAL_THRESHOLD,              SEVERITY_CRITICAL),
+        (0.50,                                SEVERITY_CRITICAL),
+        (10.0,                                SEVERITY_CRITICAL),
+    ])
+    def test_thresholds(self, psi, expected):
+        assert classify_severity(psi) == expected
+
+    @pytest.mark.parametrize("v", [
+        None,
+        float("nan"),
+        -0.1,
+        float("inf"),
+        -float("inf"),
+    ])
+    def test_no_data_cases(self, v):
+        assert classify_severity(v) == SEVERITY_NO_DATA
+
+    def test_non_numeric_returns_no_data(self):
+        assert classify_severity("not a number") == SEVERITY_NO_DATA  # type: ignore[arg-type]
+
+
+# ═════════════════════════════════════════════════════════════════════
+# build_drift_table
+# ═════════════════════════════════════════════════════════════════════
+
+class TestBuildDriftTable:
+    @staticmethod
+    def _baseline_df(rng: np.random.Generator) -> pd.DataFrame:
+        rows = [
+            _baseline_row("rf_a", rng.normal(0, 1, 5000)),
+            _baseline_row("rf_b", rng.normal(0, 1, 5000)),
+        ]
+        return pd.DataFrame(rows)
+
+    def test_shape_and_columns(self):
+        rng         = np.random.default_rng(8)
+        baseline_df = self._baseline_df(rng)
+        cur         = pd.DataFrame({
+            "rf_a": rng.normal(0, 1, 1000),
+            "rf_b": rng.normal(0, 1, 1000),
+        })
+        out = build_drift_table(baseline_df, cur, cluster_id="c0")
+        assert list(out.columns) == [
+            "cluster_id", "feature_name", "psi", "js_divergence",
+            "mean_shift", "std_ratio", "severity",
+        ]
+        assert len(out) == 2
+        assert set(out["feature_name"]) == {"rf_a", "rf_b"}
+        assert (out["cluster_id"] == "c0").all()
+
+    def test_stable_features_classified_info(self):
+        rng         = np.random.default_rng(9)
+        baseline_df = self._baseline_df(rng)
+        cur         = pd.DataFrame({
+            "rf_a": rng.normal(0, 1, 5000),
+            "rf_b": rng.normal(0, 1, 5000),
+        })
+        out = build_drift_table(baseline_df, cur, cluster_id="c0")
+        assert (out["severity"] == SEVERITY_INFO).all()
+        assert (out["psi"] < PSI_WARN_THRESHOLD).all()
+
+    def test_shifted_features_classified_critical(self):
+        rng         = np.random.default_rng(10)
+        baseline_df = self._baseline_df(rng)
+        cur         = pd.DataFrame({
+            "rf_a": rng.normal(3, 1, 5000),
+            "rf_b": rng.normal(3, 1, 5000),
+        })
+        out = build_drift_table(baseline_df, cur, cluster_id="c0")
+        assert (out["severity"] == SEVERITY_CRITICAL).all()
+        assert (out["mean_shift"] > 1.0).all()
+
+    def test_missing_feature_in_current_emits_no_data_row(self):
+        rng         = np.random.default_rng(11)
+        baseline_df = self._baseline_df(rng)
+        cur         = pd.DataFrame({"rf_a": rng.normal(0, 1, 1000)})  # rf_b missing
+        out         = build_drift_table(baseline_df, cur, cluster_id="c0")
+        b_row       = out.set_index("feature_name").loc["rf_b"]
+        assert b_row["severity"] == SEVERITY_NO_DATA
+        assert pd.isna(b_row["psi"])
+
+    def test_all_nan_feature_in_current_emits_no_data_row(self):
+        rng         = np.random.default_rng(12)
+        baseline_df = self._baseline_df(rng)
+        cur         = pd.DataFrame({
+            "rf_a": rng.normal(0, 1, 1000),
+            "rf_b": np.full(1000, np.nan),
+        })
+        out   = build_drift_table(baseline_df, cur, cluster_id="c0")
+        b_row = out.set_index("feature_name").loc["rf_b"]
+        assert b_row["severity"] == SEVERITY_NO_DATA
+
+    def test_extra_feature_in_current_ignored(self):
+        rng         = np.random.default_rng(13)
+        baseline_df = self._baseline_df(rng)
+        cur         = pd.DataFrame({
+            "rf_a": rng.normal(0, 1, 1000),
+            "rf_b": rng.normal(0, 1, 1000),
+            "rf_z": rng.normal(0, 1, 1000),   # not in baseline
+        })
+        out = build_drift_table(baseline_df, cur, cluster_id="c0")
+        assert "rf_z" not in out["feature_name"].values
+
+    def test_empty_baseline_returns_empty_table_with_dtype_schema(self):
+        out = build_drift_table(pd.DataFrame(), pd.DataFrame(), cluster_id="c0")
+        assert list(out.columns) == [
+            "cluster_id", "feature_name", "psi", "js_divergence",
+            "mean_shift", "std_ratio", "severity",
+        ]
+        assert len(out) == 0
+
+    def test_baseline_missing_required_columns_raises(self):
+        bad = pd.DataFrame([{"feature_name": "x"}])
+        with pytest.raises(ValueError, match="missing required columns"):
+            build_drift_table(bad, pd.DataFrame({"x": [1, 2, 3]}), cluster_id="c0")
+
+    def test_dtypes_canonical_for_concat(self):
+        """Empty + populated tables share a dtype fingerprint."""
+        empty = build_drift_table(pd.DataFrame(), pd.DataFrame(), cluster_id="c0")
+
+        rng         = np.random.default_rng(14)
+        baseline_df = self._baseline_df(rng)
+        cur         = pd.DataFrame({
+            "rf_a": rng.normal(0, 1, 1000),
+            "rf_b": rng.normal(0, 1, 1000),
+        })
+        populated = build_drift_table(baseline_df, cur, cluster_id="c1")
+        assert empty.dtypes.to_dict() == populated.dtypes.to_dict()
+
+        # pd.concat must work without dtype-promotion warnings
+        combined = pd.concat([empty, populated], ignore_index=True)
+        assert len(combined) == 2
+
+
+# ═════════════════════════════════════════════════════════════════════
+# build_portfolio_drift_summary
+# ═════════════════════════════════════════════════════════════════════
+
+class TestPortfolioSummary:
+    @staticmethod
+    def _drift(cid: str, severities: List[str], psis: List[float]) -> pd.DataFrame:
+        return pd.DataFrame([
+            {
+                "cluster_id":    cid,
+                "feature_name":  f"rf_{i}",
+                "psi":           p,
+                "js_divergence": 0.0,
+                "mean_shift":    0.0,
+                "std_ratio":     1.0,
+                "severity":      s,
+            }
+            for i, (s, p) in enumerate(zip(severities, psis))
+        ])
+
+    def test_aggregates_across_clusters(self):
+        t1  = self._drift("c0", [SEVERITY_INFO, SEVERITY_WARN], [0.02, 0.18])
+        t2  = self._drift("c1", [SEVERITY_CRITICAL], [0.40])
+        out = build_portfolio_drift_summary([t1, t2])
+        assert out["n_clusters"]         == 2
+        assert out["n_features_info"]    == 1
+        assert out["n_features_warn"]    == 1
+        assert out["n_features_crit"]    == 1
+        assert out["max_psi"]            == pytest.approx(0.40, abs=1e-6)
+        assert out["worst_cluster"]      == "c1"
+        assert out["worst_feature"]      == "rf_0"
+
+    def test_empty_input_returns_no_data(self):
+        out = build_portfolio_drift_summary([])
+        assert out["n_clusters"]   == 0
+        assert out["severity"]     == SEVERITY_NO_DATA
+        assert np.isnan(out["mean_psi"])
+
+    def test_none_input_returns_no_data(self):
+        out = build_portfolio_drift_summary(None)  # type: ignore[arg-type]
+        assert out["severity"] == SEVERITY_NO_DATA
+
+    def test_only_no_data_rows_returns_no_data(self):
+        t   = self._drift("c0", [SEVERITY_NO_DATA, SEVERITY_NO_DATA], [np.nan, np.nan])
+        out = build_portfolio_drift_summary([t])
+        assert out["severity"]          == SEVERITY_NO_DATA
+        assert out["n_features_nodata"] == 2
+        assert out["worst_cluster"]     is None
+
+    def test_severity_classification_from_mean_psi(self):
+        # mean_psi == 0.15 → portfolio severity "warn"
+        t   = self._drift("c0", [SEVERITY_WARN], [0.15])
+        out = build_portfolio_drift_summary([t])
+        assert out["severity"] == SEVERITY_WARN
+
+    def test_skips_empty_drift_tables_silently(self):
+        t1  = self._drift("c0", [SEVERITY_INFO], [0.05])
+        t2  = pd.DataFrame()  # empty
+        out = build_portfolio_drift_summary([t1, t2])
+        assert out["n_clusters"] == 1
+
+
+# ═════════════════════════════════════════════════════════════════════
+# End-to-end smoke — writer (baselines.py) → loader → drift table
+# ═════════════════════════════════════════════════════════════════════
+# Lives here (rather than test_loaders.py) because the assertions are
+# about drift outputs, not loader I/O.  Confirms the writer/reader/
+# primitive trio compose correctly with zero adapter code in between.
+
+class TestEndToEndSmoke:
+    """Full chain: write a real baseline parquet, load it back, score drift."""
+
+    def _write_and_load_baseline(self, tmp_path, features: pd.DataFrame) -> pd.DataFrame:
+        # Local import so this module imports fine even when the
+        # baselines writer is unavailable (e.g. running drift tests in
+        # isolation in CI).
+        from src.rade_ml_pt.monitoring.baselines import save_feature_baseline
+        from src.rade_ml_pt.monitoring.loaders   import load_baseline
+
+        path = tmp_path / "baseline.parquet"
+        save_feature_baseline(path, features, cluster_id="c0")
+        return load_baseline(path)
+
+    def test_stable_features_score_info(self, tmp_path):
+        rng           = np.random.default_rng(20)
+        training      = pd.DataFrame({
+            "rf_a": rng.normal(0, 1, 5000),
+            "rf_b": rng.normal(5, 2, 5000),
+        })
+        baseline_df = self._write_and_load_baseline(tmp_path, training)
+        current     = pd.DataFrame({
+            "rf_a": rng.normal(0, 1, 1000),
+            "rf_b": rng.normal(5, 2, 1000),
+        })
+        out = build_drift_table(baseline_df, current, cluster_id="c0")
+        assert (out["severity"] == SEVERITY_INFO).all()
+
+    def test_drift_pipeline_detects_real_shift(self, tmp_path):
+        rng         = np.random.default_rng(21)
+        training    = pd.DataFrame({
+            "rf_a": rng.normal(0, 1, 5000),
+            "rf_b": rng.normal(0, 1, 5000),
+        })
+        baseline_df = self._write_and_load_baseline(tmp_path, training)
+        current     = pd.DataFrame({
+            "rf_a": rng.normal(2, 1, 1000),   # +2σ shift
+            "rf_b": rng.normal(0, 1, 1000),
+        })
+        out         = build_drift_table(baseline_df, current, cluster_id="c0")
+        by_feature  = out.set_index("feature_name")
+        assert by_feature.loc["rf_a", "severity"] in (SEVERITY_WARN, SEVERITY_CRITICAL)
+        assert by_feature.loc["rf_b", "severity"] == SEVERITY_INFO
+
+    def test_portfolio_summary_compiles_from_real_baseline(self, tmp_path):
+        rng       = np.random.default_rng(22)
+        training  = pd.DataFrame({
+            "rf_a": rng.normal(0, 1, 5000),
+            "rf_b": rng.normal(0, 1, 5000),
+        })
+        baseline_df = self._write_and_load_baseline(tmp_path, training)
+        cur_stable  = pd.DataFrame({
+            "rf_a": rng.normal(0, 1, 1000),
+            "rf_b": rng.normal(0, 1, 1000),
+        })
+        cur_shifted = pd.DataFrame({
+            "rf_a": rng.normal(3, 1, 1000),
+            "rf_b": rng.normal(3, 1, 1000),
+        })
+        # Pretend we have two clusters — same baseline shape, different
+        # current data, so the portfolio mixes a clean cluster with a
+        # drifted one.
+        t_stable  = build_drift_table(baseline_df, cur_stable,  cluster_id="c_stable")
+        t_drifted = build_drift_table(baseline_df, cur_shifted, cluster_id="c_drifted")
+
+        summary = build_portfolio_drift_summary([t_stable, t_drifted])
+        assert summary["n_clusters"]      == 2
+        assert summary["worst_cluster"]   == "c_drifted"
+        assert summary["severity"]        in (SEVERITY_WARN, SEVERITY_CRITICAL)
+        assert summary["n_features_crit"] >= 1
 ```
 
-Expected output is five `OK:` lines.
+### File 6: `tests/rade_ml_pt/monitoring/test_loaders.py` (full source)
 
----
+```python
+"""Unit tests for ``rade_ml_pt.monitoring.loaders``.
 
-### What's next
+Round-trip ``save_feature_baseline`` → ``load_baseline`` to confirm the
+JSON-encoded columns are decoded correctly into NumPy arrays — this is
+the exact contract every drift consumer relies on, so we exercise the
+edge cases the writer documents (all-NaN feature, constant feature).
+"""
+from __future__ import annotations
 
-Phase 3.2 — API `?space=scaled|original` on Overview / Eval endpoints:
+import numpy as np
+import pandas as pd
+import pytest
 
-- Adds a `space: Literal["scaled","original"] = "scaled"` query param to the relevant endpoints.
-- Server-side projects the requested space's columns onto a canonical schema (e.g. `predictions` always means "the value in the chosen space") so the UI stays oblivious to suffixes.
-- New endpoint family for the trade-level parquets:
-  `GET /eval/runs/{version}/clusters/{cid}/trade_predictions/{split}?space=…`.
-- Pydantic response models updated to the canonical shape.
+from src.rade_ml_pt.monitoring.baselines import save_feature_baseline
+from src.rade_ml_pt.monitoring.loaders import load_baseline
+
+
+@pytest.fixture
+def features() -> pd.DataFrame:
+    """Four columns that exercise every code path the writer cares about."""
+    rng = np.random.default_rng(42)
+    return pd.DataFrame({
+        "rf_a":        rng.normal(0, 1, 1000),
+        "rf_b":        rng.normal(5, 2, 1000),
+        "rf_constant": np.full(1000, 3.14),
+        "rf_all_nan":  np.full(1000, np.nan),
+    })
+
+
+class TestLoadBaseline:
+    def test_roundtrip_preserves_stats(self, features, tmp_path):
+        path = tmp_path / "baseline.parquet"
+        save_feature_baseline(path, features, cluster_id="c0")
+
+        df    = load_baseline(path)
+        rf_a  = df.set_index("feature_name").loc["rf_a"]
+        assert rf_a["mean"] == pytest.approx(features["rf_a"].mean(),       rel=1e-4)
+        assert rf_a["std"]  == pytest.approx(features["rf_a"].std(ddof=0), rel=1e-4)
+
+    def test_histogram_columns_decoded_to_ndarrays(self, features, tmp_path):
+        path = tmp_path / "baseline.parquet"
+        save_feature_baseline(path, features, cluster_id="c0")
+
+        df = load_baseline(path)
+        for _, row in df.iterrows():
+            assert isinstance(row["hist_edges"],  np.ndarray)
+            assert isinstance(row["hist_counts"], np.ndarray)
+
+        # rf_a has data → 51 edges + 50 counts (per writer's N_HIST_BINS=50)
+        rf_a = df.set_index("feature_name").loc["rf_a"]
+        assert rf_a["hist_edges"].shape  == (51,)
+        assert rf_a["hist_counts"].shape == (50,)
+
+    def test_all_nan_feature_yields_empty_arrays(self, features, tmp_path):
+        path = tmp_path / "baseline.parquet"
+        save_feature_baseline(path, features, cluster_id="c0")
+
+        df     = load_baseline(path)
+        rf_nan = df.set_index("feature_name").loc["rf_all_nan"]
+        assert rf_nan["hist_edges"].shape  == (0,)
+        assert rf_nan["hist_counts"].shape == (0,)
+
+    def test_constant_feature_has_well_defined_edges(self, features, tmp_path):
+        path = tmp_path / "baseline.parquet"
+        save_feature_baseline(path, features, cluster_id="c0")
+
+        df       = load_baseline(path)
+        rf_const = df.set_index("feature_name").loc["rf_constant"]
+        assert rf_const["hist_edges"].shape  == (51,)
+        assert rf_const["hist_counts"].shape == (50,)
+        # save_feature_baseline widens the range with a tiny epsilon so
+        # np.histogram does not error — confirm the trick worked.
+        assert rf_const["hist_edges"][-1] > rf_const["hist_edges"][0]
+
+    def test_original_columns_retained(self, features, tmp_path):
+        path = tmp_path / "baseline.parquet"
+        save_feature_baseline(path, features, cluster_id="c0")
+        df = load_baseline(path)
+        # JSON columns stay on the frame for traceability
+        assert "hist_edges_json"  in df.columns
+        assert "hist_counts_json" in df.columns
+
+    def test_missing_file_raises_file_not_found(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            load_baseline(tmp_path / "does_not_exist.parquet")
+
+    def test_malformed_parquet_raises_value_error(self, tmp_path):
+        path = tmp_path / "wrong.parquet"
+        pd.DataFrame({"foo": [1, 2, 3]}).to_parquet(path)
+        with pytest.raises(ValueError, match="missing required columns"):
+            load_baseline(path)
+```
+
+### Verification (after copy-pasting into work env)
+
+Run from repo root:
+
+```bash
+python -m pytest tests/rade_ml_pt/monitoring/ -x -q
+```
+
+Expected: `53 passed in ~5s`, lint-clean.
+
+Quick sanity smoke for the public surface:
+
+```bash
+python -c "
+from src.rade_ml_pt.monitoring import (
+    population_stability_index, js_divergence, classify_severity,
+    build_drift_table, build_portfolio_drift_summary, load_baseline,
+    PSI_WARN_THRESHOLD, PSI_CRITICAL_THRESHOLD,
+    SEVERITY_INFO, SEVERITY_WARN, SEVERITY_CRITICAL, SEVERITY_NO_DATA,
+)
+print('OK — monitoring public surface intact')
+"
+```
+
+### What M.2 will consume
+
+M.2 (`EnsembleMonitoringPipeline`) imports only from this surface:
+
+```python
+from src.rade_ml_pt.monitoring import (
+    load_baseline,
+    build_drift_table,
+    build_portfolio_drift_summary,
+    SEVERITY_CRITICAL, SEVERITY_WARN,
+)
+```
+
+No other monitoring module is needed at the M.2 boundary — keep this
+surface stable across the M.2 / M.3 refactor.
