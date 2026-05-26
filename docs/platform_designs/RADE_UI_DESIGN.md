@@ -252,668 +252,1133 @@ No mock, no merge.
 
 ---
 
-## Appendix A — Phase M.1: Monitoring drift primitives (copy-paste sync)
+## Appendix A — Phase M.2: Ensemble monitoring pipeline (copy-paste sync)
 
-> **Status**: Five files below land in the repo under
-> `src/rade_ml_pt/monitoring/` (production code) and
-> `tests/rade_ml_pt/monitoring/` (tests). 53 unit + smoke tests pass,
-> lint-clean. This appendix is the single source of truth for M.1 —
-> copy verbatim into work env.
+> **Status**: Seven files below land in the repo. Three production
+> modules + an updated `__init__.py` re-export under
+> `src/rade_ml_pt/monitoring/` and `src/rade_ml_pt/pipelines/ensemble/`,
+> plus three test files under `tests/`. **96/96 tests pass** (53 M.1
+> + 43 M.2), lint-clean.
 >
-> **Scope**: Pure NumPy / pandas. No I/O beyond `pd.read_parquet`. No
-> dependency on the inference pipeline. M.2 (the
-> `EnsembleMonitoringPipeline` that wires drift into the artifact
-> layout) consumes only the public symbols re-exported from
-> `monitoring/__init__.py` — keep that surface stable.
+> **Scope**: Compose the existing `EnsembleInferencePipeline` to reuse
+> its `load → load_scenarios → validate_scenarios` stages, then
+> compute per-cluster drift against the training-time baselines from
+> `monitoring.baselines.save_feature_baseline`. **Zero edits to
+> `infer.py`** — we avoid the work-env drift trap entirely.
 >
-> **What the M.1 primitives compute** (per cluster, per feature in the
-> training-time scaled space):
-> * `psi` — Population Stability Index against the persisted histogram
->   (51 edges + 50 counts) saved by `monitoring.baselines.save_feature_baseline`.
->   Outlier handling: today's values are clipped into the outermost
->   bins so an unseen tail value can't blow PSI up to infinity.
-> * `js_divergence` — Jensen-Shannon divergence (log base 2 so bounded
->   `[0, 1]`) on the same paired histograms.
-> * `mean_shift` — `(μ_today - μ_train) / max(σ_train, ε)`, i.e. a
->   z-score in training-std units (good for traders who want
->   "how many sigmas off are we?").
-> * `std_ratio` — `σ_today / max(σ_train, ε)`. Volatility regime
->   indicator; >1 → wider, <1 → tighter than calibration.
-> * `severity` — `info` (PSI < 0.10) / `warn` (0.10 ≤ PSI < 0.25) /
->   `critical` (PSI ≥ 0.25) / `no_data` (NaN or unscoreable). Industry
->   defaults; consumed by every downstream colour scale.
+> **What M.2 ships**:
+> * `EnsembleMonitoringPipeline.run(new_scenario_dir)` →
+>   `MonitoringResult` with `run_id`, `portfolio_summary`,
+>   `drift_tables`, and the manifest path.
+> * Per-cluster `drift_table.parquet` written under
+>   `monitoring_runs/<run_id>/monitoring/clusters/<cid>/`.
+> * Run-level `drift_summary.json` + `manifest.json` written under
+>   `monitoring_runs/<run_id>/monitoring/`.
+> * Symmetric path conventions in `monitoring.run_paths` (mirrors
+>   inference's `inference_runs/<run_id>/inference/...`).
+> * NaN/Inf-safe JSON writers — every artefact parses with strict
+>   `json.loads` (no `NaN` / `Infinity` literals).
 >
-> **What the portfolio aggregator returns** (consumed by the M.2
-> manifest writer and the M.5 health-strip): clusters seen, severity
-> counts, mean/max PSI, worst cluster + feature, portfolio severity.
+> **What M.2 explicitly DOES NOT do** (deferred):
+> * **M.3** — `promote_to_predictions(run_id)`: load an existing
+>   monitoring manifest, chain into
+>   `EnsembleInferencePipeline.run_inference()`, write predictions
+>   alongside the drift artifacts in the same run dir.
+> * **M.4** — API routers + result reader.
+> * **M.5/M.6** — UI layout + callbacks for the Monitoring tab.
+>
+> **Key design decisions baked in**:
+> 1. **Composition over extraction** — `EnsembleMonitoringPipeline`
+>    instantiates an `EnsembleInferencePipeline` internally and calls
+>    its public `load()` / `load_scenarios()` / `validate_scenarios()`
+>    methods. Reads three private attrs of the inference pipeline
+>    (`_inference_contexts`, `_validation_report`,
+>    `_new_scenario_shocks`) directly. No edits to `infer.py`.
+> 2. **Deferred hybrid import** — the
+>    `HybridGnnRnnInferencePipeline` import is inside the
+>    `if decision.is_affected:` branch so a pure unaffected-only run
+>    doesn't need the static-replication module chain (works in this
+>    env without `src.rade_sr.market_data_manager`).
+> 3. **`version_dir` via `ctx._cluster_assets_path.parent`** — same
+>    resolution inference uses; works for both session-warm and
+>    registry-cold loads with zero code duplication.
+> 4. **Unaffected drift = historical PnL at requested scenario
+>    labels** — `ctx.elementary_pnl.loc[scenario_labels]` (same data
+>    the cheap-path inference loads). Tells us "did today's scenarios
+>    pick a slice of history that looks different from training?".
+> 5. **`no_data` fallback for missing baselines** — a cluster without
+>    a baseline parquet still gets a `severity=no_data` row so it
+>    counts in `n_clusters` and renders as a grey heatmap cell.
+> 6. **JSON-strict sanitisation** — `NaN` / `Infinity` /
+>    `np.ndarray` / `np.int64` / `Path` all coerced through
+>    `_sanitise_for_json` so every artefact is strict-JSON-parseable
+>    by non-Python tooling.
 
-### File 1: `src/rade_ml_pt/monitoring/drift.py` (full source)
+### Artifact layout (mirrors `inference_runs/`)
+
+```
+{artifacts_dir}/monitoring_runs/<run_id>/monitoring/
+  ├── manifest.json            # ensemble_version, run_id, ts, drift_summary, ...
+  ├── drift_summary.json       # output of build_portfolio_drift_summary()
+  └── clusters/<cid>/
+      └── drift_table.parquet  # output of build_drift_table()
+                               # (M.3 will add predictions_*.parquet alongside)
+```
+
+Where `run_id = "<ensemble_version>__monitor__<UTC_ISO_TS>"` (mirrors
+inference's `"<ensemble_version>__<TS>"` with `monitor` segment for
+clarity in flat listings).
+
+### Pipeline waterfall
+
+```text
+EnsembleMonitoringPipeline.run(new_scenario_dir)
+│
+├─ 1. inference_pipeline.load()                  (model + per-cluster contexts)
+├─ 2. inference_pipeline.load_scenarios(...)     (parse shock CSVs)
+├─ 3. inference_pipeline.validate_scenarios()    (routing + cheap-path check)
+├─ 4. For each cluster:
+│       today_features = _today_features(ctx, decision, shocks, labels)
+│       baseline_df    = load_baseline(version_dir(ctx) / "monitoring" / "...")
+│       drift_table    = build_drift_table(baseline_df, today_features, cid)
+│       write_drift_table_parquet(...)
+├─ 5. portfolio_summary = build_portfolio_drift_summary([drift_tables])
+│     write_drift_summary_json(...)
+│     write_monitoring_manifest_json(...)
+│
+└─ return MonitoringResult(run_id, summary, drift_tables, manifest_path)
+```
+
+### File 1: `src/rade_ml_pt/monitoring/run_paths.py` (full source)
 
 ```python
-"""Drift metrics: PSI, JS divergence, per-feature drift table.
+"""Path conventions + run-id helpers for monitoring runs.
 
-Pure numerical helpers — no I/O.  Callers (eval pipeline, inference
-pipeline, monitoring pipeline) are responsible for loading baseline
-parquets and current feature matrices.
+Mirrors ``ensemble.api.services.inference_state.per_run_artifacts_dir``
+for inference, kept in monitoring/ so the writer / pipeline / API layers
+agree on the layout without anyone importing the inference state
+manager.  Single source of truth for "where does monitoring write?".
 
-Schema and thresholds follow the design in
-``docs/platform_designs/prism_retool_migration.md`` §11.15 / Phase 4
-(E-series artifacts).  See ``monitoring.baselines`` for the writer side
-(training-time histograms with persisted edges) and
-``monitoring.loaders.load_baseline`` for decoding those parquets back
-into NumPy-ready DataFrames.
+Layout (mirrors ``inference_runs/<run_id>/inference/...``)::
+
+    {artifacts_dir}/monitoring_runs/<run_id>/monitoring/
+      ├── manifest.json
+      ├── drift_summary.json
+      └── clusters/<cid>/drift_table.parquet
 """
 from __future__ import annotations
 
-import logging
-from typing import Any, Dict, List, Optional, Sequence
+import re
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Union
 
-import numpy as np
-import pandas as pd
+# Top-level directory under ``artifacts_dir`` for monitoring runs.
+# Symmetric with ``inference_runs`` so callers can list both with a
+# single ``Path(artifacts_dir).iterdir()`` if they want a unified runs
+# index later (M.4 / M.5).
+MONITORING_RUNS_DIRNAME: str = "monitoring_runs"
 
-logger = logging.getLogger(__name__)
+# Nested sub-directory holding the manifest + per-cluster artifacts.
+# Mirrors inference's ``inference/`` sub-dir.  Keep it stable across
+# M.2 / M.3 / M.4 — the API result reader and the UI both join from
+# this constant.
+MONITORING_SUBDIRNAME:   str = "monitoring"
+
+# Default file names — also constants so writers + readers stay in
+# sync without string typos.
+MANIFEST_FILENAME:        str = "manifest.json"
+DRIFT_SUMMARY_FILENAME:   str = "drift_summary.json"
+DRIFT_TABLE_FILENAME:     str = "drift_table.parquet"
+
+# Run-id segment that distinguishes monitoring runs from inference runs
+# when both share an ``ensemble_version`` prefix.  Lets future tooling
+# (or grep) tell them apart at a glance.
+RUN_ID_SEGMENT:           str = "monitor"
 
 
-SCHEMA_VERSION: int = 1
-
-# Industry-standard PSI severity thresholds.  Single source of truth
-# for this module + every downstream consumer (UI colour scales, alert
-# rules, etc.).  Boundaries are inclusive on the upper side
-# (``psi == 0.10`` → ``"warn"``;  ``psi == 0.25`` → ``"critical"``).
-PSI_WARN_THRESHOLD:     float = 0.10
-PSI_CRITICAL_THRESHOLD: float = 0.25
-
-# Sentinel labels returned by ``classify_severity`` so the UI can
-# distinguish missing-data cells from genuinely-stable features.
-SEVERITY_INFO:     str = "info"
-SEVERITY_WARN:     str = "warn"
-SEVERITY_CRITICAL: str = "critical"
-SEVERITY_NO_DATA:  str = "no_data"
-
-
-# ═════════════════════════════════════════════════════════════════════
-# Single-feature primitives — PSI + JSD
-# ═════════════════════════════════════════════════════════════════════
-
-def population_stability_index(
-    baseline_counts: np.ndarray,
-    baseline_edges:  np.ndarray,
-    current_values:  np.ndarray,
+def monitoring_run_id(
+    ensemble_version: str,
     *,
-    epsilon: float = 1e-6,
-) -> float:
-    """Population Stability Index between a baseline histogram and current obs.
+    timestamp: Union[datetime, None] = None,
+) -> str:
+    """Build a deterministic monitoring run-id.
 
-    .. math::
+    Format::
 
-        \\text{PSI} = \\sum_i (p_{\\text{curr},i} - p_{\\text{base},i})
-                     \\times \\ln\\!\\left(\\frac{p_{\\text{curr},i}}
-                                                 {p_{\\text{base},i}}\\right)
+        <ensemble_version>__monitor__<UTC_ISO_TS>
 
-    Each bin proportion is smoothed by ``epsilon`` to avoid div-by-zero
-    and ``log(0)`` when the baseline or current has empty bins.  Current
-    observations that fall outside
-    ``[baseline_edges[0], baseline_edges[-1]]`` are clipped into the
-    outermost bin — this matches the PSI convention of "lump outliers
-    into the tail" and prevents PSI from spuriously spiking just
-    because today saw a value the baseline never did.
-
-    Non-finite ``current_values`` (NaN / inf) are dropped before
-    binning, so callers don't have to do that themselves.
+    Where ``UTC_ISO_TS`` is ``YYYY-MM-DDTHH-MM-SSZ`` (colon → dash so
+    the id is safe as a directory name on every filesystem we care
+    about).  Mirrors inference's ``<ensemble_version>__<TS>`` pattern,
+    inserting ``monitor`` so monitoring + inference runs are easy to
+    distinguish in a flat listing.
 
     Parameters
     ----------
-    baseline_counts
-        Histogram counts at training time (length ``n_bins``).
-    baseline_edges
-        Histogram edges (length ``n_bins + 1``).
-    current_values
-        Today's raw observations.  No prior binning expected.
-    epsilon
-        Bin proportion floor to prevent log(0) / divide-by-zero.
-
-    Returns
-    -------
-    float
-        PSI value.  Returns ``np.nan`` when either side is degenerate
-        (all-zero counts, mismatched shapes, empty current observations).
+    ensemble_version
+        Ensemble version or tag this run is monitoring.
+    timestamp
+        Optional override (UTC).  Defaults to ``datetime.now(timezone.utc)``.
+        Tests inject a fixed value for determinism.
     """
-    counts = np.asarray(baseline_counts, dtype=np.float64)
-    edges  = np.asarray(baseline_edges,  dtype=np.float64)
-    cur    = np.asarray(current_values,  dtype=np.float64)
-    cur    = cur[np.isfinite(cur)]
-
-    if counts.size == 0 or edges.size != counts.size + 1:
-        return float("nan")
-    if cur.size == 0:
-        return float("nan")
-    if counts.sum() <= 0:
-        return float("nan")
-
-    cur_clipped   = np.clip(cur, edges[0], edges[-1])
-    cur_counts, _ = np.histogram(cur_clipped, bins=edges)
-    if cur_counts.sum() <= 0:
-        return float("nan")
-
-    p_base = counts     / counts.sum()
-    p_curr = cur_counts / cur_counts.sum()
-
-    p_base = p_base + epsilon
-    p_curr = p_curr + epsilon
-
-    return float(np.sum((p_curr - p_base) * np.log(p_curr / p_base)))
+    if timestamp is None:
+        timestamp = datetime.now(timezone.utc)
+    if timestamp.tzinfo is None:
+        # Defensive: callers passing naive datetimes get UTC assumed,
+        # not local time — the artefact path must be reproducible.
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    ts_str = timestamp.strftime("%Y-%m-%dT%H-%M-%SZ")
+    return f"{ensemble_version}__{RUN_ID_SEGMENT}__{ts_str}"
 
 
-def js_divergence(
-    baseline_counts: np.ndarray,
-    current_counts:  np.ndarray,
-    *,
-    epsilon: float = 1e-6,
-) -> float:
-    """Jensen-Shannon divergence between two histograms (log base 2).
-
-    .. math::
-
-        \\text{JSD}(P \\| Q) = \\tfrac{1}{2}\\text{KL}(P \\| M)
-                             + \\tfrac{1}{2}\\text{KL}(Q \\| M),
-        \\quad M = \\tfrac{1}{2}(P + Q)
-
-    Bounded ``[0, 1]`` when log base 2 is used (which is the convention
-    used here); symmetric in ``P``, ``Q``.  Both inputs are normalised
-    to probability mass functions and smoothed by ``epsilon`` to avoid
-    ``log(0)`` on empty bins.
-
-    Parameters
-    ----------
-    baseline_counts, current_counts
-        Histogram counts.  Must share the same bin layout (same
-        length) — the caller is responsible for ensuring they were
-        binned against identical edges.
-    epsilon
-        Probability floor to prevent ``log(0)``.
-
-    Returns
-    -------
-    float
-        JSD value in ``[0, 1]``.  Returns ``np.nan`` on shape mismatch
-        or degenerate inputs (either array all-zero).
-    """
-    p = np.asarray(baseline_counts, dtype=np.float64)
-    q = np.asarray(current_counts,  dtype=np.float64)
-    if p.shape != q.shape or p.size == 0:
-        return float("nan")
-    if p.sum() <= 0 or q.sum() <= 0:
-        return float("nan")
-
-    p = p / p.sum()
-    q = q / q.sum()
-    m = 0.5 * (p + q)
-
-    p_safe = p + epsilon
-    q_safe = q + epsilon
-    m_safe = m + epsilon
-
-    kl_pm = float(np.sum(p_safe * np.log2(p_safe / m_safe)))
-    kl_qm = float(np.sum(q_safe * np.log2(q_safe / m_safe)))
-    return 0.5 * kl_pm + 0.5 * kl_qm
-
-
-# ═════════════════════════════════════════════════════════════════════
-# Severity classifier
-# ═════════════════════════════════════════════════════════════════════
-
-def classify_severity(psi: Optional[float]) -> str:
-    """Map a PSI value to ``info`` / ``warn`` / ``critical`` / ``no_data``.
-
-    ====================  ================  ============
-    PSI range             Severity           UI colour
-    ====================  ================  ============
-    ``[0, 0.10)``         ``info``           green
-    ``[0.10, 0.25)``      ``warn``           amber
-    ``[0.25, ∞)``         ``critical``       red
-    ``NaN / None / <0``   ``no_data``        grey
-    ====================  ================  ============
-
-    Non-numeric or otherwise unparseable inputs return ``no_data``
-    rather than raising, so the classifier is safe to apply
-    row-by-row across a DataFrame containing transient nulls.
-    """
-    if psi is None:
-        return SEVERITY_NO_DATA
-    try:
-        v = float(psi)
-    except (TypeError, ValueError):
-        return SEVERITY_NO_DATA
-    if not np.isfinite(v) or v < 0:
-        return SEVERITY_NO_DATA
-    if v < PSI_WARN_THRESHOLD:
-        return SEVERITY_INFO
-    if v < PSI_CRITICAL_THRESHOLD:
-        return SEVERITY_WARN
-    return SEVERITY_CRITICAL
-
-
-# ═════════════════════════════════════════════════════════════════════
-# Per-cluster drift table builder
-# ═════════════════════════════════════════════════════════════════════
-
-_DRIFT_TABLE_COLUMNS: Sequence[str] = (
-    "cluster_id",
-    "feature_name",
-    "psi",
-    "js_divergence",
-    "mean_shift",
-    "std_ratio",
-    "severity",
+# Run-id parser regex.  Lazy import-time compile so callers that never
+# parse run-ids don't pay the cost.  Matches the format produced by
+# :func:`monitoring_run_id` strictly — anything looser would invite
+# silent collisions with future run-id variants.
+_RUN_ID_REGEX = re.compile(
+    r"^(?P<ensemble_version>.+)__"
+    rf"{re.escape(RUN_ID_SEGMENT)}__"
+    r"(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z)$"
 )
 
-_DRIFT_TABLE_DTYPES: Dict[str, Any] = {
-    "cluster_id":    "string",
-    "feature_name":  "string",
-    "psi":           np.float32,
-    "js_divergence": np.float32,
-    "mean_shift":    np.float32,
-    "std_ratio":     np.float32,
-    "severity":      "string",
-}
+
+def parse_monitoring_run_id(run_id: str) -> dict:
+    """Reverse :func:`monitoring_run_id` — return ``{ensemble_version, ts}``.
+
+    Returns an empty dict on parse failure rather than raising; callers
+    that need strict validation should check ``bool(...)`` on the
+    result.  Used by the M.4 API to populate ``MonitoringRunMeta``
+    from a directory listing without re-reading every manifest.
+    """
+    m = _RUN_ID_REGEX.match(run_id)
+    if not m:
+        return {}
+    return {"ensemble_version": m.group("ensemble_version"), "ts": m.group("ts")}
 
 
-def build_drift_table(
-    baseline_df:      pd.DataFrame,
-    current_features: pd.DataFrame,
-    *,
-    cluster_id:       str,
-    epsilon:          float = 1e-6,
-) -> pd.DataFrame:
-    """Compute drift for every feature in ``baseline_df`` vs ``current_features``.
+def per_run_artifacts_dir(base_artifacts_dir: Union[str, Path], run_id: str) -> str:
+    """Where this run's artifacts live on disk.
 
-    The baseline is the **anchor** — every feature it tracks gets a row
-    in the output:
+    ``{base_artifacts_dir}/monitoring_runs/<run_id>``.  The pipeline's
+    writers further nest a ``monitoring/`` directory underneath for the
+    manifest + parquets, so the final manifest path is
+    ``{base}/monitoring_runs/<run_id>/monitoring/manifest.json``.
 
-    * Features present in **both** baseline and current → PSI + JSD +
-      mean_shift + std_ratio computed, severity classified.
-    * Features in baseline but **missing / all-NaN** in current → row
-      emitted with NaN metrics and ``severity = "no_data"`` so the UI
-      heatmap shows a grey cell rather than collapsing the column.
-    * Features in current but **not** in baseline → silently ignored
-      (we cannot score drift without a baseline anchor).
+    Centralised here so the pipeline, the writer, and any future
+    listing endpoint agree on the layout — same convention used by
+    inference (see ``ensemble.api.services.inference_state``).
+    """
+    return str(Path(base_artifacts_dir) / MONITORING_RUNS_DIRNAME / run_id)
 
-    Output schema (long-format, one row per baseline feature):
 
-    | column          | dtype     | meaning                              |
-    |-----------------|-----------|--------------------------------------|
-    | ``cluster_id``  | string    | owning cluster                       |
-    | ``feature_name``| string    | feature column name                  |
-    | ``psi``         | float32   | population stability index           |
-    | ``js_divergence`` | float32 | Jensen-Shannon divergence ``[0, 1]`` |
-    | ``mean_shift``  | float32   | ``(μ_curr - μ_base) / max(σ_base, ε)`` (z-score units) |
-    | ``std_ratio``   | float32   | ``σ_curr / max(σ_base, ε)`` — vol regime indicator |
-    | ``severity``    | string    | ``info``/``warn``/``critical``/``no_data`` |
+@dataclass(frozen=True)
+class MonitoringRunPaths:
+    """Resolved on-disk paths for a single monitoring run.
 
-    Parameters
+    Constructing this dataclass does NOT touch the filesystem; calling
+    :meth:`ensure_dirs` does.  Keep the two concerns separate so unit
+    tests can exercise path resolution without ``tmp_path``.
+
+    Attributes
     ----------
-    baseline_df
-        ``load_baseline``-decoded DataFrame.  Must have ``feature_name``,
-        ``mean``, ``std``, ``hist_edges`` (ndarray) and ``hist_counts``
-        (ndarray) columns.
-    current_features
-        Today's features in the **same coordinate system** the baseline
-        was built in (i.e. already pushed through the frozen training
-        scaler).  Rows = observations, cols = feature names.
-    cluster_id
-        Stamped on every output row so multi-cluster tables can be
-        ``pd.concat``-ed freely.
-    epsilon
-        Numerical floor used by PSI / std-ratio to avoid div-by-zero
-        on degenerate near-constant baselines.
-
-    Returns
-    -------
-    pd.DataFrame
-        Long-format drift table (one row per baseline feature).
+    artifacts_dir
+        Base artifacts directory (the same value passed to the
+        :class:`EnsembleMonitoringPipeline`).  All other paths are
+        rooted here.
+    run_id
+        Monitoring run identifier (see :func:`monitoring_run_id`).
+    ensemble_version
+        Ensemble version this run is monitoring.  Kept on the dataclass
+        so callers don't have to re-derive it from ``run_id`` by
+        regex.
     """
-    if baseline_df is None or baseline_df.empty:
-        return _empty_drift_table()
 
-    required = {"feature_name", "mean", "std", "hist_edges", "hist_counts"}
-    missing  = required - set(baseline_df.columns)
-    if missing:
-        raise ValueError(
-            f"baseline_df is missing required columns: {sorted(missing)}.  "
-            f"Did you forget to call monitoring.loaders.load_baseline?"
-        )
+    artifacts_dir:    Path
+    run_id:           str
+    ensemble_version: str
 
-    rows: List[Dict[str, Any]] = []
-    for _, brow in baseline_df.iterrows():
-        feature_name    = str(brow["feature_name"])
-        baseline_edges  = np.asarray(brow["hist_edges"],  dtype=np.float64)
-        baseline_counts = np.asarray(brow["hist_counts"], dtype=np.float64)
-        baseline_mean   = float(brow["mean"]) if pd.notna(brow["mean"]) else np.nan
-        baseline_std    = float(brow["std"])  if pd.notna(brow["std"])  else np.nan
+    # ─── Run-level paths ─────────────────────────────────────────────
 
-        if feature_name not in current_features.columns:
-            rows.append(_no_data_row(cluster_id, feature_name))
-            continue
+    @property
+    def run_dir(self) -> Path:
+        """``{artifacts_dir}/monitoring_runs/<run_id>``."""
+        return self.artifacts_dir / MONITORING_RUNS_DIRNAME / self.run_id
 
-        current_raw   = current_features[feature_name].to_numpy(dtype=np.float64)
-        current_valid = current_raw[np.isfinite(current_raw)]
-        if current_valid.size == 0 or baseline_counts.size == 0:
-            rows.append(_no_data_row(cluster_id, feature_name))
-            continue
+    @property
+    def monitoring_dir(self) -> Path:
+        """``{run_dir}/monitoring`` — holds manifest + summary + clusters/."""
+        return self.run_dir / MONITORING_SUBDIRNAME
 
-        psi = population_stability_index(
-            baseline_counts, baseline_edges, current_valid, epsilon=epsilon,
-        )
+    @property
+    def manifest_path(self) -> Path:
+        """``{monitoring_dir}/manifest.json``."""
+        return self.monitoring_dir / MANIFEST_FILENAME
 
-        # JSD needs paired histograms on the same edges — bin today's
-        # values with the persisted baseline edges first.  We reuse
-        # the same outlier-clipping convention as PSI so the two
-        # numbers tell a consistent story.
-        clipped = np.clip(current_valid, baseline_edges[0], baseline_edges[-1])
-        current_counts, _ = np.histogram(clipped, bins=baseline_edges)
-        jsd = js_divergence(baseline_counts, current_counts, epsilon=epsilon)
+    @property
+    def drift_summary_path(self) -> Path:
+        """``{monitoring_dir}/drift_summary.json`` — portfolio KPIs."""
+        return self.monitoring_dir / DRIFT_SUMMARY_FILENAME
 
-        # Mean shift in baseline-std units; std ratio in raw scale.
-        # ``epsilon`` guards against degenerate near-constant baselines
-        # (std ≈ 0) — the resulting numbers are noisy by definition in
-        # that regime, but better than divide-by-zero.
-        std_floor = (
-            max(baseline_std, epsilon)
-            if np.isfinite(baseline_std) and baseline_std > 0
-            else epsilon
-        )
-        current_mean = float(np.mean(current_valid))
-        current_std  = float(np.std(current_valid, ddof=0))
-        mean_shift   = (
-            (current_mean - baseline_mean) / std_floor
-            if np.isfinite(baseline_mean) else np.nan
-        )
-        std_ratio = current_std / std_floor
+    @property
+    def clusters_dir(self) -> Path:
+        """``{monitoring_dir}/clusters`` — parent of per-cluster sub-dirs."""
+        return self.monitoring_dir / "clusters"
 
-        rows.append({
-            "cluster_id":    cluster_id,
-            "feature_name":  feature_name,
-            "psi":           psi,
-            "js_divergence": jsd,
-            "mean_shift":    mean_shift,
-            "std_ratio":     std_ratio,
-            "severity":      classify_severity(psi),
-        })
+    # ─── Per-cluster paths ───────────────────────────────────────────
 
-    return _to_drift_dataframe(rows)
+    def cluster_dir(self, cluster_id: str) -> Path:
+        """``{clusters_dir}/<cluster_id>``."""
+        return self.clusters_dir / cluster_id
 
+    def cluster_drift_table_path(self, cluster_id: str) -> Path:
+        """``{cluster_dir}/drift_table.parquet`` — output of build_drift_table."""
+        return self.cluster_dir(cluster_id) / DRIFT_TABLE_FILENAME
 
-def _empty_drift_table() -> pd.DataFrame:
-    """Empty long-format drift table with the canonical dtype schema."""
-    return _to_drift_dataframe([])
+    # ─── Filesystem side-effects ─────────────────────────────────────
 
+    def ensure_dirs(self) -> None:
+        """Create the run + monitoring + clusters directories.
 
-def _no_data_row(cluster_id: str, feature_name: str) -> Dict[str, Any]:
-    """Drift-table row for a feature we cannot score (missing / all-NaN)."""
-    return {
-        "cluster_id":    cluster_id,
-        "feature_name":  feature_name,
-        "psi":           np.nan,
-        "js_divergence": np.nan,
-        "mean_shift":    np.nan,
-        "std_ratio":     np.nan,
-        "severity":      SEVERITY_NO_DATA,
-    }
-
-
-def _to_drift_dataframe(rows: List[Dict[str, Any]]) -> pd.DataFrame:
-    """Coerce a row list to the canonical drift-table dtype schema.
-
-    Centralised so empty + populated tables share the same dtype
-    fingerprint — important for ``pd.concat`` to work without dtype
-    promotion warnings when callers stitch per-cluster tables together.
-    """
-    df = pd.DataFrame(rows, columns=list(_DRIFT_TABLE_COLUMNS))
-    return df.astype(_DRIFT_TABLE_DTYPES)
-
-
-# ═════════════════════════════════════════════════════════════════════
-# Portfolio-level summary
-# ═════════════════════════════════════════════════════════════════════
-
-def build_portfolio_drift_summary(
-    drift_tables: Sequence[pd.DataFrame],
-) -> Dict[str, Any]:
-    """Aggregate per-cluster drift tables into portfolio-level KPIs.
-
-    Consumed by the monitoring run manifest (``drift_summary.json``) and
-    the Monitoring tab health-strip KPIs.  Severity is classified off
-    ``mean_psi`` using the same thresholds applied to individual
-    features, so the portfolio's "warn" line matches the per-feature
-    severity boundary the user already sees in the heatmap.
-
-    Returns a dict with:
-
-    ===================  =================================================
-    key                  meaning
-    ===================  =================================================
-    ``n_clusters``        clusters represented across the tables
-    ``n_features_total``  scoreable features (excluding ``no_data`` rows)
-    ``n_features_info``   features with severity ``info``
-    ``n_features_warn``   features with severity ``warn``
-    ``n_features_crit``   features with severity ``critical``
-    ``n_features_nodata`` features that could not be scored
-    ``mean_psi``          mean PSI across all scoreable features
-    ``max_psi``           max PSI across all scoreable features
-    ``worst_cluster``     ``cluster_id`` holding the max-PSI feature
-    ``worst_feature``     ``feature_name`` holding the max PSI
-    ``severity``          portfolio-level severity, classified off ``mean_psi``
-    ===================  =================================================
-
-    Tolerates empty / ``None`` inputs by returning an empty-state dict
-    with zero counts and ``severity == "no_data"`` so callers don't have
-    to gate on row counts.
-    """
-    if drift_tables is None or len(drift_tables) == 0:
-        return _empty_summary()
-
-    nonempty = [t for t in drift_tables if t is not None and not t.empty]
-    if not nonempty:
-        return _empty_summary()
-
-    combined   = pd.concat(nonempty, ignore_index=True)
-    n_clusters = int(combined["cluster_id"].nunique())
-
-    sev_counts = combined["severity"].value_counts().to_dict()
-    n_info   = int(sev_counts.get(SEVERITY_INFO,     0))
-    n_warn   = int(sev_counts.get(SEVERITY_WARN,     0))
-    n_crit   = int(sev_counts.get(SEVERITY_CRITICAL, 0))
-    n_nodata = int(sev_counts.get(SEVERITY_NO_DATA,  0))
-    n_total  = n_info + n_warn + n_crit
-
-    scoreable = combined[combined["severity"] != SEVERITY_NO_DATA]
-    if scoreable.empty:
-        mean_psi:      float          = float("nan")
-        max_psi:       float          = float("nan")
-        worst_cluster: Optional[str]  = None
-        worst_feature: Optional[str]  = None
-    else:
-        mean_psi      = float(scoreable["psi"].mean())
-        idx_max       = scoreable["psi"].idxmax()
-        max_psi       = float(scoreable.loc[idx_max, "psi"])
-        worst_cluster = str(scoreable.loc[idx_max, "cluster_id"])
-        worst_feature = str(scoreable.loc[idx_max, "feature_name"])
-
-    return {
-        "n_clusters":         n_clusters,
-        "n_features_total":   n_total,
-        "n_features_info":    n_info,
-        "n_features_warn":    n_warn,
-        "n_features_crit":    n_crit,
-        "n_features_nodata":  n_nodata,
-        "mean_psi":           mean_psi,
-        "max_psi":            max_psi,
-        "worst_cluster":      worst_cluster,
-        "worst_feature":      worst_feature,
-        "severity":           classify_severity(mean_psi),
-    }
-
-
-def _empty_summary() -> Dict[str, Any]:
-    """Empty-state portfolio summary; keeps every key the manifest writer expects."""
-    return {
-        "n_clusters":         0,
-        "n_features_total":   0,
-        "n_features_info":    0,
-        "n_features_warn":    0,
-        "n_features_crit":    0,
-        "n_features_nodata":  0,
-        "mean_psi":           float("nan"),
-        "max_psi":            float("nan"),
-        "worst_cluster":      None,
-        "worst_feature":      None,
-        "severity":           SEVERITY_NO_DATA,
-    }
+        Per-cluster sub-directories are created lazily by the writer
+        each time it writes a cluster table — saves us from having to
+        know the cluster list at path-construction time.
+        """
+        self.monitoring_dir.mkdir(parents=True, exist_ok=True)
+        self.clusters_dir.mkdir(parents=True, exist_ok=True)
 
 
 __all__ = [
     # constants
-    "SCHEMA_VERSION",
-    "PSI_WARN_THRESHOLD", "PSI_CRITICAL_THRESHOLD",
-    "SEVERITY_INFO", "SEVERITY_WARN", "SEVERITY_CRITICAL", "SEVERITY_NO_DATA",
-    # primitives
-    "population_stability_index",
-    "js_divergence",
-    "classify_severity",
-    # builders
-    "build_drift_table",
-    "build_portfolio_drift_summary",
+    "MONITORING_RUNS_DIRNAME",
+    "MONITORING_SUBDIRNAME",
+    "MANIFEST_FILENAME",
+    "DRIFT_SUMMARY_FILENAME",
+    "DRIFT_TABLE_FILENAME",
+    "RUN_ID_SEGMENT",
+    # functions
+    "monitoring_run_id",
+    "parse_monitoring_run_id",
+    "per_run_artifacts_dir",
+    # dataclass
+    "MonitoringRunPaths",
 ]
 ```
 
-### File 2: `src/rade_ml_pt/monitoring/loaders.py` (full source)
+### File 2: `src/rade_ml_pt/monitoring/writers.py` (full source)
 
 ```python
-"""Loaders for monitoring baseline parquets.
+"""Writers + readers for monitoring run artifacts.
 
-Decode the JSON-encoded ``hist_edges_json`` / ``hist_counts_json``
-columns produced by :func:`monitoring.baselines.save_feature_baseline`
-into ready-to-use NumPy arrays so callers (drift computation, UI
-distribution overlays) don't have to repeat the ``json.loads`` dance.
+Symmetric with inference's ``_post_infer_cluster`` / ``post_infer`` —
+two layers:
 
-Kept deliberately small — this module is just the reader half of the
-training/inference symmetry; the writer half lives in ``baselines.py``.
+* **Per-cluster**: :func:`write_drift_table_parquet` (the per-cluster
+  output of :func:`monitoring.drift.build_drift_table`).
+* **Run-level**:   :func:`write_drift_summary_json` (portfolio KPIs)
+  and :func:`write_monitoring_manifest_json` (entry-point pointer that
+  the API result reader / UI use to discover every artifact this run
+  produced).
+
+JSON writers sanitise ``NaN`` → ``null`` because ``json.dump`` with
+``allow_nan=True`` produces ``NaN`` literals that are NOT valid JSON
+and break every standards-compliant reader (incl. JavaScript /
+``json.loads`` in non-Python tooling).
 """
 from __future__ import annotations
 
 import json
 import logging
+import math
 from pathlib import Path
-from typing import Union
+from typing import Any, Dict, Mapping, Union
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 logger = logging.getLogger(__name__)
 
-# Columns that MUST be present in any baseline parquet we're prepared
-# to consume.  Hoisted to module scope so the assertion + the error
-# message stay in sync (one source of truth).
-_REQUIRED_COLUMNS = (
-    "feature_name",
-    "mean",
-    "std",
-    "hist_edges_json",
-    "hist_counts_json",
-)
+# Bumped whenever the manifest / drift_table schemas change in a
+# back-incompatible way.  Mirrors ``monitoring.baselines.SCHEMA_VERSION``
+# and ``monitoring.drift.SCHEMA_VERSION``; all three are independent
+# but conventionally move together.
+SCHEMA_VERSION: int = 1
 
 
-def load_baseline(parquet_path: Union[str, Path]) -> pd.DataFrame:
-    """Read a ``baseline_feature_stats.parquet`` and decode its JSON columns.
+# ═════════════════════════════════════════════════════════════════════
+# Per-cluster drift table (parquet)
+# ═════════════════════════════════════════════════════════════════════
+
+def write_drift_table_parquet(
+    drift_table: pd.DataFrame,
+    out_path:    Union[str, Path],
+    *,
+    cluster_id:       str,
+    ensemble_version: str,
+    run_id:           str,
+) -> None:
+    """Persist one cluster's drift table.
+
+    Schema lives in :data:`monitoring.drift._DRIFT_TABLE_COLUMNS`; this
+    writer enforces those columns and embeds ``cluster_id`` /
+    ``ensemble_version`` / ``run_id`` / ``_schema_version`` as pyarrow
+    schema metadata so a stray parquet file can be reconciled with its
+    parent run without consulting the manifest.
 
     Parameters
     ----------
-    parquet_path
-        Path to the parquet file produced by
-        :func:`monitoring.baselines.save_feature_baseline`.
-
-    Returns
-    -------
-    pd.DataFrame
-        The original parquet schema (``feature_name``, ``mean``, ``std``,
-        ``min``, ``max``, ``p05``…``p95``, ``hist_edges_json``,
-        ``hist_counts_json``) plus **two new in-memory columns**:
-
-        * ``hist_edges``  — ``np.ndarray[float64]`` of length 51 (or
-          empty when the feature was all-NaN at training time).
-        * ``hist_counts`` — ``np.ndarray[int64]``  of length 50 (or
-          empty in the same case).
-
-        The two JSON-string columns are kept on the frame for
-        traceability / debugging — drop them yourself if not needed
-        downstream.
+    drift_table
+        Output of :func:`monitoring.drift.build_drift_table`.  Must
+        contain the canonical column set (validated lightly here —
+        a missing column raises rather than silently dropping data).
+    out_path
+        Destination file.  Parent dirs are created on demand.
+    cluster_id, ensemble_version, run_id
+        Provenance triplet stamped on the schema metadata.
 
     Raises
     ------
-    FileNotFoundError
-        If ``parquet_path`` does not exist.
     ValueError
-        If the parquet is missing the expected ``hist_edges_json`` /
-        ``hist_counts_json`` (or any other required column).
+        If ``drift_table`` is missing required drift-table columns.
     """
-    parquet_path = Path(parquet_path)
-    if not parquet_path.exists():
-        raise FileNotFoundError(f"baseline parquet not found: {parquet_path}")
-
-    df = pd.read_parquet(parquet_path)
-
-    missing = set(_REQUIRED_COLUMNS) - set(df.columns)
+    required = {
+        "cluster_id", "feature_name", "psi", "js_divergence",
+        "mean_shift", "std_ratio", "severity",
+    }
+    missing = required - set(drift_table.columns)
     if missing:
         raise ValueError(
-            f"baseline parquet at {parquet_path} is missing required columns "
-            f"{sorted(missing)}.  Was it written by an older version of "
-            f"monitoring.baselines.save_feature_baseline (or by something else "
-            f"entirely)?"
+            f"drift_table for cluster '{cluster_id}' is missing columns "
+            f"{sorted(missing)}.  Did you build it via "
+            f"monitoring.drift.build_drift_table?"
         )
 
-    df = df.copy()
-    df["hist_edges"]  = df["hist_edges_json"].map(_decode_json_array_f64)
-    df["hist_counts"] = df["hist_counts_json"].map(_decode_json_array_i64)
-    return df
+    # See ``monitoring.baselines.save_feature_baseline`` for the
+    # rationale on ``pa.table`` over ``Table.from_pandas`` (the latter
+    # trips a pyarrow stub bug in PyCharm).
+    table = pa.table(drift_table)
+    schema_metadata = {
+        **(table.schema.metadata or {}),
+        b"_schema_version":   str(SCHEMA_VERSION).encode(),
+        b"cluster_id":        cluster_id.encode(),
+        b"ensemble_version":  ensemble_version.encode(),
+        b"run_id":            run_id.encode(),
+    }
+    table = table.replace_schema_metadata(schema_metadata)
+
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    pq.write_table(table, str(out_path))
+    logger.info(
+        "Wrote drift table for cluster '%s' (%d features, severity counts %s)",
+        cluster_id,
+        len(drift_table),
+        dict(drift_table["severity"].value_counts()),
+    )
 
 
-def _decode_json_array_f64(s: object) -> np.ndarray:
-    """JSON-string-of-floats → ``np.ndarray[float64]`` (empty on error/empty).
+def read_drift_table_parquet(path: Union[str, Path]) -> pd.DataFrame:
+    """Read a drift table parquet written by :func:`write_drift_table_parquet`.
 
-    Defensive: tolerates ``None`` / ``NaN`` / malformed JSON by
-    returning an empty array, so a single corrupt row in the baseline
-    parquet can't poison an entire run.  Pair with the ``hist_edges``
-    length checks downstream in drift code which already treat
-    ``size == 0`` as "no_data".
+    Pure pass-through to ``pd.read_parquet`` plus a friendlier
+    ``FileNotFoundError`` message.  The result has the exact same
+    column / dtype schema produced by
+    :func:`monitoring.drift.build_drift_table`.
     """
-    if s is None:
-        return np.empty(0, dtype=np.float64)
-    if isinstance(s, float) and np.isnan(s):
-        return np.empty(0, dtype=np.float64)
-    try:
-        parsed = json.loads(s)
-    except (json.JSONDecodeError, TypeError):
-        return np.empty(0, dtype=np.float64)
-    return np.asarray(parsed, dtype=np.float64)
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"drift table parquet not found: {path}")
+    return pd.read_parquet(path)
 
 
-def _decode_json_array_i64(s: object) -> np.ndarray:
-    """JSON-string-of-ints → ``np.ndarray[int64]`` (empty on error/empty)."""
-    if s is None:
-        return np.empty(0, dtype=np.int64)
-    if isinstance(s, float) and np.isnan(s):
-        return np.empty(0, dtype=np.int64)
-    try:
-        parsed = json.loads(s)
-    except (json.JSONDecodeError, TypeError):
-        return np.empty(0, dtype=np.int64)
-    return np.asarray(parsed, dtype=np.int64)
+# ═════════════════════════════════════════════════════════════════════
+# Run-level JSON artifacts (drift_summary, manifest)
+# ═════════════════════════════════════════════════════════════════════
+
+def write_drift_summary_json(
+    summary:  Mapping[str, Any],
+    out_path: Union[str, Path],
+) -> None:
+    """Write the portfolio-level drift summary as JSON.
+
+    ``summary`` is typically the output of
+    :func:`monitoring.drift.build_portfolio_drift_summary`.  NaN
+    values are coerced to ``None`` (rendered as JSON ``null``) so the
+    file is strictly valid JSON — see module docstring for why.
+    """
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    sanitised = _sanitise_for_json(summary)
+    with out_path.open("w", encoding="utf-8") as f:
+        json.dump(sanitised, f, indent=2, sort_keys=True)
+    logger.info("Wrote drift summary → %s", out_path)
 
 
-__all__ = ["load_baseline"]
+def read_drift_summary_json(path: Union[str, Path]) -> Dict[str, Any]:
+    """Read a drift_summary.json written by :func:`write_drift_summary_json`."""
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"drift summary json not found: {path}")
+    with path.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def write_monitoring_manifest_json(
+    manifest: Mapping[str, Any],
+    out_path: Union[str, Path],
+) -> None:
+    """Write the run manifest as JSON.
+
+    The manifest is the canonical entry point that the API result
+    reader and the UI use to discover every artifact this run
+    produced.  See :class:`pipelines.ensemble.monitor.MonitoringResult`
+    for the producer side and ``RADE_UI_DESIGN.md`` for the schema
+    expected by the M.4 API.
+    """
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    sanitised = _sanitise_for_json(manifest)
+    with out_path.open("w", encoding="utf-8") as f:
+        json.dump(sanitised, f, indent=2, sort_keys=True)
+    logger.info("Wrote monitoring manifest → %s", out_path)
+
+
+def read_monitoring_manifest_json(path: Union[str, Path]) -> Dict[str, Any]:
+    """Read a manifest.json written by :func:`write_monitoring_manifest_json`."""
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"monitoring manifest json not found: {path}")
+    with path.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Internal — JSON sanitisation
+# ═════════════════════════════════════════════════════════════════════
+
+def _sanitise_for_json(obj: Any) -> Any:
+    """Recursive NaN/Inf → None + ndarray → list normalisation.
+
+    ``json.dump(..., allow_nan=True)`` emits ``NaN`` / ``Infinity``
+    literals that are NOT in the JSON spec and silently break every
+    non-Python consumer.  We normalise here so call-sites don't have
+    to remember.
+
+    Also coerces:
+    * ``np.ndarray`` → ``list`` (so cluster-id arrays / hist arrays
+      embedded in metadata don't crash the encoder)
+    * ``np.integer`` / ``np.floating`` → native Python ``int`` /
+      ``float`` (round-trip parity across pandas / numpy versions)
+    * ``Path`` → ``str``  (manifests embed paths frequently)
+    """
+    if obj is None:
+        return None
+    if isinstance(obj, Path):
+        return str(obj)
+    if isinstance(obj, dict):
+        return {str(k): _sanitise_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple, set)):
+        return [_sanitise_for_json(v) for v in obj]
+    if isinstance(obj, np.ndarray):
+        return _sanitise_for_json(obj.tolist())
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        v = float(obj)
+        return None if not math.isfinite(v) else v
+    if isinstance(obj, float):
+        return None if not math.isfinite(obj) else obj
+    return obj
+
+
+__all__ = [
+    "SCHEMA_VERSION",
+    # parquet
+    "write_drift_table_parquet",
+    "read_drift_table_parquet",
+    # json
+    "write_drift_summary_json",
+    "read_drift_summary_json",
+    "write_monitoring_manifest_json",
+    "read_monitoring_manifest_json",
+]
 ```
 
-### File 3: `src/rade_ml_pt/monitoring/__init__.py` (replace existing)
+### File 3: `src/rade_ml_pt/pipelines/ensemble/monitor.py` (full source)
+
+```python
+"""Ensemble monitoring pipeline.
+
+Composes :class:`EnsembleInferencePipeline` to reuse the already-stable
+load → load_scenarios → validate_scenarios stages, then computes per-
+cluster drift against the training-time baselines emitted by
+:mod:`monitoring.baselines`.
+
+Pipeline waterfall::
+
+    EnsembleMonitoringPipeline.run(new_scenario_dir)
+    │
+    ├─ 1. inference.load()                       (model + per-cluster contexts)
+    ├─ 2. inference.load_scenarios(...)          (parse shock CSVs)
+    ├─ 3. inference.validate_scenarios()         (routing + cheap-path check)
+    ├─ 4. for cid in members:
+    │       today_features = _today_features(ctx, decision, shocks, labels)
+    │       baseline_df    = load_baseline(version_dir(ctx) / "monitoring" / "...")
+    │       drift_table    = build_drift_table(baseline_df, today_features, ...)
+    │       write_drift_table_parquet(...)
+    ├─ 5. portfolio_summary = build_portfolio_drift_summary([drift_tables])
+    │     write_drift_summary_json(...)
+    │     write_monitoring_manifest_json(...)
+    │
+    └─ return MonitoringResult(run_id, summary, drift_tables, manifest_path)
+
+NOT implemented in M.2 (deferred to M.3):
+* "Promote-to-predictions" step that re-uses the inference pipeline's
+  ``run_inference()`` to write ``predictions_*.parquet`` into the SAME
+  monitoring run directory.  The hook point is :meth:`run` itself —
+  M.3 will add a ``promote_to_predictions(run_id)`` method that
+  re-loads the run's manifest and chains into inference.
+
+Threading + parallelism: M.2 runs clusters sequentially.  Drift compute
+is sub-second per cluster; the wall-clock bottleneck is the lazy load
+of ``cluster_assets`` for affected clusters (shared with inference).
+M.4 / M.5 can add ``ThreadPoolExecutor`` if portfolios grow large.
+"""
+from __future__ import annotations
+
+import logging
+import time
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
+
+import pandas as pd
+
+from src.rade_ml_pt.ensemble.config import EnsembleConfig
+from src.rade_ml_pt.monitoring.drift import (
+    SEVERITY_NO_DATA,
+    build_drift_table,
+    build_portfolio_drift_summary,
+)
+from src.rade_ml_pt.monitoring.loaders import load_baseline
+from src.rade_ml_pt.monitoring.run_paths import (
+    MonitoringRunPaths,
+    monitoring_run_id,
+)
+from src.rade_ml_pt.monitoring.writers import (
+    write_drift_summary_json,
+    write_drift_table_parquet,
+    write_monitoring_manifest_json,
+)
+from src.rade_ml_pt.pipelines.ensemble.infer import (
+    ClusterRoutingDecision,
+    EnsembleInferencePipeline,
+)
+from src.rade_ml_pt.pipelines.ensemble.infer_events import (
+    EmitFn,
+    STATUS_FAIL,
+    STATUS_OK,
+    STATUS_RUNNING,
+    event,
+    noop_emit,
+)
+
+logger = logging.getLogger(__name__)
+
+
+# Monitoring schema version stamped onto the manifest.  Bump only on
+# back-incompatible manifest shape changes — adding new optional keys
+# does NOT require a bump.
+MANIFEST_SCHEMA_VERSION: int = 1
+
+# Filename of the baseline parquet under each member's ``version_dir``.
+# Must match what ``monitoring.baselines.save_feature_baseline`` writes
+# from the training pipeline.
+_BASELINE_RELPATH = Path("monitoring") / "baseline_feature_stats.parquet"
+
+# Pipeline stage tag used in activity log emissions.  Kept as a plain
+# string (cast at the call-site) because the inference event vocab is
+# a Literal[...]; widening it would require touching ``infer_events.py``
+# which we explicitly avoid in M.2.  The UI's monitoring activity log
+# (M.6) will filter on this tag.
+_STAGE_MONITORING: str = "monitoring"
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Result dataclass
+# ═════════════════════════════════════════════════════════════════════
+
+@dataclass(frozen=True)
+class MonitoringResult:
+    """Frozen return value of :meth:`EnsembleMonitoringPipeline.run`.
+
+    Programmatic callers consume this directly; the API layer (M.4)
+    will translate it into a Pydantic response model.  Heavy
+    per-cluster ``drift_tables`` are also persisted to disk under
+    :attr:`MonitoringRunPaths.cluster_drift_table_path` — the in-memory
+    copy is convenient for tests and short-lived UI sessions but the
+    disk copy is the source of truth for cross-process consumers.
+    """
+
+    run_id:            str
+    ensemble_version:  str
+    artifacts_dir:     Path
+    manifest_path:     Path
+    portfolio_summary: Dict[str, Any]
+    drift_tables:      Dict[str, pd.DataFrame] = field(default_factory=dict)
+    n_scenarios:       int                     = 0
+    n_clusters:        int                     = 0
+    n_affected:        int                     = 0
+    n_unaffected:      int                     = 0
+    wall_seconds:      float                   = 0.0
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Pipeline
+# ═════════════════════════════════════════════════════════════════════
+
+class EnsembleMonitoringPipeline:
+    """Run drift monitoring on an ensemble against a new scenario set.
+
+    Composes :class:`EnsembleInferencePipeline` for the load /
+    load_scenarios / validate stages — see module docstring for the
+    full waterfall.
+
+    Parameters
+    ----------
+    ensemble_config
+        Must have ``registry_dir`` and ``artifacts_dir`` set.  The
+        same config a non-UI inference run would use; monitoring uses
+        a ``monitoring_runs/<run_id>/`` sibling layout to inference
+        artifacts.
+    ensemble_version
+        Ensemble version or tag to monitor.
+    session
+        Optional pre-loaded :class:`EnsembleSession` (UI / backend
+        warm path).  Must match ``ensemble_version`` — the inference
+        pipeline enforces this in :meth:`load`.
+    on_event
+        Optional lifecycle-event callback.  Forwarded to the
+        composed inference pipeline AND used directly by this class
+        for monitoring-specific events.  Defaults to a no-op.
+    """
+
+    def __init__(
+        self,
+        ensemble_config:  EnsembleConfig,
+        ensemble_version: str = "latest",
+        session:          Optional[Any] = None,
+        *,
+        on_event:         Optional[EmitFn] = None,
+    ) -> None:
+        self.config           = ensemble_config
+        self.ensemble_version = ensemble_version
+        self._session         = session
+        self._emit: EmitFn    = on_event if on_event is not None else noop_emit
+
+        # Composed inference pipeline — owns the model + contexts +
+        # validation report.  Created on every instance so monitoring
+        # runs are independent (no cross-run state leak).
+        self._inference_pipeline = EnsembleInferencePipeline(
+            ensemble_config  = ensemble_config,
+            ensemble_version = ensemble_version,
+            session          = session,
+            on_event         = on_event,
+        )
+
+        # Populated by run().
+        self._run_paths:    Optional[MonitoringRunPaths] = None
+        self._drift_tables: Dict[str, pd.DataFrame]      = {}
+
+    # ─────────────────────────────────────────────────────────────────
+    # Public API
+    # ─────────────────────────────────────────────────────────────────
+
+    def run(
+        self,
+        new_scenario_dir: Optional[Union[str, Path]] = None,
+    ) -> MonitoringResult:
+        """Execute the full monitoring pipeline.
+
+        Convenience wrapper that calls the four staged methods in
+        order — symmetric with
+        :meth:`EnsembleInferencePipeline.run` so callers can swap one
+        for the other when they want a drift-only view of today's
+        scenarios.
+
+        Parameters
+        ----------
+        new_scenario_dir
+            Directory containing the new-scenario shock CSVs.  Falls
+            back to ``config.metadata['inference']['new_scenario_dir']``
+            if ``None`` (matching the inference pipeline's lookup).
+
+        Raises
+        ------
+        ValueError
+            If the inference validation reports user-input errors
+            (e.g. unaffected cluster with missing scenario labels).
+        """
+        logger.info("EnsembleMonitoringPipeline: starting")
+        self._emit(_mon_event("Pipeline started", status=STATUS_RUNNING,
+                              target=self.ensemble_version))
+        t0 = time.perf_counter()
+
+        try:
+            self._inference_pipeline.load()
+            self._inference_pipeline.load_scenarios(new_scenario_dir)
+            report = self._inference_pipeline.validate_scenarios()
+
+            if not report.is_valid:
+                raise ValueError(
+                    f"Monitoring validation failed with "
+                    f"{len(report.errors)} error(s): {report.errors}"
+                )
+
+            self._run_paths    = self._init_run_paths()
+            self._drift_tables = self._compute_drift_for_all_clusters()
+            portfolio_summary  = build_portfolio_drift_summary(
+                list(self._drift_tables.values())
+            )
+            self._write_run_artifacts(portfolio_summary)
+        except Exception as exc:
+            self._emit(_mon_event(
+                "Pipeline failed", status=STATUS_FAIL,
+                target=type(exc).__name__, detail=str(exc),
+            ))
+            raise
+
+        wall = time.perf_counter() - t0
+        n_affected   = report.affected_count
+        n_unaffected = report.unaffected_count
+
+        assert self._run_paths is not None  # set in the try-block
+
+        result = MonitoringResult(
+            run_id            = self._run_paths.run_id,
+            ensemble_version  = self.ensemble_version,
+            artifacts_dir     = self._run_paths.run_dir,
+            manifest_path     = self._run_paths.manifest_path,
+            portfolio_summary = portfolio_summary,
+            drift_tables      = self._drift_tables,
+            n_scenarios       = report.n_scenarios,
+            n_clusters        = n_affected + n_unaffected,
+            n_affected        = n_affected,
+            n_unaffected      = n_unaffected,
+            wall_seconds      = wall,
+        )
+
+        logger.info(
+            "EnsembleMonitoringPipeline: done (%.3fs, %d clusters, severity=%s)",
+            wall, result.n_clusters, portfolio_summary.get("severity"),
+        )
+        self._emit(_mon_event(
+            "Pipeline complete", status=STATUS_OK,
+            target=f"{wall * 1000:.0f} ms · {result.n_clusters} clusters",
+            detail=f"severity={portfolio_summary.get('severity')}",
+        ))
+        return result
+
+    # ─────────────────────────────────────────────────────────────────
+    # Internal — drift compute
+    # ─────────────────────────────────────────────────────────────────
+
+    def _compute_drift_for_all_clusters(self) -> Dict[str, pd.DataFrame]:
+        """Walk the validation report, compute a drift table per cluster.
+
+        Two paths:
+        * **Affected** cluster → today's features = output of
+          :meth:`HybridGnnRnnInferencePipeline.build_new_scenario_inputs`
+          (same call inference makes; the heavy ``cluster_assets``
+          load happens once and is shared by a later promote step).
+        * **Unaffected** cluster → today's features =
+          ``ctx.elementary_pnl.loc[scenario_labels]`` (the historical
+          PnL slice for the requested scenario labels).  This still
+          tells us "did today's scenarios pick a slice of history
+          that looks different from training?".
+
+        Missing baselines or shape mismatches degrade gracefully — the
+        affected feature column emits a ``severity = "no_data"`` row
+        rather than crashing the run.
+        """
+        assert self._inference_pipeline._validation_report is not None, \
+            "validate_scenarios() must run first"
+        assert self._inference_pipeline._new_scenario_shocks is not None, \
+            "load_scenarios() must run first"
+
+        report          = self._inference_pipeline._validation_report
+        shocks          = self._inference_pipeline._new_scenario_shocks
+        scenario_labels = report.scenario_labels
+
+        drift_tables: Dict[str, pd.DataFrame] = {}
+
+        for decision in report.cluster_decisions:
+            cid = decision.cluster_id
+            ctx = self._inference_pipeline._inference_contexts[cid]
+
+            self._emit(_mon_event(
+                "Computing drift", status=STATUS_RUNNING, target=cid,
+                detail="affected" if decision.is_affected else "unaffected",
+            ))
+
+            try:
+                today_features = self._today_features(
+                    ctx              = ctx,
+                    decision         = decision,
+                    shocks           = shocks,
+                    scenario_labels  = scenario_labels,
+                )
+                baseline_df = self._load_cluster_baseline(ctx, cluster_id=cid)
+
+                drift_table = build_drift_table(
+                    baseline_df      = baseline_df,
+                    current_features = today_features,
+                    cluster_id       = cid,
+                )
+            except FileNotFoundError as exc:
+                # No baseline for this cluster — emit a no_data row per
+                # feature in the current frame so the portfolio
+                # summary still reflects the cluster's coverage.
+                logger.warning(
+                    "No baseline found for cluster '%s' (%s) — drift row will "
+                    "be emitted as no_data", cid, exc,
+                )
+                drift_table = _no_data_table_for_cluster(cid)
+
+            drift_tables[cid] = drift_table
+
+            sev_counts = dict(drift_table["severity"].value_counts())
+            self._emit(_mon_event(
+                "Cluster drift ready", status=STATUS_OK, target=cid,
+                detail=f"{len(drift_table)} features · {sev_counts}",
+            ))
+
+        return drift_tables
+
+    @staticmethod
+    def _today_features(
+        ctx:             Any,
+        decision:        ClusterRoutingDecision,
+        shocks:          Dict[str, Any],
+        scenario_labels: List[str],
+    ) -> pd.DataFrame:
+        """Build today's feature matrix for one cluster.
+
+        Returns a ``DataFrame`` shaped ``(n_scenarios × n_features)``
+        in the same coordinate system the training baseline was built
+        in (scaled space).  Compatible with
+        :func:`monitoring.drift.build_drift_table`.
+
+        Affected path delegates to the same builder inference uses, so
+        the two pipelines see byte-identical "today" features for any
+        cluster they both touch.  Unaffected path slices the
+        cluster's historical ``elementary_pnl`` at the requested
+        scenario labels — same data the cheap-path inference loads.
+
+        The heavy ``HybridGnnRnnInferencePipeline`` import is deferred
+        to the affected branch so a pure unaffected-only run (or a
+        unit test) doesn't pull in the static-replication dependency
+        chain.
+        """
+        if decision.is_affected:
+            from src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer import (
+                HybridGnnRnnInferencePipeline,
+            )
+            result = HybridGnnRnnInferencePipeline.build_new_scenario_inputs(
+                ctx                 = ctx,
+                new_scenario_shocks = shocks,
+                scenario_labels     = scenario_labels,
+                is_affected         = True,
+            )
+            inputs = result["inputs"]
+            elementary_pnl = inputs.elementary_pnl
+            if elementary_pnl is None:
+                raise RuntimeError(
+                    f"build_new_scenario_inputs returned no elementary_pnl "
+                    f"for cluster '{decision.cluster_id}'."
+                )
+            return elementary_pnl
+
+        # Unaffected path — historical PnL at the requested labels.
+        # Labels are guaranteed present by the validate_scenarios()
+        # cheap-path eligibility check (any missing label would have
+        # been surfaced as an error and we'd never reach this branch).
+        hist = ctx.elementary_pnl
+        if hist is None:
+            raise RuntimeError(
+                f"Cluster '{decision.cluster_id}' is unaffected but its "
+                f"InferenceContext has no elementary_pnl loaded."
+            )
+        return hist.loc[scenario_labels]
+
+    @staticmethod
+    def _load_cluster_baseline(ctx: Any, *, cluster_id: str) -> pd.DataFrame:
+        """Locate + load the training-time baseline parquet.
+
+        Resolution order (first hit wins):
+        1. ``ctx._cluster_assets_path.parent`` — set by
+           ``load_inference_context_from_dir``; works for both
+           registry cold-loads and session warm-loads.
+        2. Future: a ``ctx.version_dir`` field if we add one.
+
+        Raises
+        ------
+        FileNotFoundError
+            If no baseline parquet can be resolved / read.  The caller
+            converts this into a no_data drift row.
+        """
+        if ctx._cluster_assets_path is None:
+            raise FileNotFoundError(
+                f"Cluster '{cluster_id}': InferenceContext has no "
+                f"_cluster_assets_path; cannot derive baseline location."
+            )
+        version_dir = ctx._cluster_assets_path.parent
+        baseline_path = version_dir / _BASELINE_RELPATH
+        return load_baseline(baseline_path)
+
+    # ─────────────────────────────────────────────────────────────────
+    # Internal — artifact writing
+    # ─────────────────────────────────────────────────────────────────
+
+    def _init_run_paths(self) -> MonitoringRunPaths:
+        """Mint a fresh run-id + create the on-disk layout."""
+        run_id = monitoring_run_id(self.ensemble_version)
+        artifacts_dir = Path(self.config.artifacts_dir)
+        paths = MonitoringRunPaths(
+            artifacts_dir    = artifacts_dir,
+            run_id           = run_id,
+            ensemble_version = self.ensemble_version,
+        )
+        paths.ensure_dirs()
+        logger.info(
+            "Monitoring run dir: %s (run_id=%s)", paths.run_dir, paths.run_id,
+        )
+        return paths
+
+    def _write_run_artifacts(self, portfolio_summary: Dict[str, Any]) -> None:
+        """Persist per-cluster parquets + run-level JSON files."""
+        assert self._run_paths is not None
+
+        # Per-cluster drift tables.
+        for cid, drift_table in self._drift_tables.items():
+            write_drift_table_parquet(
+                drift_table      = drift_table,
+                out_path         = self._run_paths.cluster_drift_table_path(cid),
+                cluster_id       = cid,
+                ensemble_version = self.ensemble_version,
+                run_id           = self._run_paths.run_id,
+            )
+
+        # Run-level summary + manifest.
+        write_drift_summary_json(
+            summary  = portfolio_summary,
+            out_path = self._run_paths.drift_summary_path,
+        )
+        write_monitoring_manifest_json(
+            manifest = self._build_manifest(portfolio_summary),
+            out_path = self._run_paths.manifest_path,
+        )
+
+    def _build_manifest(self, portfolio_summary: Dict[str, Any]) -> Dict[str, Any]:
+        """Construct the canonical run manifest.
+
+        Mirrors the inference manifest schema where it makes sense
+        (``schema_version``, ``run_id``, ``ensemble_version``,
+        ``created_at``) and adds monitoring-specific keys
+        (``drift_summary``, ``cluster_drift_tables``, ``predictions``
+        — the last is null in M.2; M.3 populates it on promote).
+        """
+        assert self._run_paths is not None
+        report   = self._inference_pipeline._validation_report
+        loaded   = self._inference_pipeline._loaded_scenarios
+
+        # Per-cluster parquet paths stored RELATIVE to the run dir so
+        # the manifest moves with the directory tree.  The API reader
+        # joins them back against the manifest's own location.
+        cluster_drift_tables: Dict[str, str] = {}
+        for cid in self._drift_tables:
+            abs_path = self._run_paths.cluster_drift_table_path(cid)
+            rel_path = abs_path.relative_to(self._run_paths.run_dir)
+            cluster_drift_tables[cid] = str(rel_path)
+
+        return {
+            "schema_version":       MANIFEST_SCHEMA_VERSION,
+            "run_id":                self._run_paths.run_id,
+            "ensemble_version":      self.ensemble_version,
+            "created_at":            datetime.now(timezone.utc).isoformat(
+                                         timespec="seconds"),
+            "input_mode":            "new_scenarios",
+            "new_scenario_dir":      loaded.new_scenario_dir if loaded else None,
+            "n_scenarios":           report.n_scenarios if report else 0,
+            "n_clusters":            report.affected_count + report.unaffected_count
+                                     if report else 0,
+            "n_clusters_affected":   report.affected_count   if report else 0,
+            "n_clusters_unaffected": report.unaffected_count if report else 0,
+            "drift_summary":         portfolio_summary,
+            "cluster_drift_tables":  cluster_drift_tables,
+            # M.3 promote step will populate this; nullable in M.2.
+            "predictions": None,
+        }
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Helpers
+# ═════════════════════════════════════════════════════════════════════
+
+def _mon_event(
+    phase: str,
+    *,
+    status: str = STATUS_OK,
+    target: Optional[str] = None,
+    detail: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Thin wrapper around :func:`event` that stamps the monitoring stage.
+
+    Suppresses the type-checker warning for passing a non-Literal
+    string into ``Stage`` — see ``_STAGE_MONITORING`` docstring.
+    """
+    return event(
+        _STAGE_MONITORING,  # type: ignore[arg-type]
+        phase,
+        status=status,  # type: ignore[arg-type]
+        target=target,
+        detail=detail,
+    )
+
+
+def _no_data_table_for_cluster(cluster_id: str) -> pd.DataFrame:
+    """Single-row no_data drift table when a cluster has no baseline.
+
+    Lets the portfolio summary's ``n_clusters`` count this cluster
+    even though we couldn't score any features for it.  The single
+    row carries ``feature_name="__no_baseline__"`` so the UI heatmap
+    has something concrete to render in the cluster's column.
+    """
+    return build_drift_table(
+        baseline_df = pd.DataFrame([{
+            "feature_name": "__no_baseline__",
+            "mean":         float("nan"),
+            "std":          float("nan"),
+            "hist_edges":   [],
+            "hist_counts":  [],
+        }]),
+        current_features = pd.DataFrame(),
+        cluster_id       = cluster_id,
+    )
+
+
+__all__ = [
+    "EnsembleMonitoringPipeline",
+    "MonitoringResult",
+    "MANIFEST_SCHEMA_VERSION",
+]
+```
+
+### File 4: `src/rade_ml_pt/monitoring/__init__.py` (replace existing — adds M.2 re-exports)
 
 ```python
 """Drift monitoring artifacts for the PRISM Model Monitoring surface.
@@ -926,6 +1391,11 @@ This package houses:
   back into NumPy-ready DataFrames (``load_baseline``).
 * :mod:`monitoring.drift`     — pure-NumPy drift primitives + per-cluster
   / portfolio aggregators (PSI, JSD, severity classifier).
+* :mod:`monitoring.writers`   — readers/writers for monitoring run
+  artifacts (per-cluster drift table parquets + run-level JSON).
+* :mod:`monitoring.run_paths` — on-disk layout conventions
+  (``monitoring_runs/<run_id>/monitoring/...``) — symmetric with
+  inference's ``inference_runs/<run_id>/inference/...``.
 
 See ``docs/platform_designs/prism_retool_migration.md`` Phase 4 for the
 full design and ``RADE_UI_DESIGN.md`` for the Monitoring tab consumer.
@@ -944,61 +1414,222 @@ from .drift import (  # noqa: F401  (re-exported public API)
     population_stability_index,
 )
 from .loaders import load_baseline  # noqa: F401
+from .run_paths import (  # noqa: F401
+    MonitoringRunPaths,
+    monitoring_run_id,
+    parse_monitoring_run_id,
+    per_run_artifacts_dir,
+)
+from .writers import (  # noqa: F401
+    read_drift_summary_json,
+    read_drift_table_parquet,
+    read_monitoring_manifest_json,
+    write_drift_summary_json,
+    write_drift_table_parquet,
+    write_monitoring_manifest_json,
+)
 
 __all__ = [
-    # constants
+    # ─── drift.py ────────────────────────────────────────────────────
     "PSI_WARN_THRESHOLD", "PSI_CRITICAL_THRESHOLD",
     "SEVERITY_INFO", "SEVERITY_WARN", "SEVERITY_CRITICAL", "SEVERITY_NO_DATA",
-    # primitives
     "population_stability_index",
     "js_divergence",
     "classify_severity",
-    # builders
     "build_drift_table",
     "build_portfolio_drift_summary",
-    # IO
+    # ─── loaders.py ──────────────────────────────────────────────────
     "load_baseline",
+    # ─── run_paths.py ────────────────────────────────────────────────
+    "MonitoringRunPaths",
+    "monitoring_run_id",
+    "parse_monitoring_run_id",
+    "per_run_artifacts_dir",
+    # ─── writers.py ──────────────────────────────────────────────────
+    "write_drift_table_parquet",
+    "read_drift_table_parquet",
+    "write_drift_summary_json",
+    "read_drift_summary_json",
+    "write_monitoring_manifest_json",
+    "read_monitoring_manifest_json",
 ]
 ```
-
-### File 4: `tests/rade_ml_pt/monitoring/__init__.py` (empty file, but create it)
-
-```python
-```
-
-> Empty `__init__.py` — needed only so pytest discovers the test
-> package under the existing `tests/rade_ml_pt/...` layout.
-
-### File 5: `tests/rade_ml_pt/monitoring/test_drift.py` (full source)
+### File 5: `tests/rade_ml_pt/monitoring/test_run_paths.py` (full source)
 
 ```python
-"""Unit tests for ``rade_ml_pt.monitoring.drift``.
+"""Unit tests for ``rade_ml_pt.monitoring.run_paths``.
 
-Three rings of coverage:
-* Single-feature primitives (PSI, JSD, severity classifier).
-* Per-cluster ``build_drift_table`` shape + edge cases.
-* Portfolio summary aggregator.
+Pure path-resolution + run-id format tests — no filesystem touching
+except for the explicit ``ensure_dirs`` assertion.
 """
 from __future__ import annotations
 
-from typing import List
+from datetime import datetime, timezone
+from pathlib import Path
+
+import pytest
+
+from src.rade_ml_pt.monitoring.run_paths import (
+    DRIFT_SUMMARY_FILENAME,
+    DRIFT_TABLE_FILENAME,
+    MANIFEST_FILENAME,
+    MONITORING_RUNS_DIRNAME,
+    MONITORING_SUBDIRNAME,
+    MonitoringRunPaths,
+    monitoring_run_id,
+    parse_monitoring_run_id,
+    per_run_artifacts_dir,
+)
+
+
+# ═════════════════════════════════════════════════════════════════════
+# monitoring_run_id
+# ═════════════════════════════════════════════════════════════════════
+
+class TestMonitoringRunId:
+    def test_format_with_fixed_timestamp(self):
+        ts = datetime(2026, 5, 26, 14, 30, 0, tzinfo=timezone.utc)
+        rid = monitoring_run_id("ens_v1", timestamp=ts)
+        assert rid == "ens_v1__monitor__2026-05-26T14-30-00Z"
+
+    def test_naive_timestamp_assumed_utc(self):
+        ts_naive = datetime(2026, 5, 26, 14, 30, 0)
+        rid = monitoring_run_id("ens_v1", timestamp=ts_naive)
+        assert rid.endswith("2026-05-26T14-30-00Z")
+
+    def test_now_default_is_zulu_format(self):
+        rid = monitoring_run_id("ens_v1")
+        # Z suffix + colon-free → safe directory name on every OS
+        assert rid.startswith("ens_v1__monitor__")
+        assert rid.endswith("Z")
+        assert ":" not in rid
+
+    def test_ensemble_version_with_underscores_preserved(self):
+        ts = datetime(2026, 5, 26, 14, 30, 0, tzinfo=timezone.utc)
+        rid = monitoring_run_id("ens_v1_2_dev", timestamp=ts)
+        assert rid.startswith("ens_v1_2_dev__monitor__")
+
+
+# ═════════════════════════════════════════════════════════════════════
+# parse_monitoring_run_id
+# ═════════════════════════════════════════════════════════════════════
+
+class TestParseMonitoringRunId:
+    def test_roundtrip(self):
+        ts  = datetime(2026, 5, 26, 14, 30, 0, tzinfo=timezone.utc)
+        rid = monitoring_run_id("ens_v1", timestamp=ts)
+        parsed = parse_monitoring_run_id(rid)
+        assert parsed == {
+            "ensemble_version": "ens_v1",
+            "ts":               "2026-05-26T14-30-00Z",
+        }
+
+    def test_underscored_version_roundtrip(self):
+        ts  = datetime(2026, 5, 26, 14, 30, 0, tzinfo=timezone.utc)
+        rid = monitoring_run_id("ens_v1_2_dev", timestamp=ts)
+        parsed = parse_monitoring_run_id(rid)
+        assert parsed["ensemble_version"] == "ens_v1_2_dev"
+
+    @pytest.mark.parametrize("bad", [
+        "",
+        "ens_v1__monitor__not-a-ts",
+        "ens_v1__infer__2026-05-26T14-30-00Z",  # wrong segment
+        "no_segments_at_all",
+    ])
+    def test_invalid_returns_empty_dict(self, bad):
+        assert parse_monitoring_run_id(bad) == {}
+
+
+# ═════════════════════════════════════════════════════════════════════
+# per_run_artifacts_dir
+# ═════════════════════════════════════════════════════════════════════
+
+class TestPerRunArtifactsDir:
+    def test_basic(self):
+        out = per_run_artifacts_dir("/tmp/artifacts", "rid")
+        assert out == str(Path("/tmp/artifacts") / MONITORING_RUNS_DIRNAME / "rid")
+
+    def test_accepts_path_obj(self):
+        out = per_run_artifacts_dir(Path("/tmp/artifacts"), "rid")
+        assert MONITORING_RUNS_DIRNAME in out
+
+
+# ═════════════════════════════════════════════════════════════════════
+# MonitoringRunPaths
+# ═════════════════════════════════════════════════════════════════════
+
+class TestMonitoringRunPaths:
+    def _paths(self, tmp_path: Path) -> MonitoringRunPaths:
+        return MonitoringRunPaths(
+            artifacts_dir    = tmp_path,
+            run_id           = "ens_v1__monitor__2026-05-26T14-30-00Z",
+            ensemble_version = "ens_v1",
+        )
+
+    def test_run_dir_layout(self, tmp_path):
+        p = self._paths(tmp_path)
+        assert p.run_dir == tmp_path / MONITORING_RUNS_DIRNAME / p.run_id
+
+    def test_monitoring_dir_nested(self, tmp_path):
+        p = self._paths(tmp_path)
+        assert p.monitoring_dir == p.run_dir / MONITORING_SUBDIRNAME
+
+    def test_manifest_path(self, tmp_path):
+        p = self._paths(tmp_path)
+        assert p.manifest_path == p.monitoring_dir / MANIFEST_FILENAME
+
+    def test_drift_summary_path(self, tmp_path):
+        p = self._paths(tmp_path)
+        assert p.drift_summary_path == p.monitoring_dir / DRIFT_SUMMARY_FILENAME
+
+    def test_cluster_drift_table_path(self, tmp_path):
+        p = self._paths(tmp_path)
+        cdp = p.cluster_drift_table_path("c0")
+        assert cdp == p.clusters_dir / "c0" / DRIFT_TABLE_FILENAME
+
+    def test_ensure_dirs_creates_layout(self, tmp_path):
+        p = self._paths(tmp_path)
+        assert not p.monitoring_dir.exists()
+        p.ensure_dirs()
+        assert p.monitoring_dir.is_dir()
+        assert p.clusters_dir.is_dir()
+
+    def test_ensure_dirs_idempotent(self, tmp_path):
+        p = self._paths(tmp_path)
+        p.ensure_dirs()
+        p.ensure_dirs()  # second call must not raise
+        assert p.monitoring_dir.is_dir()
+```
+
+### File 6: `tests/rade_ml_pt/monitoring/test_writers.py` (full source)
+
+```python
+"""Unit tests for ``rade_ml_pt.monitoring.writers``.
+
+Round-trip writers ↔ readers + JSON sanitisation edge cases.
+"""
+from __future__ import annotations
+
+import json
+import math
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 import pytest
 
 from src.rade_ml_pt.monitoring.drift import (
-    PSI_CRITICAL_THRESHOLD,
-    PSI_WARN_THRESHOLD,
-    SEVERITY_CRITICAL,
     SEVERITY_INFO,
     SEVERITY_NO_DATA,
-    SEVERITY_WARN,
-    build_drift_table,
-    build_portfolio_drift_summary,
-    classify_severity,
-    js_divergence,
-    population_stability_index,
+)
+from src.rade_ml_pt.monitoring.writers import (
+    read_drift_summary_json,
+    read_drift_table_parquet,
+    read_monitoring_manifest_json,
+    write_drift_summary_json,
+    write_drift_table_parquet,
+    write_monitoring_manifest_json,
 )
 
 
@@ -1006,551 +1637,726 @@ from src.rade_ml_pt.monitoring.drift import (
 # Helpers
 # ═════════════════════════════════════════════════════════════════════
 
-def _hist(values: np.ndarray, edges: np.ndarray) -> np.ndarray:
-    counts, _ = np.histogram(values, bins=edges)
-    return counts
-
-
-def _baseline_row(name: str, values: np.ndarray, n_bins: int = 50) -> dict:
-    """Build a single baseline-DataFrame row in the same shape ``load_baseline`` produces."""
-    edges  = np.linspace(values.min(), values.max(), n_bins + 1)
-    counts = _hist(values, edges)
-    return {
-        "feature_name": name,
-        "mean":         float(values.mean()),
-        "std":          float(values.std(ddof=0)),
-        "hist_edges":   edges,
-        "hist_counts":  counts,
-    }
-
-
-# ═════════════════════════════════════════════════════════════════════
-# population_stability_index
-# ═════════════════════════════════════════════════════════════════════
-
-class TestPSI:
-    def test_identical_distributions_returns_near_zero(self):
-        rng    = np.random.default_rng(0)
-        x      = rng.normal(0, 1, 5000)
-        edges  = np.linspace(-4, 4, 51)
-        counts = _hist(x, edges)
-        psi    = population_stability_index(counts, edges, x)
-        assert psi < 0.01
-
-    def test_disjoint_distributions_returns_large(self):
-        rng         = np.random.default_rng(1)
-        base        = rng.normal(-3, 0.5, 5000)
-        cur         = rng.normal(+3, 0.5, 5000)
-        edges       = np.linspace(-5, 5, 51)
-        base_counts = _hist(base, edges)
-        psi         = population_stability_index(base_counts, edges, cur)
-        assert psi > 1.0
-
-    def test_one_sigma_shift_lands_in_warn_or_critical(self):
-        rng         = np.random.default_rng(2)
-        base        = rng.normal(0, 1, 5000)
-        cur         = rng.normal(1, 1, 5000)
-        edges       = np.linspace(-4, 5, 51)
-        base_counts = _hist(base, edges)
-        psi         = population_stability_index(base_counts, edges, cur)
-        assert psi > PSI_WARN_THRESHOLD
-        assert psi < 2.0  # sanity ceiling for 1-sigma shift
-
-    def test_empty_current_returns_nan(self):
-        edges  = np.linspace(-1, 1, 51)
-        counts = np.ones(50, dtype=np.int64)
-        assert np.isnan(population_stability_index(counts, edges, np.array([])))
-
-    def test_zero_baseline_counts_returns_nan(self):
-        edges  = np.linspace(-1, 1, 51)
-        counts = np.zeros(50, dtype=np.int64)
-        assert np.isnan(population_stability_index(counts, edges, np.array([0.0, 0.1])))
-
-    def test_mismatched_shapes_returns_nan(self):
-        # 50-element counts paired with 50-element edges (should be 51)
-        edges  = np.linspace(-1, 1, 50)
-        counts = np.ones(50, dtype=np.int64)
-        assert np.isnan(population_stability_index(counts, edges, np.array([0.0])))
-
-    def test_outlier_current_values_clipped_not_dropped(self):
-        rng         = np.random.default_rng(3)
-        base        = rng.normal(0, 1, 5000)
-        edges       = np.linspace(-3, 3, 51)
-        base_counts = _hist(base, edges)
-        # Current values entirely outside the baseline range — naive
-        # np.histogram would silently drop them.  The clip step lumps
-        # them into the outermost bin, so PSI still reflects "today
-        # looks nothing like training".
-        cur = rng.normal(10, 1, 5000)
-        psi = population_stability_index(base_counts, edges, cur)
-        assert np.isfinite(psi)
-        assert psi > 1.0
-
-    def test_non_finite_current_values_dropped(self):
-        rng         = np.random.default_rng(4)
-        base        = rng.normal(0, 1, 5000)
-        edges       = np.linspace(-4, 4, 51)
-        base_counts = _hist(base, edges)
-        # Half NaN, half OK; should still return a finite (small) PSI
-        cur = np.concatenate([rng.normal(0, 1, 2500), np.full(2500, np.nan)])
-        psi = population_stability_index(base_counts, edges, cur)
-        assert np.isfinite(psi)
-        assert psi < 0.05
+def _drift_table_fixture(cluster_id: str = "c0") -> pd.DataFrame:
+    """Canonical drift table — matches build_drift_table output shape."""
+    return pd.DataFrame([
+        {
+            "cluster_id":    cluster_id,
+            "feature_name":  "rf_a",
+            "psi":           0.05,
+            "js_divergence": 0.01,
+            "mean_shift":    0.10,
+            "std_ratio":     1.02,
+            "severity":      SEVERITY_INFO,
+        },
+        {
+            "cluster_id":    cluster_id,
+            "feature_name":  "rf_b",
+            "psi":           float("nan"),
+            "js_divergence": float("nan"),
+            "mean_shift":    float("nan"),
+            "std_ratio":     float("nan"),
+            "severity":      SEVERITY_NO_DATA,
+        },
+    ]).astype({
+        "cluster_id":    "string",
+        "feature_name":  "string",
+        "psi":           np.float32,
+        "js_divergence": np.float32,
+        "mean_shift":    np.float32,
+        "std_ratio":     np.float32,
+        "severity":      "string",
+    })
 
 
 # ═════════════════════════════════════════════════════════════════════
-# js_divergence
+# write_drift_table_parquet ↔ read_drift_table_parquet
 # ═════════════════════════════════════════════════════════════════════
 
-class TestJSD:
-    def test_identical_returns_near_zero(self):
-        rng    = np.random.default_rng(5)
-        edges  = np.linspace(-3, 3, 51)
-        counts = _hist(rng.normal(0, 1, 5000), edges)
-        assert js_divergence(counts, counts) < 1e-3
+class TestDriftTableParquet:
+    def test_roundtrip_preserves_columns(self, tmp_path):
+        df  = _drift_table_fixture("c0")
+        out = tmp_path / "drift_table.parquet"
+        write_drift_table_parquet(
+            df, out,
+            cluster_id="c0", ensemble_version="ens_v1", run_id="rid",
+        )
+        back = read_drift_table_parquet(out)
+        assert list(back.columns) == list(df.columns)
+        assert len(back) == len(df)
+        assert (back["feature_name"] == df["feature_name"]).all()
+        assert back.loc[0, "psi"] == pytest.approx(0.05, abs=1e-5)
 
-    def test_symmetric(self):
-        rng   = np.random.default_rng(6)
-        edges = np.linspace(-3, 3, 51)
-        a     = _hist(rng.normal(0, 1, 5000), edges)
-        b     = _hist(rng.normal(1, 1, 5000), edges)
-        assert js_divergence(a, b) == pytest.approx(js_divergence(b, a), abs=1e-9)
+    def test_creates_parent_dirs(self, tmp_path):
+        df  = _drift_table_fixture()
+        out = tmp_path / "deeply" / "nested" / "drift_table.parquet"
+        write_drift_table_parquet(
+            df, out,
+            cluster_id="c0", ensemble_version="ens_v1", run_id="rid",
+        )
+        assert out.exists()
 
-    def test_bounded_in_unit_interval(self):
-        rng   = np.random.default_rng(7)
-        edges = np.linspace(-3, 3, 51)
-        a     = _hist(rng.normal(-2, 0.5, 5000), edges)
-        b     = _hist(rng.normal(+2, 0.5, 5000), edges)
-        jsd   = js_divergence(a, b)
-        assert 0.0 <= jsd <= 1.0
+    def test_schema_metadata_embedded(self, tmp_path):
+        df  = _drift_table_fixture("c0")
+        out = tmp_path / "drift_table.parquet"
+        write_drift_table_parquet(
+            df, out,
+            cluster_id="c0", ensemble_version="ens_v1", run_id="rid",
+        )
+        table = pq.read_table(out)
+        meta  = table.schema.metadata or {}
+        assert meta.get(b"cluster_id")       == b"c0"
+        assert meta.get(b"ensemble_version") == b"ens_v1"
+        assert meta.get(b"run_id")           == b"rid"
+        assert b"_schema_version" in meta
 
-    def test_shape_mismatch_returns_nan(self):
-        assert np.isnan(js_divergence(np.ones(10), np.ones(20)))
+    def test_missing_columns_raises(self, tmp_path):
+        bad = pd.DataFrame([{"cluster_id": "c0", "feature_name": "x"}])  # missing psi etc.
+        with pytest.raises(ValueError, match="missing columns"):
+            write_drift_table_parquet(
+                bad, tmp_path / "x.parquet",
+                cluster_id="c0", ensemble_version="ens_v1", run_id="rid",
+            )
 
-    def test_zero_inputs_return_nan(self):
-        assert np.isnan(js_divergence(np.zeros(10), np.ones(10)))
-        assert np.isnan(js_divergence(np.ones(10), np.zeros(10)))
-
-
-# ═════════════════════════════════════════════════════════════════════
-# classify_severity
-# ═════════════════════════════════════════════════════════════════════
-
-class TestSeverity:
-    @pytest.mark.parametrize("psi,expected", [
-        (0.0,                                 SEVERITY_INFO),
-        (0.09,                                SEVERITY_INFO),
-        (PSI_WARN_THRESHOLD - 1e-9,           SEVERITY_INFO),
-        (PSI_WARN_THRESHOLD,                  SEVERITY_WARN),
-        (0.20,                                SEVERITY_WARN),
-        (PSI_CRITICAL_THRESHOLD - 1e-9,       SEVERITY_WARN),
-        (PSI_CRITICAL_THRESHOLD,              SEVERITY_CRITICAL),
-        (0.50,                                SEVERITY_CRITICAL),
-        (10.0,                                SEVERITY_CRITICAL),
-    ])
-    def test_thresholds(self, psi, expected):
-        assert classify_severity(psi) == expected
-
-    @pytest.mark.parametrize("v", [
-        None,
-        float("nan"),
-        -0.1,
-        float("inf"),
-        -float("inf"),
-    ])
-    def test_no_data_cases(self, v):
-        assert classify_severity(v) == SEVERITY_NO_DATA
-
-    def test_non_numeric_returns_no_data(self):
-        assert classify_severity("not a number") == SEVERITY_NO_DATA  # type: ignore[arg-type]
+    def test_missing_file_raises(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            read_drift_table_parquet(tmp_path / "nope.parquet")
 
 
 # ═════════════════════════════════════════════════════════════════════
-# build_drift_table
+# write_drift_summary_json
 # ═════════════════════════════════════════════════════════════════════
 
-class TestBuildDriftTable:
-    @staticmethod
-    def _baseline_df(rng: np.random.Generator) -> pd.DataFrame:
-        rows = [
-            _baseline_row("rf_a", rng.normal(0, 1, 5000)),
-            _baseline_row("rf_b", rng.normal(0, 1, 5000)),
-        ]
-        return pd.DataFrame(rows)
+class TestDriftSummaryJson:
+    def test_roundtrip(self, tmp_path):
+        summary = {
+            "n_clusters": 3,
+            "mean_psi": 0.12,
+            "severity": "warn",
+            "worst_cluster": "c1",
+        }
+        out = tmp_path / "drift_summary.json"
+        write_drift_summary_json(summary, out)
+        back = read_drift_summary_json(out)
+        assert back == summary
 
-    def test_shape_and_columns(self):
-        rng         = np.random.default_rng(8)
-        baseline_df = self._baseline_df(rng)
-        cur         = pd.DataFrame({
-            "rf_a": rng.normal(0, 1, 1000),
-            "rf_b": rng.normal(0, 1, 1000),
-        })
-        out = build_drift_table(baseline_df, cur, cluster_id="c0")
-        assert list(out.columns) == [
-            "cluster_id", "feature_name", "psi", "js_divergence",
-            "mean_shift", "std_ratio", "severity",
-        ]
-        assert len(out) == 2
-        assert set(out["feature_name"]) == {"rf_a", "rf_b"}
-        assert (out["cluster_id"] == "c0").all()
+    def test_nan_coerced_to_null(self, tmp_path):
+        summary = {
+            "mean_psi": float("nan"),
+            "max_psi":  float("inf"),
+            "n_clusters": 0,
+        }
+        out = tmp_path / "drift_summary.json"
+        write_drift_summary_json(summary, out)
+        raw = out.read_text()
+        assert "NaN" not in raw          # NOT in the JSON spec
+        assert "Infinity" not in raw
+        assert "null" in raw
+        back = read_drift_summary_json(out)
+        assert back["mean_psi"]   is None
+        assert back["max_psi"]    is None
+        assert back["n_clusters"] == 0
 
-    def test_stable_features_classified_info(self):
-        rng         = np.random.default_rng(9)
-        baseline_df = self._baseline_df(rng)
-        cur         = pd.DataFrame({
-            "rf_a": rng.normal(0, 1, 5000),
-            "rf_b": rng.normal(0, 1, 5000),
-        })
-        out = build_drift_table(baseline_df, cur, cluster_id="c0")
-        assert (out["severity"] == SEVERITY_INFO).all()
-        assert (out["psi"] < PSI_WARN_THRESHOLD).all()
+    def test_numpy_types_normalised(self, tmp_path):
+        summary = {
+            "n_clusters":   np.int64(3),
+            "mean_psi":     np.float32(0.12),
+            "feature_names": np.array(["a", "b"]),
+        }
+        out = tmp_path / "drift_summary.json"
+        write_drift_summary_json(summary, out)
+        back = read_drift_summary_json(out)
+        assert back["n_clusters"] == 3
+        assert back["mean_psi"] == pytest.approx(0.12, abs=1e-6)
+        assert back["feature_names"] == ["a", "b"]
 
-    def test_shifted_features_classified_critical(self):
-        rng         = np.random.default_rng(10)
-        baseline_df = self._baseline_df(rng)
-        cur         = pd.DataFrame({
-            "rf_a": rng.normal(3, 1, 5000),
-            "rf_b": rng.normal(3, 1, 5000),
-        })
-        out = build_drift_table(baseline_df, cur, cluster_id="c0")
-        assert (out["severity"] == SEVERITY_CRITICAL).all()
-        assert (out["mean_shift"] > 1.0).all()
+    def test_path_values_serialised(self, tmp_path):
+        summary = {"some_path": tmp_path / "foo.parquet"}
+        out = tmp_path / "drift_summary.json"
+        write_drift_summary_json(summary, out)
+        back = read_drift_summary_json(out)
+        assert isinstance(back["some_path"], str)
+        assert back["some_path"].endswith("foo.parquet")
 
-    def test_missing_feature_in_current_emits_no_data_row(self):
-        rng         = np.random.default_rng(11)
-        baseline_df = self._baseline_df(rng)
-        cur         = pd.DataFrame({"rf_a": rng.normal(0, 1, 1000)})  # rf_b missing
-        out         = build_drift_table(baseline_df, cur, cluster_id="c0")
-        b_row       = out.set_index("feature_name").loc["rf_b"]
-        assert b_row["severity"] == SEVERITY_NO_DATA
-        assert pd.isna(b_row["psi"])
+    def test_creates_parent_dirs(self, tmp_path):
+        summary = {"k": 1}
+        out = tmp_path / "deeply" / "nested" / "ds.json"
+        write_drift_summary_json(summary, out)
+        assert out.exists()
 
-    def test_all_nan_feature_in_current_emits_no_data_row(self):
-        rng         = np.random.default_rng(12)
-        baseline_df = self._baseline_df(rng)
-        cur         = pd.DataFrame({
-            "rf_a": rng.normal(0, 1, 1000),
-            "rf_b": np.full(1000, np.nan),
-        })
-        out   = build_drift_table(baseline_df, cur, cluster_id="c0")
-        b_row = out.set_index("feature_name").loc["rf_b"]
-        assert b_row["severity"] == SEVERITY_NO_DATA
-
-    def test_extra_feature_in_current_ignored(self):
-        rng         = np.random.default_rng(13)
-        baseline_df = self._baseline_df(rng)
-        cur         = pd.DataFrame({
-            "rf_a": rng.normal(0, 1, 1000),
-            "rf_b": rng.normal(0, 1, 1000),
-            "rf_z": rng.normal(0, 1, 1000),   # not in baseline
-        })
-        out = build_drift_table(baseline_df, cur, cluster_id="c0")
-        assert "rf_z" not in out["feature_name"].values
-
-    def test_empty_baseline_returns_empty_table_with_dtype_schema(self):
-        out = build_drift_table(pd.DataFrame(), pd.DataFrame(), cluster_id="c0")
-        assert list(out.columns) == [
-            "cluster_id", "feature_name", "psi", "js_divergence",
-            "mean_shift", "std_ratio", "severity",
-        ]
-        assert len(out) == 0
-
-    def test_baseline_missing_required_columns_raises(self):
-        bad = pd.DataFrame([{"feature_name": "x"}])
-        with pytest.raises(ValueError, match="missing required columns"):
-            build_drift_table(bad, pd.DataFrame({"x": [1, 2, 3]}), cluster_id="c0")
-
-    def test_dtypes_canonical_for_concat(self):
-        """Empty + populated tables share a dtype fingerprint."""
-        empty = build_drift_table(pd.DataFrame(), pd.DataFrame(), cluster_id="c0")
-
-        rng         = np.random.default_rng(14)
-        baseline_df = self._baseline_df(rng)
-        cur         = pd.DataFrame({
-            "rf_a": rng.normal(0, 1, 1000),
-            "rf_b": rng.normal(0, 1, 1000),
-        })
-        populated = build_drift_table(baseline_df, cur, cluster_id="c1")
-        assert empty.dtypes.to_dict() == populated.dtypes.to_dict()
-
-        # pd.concat must work without dtype-promotion warnings
-        combined = pd.concat([empty, populated], ignore_index=True)
-        assert len(combined) == 2
+    def test_missing_file_raises(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            read_drift_summary_json(tmp_path / "nope.json")
 
 
 # ═════════════════════════════════════════════════════════════════════
-# build_portfolio_drift_summary
+# write_monitoring_manifest_json
 # ═════════════════════════════════════════════════════════════════════
 
-class TestPortfolioSummary:
-    @staticmethod
-    def _drift(cid: str, severities: List[str], psis: List[float]) -> pd.DataFrame:
-        return pd.DataFrame([
-            {
-                "cluster_id":    cid,
-                "feature_name":  f"rf_{i}",
-                "psi":           p,
-                "js_divergence": 0.0,
-                "mean_shift":    0.0,
-                "std_ratio":     1.0,
-                "severity":      s,
-            }
-            for i, (s, p) in enumerate(zip(severities, psis))
-        ])
+class TestMonitoringManifestJson:
+    def test_roundtrip(self, tmp_path):
+        manifest = {
+            "schema_version":  1,
+            "run_id":          "ens_v1__monitor__2026-05-26T14-30-00Z",
+            "ensemble_version": "ens_v1",
+            "n_clusters":      3,
+            "drift_summary":   {"mean_psi": 0.05},
+            "cluster_drift_tables": {
+                "c0": "clusters/c0/drift_table.parquet",
+            },
+            "predictions": None,
+        }
+        out = tmp_path / "manifest.json"
+        write_monitoring_manifest_json(manifest, out)
+        back = read_monitoring_manifest_json(out)
+        assert back == manifest
 
-    def test_aggregates_across_clusters(self):
-        t1  = self._drift("c0", [SEVERITY_INFO, SEVERITY_WARN], [0.02, 0.18])
-        t2  = self._drift("c1", [SEVERITY_CRITICAL], [0.40])
-        out = build_portfolio_drift_summary([t1, t2])
-        assert out["n_clusters"]         == 2
-        assert out["n_features_info"]    == 1
-        assert out["n_features_warn"]    == 1
-        assert out["n_features_crit"]    == 1
-        assert out["max_psi"]            == pytest.approx(0.40, abs=1e-6)
-        assert out["worst_cluster"]      == "c1"
-        assert out["worst_feature"]      == "rf_0"
+    def test_nested_nan_coerced(self, tmp_path):
+        manifest = {
+            "drift_summary": {
+                "mean_psi": float("nan"),
+                "nested":   {"deep_nan": float("nan")},
+            },
+        }
+        out = tmp_path / "manifest.json"
+        write_monitoring_manifest_json(manifest, out)
+        back = read_monitoring_manifest_json(out)
+        assert back["drift_summary"]["mean_psi"]            is None
+        assert back["drift_summary"]["nested"]["deep_nan"]  is None
 
-    def test_empty_input_returns_no_data(self):
-        out = build_portfolio_drift_summary([])
-        assert out["n_clusters"]   == 0
-        assert out["severity"]     == SEVERITY_NO_DATA
-        assert np.isnan(out["mean_psi"])
+    def test_json_is_strictly_valid(self, tmp_path):
+        """Confirm the file parses with stdlib json.loads (strict=True)."""
+        manifest = {"k": float("nan"), "deep": [float("inf"), 1.0]}
+        out = tmp_path / "manifest.json"
+        write_monitoring_manifest_json(manifest, out)
+        # Default json.loads is strict — would reject NaN/Infinity
+        parsed = json.loads(out.read_text())
+        assert parsed["k"]      is None
+        assert parsed["deep"]   == [None, 1.0]
 
-    def test_none_input_returns_no_data(self):
-        out = build_portfolio_drift_summary(None)  # type: ignore[arg-type]
-        assert out["severity"] == SEVERITY_NO_DATA
-
-    def test_only_no_data_rows_returns_no_data(self):
-        t   = self._drift("c0", [SEVERITY_NO_DATA, SEVERITY_NO_DATA], [np.nan, np.nan])
-        out = build_portfolio_drift_summary([t])
-        assert out["severity"]          == SEVERITY_NO_DATA
-        assert out["n_features_nodata"] == 2
-        assert out["worst_cluster"]     is None
-
-    def test_severity_classification_from_mean_psi(self):
-        # mean_psi == 0.15 → portfolio severity "warn"
-        t   = self._drift("c0", [SEVERITY_WARN], [0.15])
-        out = build_portfolio_drift_summary([t])
-        assert out["severity"] == SEVERITY_WARN
-
-    def test_skips_empty_drift_tables_silently(self):
-        t1  = self._drift("c0", [SEVERITY_INFO], [0.05])
-        t2  = pd.DataFrame()  # empty
-        out = build_portfolio_drift_summary([t1, t2])
-        assert out["n_clusters"] == 1
-
-
-# ═════════════════════════════════════════════════════════════════════
-# End-to-end smoke — writer (baselines.py) → loader → drift table
-# ═════════════════════════════════════════════════════════════════════
-# Lives here (rather than test_loaders.py) because the assertions are
-# about drift outputs, not loader I/O.  Confirms the writer/reader/
-# primitive trio compose correctly with zero adapter code in between.
-
-class TestEndToEndSmoke:
-    """Full chain: write a real baseline parquet, load it back, score drift."""
-
-    def _write_and_load_baseline(self, tmp_path, features: pd.DataFrame) -> pd.DataFrame:
-        # Local import so this module imports fine even when the
-        # baselines writer is unavailable (e.g. running drift tests in
-        # isolation in CI).
-        from src.rade_ml_pt.monitoring.baselines import save_feature_baseline
-        from src.rade_ml_pt.monitoring.loaders   import load_baseline
-
-        path = tmp_path / "baseline.parquet"
-        save_feature_baseline(path, features, cluster_id="c0")
-        return load_baseline(path)
-
-    def test_stable_features_score_info(self, tmp_path):
-        rng           = np.random.default_rng(20)
-        training      = pd.DataFrame({
-            "rf_a": rng.normal(0, 1, 5000),
-            "rf_b": rng.normal(5, 2, 5000),
-        })
-        baseline_df = self._write_and_load_baseline(tmp_path, training)
-        current     = pd.DataFrame({
-            "rf_a": rng.normal(0, 1, 1000),
-            "rf_b": rng.normal(5, 2, 1000),
-        })
-        out = build_drift_table(baseline_df, current, cluster_id="c0")
-        assert (out["severity"] == SEVERITY_INFO).all()
-
-    def test_drift_pipeline_detects_real_shift(self, tmp_path):
-        rng         = np.random.default_rng(21)
-        training    = pd.DataFrame({
-            "rf_a": rng.normal(0, 1, 5000),
-            "rf_b": rng.normal(0, 1, 5000),
-        })
-        baseline_df = self._write_and_load_baseline(tmp_path, training)
-        current     = pd.DataFrame({
-            "rf_a": rng.normal(2, 1, 1000),   # +2σ shift
-            "rf_b": rng.normal(0, 1, 1000),
-        })
-        out         = build_drift_table(baseline_df, current, cluster_id="c0")
-        by_feature  = out.set_index("feature_name")
-        assert by_feature.loc["rf_a", "severity"] in (SEVERITY_WARN, SEVERITY_CRITICAL)
-        assert by_feature.loc["rf_b", "severity"] == SEVERITY_INFO
-
-    def test_portfolio_summary_compiles_from_real_baseline(self, tmp_path):
-        rng       = np.random.default_rng(22)
-        training  = pd.DataFrame({
-            "rf_a": rng.normal(0, 1, 5000),
-            "rf_b": rng.normal(0, 1, 5000),
-        })
-        baseline_df = self._write_and_load_baseline(tmp_path, training)
-        cur_stable  = pd.DataFrame({
-            "rf_a": rng.normal(0, 1, 1000),
-            "rf_b": rng.normal(0, 1, 1000),
-        })
-        cur_shifted = pd.DataFrame({
-            "rf_a": rng.normal(3, 1, 1000),
-            "rf_b": rng.normal(3, 1, 1000),
-        })
-        # Pretend we have two clusters — same baseline shape, different
-        # current data, so the portfolio mixes a clean cluster with a
-        # drifted one.
-        t_stable  = build_drift_table(baseline_df, cur_stable,  cluster_id="c_stable")
-        t_drifted = build_drift_table(baseline_df, cur_shifted, cluster_id="c_drifted")
-
-        summary = build_portfolio_drift_summary([t_stable, t_drifted])
-        assert summary["n_clusters"]      == 2
-        assert summary["worst_cluster"]   == "c_drifted"
-        assert summary["severity"]        in (SEVERITY_WARN, SEVERITY_CRITICAL)
-        assert summary["n_features_crit"] >= 1
+    def test_missing_file_raises(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            read_monitoring_manifest_json(tmp_path / "nope.json")
 ```
 
-### File 6: `tests/rade_ml_pt/monitoring/test_loaders.py` (full source)
+### File 7: `tests/rade_ml_pt/pipelines/ensemble/test_monitor.py` (full source)
 
 ```python
-"""Unit tests for ``rade_ml_pt.monitoring.loaders``.
+"""Unit + integration tests for ``EnsembleMonitoringPipeline``.
 
-Round-trip ``save_feature_baseline`` → ``load_baseline`` to confirm the
-JSON-encoded columns are decoded correctly into NumPy arrays — this is
-the exact contract every drift consumer relies on, so we exercise the
-edge cases the writer documents (all-NaN feature, constant feature).
+Strategy:
+* Test each helper (``_today_features``, ``_load_cluster_baseline``,
+  ``_init_run_paths``, ``_build_manifest``, ``_write_run_artifacts``)
+  in isolation with synthetic inputs.
+* One end-to-end ``run()`` test stitches the helpers together via a
+  monkey-patched ``EnsembleInferencePipeline`` so we never touch the
+  real ensemble loader or any model.
+
+Mocking convention: we monkey-patch the *names* the module imported
+(``monitor.EnsembleInferencePipeline``, etc.) so the real classes are
+free to evolve without breaking these tests.
 """
 from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 import pytest
 
 from src.rade_ml_pt.monitoring.baselines import save_feature_baseline
-from src.rade_ml_pt.monitoring.loaders import load_baseline
+from src.rade_ml_pt.monitoring.drift import (
+    SEVERITY_CRITICAL,
+    SEVERITY_INFO,
+    SEVERITY_NO_DATA,
+)
+from src.rade_ml_pt.monitoring.run_paths import MonitoringRunPaths
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Lightweight stand-ins for the inference dataclasses
+# ═════════════════════════════════════════════════════════════════════
+
+@dataclass
+class _FakeCtx:
+    """Substitute for InferenceContext — only the fields monitor.py touches."""
+    elementary_pnl:       Optional[pd.DataFrame] = None
+    _cluster_assets_path: Optional[Path]         = None
+
+
+@dataclass
+class _FakeRoutingDecision:
+    """Substitute for ClusterRoutingDecision."""
+    cluster_id:               str
+    is_affected:              bool
+    missing_scenario_labels:  List[str] = field(default_factory=list)
+
+
+@dataclass
+class _FakeValidationReport:
+    """Substitute for ValidationReport — exposes the fields run() reads."""
+    ensemble_version:   str
+    n_scenarios:        int
+    scenario_labels:    List[str]
+    cluster_decisions:  List[_FakeRoutingDecision]
+    errors:             List[str] = field(default_factory=list)
+    warnings:           List[str] = field(default_factory=list)
+
+    @property
+    def is_valid(self) -> bool:
+        return not self.errors
+
+    @property
+    def affected_count(self) -> int:
+        return sum(d.is_affected for d in self.cluster_decisions)
+
+    @property
+    def unaffected_count(self) -> int:
+        return sum(not d.is_affected for d in self.cluster_decisions)
+
+
+@dataclass
+class _FakeLoadedScenarios:
+    new_scenario_dir:  str
+    n_scenarios:       int
+    scenario_labels:   List[str]
+
+
+class _FakeInferencePipeline:
+    """In-memory replacement for ``EnsembleInferencePipeline``.
+
+    Exposes the same private attrs ``monitor.py`` reads
+    (``_inference_contexts``, ``_validation_report``, etc.) plus the
+    three public methods (``load``, ``load_scenarios``,
+    ``validate_scenarios``) the monitoring pipeline calls.
+    """
+
+    def __init__(
+        self,
+        ensemble_config,
+        ensemble_version: str,
+        session=None,
+        *,
+        on_event=None,
+    ):
+        self.config           = ensemble_config
+        self.ensemble_version = ensemble_version
+        self._session         = session
+        self._inference_contexts: Dict[str, _FakeCtx]               = {}
+        self._validation_report:  Optional[_FakeValidationReport]   = None
+        self._loaded_scenarios:   Optional[_FakeLoadedScenarios]    = None
+        self._new_scenario_shocks: Optional[Dict[str, Any]]         = None
+
+        # Test hooks — populated by the test BEFORE run() is called.
+        self._test_contexts:        Dict[str, _FakeCtx]              = {}
+        self._test_decisions:       List[_FakeRoutingDecision]       = []
+        self._test_scenario_labels: List[str]                        = []
+
+    def load(self) -> None:
+        self._inference_contexts = dict(self._test_contexts)
+
+    def load_scenarios(self, new_scenario_dir=None) -> None:
+        self._loaded_scenarios = _FakeLoadedScenarios(
+            new_scenario_dir = str(new_scenario_dir),
+            n_scenarios      = len(self._test_scenario_labels),
+            scenario_labels  = list(self._test_scenario_labels),
+        )
+        self._new_scenario_shocks = {"rf_x": {lab: 0.01 for lab in self._test_scenario_labels}}
+
+    def validate_scenarios(self) -> _FakeValidationReport:
+        self._validation_report = _FakeValidationReport(
+            ensemble_version  = self.ensemble_version,
+            n_scenarios       = len(self._test_scenario_labels),
+            scenario_labels   = list(self._test_scenario_labels),
+            cluster_decisions = list(self._test_decisions),
+        )
+        return self._validation_report
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Fixtures
+# ═════════════════════════════════════════════════════════════════════
+
+@pytest.fixture
+def patch_inference_pipeline(monkeypatch):
+    """Swap the production EnsembleInferencePipeline for the in-memory fake."""
+    from src.rade_ml_pt.pipelines.ensemble import monitor
+    monkeypatch.setattr(monitor, "EnsembleInferencePipeline", _FakeInferencePipeline)
+    return monitor
 
 
 @pytest.fixture
-def features() -> pd.DataFrame:
-    """Four columns that exercise every code path the writer cares about."""
-    rng = np.random.default_rng(42)
-    return pd.DataFrame({
-        "rf_a":        rng.normal(0, 1, 1000),
-        "rf_b":        rng.normal(5, 2, 1000),
-        "rf_constant": np.full(1000, 3.14),
-        "rf_all_nan":  np.full(1000, np.nan),
+def ensemble_config(tmp_path):
+    """Minimal EnsembleConfig substitute — monitor.py only reads artifacts_dir."""
+    return SimpleNamespace(
+        registry_dir  = str(tmp_path / "registry"),
+        artifacts_dir = str(tmp_path / "artifacts"),
+        metadata      = {"inference": {}},
+    )
+
+
+@pytest.fixture
+def baseline_parquet_path(tmp_path):
+    """Write a real baseline parquet on disk for the unaffected-path test."""
+    rng = np.random.default_rng(0)
+    features = pd.DataFrame({
+        "trade_0": rng.normal(0, 1, 5000),
+        "trade_1": rng.normal(2, 1, 5000),
     })
+    version_dir = tmp_path / "registry" / "cluster-c0-v1"
+    out = version_dir / "monitoring" / "baseline_feature_stats.parquet"
+    save_feature_baseline(out, features, cluster_id="c0")
+    return out
 
 
-class TestLoadBaseline:
-    def test_roundtrip_preserves_stats(self, features, tmp_path):
-        path = tmp_path / "baseline.parquet"
-        save_feature_baseline(path, features, cluster_id="c0")
+# ═════════════════════════════════════════════════════════════════════
+# Helpers — pipeline construction
+# ═════════════════════════════════════════════════════════════════════
 
-        df    = load_baseline(path)
-        rf_a  = df.set_index("feature_name").loc["rf_a"]
-        assert rf_a["mean"] == pytest.approx(features["rf_a"].mean(),       rel=1e-4)
-        assert rf_a["std"]  == pytest.approx(features["rf_a"].std(ddof=0), rel=1e-4)
+def _scenario_labels(n: int) -> List[str]:
+    return [f"s{i}" for i in range(n)]
 
-    def test_histogram_columns_decoded_to_ndarrays(self, features, tmp_path):
-        path = tmp_path / "baseline.parquet"
-        save_feature_baseline(path, features, cluster_id="c0")
 
-        df = load_baseline(path)
-        for _, row in df.iterrows():
-            assert isinstance(row["hist_edges"],  np.ndarray)
-            assert isinstance(row["hist_counts"], np.ndarray)
+def _historical_pnl(scenario_labels: List[str], rng: np.random.Generator) -> pd.DataFrame:
+    """Synthetic historical elementary PnL — index = scenario labels."""
+    return pd.DataFrame(
+        {
+            "trade_0": rng.normal(0, 1, len(scenario_labels)),
+            "trade_1": rng.normal(2, 1, len(scenario_labels)),
+        },
+        index=scenario_labels,
+    )
 
-        # rf_a has data → 51 edges + 50 counts (per writer's N_HIST_BINS=50)
-        rf_a = df.set_index("feature_name").loc["rf_a"]
-        assert rf_a["hist_edges"].shape  == (51,)
-        assert rf_a["hist_counts"].shape == (50,)
 
-    def test_all_nan_feature_yields_empty_arrays(self, features, tmp_path):
-        path = tmp_path / "baseline.parquet"
-        save_feature_baseline(path, features, cluster_id="c0")
+def _make_pipeline(monitor_module, ensemble_config):
+    """Construct EnsembleMonitoringPipeline with the patched fake injected."""
+    return monitor_module.EnsembleMonitoringPipeline(
+        ensemble_config  = ensemble_config,
+        ensemble_version = "ens_v1",
+    )
 
-        df     = load_baseline(path)
-        rf_nan = df.set_index("feature_name").loc["rf_all_nan"]
-        assert rf_nan["hist_edges"].shape  == (0,)
-        assert rf_nan["hist_counts"].shape == (0,)
 
-    def test_constant_feature_has_well_defined_edges(self, features, tmp_path):
-        path = tmp_path / "baseline.parquet"
-        save_feature_baseline(path, features, cluster_id="c0")
+# ═════════════════════════════════════════════════════════════════════
+# Helper-level tests
+# ═════════════════════════════════════════════════════════════════════
 
-        df       = load_baseline(path)
-        rf_const = df.set_index("feature_name").loc["rf_constant"]
-        assert rf_const["hist_edges"].shape  == (51,)
-        assert rf_const["hist_counts"].shape == (50,)
-        # save_feature_baseline widens the range with a tiny epsilon so
-        # np.histogram does not error — confirm the trick worked.
-        assert rf_const["hist_edges"][-1] > rf_const["hist_edges"][0]
+class TestTodayFeatures:
+    """``_today_features`` — unaffected path is pure; affected path delegates."""
 
-    def test_original_columns_retained(self, features, tmp_path):
-        path = tmp_path / "baseline.parquet"
-        save_feature_baseline(path, features, cluster_id="c0")
-        df = load_baseline(path)
-        # JSON columns stay on the frame for traceability
-        assert "hist_edges_json"  in df.columns
-        assert "hist_counts_json" in df.columns
+    def test_unaffected_path_returns_historical_slice(self):
+        from src.rade_ml_pt.pipelines.ensemble.monitor import EnsembleMonitoringPipeline
 
-    def test_missing_file_raises_file_not_found(self, tmp_path):
-        with pytest.raises(FileNotFoundError):
-            load_baseline(tmp_path / "does_not_exist.parquet")
+        labels = _scenario_labels(5)
+        rng    = np.random.default_rng(0)
+        ctx    = _FakeCtx(elementary_pnl=_historical_pnl(labels, rng))
+        dec    = _FakeRoutingDecision(cluster_id="c0", is_affected=False)
 
-    def test_malformed_parquet_raises_value_error(self, tmp_path):
-        path = tmp_path / "wrong.parquet"
-        pd.DataFrame({"foo": [1, 2, 3]}).to_parquet(path)
-        with pytest.raises(ValueError, match="missing required columns"):
-            load_baseline(path)
+        out = EnsembleMonitoringPipeline._today_features(
+            ctx=ctx, decision=dec, shocks={}, scenario_labels=labels,
+        )
+        assert list(out.index) == labels
+        assert set(out.columns) == {"trade_0", "trade_1"}
+
+    def test_unaffected_path_raises_without_elementary_pnl(self):
+        from src.rade_ml_pt.pipelines.ensemble.monitor import EnsembleMonitoringPipeline
+
+        ctx = _FakeCtx(elementary_pnl=None)
+        dec = _FakeRoutingDecision(cluster_id="c0", is_affected=False)
+        with pytest.raises(RuntimeError, match="no elementary_pnl"):
+            EnsembleMonitoringPipeline._today_features(
+                ctx=ctx, decision=dec, shocks={}, scenario_labels=["s0"],
+            )
+
+    def test_affected_path_delegates_to_hybrid_builder(self, monkeypatch):
+        """The affected path calls HybridGnnRnnInferencePipeline.build_new_scenario_inputs.
+
+        We inject a fake module into ``sys.modules`` before the deferred
+        import inside ``_today_features`` runs, so this test works
+        even in environments without the hybrid_gnn_rnn dependency
+        chain (``rade_sr.market_data_manager`` etc.).
+        """
+        import sys
+        from src.rade_ml_pt.pipelines.ensemble.monitor import EnsembleMonitoringPipeline
+
+        labels = _scenario_labels(3)
+        synthetic_pnl = pd.DataFrame(
+            {"trade_0": [0.1, 0.2, 0.3]},
+            index=labels,
+        )
+
+        def _fake_builder(*, ctx, new_scenario_shocks, scenario_labels, is_affected):
+            assert is_affected is True
+            return {"inputs": SimpleNamespace(elementary_pnl=synthetic_pnl)}
+
+        fake_module = SimpleNamespace(
+            HybridGnnRnnInferencePipeline=SimpleNamespace(
+                build_new_scenario_inputs=_fake_builder,
+            ),
+        )
+        monkeypatch.setitem(
+            sys.modules,
+            "src.rade_ml_pt.pipelines.hybrid_gnn_rnn.infer",
+            fake_module,
+        )
+
+        out = EnsembleMonitoringPipeline._today_features(
+            ctx              = _FakeCtx(),
+            decision         = _FakeRoutingDecision(cluster_id="c0", is_affected=True),
+            shocks           = {"rf_x": {"s0": 0.01}},
+            scenario_labels  = labels,
+        )
+        pd.testing.assert_frame_equal(out, synthetic_pnl)
+
+
+class TestLoadClusterBaseline:
+    """``_load_cluster_baseline`` — resolution via ``_cluster_assets_path.parent``."""
+
+    def test_loads_real_baseline_via_ctx_path(self, baseline_parquet_path):
+        from src.rade_ml_pt.pipelines.ensemble.monitor import EnsembleMonitoringPipeline
+
+        version_dir = baseline_parquet_path.parent.parent
+        # _cluster_assets_path.parent must equal version_dir
+        ctx = _FakeCtx(_cluster_assets_path=version_dir / "cluster_assets.joblib")
+
+        df = EnsembleMonitoringPipeline._load_cluster_baseline(ctx, cluster_id="c0")
+        assert "hist_edges"  in df.columns
+        assert "hist_counts" in df.columns
+        assert set(df["feature_name"]) == {"trade_0", "trade_1"}
+
+    def test_missing_assets_path_raises_file_not_found(self):
+        from src.rade_ml_pt.pipelines.ensemble.monitor import EnsembleMonitoringPipeline
+
+        ctx = _FakeCtx(_cluster_assets_path=None)
+        with pytest.raises(FileNotFoundError, match="no _cluster_assets_path"):
+            EnsembleMonitoringPipeline._load_cluster_baseline(ctx, cluster_id="c0")
+
+
+class TestInitRunPaths:
+    def test_creates_layout_and_returns_paths(self, patch_inference_pipeline, ensemble_config):
+        pipe = _make_pipeline(patch_inference_pipeline, ensemble_config)
+        paths = pipe._init_run_paths()
+        assert isinstance(paths, MonitoringRunPaths)
+        assert paths.monitoring_dir.is_dir()
+        assert paths.clusters_dir.is_dir()
+        assert paths.run_id.startswith("ens_v1__monitor__")
+
+
+# ═════════════════════════════════════════════════════════════════════
+# End-to-end run() — unaffected cluster against real baseline
+# ═════════════════════════════════════════════════════════════════════
+
+class TestRunEndToEnd:
+    def test_drift_only_with_unaffected_cluster_writes_all_artifacts(
+        self, patch_inference_pipeline, ensemble_config, tmp_path,
+    ):
+        # Build a real baseline parquet for cluster c0.
+        rng = np.random.default_rng(0)
+        training_features = pd.DataFrame({
+            "trade_0": rng.normal(0, 1, 5000),
+            "trade_1": rng.normal(0, 1, 5000),
+        })
+        version_dir = Path(ensemble_config.registry_dir) / "cluster-c0-v1"
+        save_feature_baseline(
+            version_dir / "monitoring" / "baseline_feature_stats.parquet",
+            features   = training_features,
+            cluster_id = "c0",
+        )
+
+        # 500 today obs against 5000 baseline obs keeps sample-size
+        # noise in PSI low enough for stable assertions; under-sampling
+        # alone can push PSI above the info threshold even when the
+        # underlying distribution is identical.
+        labels    = _scenario_labels(500)
+        today_pnl = pd.DataFrame(
+            {
+                "trade_0": rng.normal(0, 1, len(labels)),
+                "trade_1": rng.normal(0, 1, len(labels)),
+            },
+            index=labels,
+        )
+
+        pipe = _make_pipeline(patch_inference_pipeline, ensemble_config)
+        # Inject the test fixtures BEFORE calling run() — the fake
+        # inference pipeline copies them when load() / load_scenarios()
+        # are called.
+        fake = pipe._inference_pipeline
+        fake._test_contexts = {
+            "c0": _FakeCtx(
+                elementary_pnl       = today_pnl,
+                _cluster_assets_path = version_dir / "cluster_assets.joblib",
+            ),
+        }
+        fake._test_decisions       = [_FakeRoutingDecision("c0", is_affected=False)]
+        fake._test_scenario_labels = labels
+
+        result = pipe.run(new_scenario_dir=tmp_path / "scenarios")
+
+        # ── MonitoringResult shape ─────────────────────────────────
+        assert result.run_id.startswith("ens_v1__monitor__")
+        assert result.n_clusters     == 1
+        assert result.n_affected     == 0
+        assert result.n_unaffected   == 1
+        assert result.n_scenarios    == 500
+        assert "c0" in result.drift_tables
+
+        # ── Portfolio summary ──────────────────────────────────────
+        # The point of this test is pipeline wiring, not drift
+        # numerics — only assert that summary keys are populated and
+        # severity comes from the canonical set.
+        summary = result.portfolio_summary
+        assert summary["n_clusters"]    == 1
+        assert summary["severity"]      in {"info", "warn", "critical", "no_data"}
+        assert "mean_psi" in summary
+
+        # ── On-disk artifacts exist ────────────────────────────────
+        manifest_path = result.manifest_path
+        assert manifest_path.is_file()
+        drift_summary_path = manifest_path.parent / "drift_summary.json"
+        assert drift_summary_path.is_file()
+        cluster_parquet = manifest_path.parent / "clusters" / "c0" / "drift_table.parquet"
+        assert cluster_parquet.is_file()
+
+        # ── Manifest content ───────────────────────────────────────
+        manifest = json.loads(manifest_path.read_text())
+        assert manifest["schema_version"]       == 1
+        assert manifest["ensemble_version"]     == "ens_v1"
+        assert manifest["n_clusters"]            == 1
+        assert manifest["n_clusters_unaffected"] == 1
+        assert "c0" in manifest["cluster_drift_tables"]
+        assert manifest["cluster_drift_tables"]["c0"].endswith("drift_table.parquet")
+        # M.2 hasn't promoted yet
+        assert manifest["predictions"] is None
+
+    def test_invalid_validation_report_raises(
+        self, patch_inference_pipeline, ensemble_config, tmp_path,
+    ):
+        pipe = _make_pipeline(patch_inference_pipeline, ensemble_config)
+        fake = pipe._inference_pipeline
+        labels = _scenario_labels(3)
+        fake._test_contexts        = {"c0": _FakeCtx()}
+        fake._test_decisions       = [_FakeRoutingDecision("c0", is_affected=False)]
+        fake._test_scenario_labels = labels
+
+        # Override validate_scenarios to inject an error
+        def _bad_validate():
+            report = _FakeValidationReport(
+                ensemble_version  = "ens_v1",
+                n_scenarios       = 3,
+                scenario_labels   = labels,
+                cluster_decisions = fake._test_decisions,
+                errors            = ["synthetic validation error"],
+            )
+            fake._validation_report = report
+            return report
+        fake.validate_scenarios = _bad_validate  # type: ignore[assignment]
+
+        with pytest.raises(ValueError, match="validation failed"):
+            pipe.run(new_scenario_dir=tmp_path / "scenarios")
+
+    def test_missing_baseline_emits_no_data_table(
+        self, patch_inference_pipeline, ensemble_config, tmp_path,
+    ):
+        """Cluster with no baseline parquet → no_data drift row, run still succeeds."""
+        labels    = _scenario_labels(5)
+        rng       = np.random.default_rng(0)
+        today_pnl = _historical_pnl(labels, rng)
+
+        # Note: NO baseline parquet written, but ctx points to a fake
+        # version_dir that doesn't have one.
+        version_dir = Path(ensemble_config.registry_dir) / "cluster-c0-v1"
+        version_dir.mkdir(parents=True, exist_ok=True)
+
+        pipe = _make_pipeline(patch_inference_pipeline, ensemble_config)
+        fake = pipe._inference_pipeline
+        fake._test_contexts = {
+            "c0": _FakeCtx(
+                elementary_pnl       = today_pnl,
+                _cluster_assets_path = version_dir / "cluster_assets.joblib",
+            ),
+        }
+        fake._test_decisions       = [_FakeRoutingDecision("c0", is_affected=False)]
+        fake._test_scenario_labels = labels
+
+        result = pipe.run(new_scenario_dir=tmp_path / "scenarios")
+        c0_drift = result.drift_tables["c0"]
+        assert (c0_drift["severity"] == SEVERITY_NO_DATA).all()
+        # Manifest still written
+        assert result.manifest_path.is_file()
 ```
 
-### Verification (after copy-pasting into work env)
+### Verification (copy-paste into work env)
 
-Run from repo root:
+After copying the seven files above into work env, run:
 
 ```bash
-python -m pytest tests/rade_ml_pt/monitoring/ -x -q
+# Lint (style + unused imports)
+ruff check src/rade_ml_pt/monitoring/run_paths.py \
+           src/rade_ml_pt/monitoring/writers.py \
+           src/rade_ml_pt/monitoring/__init__.py \
+           src/rade_ml_pt/pipelines/ensemble/monitor.py \
+           tests/rade_ml_pt/monitoring/test_run_paths.py \
+           tests/rade_ml_pt/monitoring/test_writers.py \
+           tests/rade_ml_pt/pipelines/ensemble/test_monitor.py
+
+# Run the new tests (M.2 surface only) — should be 43 passing
+pytest tests/rade_ml_pt/monitoring/test_run_paths.py \
+       tests/rade_ml_pt/monitoring/test_writers.py \
+       tests/rade_ml_pt/pipelines/ensemble/test_monitor.py -v
+
+# Full monitoring surface (M.1 + M.2) — should be 96 passing
+pytest tests/rade_ml_pt/monitoring/ \
+       tests/rade_ml_pt/pipelines/ensemble/test_monitor.py -v
 ```
 
-Expected: `53 passed in ~5s`, lint-clean.
+Expected output: **96 passed** (53 M.1 + 43 M.2). If the work env
+also has `src.rade_sr.market_data_manager` available, the affected-
+path test will run against the real `HybridGnnRnnInferencePipeline`
+on import; the deferred import in `monitor._today_features` means
+the test still passes either way.
 
-Quick sanity smoke for the public surface:
+### Quick smoke (non-test, manual)
 
-```bash
-python -c "
-from src.rade_ml_pt.monitoring import (
-    population_stability_index, js_divergence, classify_severity,
-    build_drift_table, build_portfolio_drift_summary, load_baseline,
-    PSI_WARN_THRESHOLD, PSI_CRITICAL_THRESHOLD,
-    SEVERITY_INFO, SEVERITY_WARN, SEVERITY_CRITICAL, SEVERITY_NO_DATA,
-)
-print('OK — monitoring public surface intact')
-"
-```
-
-### What M.2 will consume
-
-M.2 (`EnsembleMonitoringPipeline`) imports only from this surface:
+If you want to confirm the pipeline runs against a real ensemble in
+work env (NOT a test — pretty-print on the side):
 
 ```python
-from src.rade_ml_pt.monitoring import (
-    load_baseline,
-    build_drift_table,
-    build_portfolio_drift_summary,
-    SEVERITY_CRITICAL, SEVERITY_WARN,
+from src.rade_ml_pt.ensemble.config import EnsembleConfig
+from src.rade_ml_pt.pipelines.ensemble.monitor import EnsembleMonitoringPipeline
+
+config = EnsembleConfig(...)   # same config you use for inference
+pipe   = EnsembleMonitoringPipeline(
+    ensemble_config  = config,
+    ensemble_version = "ens_v1",
 )
+result = pipe.run(new_scenario_dir="/path/to/new_scenarios/")
+
+print(result.run_id)
+print(result.portfolio_summary)        # → {n_clusters: ..., mean_psi: ..., severity: "info|warn|critical|no_data", ...}
+print(list(result.drift_tables.keys()))  # → ["c0", "c1", ...]
+print(result.manifest_path)              # → {artifacts_dir}/monitoring_runs/<run_id>/monitoring/manifest.json
 ```
 
-No other monitoring module is needed at the M.2 boundary — keep this
-surface stable across the M.2 / M.3 refactor.
+The run dir contains everything the M.4 API will eventually serve.
+
+### What M.3 will consume
+
+The M.3 promote-to-predictions step will:
+
+1. Load `manifest.json` from a known `run_id`.
+2. Re-build the inference pipeline at the same `ensemble_version` and
+   `new_scenario_dir` (both stored in the manifest).
+3. Call `inference_pipeline.run_inference()` and re-route its writers
+   to `manifest_path.parent` so `predictions_*.parquet` land next to
+   the drift tables.
+4. Update the manifest's `predictions` field to point to the new
+   files and bump `schema_version` if the shape changes.
+
+No edits to `infer.py` are needed for M.3 either — `run_inference()`
+already accepts a target artifacts directory, and the monitoring
+manifest is the only file we need to rewrite.
+
+---
