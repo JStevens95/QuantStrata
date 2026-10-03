@@ -1,4 +1,3 @@
-cd /Users/joesstevens/PycharmProjects/QuantStrata && cat > .gitignore << 'EOF'
 # Python
 __pycache__/
 *.py[cod]
@@ -67,6 +66,12 @@ artifacts/
 *.log
 *.log.*
 
+# Generated mock data. Every file beneath data/ is produced by an example
+# script (examples/rade_sr/00_generate_mock_portfolio.py and friends), so it
+# is regenerable in seconds and would otherwise add ~18MB of binary pickles
+# and parquet to every clone.
+data/
+
 # Data files (if you store large datasets locally)
 *.h5
 *.hdf5
@@ -89,5 +94,3 @@ artifacts/
 *.pt
 models/checkpoints/
 wandb/
-
-EOF

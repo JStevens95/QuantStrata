@@ -216,23 +216,52 @@ class HybridGnnRnnEvalPipeline(EvalPipeline):
     def _inverse_target_transforms(
             predictions: np.ndarray, targets: np.ndarray, transformer: Any
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """Invert standardisation of target trades."""
-        # 0. reversion of scale transformation (z-space -> p-space).
-        if transformer:
-            predictions_unscaled = transformer.inverse_transform(predictions)
-            targets_unsclaed = transformer.inverse_transform(targets)
-        else:
-            predictions_unscaled = predictions
-            targets_unsclaed = targets
-        return predictions_unscaled, targets_unsclaed
+        """Invert standardisation of target trades.
+
+        Thin facade over
+        :func:`src.rade_ml_pt.utilities.predictions_transform.inverse_scale_predictions`
+        so the inverse-scale math has a single definition shared with
+        the inference pipeline.  Preserves the legacy behaviour of
+        returning inputs unchanged when ``transformer`` is ``None``
+        (older registry entries with no scaler artefact) rather than
+        raising — so existing per-member eval callers keep working.
+        """
+        if transformer is None:
+            return predictions, targets
+
+        from src.rade_ml_pt.utilities.predictions_transform import (
+            inverse_scale_predictions,
+        )
+        predictions_unscaled, _ = inverse_scale_predictions(predictions, transformer)
+        targets_unscaled, _     = inverse_scale_predictions(targets, transformer)
+        return predictions_unscaled, targets_unscaled
 
     @staticmethod
     def _inverse_target_notional(
             target_pnl: pd.DataFrame, target_attributes: Dict[str, Any],
             req_cols: List[str] = ["TradeKey", "NotionalSign"]
     ) -> pd.DataFrame:
-        """Invert target trade notional scaling."""
-        pass
+        """Apply per-trade ``NotionalSign`` to an unscaled PnL frame.
+
+        Thin facade over
+        :func:`src.rade_ml_pt.utilities.predictions_transform.apply_notional_signs`
+        so the notional-sign-restoration math has a single definition
+        shared with the inference pipeline.  Preserves the original
+        *soft* failure mode (warn + return input unchanged on missing /
+        misaligned attributes) for backward compatibility with legacy
+        per-member eval callers — the strict inference / ensemble-eval
+        path uses ``strict=True`` via the utility directly.
+        """
+        from src.rade_ml_pt.utilities.predictions_transform import (
+            apply_notional_signs,
+        )
+        return apply_notional_signs(
+            pnl_df            = target_pnl,
+            target_attributes = target_attributes,
+            key_field         = req_cols[0],
+            sign_field        = req_cols[1],
+            strict            = False,
+        )
 
     @staticmethod
     def _rebuild_target_portfolio(

@@ -1,0 +1,516 @@
+"""
+The model package convention, enforced.
+
+A convention that lives only in prose is a convention that holds until the
+first person in a hurry, and the cost is not paid by them -- it is paid by
+everyone who afterwards has to open a model package to find out what shape
+it is. ``docs/MODEL_IMPLEMENTATION.md`` describes the layout; this module
+is what makes the description true.
+
+What is checked, and why each one
+-----------------------------------
+*Every model is a package.* So that ``rade_xl.models.<name>`` means one
+thing, and so that growing a model never means moving it.
+
+*The four files always exist.* So that the procedure has no branches: a
+contributor copies the same template whatever they are building.
+
+*No file is named anything else.* This is the check that makes the rest
+airtight. Without it the four required files are a floor and the layout
+drifts anyway, one ``utils.py`` at a time.
+
+*``model.py`` does not import the framework's wiring.* The split between
+mathematics and plumbing is the reason for the convention. A ``model.py``
+that imports the registry has quietly undone it while still passing every
+other check here.
+
+*``register.py`` declares exactly one model.* Two registrations in one
+package make ``rade_xl.models.<name>`` ambiguous as an address.
+
+*Each package registers itself on import.* The framework has no plugin
+scan: importing is the registration mechanism, so a package whose
+``__init__`` does not reach its ``register`` module is invisible to a
+specification despite looking complete.
+"""
+
+from __future__ import annotations
+
+import ast
+import importlib
+import sys
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+import pytest
+
+from src.rade_xl.core.runtime.components import LEARNERS, MODELS, REPORTS
+from src.rade_xl.testkit.fixtures import isolated_registries
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+#: The five files every model package has, at every tier. Absent any one of
+#: them the package is incomplete even if it imports and runs, because the
+#: next reader cannot rely on the convention to find anything.
+REQUIRED_FILES = frozenset(
+    {"__init__.py", "spec.py", "model.py", "register.py", "data.py"}
+)
+
+#: Files a model package may additionally contain, and nothing else. Each
+#: name means a specific thing; see ``rade_xl.models.__init__``. The point of
+#: closing the set is that a new concern has to be either one of these or a
+#: deliberate, reviewed extension of the vocabulary -- not a judgement call
+#: made silently inside one model.
+OPTIONAL_FILES = frozenset({"state.py", "reports.py", "visuals.py"})
+
+#: Sub-directories a model package may contain.
+OPTIONAL_DIRECTORIES = frozenset({"layers", "features", "pipelines"})
+
+#: Stages a model may override. ``infer.py`` is absent deliberately:
+#: inference is "load the bundle and run the model forward", and a model
+#: that needs to change that has changed what its bundle means. See
+#: ``ARCHITECTURE.md`` §11.
+PIPELINE_FILES = frozenset({"__init__.py", "train.py", "eval.py", "tune.py"})
+
+#: Modules ``model.py`` may not import, because importing them means the
+#: mathematics has been mixed back into the wiring. Matched on the dotted
+#: suffix so that a relative import reads the same as an absolute one.
+WIRING_MODULES = ("core.runtime.components", "core.spec.run", "core.spec.training")
+
+#: Statements of *ceremony* a tier 1 model may contain: everything in the
+#: package except ``model.py``.
+#:
+#: ``model.py`` is excluded because it is the mathematics -- the thing the
+#: user came to write. Capping it penalises a model for being a model, and
+#: a budget that a complicated architecture can blow is a budget that stops
+#: measuring what it was introduced to measure. What this number watches is
+#: the cost the *framework* imposes: the spec, the registration, the data
+#: declaration and the charter.
+#:
+#: Raised from 70 (whole package) when ``data.py`` became mandatory. That
+#: was a real increase in the framework's floor, roughly eleven statements
+#: per model, and it was accepted in exchange for the input contract being
+#: declared and checked rather than discovered at runtime. Recorded here
+#: rather than quietly absorbed, because a budget nobody has to justify
+#: moving is not a budget.
+TIER_1_BUDGET = 55
+
+MODELS_ROOT = Path("src/rade_xl/models")
+
+
+def model_packages() -> list[Path]:
+    """
+    Return every model package directory.
+
+    Returns
+    -------
+    list of Path
+        One per model, sorted by name.
+    """
+    return sorted(
+        path
+        for path in MODELS_ROOT.iterdir()
+        if path.is_dir() and path.name != "__pycache__"
+    )
+
+
+def statements(path: Path) -> int:
+    """
+    Count statements in a module, which is the tier 1 budget's unit.
+
+    Statements rather than physical lines, so that the budget cannot be met
+    by writing long lines and cannot be exceeded by documenting generously.
+    The point is to constrain how much a model has to *do*, not how much it
+    is allowed to explain.
+
+    Parameters
+    ----------
+    path
+        A module.
+
+    Returns
+    -------
+    int
+        Statement count, excluding bare docstring expressions.
+    """
+    return sum(
+        1
+        for node in ast.walk(ast.parse(path.read_text()))
+        if isinstance(node, ast.stmt)
+        and not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant))
+    )
+
+
+def imported_modules(path: Path) -> Iterator[str]:
+    """
+    Yield the dotted name of every module a file imports.
+
+    Relative imports are yielded without their leading dots, so that
+    ``from ...core.runtime.components import model`` and the absolute form
+    produce the same string and a single rule covers both.
+
+    Parameters
+    ----------
+    path
+        A module.
+
+    Yields
+    ------
+    str
+        A dotted module name.
+    """
+    for node in ast.walk(ast.parse(path.read_text())):
+        if isinstance(node, ast.ImportFrom) and node.module is not None:
+            yield node.module
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                yield alias.name
+
+
+def registered_names(path: Path) -> list[str]:
+    """
+    Return the name in every ``@model(...)`` decorator in a file.
+
+    Read from the syntax tree rather than by importing, so that the check
+    reports a layout fault rather than an import error when the package is
+    mid-edit.
+
+    Parameters
+    ----------
+    path
+        A module.
+
+    Returns
+    -------
+    list of str
+        One entry per decorated class.
+    """
+    found: list[str] = []
+    for node in ast.walk(ast.parse(path.read_text())):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        for decorator in node.decorator_list:
+            if (
+                isinstance(decorator, ast.Call)
+                and isinstance(decorator.func, ast.Name)
+                and decorator.func.id == "model"
+                and decorator.args
+                and isinstance(decorator.args[0], ast.Constant)
+            ):
+                found.append(str(decorator.args[0].value))
+    return found
+
+
+class TestEveryModelIsAPackage:
+    """The addressing rule: one directory, one model, no exceptions."""
+
+    def test_there_are_no_loose_modules_in_the_library(self) -> None:
+        """
+        Nothing but ``__init__.py`` sits directly under ``models/``.
+
+        A loose ``ridge.py`` beside a ``hybrid_gnn_rnn/`` package is the
+        state this convention replaced. It is not wrong so much as
+        *unanswerable*: a contributor cannot tell which shape theirs should
+        be, and whichever they pick is inconsistent with half the library.
+        """
+        loose = [
+            path.name
+            for path in MODELS_ROOT.glob("*.py")
+            if path.name != "__init__.py"
+        ]
+        assert not loose, (
+            f"models are packages, not modules; found {loose} directly under "
+            f"{MODELS_ROOT}. Move each into models/<name>/ with the four "
+            f"required files -- see docs/MODEL_IMPLEMENTATION.md §3"
+        )
+
+    def test_the_library_is_not_empty(self) -> None:
+        """
+        Guard against the suite below passing by having nothing to check.
+
+        Every parametrised test in this module iterates the packages, so a
+        library that was accidentally emptied would turn the whole file
+        green rather than red.
+        """
+        assert len(model_packages()) >= 2
+
+
+class TestTheRequiredFilesExist:
+    """The template, which is what makes the procedure branchless."""
+
+    @pytest.mark.parametrize("package", model_packages(), ids=lambda p: p.name)
+    def test_the_five_required_files_are_present(self, package: Path) -> None:
+        """
+        Every model has all five, including the smallest.
+
+        The ceremony is the price of there being one procedure rather than
+        a judgement call -- see ``rade_xl.models.__init__`` for the full
+        argument.
+        """
+        present = {path.name for path in package.glob("*.py")}
+        missing = sorted(REQUIRED_FILES - present)
+        assert not missing, (
+            f"{package.name} is missing {missing}. Copy the template from "
+            f"src/rade_xl/models/ridge/ -- every model has these five files "
+            f"at every tier"
+        )
+
+    @pytest.mark.parametrize("package", model_packages(), ids=lambda p: p.name)
+    def test_data_py_declares_an_input_contract(self, package: Path) -> None:
+        """
+        ``data.py`` exports a ``REQUIRES``, and ``register.py`` binds it.
+
+        This is the check that stops a mandatory ``data.py`` degenerating
+        into a stub. Requiring the *file* only guarantees a file; the
+        reason it is worth requiring is that it carries a declaration the
+        framework then enforces, and without this check a model could
+        satisfy the layout while declaring nothing.
+
+        ``InputRequirement.unconstrained()`` is a perfectly good answer --
+        a model that flattens everything genuinely has no constraints --
+        but it has to be written down, because "no constraints" and "not
+        thought about" are indistinguishable from the outside.
+        """
+        exported = {
+            target.id
+            for node in ast.walk(ast.parse((package / "data.py").read_text()))
+            if isinstance(node, ast.Assign)
+            for target in node.targets
+            if isinstance(target, ast.Name)
+        }
+        assert "REQUIRES" in exported, (
+            f"{package.name}/data.py must define REQUIRES, the input "
+            f"contract the pipeline checks the data build against. Use "
+            f"InputRequirement.unconstrained() if the model truly accepts "
+            f"anything"
+        )
+        assert "REQUIRES" in (package / "register.py").read_text(), (
+            f"{package.name}/register.py must bind `requires = REQUIRES`; a "
+            f"contract nothing reads is not a contract"
+        )
+
+    @pytest.mark.parametrize("package", model_packages(), ids=lambda p: p.name)
+    def test_no_file_is_named_outside_the_vocabulary(self, package: Path) -> None:
+        """
+        A model package contains only names the convention defines.
+
+        This is the check that makes the layout airtight rather than merely
+        a floor. A ``helpers.py`` or a ``utils.py`` is always defensible in
+        the moment and always means the next reader has to open the package
+        to find out what is in it.
+
+        If a model genuinely needs a concept the vocabulary lacks, the fix
+        is to add it here and to ``rade_xl.models.__init__`` in the same
+        commit, so the decision is made once for the library rather than
+        privately inside one model.
+        """
+        allowed = REQUIRED_FILES | OPTIONAL_FILES
+        strays = sorted(
+            path.name for path in package.glob("*.py") if path.name not in allowed
+        )
+        assert not strays, (
+            f"{package.name} contains {strays}, which the model layout does "
+            f"not define. Permitted files: {sorted(allowed)}. Permitted "
+            f"directories: {sorted(OPTIONAL_DIRECTORIES)}"
+        )
+
+    @pytest.mark.parametrize("package", model_packages(), ids=lambda p: p.name)
+    def test_no_directory_is_named_outside_the_vocabulary(
+        self, package: Path
+    ) -> None:
+        """Sub-directories are limited the same way, and for the same reason."""
+        strays = sorted(
+            path.name
+            for path in package.iterdir()
+            if path.is_dir()
+            and path.name != "__pycache__"
+            and path.name not in OPTIONAL_DIRECTORIES
+        )
+        assert not strays, (
+            f"{package.name} contains directories {strays}; permitted: "
+            f"{sorted(OPTIONAL_DIRECTORIES)}"
+        )
+
+    @pytest.mark.parametrize("package", model_packages(), ids=lambda p: p.name)
+    def test_pipeline_overrides_are_named_for_their_stage(
+        self, package: Path
+    ) -> None:
+        """
+        A ``pipelines/`` directory holds only stage overrides.
+
+        ``infer.py`` is excluded deliberately. Inference is "load the
+        bundle and run the model forward"; a model that needs to change
+        that has changed what its bundle means, and the place to fix it is
+        the bundle rather than a fourth override.
+        """
+        pipelines = package / "pipelines"
+        if not pipelines.is_dir():
+            pytest.skip(f"{package.name} overrides no pipeline stage")
+        strays = sorted(
+            path.name
+            for path in pipelines.glob("*.py")
+            if path.name not in PIPELINE_FILES
+        )
+        assert not strays, (
+            f"{package.name}/pipelines contains {strays}; a stage override "
+            f"is named for its stage: {sorted(PIPELINE_FILES)}"
+        )
+
+
+class TestTheSplitIsReal:
+    """
+    The convention is only worth its ceremony if the halves stay separate.
+
+    These are the checks that stop the layout becoming four files that each
+    contain a bit of everything, which would be strictly worse than the one
+    file it replaced.
+    """
+
+    @pytest.mark.parametrize("package", model_packages(), ids=lambda p: p.name)
+    def test_model_py_does_not_import_the_frameworks_wiring(
+        self, package: Path
+    ) -> None:
+        """
+        ``model.py`` is mathematics and knows nothing about running.
+
+        The payoff is concrete: the architecture can be imported, read,
+        reviewed and unit-tested with no registry, no run specification and
+        no engine in the picture. The moment it imports the decorator, the
+        file is wiring again and every one of those properties is gone.
+
+        Note that importing *contracts* -- a signature, an error type -- is
+        fine. The line is at things that only exist because the model is
+        being run by this framework.
+        """
+        offenders = sorted(
+            name
+            for name in imported_modules(package / "model.py")
+            if name.lstrip(".").endswith(WIRING_MODULES)
+        )
+        assert not offenders, (
+            f"{package.name}/model.py imports {offenders}; registration and "
+            f"run-spec parsing belong in register.py so that model.py stays "
+            f"readable as mathematics"
+        )
+
+    @pytest.mark.parametrize("package", model_packages(), ids=lambda p: p.name)
+    def test_registration_happens_in_register_py_and_nowhere_else(
+        self, package: Path
+    ) -> None:
+        """
+        Exactly one ``@model(...)`` per package, in ``register.py``.
+
+        One, because ``rade_xl.models.<name>`` is an address and two
+        registrations make it ambiguous. In ``register.py``, because that
+        is where a reader looks for it -- a decorator hidden in ``spec.py``
+        works perfectly and is findable only by grep.
+        """
+        for path in sorted(package.rglob("*.py")):
+            names = registered_names(path)
+            if path.name == "register.py":
+                assert len(names) == 1, (
+                    f"{package.name}/register.py declares {len(names)} models "
+                    f"({names}); it must declare exactly one"
+                )
+            else:
+                assert not names, (
+                    f"{path} registers {names}; registration belongs in "
+                    f"{package.name}/register.py"
+                )
+
+    @pytest.mark.parametrize("package", model_packages(), ids=lambda p: p.name)
+    def test_importing_the_package_registers_the_model(
+        self, package: Path
+    ) -> None:
+        """
+        The ``__init__`` reaches ``register``, so importing is enough.
+
+        There is no plugin scan and no entry-point discovery in this
+        framework: import *is* the registration mechanism. A package whose
+        ``__init__`` imports only its spec looks complete, passes every
+        other check in this file, and is invisible to a specification that
+        names it.
+
+        Checked against an emptied registry *and* an evicted module cache,
+        because either one alone makes the test lie. With the registry
+        intact, a previously imported model satisfies the assertion for a
+        package that registers nothing. With the cache intact, importing
+        the package is a no-op and the assertion passes for a package whose
+        ``__init__`` was emptied this morning -- a reload will not help,
+        because reloading ``__init__`` does not re-execute the ``register``
+        submodule that is still cached beneath it.
+
+        So the test evicts the package's whole sub-tree and imports it
+        cold, which is the only arrangement that actually reproduces what
+        a user's first import does.
+        """
+        declared = registered_names(package / "register.py")[0]
+        prefix = f"src.rade_xl.models.{package.name}"
+        cached = {
+            name: module
+            for name, module in sys.modules.items()
+            if name == prefix or name.startswith(f"{prefix}.")
+        }
+        try:
+            for name in cached:
+                del sys.modules[name]
+            with isolated_registries(empty=True):
+                # `empty=True` clears models and engines only, by design:
+                # those are names a specification claims, while reports and
+                # learners are catalogues the pipeline renders from. A cold
+                # import is the one case that needs all four cleared, since
+                # a model that also registers reports -- as the flagship
+                # does -- would otherwise collide with its own earlier
+                # registration. Cleared here rather than by widening the
+                # fixture, because the context manager restores every
+                # registry on exit regardless.
+                for registry in (LEARNERS, REPORTS):
+                    registry.restore({})
+                importlib.import_module(prefix)
+                assert declared in MODELS.names(), (
+                    f"importing rade_xl.models.{package.name} did not "
+                    f"register {declared!r}; its __init__ must import from "
+                    f".register"
+                )
+        finally:
+            # Put the originals back. The cold import above created a second
+            # set of class objects, and leaving those in the cache would mean
+            # a later test's `get_model(...) is SomeModel` compares a class
+            # from one import against a class from another and fails for a
+            # reason that has nothing to do with what it is testing.
+            sys.modules.update(cached)
+
+
+class TestSimpleModelsStayCheap:
+    """
+    The budget that makes the framework's cost visible.
+
+    If a tier 1 model stops fitting, the finding is about the framework
+    rather than about the model: something above it now demands boilerplate.
+    Raising the budget to make this pass would delete the only signal that
+    said so.
+    """
+
+    @pytest.mark.parametrize(
+        "name", ["ridge", "xgb_tabular", "lstm_tabular"]
+    )
+    def test_a_tier_1_model_fits_in_the_budget(self, name: str) -> None:
+        """
+        Everything except ``model.py``, summed across the package.
+
+        Summed rather than per file, because budgeting each file
+        separately would mean the five-file template silently quintupled
+        the allowance. ``model.py`` excluded, because the mathematics is
+        not the framework's tax to charge.
+        """
+        package = MODELS_ROOT / name
+        total = sum(
+            statements(path)
+            for path in sorted(package.glob("*.py"))
+            if path.name != "model.py"
+        )
+        assert total <= TIER_1_BUDGET, (
+            f"{name} spends {total} statements on ceremony against a budget "
+            f"of {TIER_1_BUDGET}; either it is no longer tier 1, or the "
+            f"framework is asking a simple model for too much"
+        )

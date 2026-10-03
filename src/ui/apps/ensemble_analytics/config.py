@@ -75,10 +75,11 @@ SPLITS: List[str] = ["test", "val", "train"]
 DEFAULT_SPLIT: str = "test"
 
 # ── Evaluation group-by column mapping ────────────────────────────
-# Maps the internal sub-tab concept to the actual catalogue column name.
-# Update these values to match your trade catalogue columns.
+# Maps the internal sub-tab concept to the actual attribute key name
+# in cluster_attributes.json (and thus the trade catalogue).
+# Must match the names in EnsembleConfig.cluster_key.
 EVAL_GROUP_COLUMNS: Dict[str, str] = {
-    "desk": "AssetClassCode",
+    "desk": "desk",
     "product_type": "ProductCode",
     "ccy": "CurrencyCode",
 }

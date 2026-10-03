@@ -10,6 +10,7 @@ import json
 import logging
 
 import numpy as np
+import pandas as pd
 import torch
 
 from pathlib import Path
@@ -100,18 +101,28 @@ class HybridGnnRnnTrainPipeline(TrainPipeline):
 
         # custom: save input artifacts.
         if self._registered_entry is not None and data_result is not None:
-            self._save_training_artifacts(self._registered_entry, data_result)
+            self._save_training_artifacts(self._registered_entry, data_result, result)
 
         if self.config.artifacts_dir and data_result is not None:
             self._post_train_plots(result, model, data_result)
 
-    def _save_training_artifacts(self, entry: Any, data_result: "DataBuildResult") -> None:
+    def _save_training_artifacts(
+        self,
+        entry: Any,
+        data_result: "DataBuildResult",
+        result: "TrainingResult",
+    ) -> None:
         """
         Save artifacts needed for cold-start inference alongside the registered model.
 
-        Persists: graph builder, encoder, scalers, data config, and trade universe
-        into the registry version directory so a single registry.load() provides
-        the path to everything needed for inference and UI analytics.
+        Persists: graph builder, encoder, scalers, data config, trade universe,
+        and per-epoch training curves into the registry version directory so
+        a single registry.load() provides the path to everything needed for
+        inference and UI analytics.
+
+        Per the PRISM pipeline output contract (see
+        ``docs/platform_designs/prism_retool_migration.md`` §11.15.1) this
+        method is the single producer of all per-member registry files.
         """
         import joblib
         from src.rade_ml_pt.data.hybrid_gnn_rnn.build import HybridGnnRnnResult
@@ -236,7 +247,189 @@ class HybridGnnRnnTrainPipeline(TrainPipeline):
             if key not in ["name", "request_log"]:
                 joblib.dump(value, version_dir / f"{key}.joblib", compress=5)
             logger.info(f"Saved {key} to {version_dir}")
+
+        # ---- save lightweight RF-keys sidecar (avoids loading
+        #      cluster_assets.joblib at inference time just to decide
+        #      which clusters are affected by new scenarios; see
+        #      ``intersecting_risk_factors`` and the lazy-load in
+        #      ``_build_affected_inputs``). ----
+        cluster_assets = job.get("cluster_assets")
+        if cluster_assets is not None:
+            rf_keys = {
+                asset_name: list(asset.risk_factor_shocks.keys())
+                for asset_name, asset in cluster_assets.items()
+            }
+            with open(version_dir / "cluster_rf_keys.json", "w") as f:
+                json.dump(rf_keys, f, indent=2)
+            logger.info(f"Saved cluster_rf_keys.json to {version_dir}")
+
+        # ---- save per-epoch training curves (PRISM contract §11.15.1). ----
+        self._save_training_curves(version_dir, result)
+
+        # ---- save monitoring + DQ baselines (PRISM contract §11.15.1). ----
+        # Residual-based baselines (which need a forward pass) are emitted
+        # by the eval pipeline per §11.15.2 — eval already runs inference
+        # on the train split, so we avoid a duplicate forward pass here.
+        self._save_baselines(version_dir, data_result)
+
         logger.info(f"Artifacts saved to {version_dir}")
+
+    def _save_baselines(
+        self,
+        version_dir: Path,
+        data_result: "DataBuildResult",
+    ) -> None:
+        """
+        Write per-member feature baselines for drift monitoring and DQ.
+
+        Three parquets land under ``version_dir``:
+
+        - ``monitoring/baseline_feature_stats.parquet``        (Phase 4a)
+        - ``quality/completeness_train_baseline.parquet``      (Phase 5a)
+        - ``quality/feature_summary_train_baseline.parquet``   (Phase 5a)
+
+        All three are computed purely from the scaled training slice of
+        ``data_result.elementary_pnl``.  They do **not** require a model
+        forward pass.  Residual baselines, which do, are produced by the
+        eval pipeline per the PRISM contract §11.15.2.
+
+        Raises
+        ------
+        RuntimeError
+            If cluster id cannot be resolved, or if ``elementary_pnl`` /
+            ``train_indices`` are absent.  The contract demands these
+            files exist after every training run, so missing inputs
+            surface loudly rather than silently producing empty files.
+        """
+        from src.rade_ml_pt.monitoring.baselines import save_feature_baseline
+        from src.rade_ml_pt.quality.completeness import save_completeness
+        from src.rade_ml_pt.quality.summary import save_feature_summary
+
+        cluster_id = self.config.metadata.get("cluster_id")
+        if not cluster_id:
+            # Fall back to the member registry version name for standalone
+            # runs that bypass EnsembleConfig.  Log loudly — standalone
+            # runs still produce the file, but the cluster label will be
+            # the opaque version string.
+            cluster_id = getattr(self._registered_entry, "version", None) or "standalone"
+            logger.warning(
+                "cluster_id missing from pipeline metadata; falling back to "
+                "'%s' for baseline labelling.  Set metadata['cluster_id'] "
+                "via EnsembleConfig.get_member_pipeline_config to suppress.",
+                cluster_id,
+            )
+
+        if data_result.elementary_pnl is None:
+            raise RuntimeError(
+                f"data_result.elementary_pnl is None for '{cluster_id}' — "
+                "cannot emit training baselines."
+            )
+
+        train_indices = data_result.metadata.get("train_indices")
+        if train_indices is None or len(train_indices) == 0:
+            raise RuntimeError(
+                f"train_indices empty for '{cluster_id}' — cannot emit "
+                "training baselines."
+            )
+
+        train_features = data_result.elementary_pnl.iloc[np.asarray(train_indices)]
+
+        save_feature_baseline(
+            version_dir / "monitoring" / "baseline_feature_stats.parquet",
+            features=train_features,
+            cluster_id=cluster_id,
+        )
+        save_completeness(
+            version_dir / "quality" / "completeness_train_baseline.parquet",
+            features=train_features,
+            cluster_id=cluster_id,
+        )
+        save_feature_summary(
+            version_dir / "quality" / "feature_summary_train_baseline.parquet",
+            features=train_features,
+            cluster_id=cluster_id,
+        )
+
+    @staticmethod
+    def _save_training_curves(version_dir: Path, result: "TrainingResult") -> None:
+        """
+        Persist per-epoch training curves as a parquet alongside the
+        registered model.
+
+        This is a required output under the PRISM pipeline contract
+        (``docs/platform_designs/prism_retool_migration.md`` §11.15.1).
+        Consumed by ``ArtifactCache`` and the PRISM training-curve
+        endpoint; no configuration flag gates emission.
+
+        Schema
+        ------
+        ``epoch``       int32    (required)
+        ``train_loss``  float32  (required — sourced from ``history["loss"]``)
+        *other columns* float32  (one per extra key in ``result.history``)
+
+        Every per-epoch series the trainer emits is persisted; this
+        writer is metric-agnostic by design so new metrics added to
+        the trainer automatically flow through to Retool/PRISM
+        without any change here or in ``ArtifactCache``.
+
+        A series is rejected (and raises) if its length differs from
+        ``len(history["loss"])``, since a mismatched curve cannot be
+        joined to the ``epoch`` axis and would mislead downstream
+        consumers.  Non-numeric or non-length-aware values are not
+        silently dropped — they raise ``RuntimeError``.
+
+        File-level pyarrow metadata stores ``_schema_version=1``.
+        """
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        history = result.history or {}
+        loss = history.get("loss")
+        if not loss:
+            raise RuntimeError(
+                f"Training for '{version_dir.name}' completed without a "
+                "populated loss history; cannot emit training_curves.parquet. "
+                "This indicates a Trainer bug, not a legitimate off-mode."
+            )
+        n_epochs = len(loss)
+        columns: dict = {
+            "epoch": np.arange(n_epochs, dtype=np.int32),
+            "train_loss": np.asarray(loss, dtype=np.float32),
+        }
+        # Persist every other per-epoch series the trainer emitted.
+        # We refuse to silently drop or truncate: any key whose length
+        # does not match ``n_epochs`` is a trainer-side contract break.
+        for key, vals in history.items():
+            if key == "loss" or vals is None:
+                continue
+            try:
+                arr = np.asarray(vals, dtype=np.float32)
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError(
+                    f"history['{key}'] for '{version_dir.name}' is not a "
+                    f"numeric per-epoch series: {exc}"
+                ) from exc
+            if arr.ndim != 1 or arr.shape[0] != n_epochs:
+                raise RuntimeError(
+                    f"history['{key}'] for '{version_dir.name}' has shape "
+                    f"{arr.shape}, expected ({n_epochs},).  Every metric in "
+                    "history must be a flat per-epoch series aligned with 'loss'."
+                )
+            columns[key] = arr
+
+        df = pd.DataFrame(columns)
+        # ``pa.table`` (module-level factory) avoids the spurious
+        # "Parameter 'cls_1' unfilled" warning PyCharm's pyarrow stub
+        # produces against the ``Table.from_pandas`` classmethod.
+        table = pa.table(df)
+        schema_metadata = {
+            **(table.schema.metadata or {}),
+            b"_schema_version": b"1",
+        }
+        table = table.replace_schema_metadata(schema_metadata)
+        out_path = version_dir / "training_curves.parquet"
+        pq.write_table(table, str(out_path))
+        logger.info(f"Saved training_curves.parquet to {version_dir}")
 
     @staticmethod
     def _save_datasets(version_dir: Path, data_result: "DataBuildResult") -> None:

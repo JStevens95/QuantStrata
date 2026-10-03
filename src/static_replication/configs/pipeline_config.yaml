@@ -1,0 +1,70 @@
+# -------------------------------------------------------------------------------------------------
+# Top level --> STATIC REPLICATION PREPROCESSING CONFIGURATION.
+# -------------------------------------------------------------------------------------------------
+root_folder: "<ROOT_FOLDER>"
+
+# -------------------------------------------------------------------------------------------------
+# Defaults applied to portfolio construction.
+# -------------------------------------------------------------------------------------------------
+portfolio_config:
+  trade_id_key: ["AssetClassCode", "DeskName", "UnderlyingOption", "TRBookKey", "ProductCode", "TradeCode"]
+  currency_field: "UnderlyingOption"
+
+# -------------------------------------------------------------------------------------------------
+# Risk factor resolution configuration.
+# -------------------------------------------------------------------------------------------------
+factor_config:
+  fx_config:
+    source: "file"
+    mapping_file: "<PATH_TO_FX_MAPPING_FILE>"
+    mapping_key: "currency"
+    attrs_key: "UnderlyingOption"
+    factor_cols: ["fx_risk_factor_1", "fx_risk_factor_2"]
+    dependency_cols: ["ir_risk_factor_1", "ir_risk_factor_2"]
+    asset_class_of:
+      ir_risk_factor_1: IR
+      ir_risk_factor_2: IR
+  ir_config:
+    source: "attribute"
+    factor_cols: ["CurveCode"]
+
+# -------------------------------------------------------------------------------------------------
+# Defaults applied to every Asset built. Per-factor overrides go under ``factor_configs``.
+# -------------------------------------------------------------------------------------------------
+asset_config:
+  cob_date: "2026-03-31"
+  start_date: "2024-01-01"
+  end_date: "2026-03-31"
+  calc_type: "MAXSVAR"
+
+# -------------------------------------------------------------------------------------------------
+# Elementary trade generator configuration. fx_config / ir_config let each asset class
+# declare its own strike / tenor grid; top level keys apply to both if no sub dict is given
+# -------------------------------------------------------------------------------------------------
+trade_config:
+  fx_config:
+    payoff_types: ["EC", "EP", "DC", "DP", "QC", "QP"]
+    strike_values: [0.9, 1.0, 1.1]
+    tenor_values: [0.083, 0.25, 0.5, 1.0]
+    strike_convention: "relative"
+    plot_option_surface: False
+  ir_config:
+    payoff_types: ["IRS"]
+    strike_values: [0.0]
+    tenor_values: [0.083, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0]
+    strike_convention: "absolute"
+    plot_option_surface: False
+
+# -------------------------------------------------------------------------------------------------
+# Slicing strategy for the final ReplicationJobs.
+# Use a list for composite keys e.g. ["AssetClass", "Desk"]
+# -------------------------------------------------------------------------------------------------
+cluster_config:
+  normalise_target_notional: 1
+  cluster_key: ["AssetClassCode", "UnderlyingOption", "ProductCode"]
+
+# PnL computation backend - "serial" | "threading" | "multiprocessing"
+execution_backend: "serial"
+
+# Base label for this run; UTC datetime + hash suffix appended when config loads.
+run_id: "mock_run"

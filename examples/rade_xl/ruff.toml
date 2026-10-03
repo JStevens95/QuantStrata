@@ -1,0 +1,29 @@
+# Lint configuration for the rade_xl example scripts.
+#
+# Examples are held to the framework's standard rather than the repository's
+# looser default, so this file extends the package's configuration.  An
+# example is the first code a new user reads and copies; if it is allowed to
+# drift below the standard of the framework it demonstrates, it teaches the
+# wrong habits more effectively than any document teaches the right ones.
+#
+# Ruff resolves configuration by walking up from each linted file, so without
+# this file these scripts would fall back to the repository root config, where
+# `print` is not checked at all.
+extend = "../../src/rade_xl/ruff.toml"
+
+[lint]
+extend-ignore = [
+    # An example's output *is* its result.  These are scripts a user runs to
+    # watch the framework work, not library code whose output belongs in a
+    # log, so `print` is correct here and only here -- it stays banned in
+    # `src/rade_xl`, where writing to stdout would contaminate a caller's.
+    "T201",
+]
+
+# E402 is deliberately *not* relaxed.  An example inserts the repository root
+# on `sys.path` before importing `src.rade_xl`, which necessarily puts a
+# statement above the imports, and the alternative -- requiring an installed
+# distribution to run an example -- would make the examples useless to exactly
+# the person who most needs them.  The affected imports carry an explicit
+# `noqa: E402` instead, so the exemption is visible at the line it applies to
+# and an accidentally misplaced import is still caught.

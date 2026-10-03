@@ -1,0 +1,29 @@
+{
+  "elementary_ids": [
+    "EURUSD|vanilla_option|000",
+    "EURUSD|vanilla_option|001",
+    "EURUSD|vanilla_option|002",
+    "EURUSD|vanilla_option|003",
+    "EURUSD|vanilla_option|004",
+    "EURUSD|forward|005",
+    "EURUSD|forward|006",
+    "EURUSD|forward|007",
+    "EURUSD|forward|008",
+    "EURUSD|forward|009",
+    "GBPUSD|vanilla_option|010",
+    "GBPUSD|vanilla_option|011",
+    "GBPUSD|vanilla_option|012",
+    "GBPUSD|vanilla_option|013",
+    "GBPUSD|vanilla_option|014",
+    "GBPUSD|forward|015",
+    "GBPUSD|forward|016",
+    "GBPUSD|forward|017",
+    "GBPUSD|forward|018",
+    "GBPUSD|forward|019"
+  ],
+  "target_ids": [
+    "EURUSD|vanilla_option|tgt_0",
+    "EURUSD|vanilla_option|tgt_1",
+    "EURUSD|vanilla_option|tgt_2"
+  ]
+}

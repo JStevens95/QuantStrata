@@ -1,0 +1,46 @@
+# Example OrchestratorConfig. Block order mirrors the pipeline stages.
+cob_date: "20240102"
+
+# Stage 3 — risk-factor resolution rules, per asset class.
+# Each sub-key yields one asset class (trailing "_config" stripped: fx_config -> fx).
+factor_config:
+  fx_config:
+    source: file                 # look the key up in a CSV ("file"/"mapping")
+    mapping_file: fx_mapping.csv  # resolved relative to this file
+    attrs_key: ccy               # portfolio column holding the pair (e.g. EURUSD)
+    mapping_key: currency        # key column in the CSV (may differ from attrs_key)
+    factor_cols: [fx_risk_factor_1, fx_risk_factor_2]   # -> primary risk factors
+    dependency_cols: [ir_risk_factor_1, ir_risk_factor_2]
+    # asset_class_of omitted: primaries take this rule's class (fx); IR dependencies are
+    # inferred from the factor-id prefix (IR_* -> rates). Pin explicitly if your plugin
+    # class names differ, e.g. asset_class_of: {ir_risk_factor_1: rates}.
+  rates_config:
+    source: attribute            # factor id already on the trade row
+    factor_cols: [RatesFactor]
+
+# Stage 5 — elementary grids, per asset class (passed verbatim to the generator).
+elementary:
+  fx:
+    moneyness: [0.90, 0.95, 1.00, 1.05, 1.10]
+    expiries: [0.25, 0.50, 1.00]
+    instruments: [call, put, digital_call, forward]
+  rates:
+    expiries: [1.0, 2.0, 5.0]
+    swap_tenors: [2.0, 5.0, 10.0]
+    strike_offsets_bp: [-50, 0, 50]
+    instruments: [payer, receiver]
+    freq: 0.5
+
+# Stage 7 — PnL engine.
+engine:
+  max_workers: 4
+  use_numba: true
+
+# Stage 8 — clustering keys (AssetClass is always applied first).
+clustering:
+  keys: [AssetClass, DeskName]
+
+# Artifact store location: <root>/<run_id>/...
+output:
+  root: data/rade_static_replication
+  run_id: mock_run

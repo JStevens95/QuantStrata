@@ -1,0 +1,106 @@
+/* Tailwind input — REFERENCE ONLY.
+ *
+ * The Rade Analytics app loads the pre-compiled `rade.css` next to
+ * this file.  This input is retained so the source-of-truth for any
+ * @layer customisations is documented alongside the config.
+ *
+ * If the Tailwind CLI is ever re-enabled, this is the file the CLI
+ * reads in.  See tailwind.config.js for the accompanying rebuild
+ * command. */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Base tweaks ─────────────────────────────────────────────────── */
+@layer base {
+  html {
+    color-scheme: dark;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11"; /* Inter v4 tabular cuts */
+  }
+
+  body {
+    @apply bg-slate-950 text-slate-100 font-sans antialiased;
+  }
+
+  /* Slim scrollbars, dark theme. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgb(30 41 59 / 0.8); /* slate-800 */
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgb(51 65 85 / 0.9); /* slate-700 */
+  }
+
+  /* Keyboard focus — violet ring over slate-950 offset, per §10. */
+  :focus-visible {
+    outline: none;
+    box-shadow:
+      0 0 0 2px #020617,
+      0 0 0 4px #8b5cf6;
+  }
+}
+
+/* ── Component classes used by the Python components ─────────────── */
+@layer components {
+  .rade-card {
+    @apply rounded-2xl bg-slate-900 border border-slate-800 p-5;
+  }
+
+  .rade-card-compact {
+    @apply rounded-2xl bg-slate-900 border border-slate-800 p-4;
+  }
+
+  .rade-kpi-label {
+    @apply text-[11px] uppercase tracking-wide text-slate-500;
+  }
+
+  .rade-kpi-value {
+    @apply text-2xl font-semibold text-slate-100 font-mono;
+  }
+
+  .rade-nav-item {
+    @apply flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-400
+           hover:bg-slate-800 hover:text-slate-100 transition-colors;
+  }
+
+  .rade-nav-item--active {
+    @apply bg-slate-800 text-slate-100 border-l-2 border-violet-500;
+  }
+
+  .rade-brand-gradient {
+    background-image: linear-gradient(to right, #8b5cf6, #22d3ee);
+  }
+
+  .rade-skeleton-shimmer {
+    position: relative;
+    overflow: hidden;
+    background: rgb(15 23 42); /* slate-900 */
+  }
+  .rade-skeleton-shimmer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background-image: linear-gradient(
+      90deg,
+      rgba(148, 163, 184, 0) 0%,
+      rgba(148, 163, 184, 0.08) 50%,
+      rgba(148, 163, 184, 0) 100%
+    );
+    animation: rade-shimmer 1.6s infinite;
+  }
+
+  @keyframes rade-shimmer {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+}

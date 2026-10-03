@@ -1,0 +1,53 @@
+{
+  "delta": [
+    0.6229318783033635,
+    -0.889280366123181,
+    0.07624202007962633
+  ],
+  "moneyness": [
+    0.8164329459822222,
+    0.9389153897222792,
+    0.9060914090010699
+  ],
+  "product_subtype": [
+    "european",
+    "european",
+    "european"
+  ],
+  "product_type": [
+    "vanilla_option",
+    "vanilla_option",
+    "vanilla_option"
+  ],
+  "trade_id": [
+    "EURUSD|vanilla_option|tgt_0",
+    "EURUSD|vanilla_option|tgt_1",
+    "EURUSD|vanilla_option|tgt_2"
+  ],
+  "trade_type": [
+    "target",
+    "target",
+    "target"
+  ],
+  "underlying_risk_factors": [
+    [
+      "FX"
+    ],
+    [
+      "FX"
+    ],
+    [
+      "FX"
+    ]
+  ],
+  "vega": [
+    0.03527503185494729,
+    0.46701649556531966,
+    0.3831756402786951
+  ],
+  "yrs_to_maturity": [
+    1.403573192492625,
+    1.9027019456146443,
+    0.6092896560194118
+  ]
+}

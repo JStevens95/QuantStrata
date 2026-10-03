@@ -1,0 +1,21 @@
+# Risk-factor resolution — paths are relative to this file's directory.
+# Run: load_resolution_config(Path(...)/ "risk_factor_resolution.yaml")
+
+risk_factor_resolution:
+
+  fx:
+    source: mapping
+    mapping: fx_mapping.csv
+    mapping_key_col: ccy
+    key_field: ccy
+    factor_cols:
+      - fx_risk_factor_1
+      - fx_risk_factor_2
+    dependency_cols:
+      - ir_risk_factor_1
+      - ir_risk_factor_2
+
+  rates:
+    source: attribute
+    factor_cols:
+      - RiskFactor

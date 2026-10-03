@@ -2602,7 +2602,23 @@ def is_fx_identity(factor_id: str) -> bool:
     return factor_id.upper().endswith(".USD.USD")
 
 
+def infer_asset_class(factor_id: str) -> str:
+    """Best-effort asset class from a factor-id prefix (for dependency factors).
+
+    Used only when a dependency column is not pinned via ``asset_class_of``. The default
+    mapping matches this library's registry keys (``fx`` / ``rates``); if your plugins
+    use different class names (e.g. ``ir``), pin them with ``asset_class_of`` in config.
+    """
+    head = factor_id.split(".")[0].upper()
+    if head.startswith("FX"):
+        return "fx"
+    if head.startswith("IR"):
+        return "rates"
+    return head.lower()
+
+
 def _valid(value) -> bool:
+    """A field value is usable when it is present, non-NaN and non-blank."""
     return value is not None and pd.notna(value) and str(value).strip() != ""
 
 
@@ -2624,47 +2640,59 @@ def resolve_row(
     rule: AssetFactorRule, row: pd.Series, mappings: MappingCache,
 ) -> Tuple[List[RiskFactorSpec], List[RiskFactorSpec]]:
     """Resolve one trade row into (primary specs, dependency specs)."""
-    if rule.source == "mapping":
-        key = row.get(rule.key_field)
+    all_cols = rule.factor_cols + rule.dependency_cols
+    if rule.is_file_source:
+        # File source: read the lookup key from the trade, then pull factor ids from the CSV.
+        key = row.get(rule.attrs_key)
         if not _valid(key):
-            raise FactorResolutionError(f"[{rule.asset_class}] trade missing mapping key {rule.key_field!r}")
-        table = mappings.get(rule.mapping_path, rule.key_field)
+            raise FactorResolutionError(f"[{rule.asset_class}] trade missing lookup key {rule.attrs_key!r}")
+        table = mappings.get(rule.mapping_file, rule.mapping_key_col)
         if str(key) not in table.index:
             raise FactorResolutionError(
-                f"[{rule.asset_class}] key {key!r} not found in mapping {rule.mapping_path}"
+                f"[{rule.asset_class}] key {key!r} not found in mapping {rule.mapping_file}"
             )
         lookup = table.loc[str(key)]
-        source_row = {f: lookup.get(f) for f in (rule.factor_fields + rule.dependency_fields)}
+        source_row = {col: lookup.get(col) for col in all_cols}
         meta_key = {"key": str(key)}
     else:
-        source_row = {f: row.get(f) for f in (rule.factor_fields + rule.dependency_fields)}
+        # Attribute source: factor ids already live on the trade row.
+        source_row = {col: row.get(col) for col in all_cols}
         meta_key = {}
 
-    primaries = _make_specs(rule, rule.factor_fields, source_row, is_primary=True, meta_key=meta_key)
-    dependencies = _make_specs(rule, rule.dependency_fields, source_row, is_primary=False, meta_key=meta_key)
+    primaries = _make_specs(rule, rule.factor_cols, source_row, is_primary=True, meta_key=meta_key)
+    dependencies = _make_specs(rule, rule.dependency_cols, source_row, is_primary=False, meta_key=meta_key)
     return primaries, dependencies
 
 
 def _make_specs(
-    rule: AssetFactorRule, fields: List[str], source_row: Dict, *, is_primary: bool, meta_key: Dict,
+    rule: AssetFactorRule, columns: List[str], source_row: Dict, *, is_primary: bool, meta_key: Dict,
 ) -> List[RiskFactorSpec]:
-    out: List[RiskFactorSpec] = []
+    """Turn the named columns of one resolved row into de-duplicated factor specs."""
+    specs: List[RiskFactorSpec] = []
     seen: set[str] = set()
-    for field_name in fields:
-        factor_id = source_row.get(field_name)
+    for column in columns:
+        factor_id = source_row.get(column)
         if not _valid(factor_id):
             continue
         factor_id = str(factor_id).strip()
+        # Drop the trivial USD/USD leg and any intra-row repeats.
         if is_fx_identity(factor_id) or factor_id in seen:
             continue
         seen.add(factor_id)
-        out.append(RiskFactorSpec(
+        specs.append(RiskFactorSpec(
             factor_id=factor_id,
-            asset_class=rule.asset_class_of.get(field_name, rule.asset_class),
+            asset_class=_asset_class_for(rule, column, factor_id, is_primary),
             is_primary=is_primary,
-            meta={"field": field_name, **meta_key},
+            meta={"field": column, **meta_key},
         ))
-    return out
+    return specs
+
+
+def _asset_class_for(rule: AssetFactorRule, column: str, factor_id: str, is_primary: bool) -> str:
+    """Asset class of a produced factor: explicit override -> rule class (primary) -> inferred (dep)."""
+    if column in rule.asset_class_of:
+        return rule.asset_class_of[column]
+    return rule.asset_class if is_primary else infer_asset_class(factor_id)
 ```
 
 ### `portfolio/validate.py`
@@ -2743,8 +2771,10 @@ __all__ = [
 """
 Configuration loading — YAML/dict -> validated :class:`OrchestratorConfig`.
 
-Relative ``mapping_path`` entries resolve against the YAML file's directory so a
-config is portable.
+Relative ``mapping_file`` entries resolve against the YAML file's directory so a
+config is portable. The resolution block may be named ``factor_config`` (work-env
+convention) or ``factors``; each sub-key (e.g. ``fx_config``) yields one asset class
+with a trailing ``_config`` stripped (``fx_config`` -> ``fx``).
 """
 from __future__ import annotations
 
@@ -2761,6 +2791,12 @@ from src.rade_static_replication.config.schema import (
     OutputConfig,
 )
 from src.rade_static_replication.domain.errors import ConfigurationError
+
+
+def _asset_class_from_key(block_key: str) -> str:
+    """Derive the asset class from a resolution-block key (``fx_config`` -> ``fx``)."""
+    key = str(block_key).strip().lower()
+    return key[: -len("_config")] if key.endswith("_config") else key
 
 
 def load_config(path: str | Path) -> OrchestratorConfig:
@@ -2780,19 +2816,27 @@ def config_from_dict(raw: Dict[str, Any], base_dir: Optional[Path] = None) -> Or
     if "cob_date" not in raw:
         raise ConfigurationError("config missing required 'cob_date'")
 
+    # Accept the work-env key name (factor_config) or the shorter alias (factors).
+    factor_block = raw.get("factor_config") or raw.get("factors") or {}
+
     rules: Dict[str, AssetFactorRule] = {}
-    for ac, block in (raw.get("factors", {}) or {}).items():
-        mp = block.get("mapping_path")
-        if mp and base_dir is not None and not Path(mp).is_absolute():
-            mp = str((base_dir / mp).resolve())
-        rules[ac] = AssetFactorRule(
-            asset_class=ac,
+    for block_key, block in factor_block.items():
+        asset_class = _asset_class_from_key(block_key)
+
+        # Resolve a relative mapping file against the config's own directory.
+        mapping_file = block.get("mapping_file")
+        if mapping_file and base_dir is not None and not Path(mapping_file).is_absolute():
+            mapping_file = str((base_dir / mapping_file).resolve())
+
+        rules[asset_class] = AssetFactorRule(
+            asset_class=asset_class,
             source=block["source"],
-            key_field=block.get("key_field", ""),
-            factor_fields=list(block.get("factor_fields", [])),
-            dependency_fields=list(block.get("dependency_fields", [])),
+            factor_cols=list(block.get("factor_cols", [])),
+            dependency_cols=list(block.get("dependency_cols", [])),
+            attrs_key=block.get("attrs_key", ""),
+            mapping_key=block.get("mapping_key", ""),
+            mapping_file=mapping_file,
             asset_class_of=dict(block.get("asset_class_of", {})),
-            mapping_path=mp,
         )
 
     out_block = raw.get("output", {}) or {}
@@ -2836,28 +2880,52 @@ from src.rade_static_replication.domain.errors import ConfigurationError
 class AssetFactorRule:
     """How to resolve risk factors for one asset class.
 
-    ``source`` is ``"attribute"`` (factor ids already on the trade row) or
-    ``"mapping"`` (look a ``key_field`` up in a CSV). ``asset_class_of`` maps each
-    factor field to the asset class of the factor it yields, so one rule can emit
-    factors of several classes (FX needs IR dependency curves).
+    Field names mirror the work-env ``factor_config`` block:
+
+    * ``source`` — ``"file"`` / ``"mapping"`` (look a key up in a CSV) or
+      ``"attribute"`` (factor ids already on the trade row).
+    * ``attrs_key`` — the **portfolio** column holding the lookup key (file source).
+    * ``mapping_key`` — the **key column in the mapping CSV** (file source). Decoupled
+      from ``attrs_key`` so the portfolio and the CSV may name the key differently
+      (e.g. ``CurrencyCode`` vs ``currency``); blank falls back to ``attrs_key``.
+    * ``factor_cols`` — columns whose values are the **primary** risk factors.
+    * ``dependency_cols`` — columns whose values are **dependency** factors (built but
+      not priced), e.g. the IR curves an FX factor needs.
+    * ``asset_class_of`` — optional per-column override of the produced factor's asset
+      class. When a column is absent here, primaries take this rule's ``asset_class`` and
+      dependencies are inferred from the factor-id prefix (see ``rules.infer_asset_class``).
     """
     asset_class: str
     source: str
-    key_field: str
-    factor_fields: List[str]
-    dependency_fields: List[str] = field(default_factory=list)
+    factor_cols: List[str]
+    dependency_cols: List[str] = field(default_factory=list)
+    attrs_key: str = ""
+    mapping_key: str = ""
+    mapping_file: Optional[str] = None
     asset_class_of: Dict[str, str] = field(default_factory=dict)
-    mapping_path: Optional[str] = None
+
+    @property
+    def is_file_source(self) -> bool:
+        """True when factors come from a mapping CSV rather than the trade row."""
+        return self.source in ("file", "mapping")
+
+    @property
+    def mapping_key_col(self) -> str:
+        """Key column to index the CSV by (defaults to the portfolio key column)."""
+        return self.mapping_key or self.attrs_key
 
     def __post_init__(self) -> None:
-        if self.source not in ("attribute", "mapping"):
+        if self.source not in ("file", "mapping", "attribute"):
             raise ConfigurationError(
-                f"[{self.asset_class}] source must be 'attribute' or 'mapping', got {self.source!r}"
+                f"[{self.asset_class}] source must be 'file', 'mapping' or 'attribute', got {self.source!r}"
             )
-        if self.source == "mapping" and not self.mapping_path:
-            raise ConfigurationError(f"[{self.asset_class}] mapping source needs 'mapping_path'")
-        if not self.factor_fields:
-            raise ConfigurationError(f"[{self.asset_class}] needs at least one factor_field")
+        if self.is_file_source:
+            if not self.mapping_file:
+                raise ConfigurationError(f"[{self.asset_class}] file source needs 'mapping_file'")
+            if not self.attrs_key:
+                raise ConfigurationError(f"[{self.asset_class}] file source needs 'attrs_key'")
+        if not self.factor_cols:
+            raise ConfigurationError(f"[{self.asset_class}] needs at least one factor_col")
 
 
 @dataclass(frozen=True)
@@ -3655,11 +3723,11 @@ logger = logging.getLogger(__name__)
 def _config_to_dict(config: OrchestratorConfig) -> dict:
     return {
         "cob_date": config.cob_date,
-        "factors": {
+        "factor_config": {
             ac: {
-                "source": r.source, "key_field": r.key_field,
-                "factor_fields": r.factor_fields, "dependency_fields": r.dependency_fields,
-                "asset_class_of": r.asset_class_of, "mapping_path": r.mapping_path,
+                "source": r.source, "attrs_key": r.attrs_key, "mapping_key": r.mapping_key,
+                "factor_cols": r.factor_cols, "dependency_cols": r.dependency_cols,
+                "asset_class_of": r.asset_class_of, "mapping_file": r.mapping_file,
             }
             for ac, r in config.factors.rules.items()
         },
@@ -4277,7 +4345,7 @@ class RatesShockPayload:
 ### `configs/fx_mapping.csv`
 
 ```csv
-ccy,fx_risk_factor_1,fx_risk_factor_2,ir_factor_1,ir_factor_2
+currency,fx_risk_factor_1,fx_risk_factor_2,ir_risk_factor_1,ir_risk_factor_2
 EURUSD,FX.SPOT.USD.EUR,FX.SPOT.USD.USD,IR_CURVE_SWAP.EUR,IR_CURVE_SWAP.USD
 GBPUSD,FX.SPOT.USD.GBP,FX.SPOT.USD.USD,IR_CURVE_SWAP.GBP,IR_CURVE_SWAP.USD
 AUDUSD,FX.SPOT.USD.AUD,FX.SPOT.USD.USD,IR_CURVE_SWAP.AUD,IR_CURVE_SWAP.USD
@@ -4291,22 +4359,21 @@ USDJPY,FX.SPOT.USD.JPY,FX.SPOT.USD.USD,IR_CURVE_SWAP.JPY,IR_CURVE_SWAP.USD
 cob_date: "20240102"
 
 # Stage 3 — risk-factor resolution rules, per asset class.
-factors:
-  fx:
-    source: mapping            # look the key up in a CSV
-    key_field: ccy             # portfolio column holding the pair (e.g. EURUSD)
-    mapping_path: fx_mapping.csv   # resolved relative to this file
-    factor_fields: [fx_risk_factor_1]                 # -> primary risk factor(s)
-    dependency_fields: [fx_risk_factor_2, ir_factor_1, ir_factor_2]
-    asset_class_of:            # asset class produced by each field
-      fx_risk_factor_1: fx
-      fx_risk_factor_2: fx
-      ir_factor_1: rates
-      ir_factor_2: rates
-  rates:
-    source: attribute          # factor id already on the trade row
-    key_field: ""
-    factor_fields: [RatesFactor]
+# Each sub-key yields one asset class (trailing "_config" stripped: fx_config -> fx).
+factor_config:
+  fx_config:
+    source: file                 # look the key up in a CSV ("file"/"mapping")
+    mapping_file: fx_mapping.csv  # resolved relative to this file
+    attrs_key: ccy               # portfolio column holding the pair (e.g. EURUSD)
+    mapping_key: currency        # key column in the CSV (may differ from attrs_key)
+    factor_cols: [fx_risk_factor_1, fx_risk_factor_2]   # -> primary risk factors
+    dependency_cols: [ir_risk_factor_1, ir_risk_factor_2]
+    # asset_class_of omitted: primaries take this rule's class (fx); IR dependencies are
+    # inferred from the factor-id prefix (IR_* -> rates). Pin explicitly if your plugin
+    # class names differ, e.g. asset_class_of: {ir_risk_factor_1: rates}.
+  rates_config:
+    source: attribute            # factor id already on the trade row
+    factor_cols: [RatesFactor]
 
 # Stage 5 — elementary grids, per asset class (passed verbatim to the generator).
 elementary:
@@ -4422,18 +4489,17 @@ def _config(tmp_path, mapping_csv) -> OrchestratorConfig:
         cob_date="20240102",
         factors=FactorResolutionConfig(rules={
             "fx": AssetFactorRule(
-                asset_class="fx", source="mapping", key_field="ccy",
-                factor_fields=["fx_risk_factor_1"],
-                dependency_fields=["fx_risk_factor_2", "ir_factor_1", "ir_factor_2"],
+                asset_class="fx", source="file", attrs_key="ccy", mapping_key="currency",
+                factor_cols=["fx_risk_factor_1", "fx_risk_factor_2"],
+                dependency_cols=["ir_risk_factor_1", "ir_risk_factor_2"],
                 asset_class_of={
-                    "fx_risk_factor_1": "fx", "fx_risk_factor_2": "fx",
-                    "ir_factor_1": "rates", "ir_factor_2": "rates",
+                    "ir_risk_factor_1": "rates", "ir_risk_factor_2": "rates",
                 },
-                mapping_path=str(mapping_csv),
+                mapping_file=str(mapping_csv),
             ),
             "rates": AssetFactorRule(
-                asset_class="rates", source="attribute", key_field="",
-                factor_fields=["RatesFactor"],
+                asset_class="rates", source="attribute",
+                factor_cols=["RatesFactor"],
             ),
         }),
         elementary=ElementaryConfig(grids={}),
@@ -4444,7 +4510,7 @@ def _config(tmp_path, mapping_csv) -> OrchestratorConfig:
 
 def test_full_pipeline(tmp_path):
     mapping = (
-        "ccy,fx_risk_factor_1,fx_risk_factor_2,ir_factor_1,ir_factor_2\n"
+        "currency,fx_risk_factor_1,fx_risk_factor_2,ir_risk_factor_1,ir_risk_factor_2\n"
         "EURUSD,FX.SPOT.USD.EUR,FX.SPOT.USD.USD,IR_CURVE_SWAP.EUR,IR_CURVE_SWAP.USD\n"
         "GBPUSD,FX.SPOT.USD.GBP,FX.SPOT.USD.USD,IR_CURVE_SWAP.GBP,IR_CURVE_SWAP.USD\n"
         "AUDUSD,FX.SPOT.USD.AUD,FX.SPOT.USD.USD,IR_CURVE_SWAP.AUD,IR_CURVE_SWAP.USD\n"

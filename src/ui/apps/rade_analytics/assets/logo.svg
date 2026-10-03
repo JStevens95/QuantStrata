@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Rade Analytics - primary brand mark ("Sliced R").
+
+  Bold geometric capital R filled with a violet -> cyan diagonal
+  linear gradient, with a single thin diagonal slice cutting through
+  the lower leg.
+
+  The slice is rendered as an SVG mask (not a hard-coded coloured
+  polygon on top) so the mark stays background-agnostic: the gap
+  reveals whatever sits behind the logo.  Works on slate-950, on
+  light surfaces, on the violet-to-cyan gradient itself - the cut
+  always reads correctly.
+
+  viewBox 0 0 100 120 is the native aspect for the capital R; the
+  mark scales crisply from 16 x 19 px (favicon) to 144 x 173 px
+  (splash hero) without hinting artefacts.
+
+  Colour tokens mirror RADE_UI_DESIGN.md section 2:
+    - violet-500 (#8b5cf6)  gradient stop 0%
+    - cyan-400   (#22d3ee)  gradient stop 100%
+-->
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 100 120"
+     fill="none"
+     role="img"
+     aria-label="Rade logo">
+  <title>Rade</title>
+
+  <defs>
+    <linearGradient id="rade-body-gradient"
+                    x1="0" y1="0" x2="100" y2="120"
+                    gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#22d3ee"/>
+    </linearGradient>
+
+    <!--
+      Diagonal slice, 4 px thick, angled ~16 degrees above horizontal.
+      Everything inside the black polygon is cut away from the R; the
+      white rect is the "kept" region.  Extends slightly past the
+      right edge so the cut exits cleanly through the leg's outer
+      edge.
+    -->
+    <mask id="rade-slice-mask"
+          maskUnits="userSpaceOnUse"
+          x="0" y="0" width="100" height="120">
+      <rect x="0" y="0" width="100" height="120" fill="white"/>
+      <polygon points="20,92 96,70 96,74 20,96" fill="black"/>
+    </mask>
+  </defs>
+
+  <!--
+    Single path for the whole R letterform:
+      * Outer sub-path (clockwise):
+          stem top -> bowl top -> bowl outer curve ->
+          leg outer diagonal -> leg bottom ->
+          leg inner diagonal (up-left to the stem/leg junction) ->
+          stem right edge (down) -> stem bottom -> close
+      * Inner sub-path: rounded counter inside the bowl, cut out via
+        the evenodd fill-rule.
+  -->
+  <path d="M 10 10
+           L 60 10
+           Q 82 10 82 32
+           Q 82 54 60 54
+           L 90 108
+           L 58 108
+           L 34 54
+           L 34 108
+           L 10 108
+           Z
+           M 40 22
+           L 56 22
+           Q 68 22 68 32
+           Q 68 42 56 42
+           L 40 42
+           Z"
+        fill="url(#rade-body-gradient)"
+        fill-rule="evenodd"
+        mask="url(#rade-slice-mask)"/>
+</svg>

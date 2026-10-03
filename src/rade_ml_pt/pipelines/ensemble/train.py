@@ -460,6 +460,87 @@ class EnsembleTrainPipeline:
     # Ensemble registration
     # ------------------------------------------------------------------
 
+    def _build_member_summary(
+        self,
+        member_versions: Dict[str, str],
+        member_results: Dict[str, "TrainingResult"],
+    ) -> Dict[str, Dict[str, Any]]:
+        """Build the enriched per-cluster summary written to
+        ``member_summary.json`` in the ensemble registry dir.
+
+        Cluster attributes are sourced via
+        :meth:`EnsembleConfig.get_cluster_keys_for_router`, which zips
+        ``cluster_key`` (column names, e.g. ``["AssetClassCode",
+        "CurrencyCode"]``) with the **positional** values in
+        ``cluster_key_values[cid]`` (e.g. ``("FX", "GBPUSD")``) into a
+        named-attribute dict per cluster.  This is the same logic the
+        ensemble's TradeRouter uses, so attributes always match what
+        the routing layer sees.
+
+        Every cluster receives the same fixed schema so downstream
+        consumers (FastAPI Governance page, PRISM Overview) can rely
+        on the shape being stable.  Cluster-key fields default to the
+        empty string (``""``) when the corresponding column wasn't
+        included in this ensemble's clustering — e.g. clustering on
+        ``["AssetClassCode", "CurrencyCode"]`` only will produce
+        ``desk=""`` and ``product=""``.  Empty string is preferred
+        over ``None`` so JSON serialisation, table renderers, and
+        Pandas string accessors all behave uniformly without per-call
+        null-checks.
+
+        Schema is versioned via ``_schema_version``.  v2 narrowed
+        ``ccy``/``desk``/``product``/``asset_class`` from
+        ``Optional[str]`` (with ``null`` when absent) to ``str``
+        (with ``""`` when absent).  Bump on *removing* or
+        *re-typing* a field, never on additive changes.  See
+        ``docs/platform_designs/prism_retool_migration.md`` §11.15.1
+        for the pipeline output contract.
+        """
+        cluster_attrs = self.config.get_cluster_keys_for_router() or {}
+        summary: Dict[str, Dict[str, Any]] = {}
+        for cid, result in member_results.items():
+            attrs = cluster_attrs.get(cid) or {}
+            summary[cid] = {
+                "cluster_id": cid,
+                "n_trades": len(self.config.cluster_mapping.get(cid, [])),
+                "ccy":         attrs.get("CurrencyCode", ""),
+                "desk":        attrs.get("Desk", ""),
+                "product":     attrs.get("ProductCode", ""),
+                "asset_class": attrs.get("AssetClassCode", ""),
+                "model_version": member_versions.get(cid),
+                "trained_at": self._read_member_trained_at(member_versions.get(cid)),
+                "best_val_loss": result.best_val_loss,
+                "best_train_loss": result.best_train_loss,
+                "final_epoch": result.final_epoch,
+                "stopped_early": result.stopped_early,
+                "training_time_seconds": result.training_time_seconds,
+                "_schema_version": 2,
+            }
+        return summary
+
+    def _read_member_trained_at(self, member_version: Optional[str]) -> Optional[str]:
+        """Return the ISO-8601 ``timestamp`` from a member's
+        ``metadata.json``, or ``None`` if unavailable.
+
+        The timestamp is written by ``ModelRegistry.register`` via
+        ``RegistryEntry.timestamp``.  Missing or malformed files are
+        non-fatal and simply produce ``trained_at=null`` in the
+        ensemble summary.
+        """
+        if not member_version or not self.config.registry_dir:
+            return None
+        meta_path = Path(self.config.registry_dir) / member_version / "metadata.json"
+        if not meta_path.exists():
+            return None
+        try:
+            with meta_path.open() as fh:
+                return json.load(fh).get("timestamp")
+        except Exception as exc:
+            logger.warning(
+                "Could not read timestamp from %s: %s", meta_path, exc,
+            )
+            return None
+
     def _register_ensemble(
         self,
         member_versions: Dict[str, str],
@@ -470,16 +551,7 @@ class EnsembleTrainPipeline:
             logger.warning("No registry_dir set; skipping ensemble registration.")
             return "not_registered"
 
-        member_summary: Dict[str, Dict[str, Any]] = {}
-        for cid, result in member_results.items():
-            member_summary[cid] = {
-                "n_trades": len(self.config.cluster_mapping.get(cid, [])),
-                "best_val_loss": result.best_val_loss,
-                "best_train_loss": result.best_train_loss,
-                "final_epoch": result.final_epoch,
-                "stopped_early": result.stopped_early,
-                "training_time_seconds": result.training_time_seconds,
-            }
+        member_summary = self._build_member_summary(member_versions, member_results)
 
         ens_registry = EnsembleRegistry(self.config.registry_dir)
         version = ens_registry.register(

@@ -58,82 +58,30 @@ class TestEnsembleEvalPipeline:
 
 
 class TestEnsembleInferencePipeline:
-    def _setup_inference(self, registry_with_members):
-        """Register ensemble and prepare member_inputs for inference."""
-        registry, versions, config = registry_with_members
-        ens_reg = EnsembleRegistry(config.registry_dir)
-        ens_reg.register(config, versions, tags=["infer_test"])
+    """Integration tests against the staged pipeline.
 
-        import torch
-        member_inputs = {
-            "cluster_0": {"features": torch.randn(4, 4)},
-            "cluster_1": {"features": torch.randn(4, 4)},
-        }
+    The previous pre-built ``member_inputs`` short-circuit was
+    removed from :class:`EnsembleInferencePipeline`.  Fresh tests
+    that drive the staged path
+    (``load → load_scenarios → validate_scenarios → run_inference``)
+    will be added once the synthetic-staged-path fixture lands.
 
-        config.metadata["inference"] = {
-            "input_mode": "new_scenarios",
-            "member_inputs": member_inputs,
-        }
-        return config
-
-    def test_infer_new_scenarios(self, registry_with_members):
-        config = self._setup_inference(registry_with_members)
-        pipeline = EnsembleInferencePipeline(config, ensemble_version="infer_test")
-        result = pipeline.run()
-
-        assert result.predictions is not None
-        assert result.predictions.shape[0] == 4
-        assert result.n_samples == 4
-
-    def test_infer_saves_csv(self, registry_with_members):
-        config = self._setup_inference(registry_with_members)
-        pipeline = EnsembleInferencePipeline(config, ensemble_version="infer_test")
-        result = pipeline.run()
-
-        from pathlib import Path
-        csv_path = Path(config.artifacts_dir) / "inference" / "predictions.csv"
-        assert csv_path.exists()
-
-    def test_infer_new_trades_mode(self, registry_with_members):
-        registry, versions, config = registry_with_members
-        ens_reg = EnsembleRegistry(config.registry_dir)
-        ens_reg.register(config, versions, tags=["trades_test"])
-
-        import torch
-        config.metadata["inference"] = {
-            "input_mode": "new_trades",
-            "member_inputs": {
-                "cluster_0": {"features": torch.randn(2, 4)},
-                "cluster_1": {"features": torch.randn(2, 4)},
-            },
-            "new_trade_assignments": {
-                "cluster_0": ["new_trade_X"],
-            },
-        }
-
-        pipeline = EnsembleInferencePipeline(config, ensemble_version="trades_test")
-        result = pipeline.run()
-
-        assert result.predictions is not None
-        assert result.metadata.get("new_trade_assignments") is not None
+    For now :meth:`test_infer_unknown_mode_raises` covers the
+    pipeline's input_mode validation; the rest of the contract is
+    exercised by the eval suite above and by the event-protocol
+    unit tests in ``test_infer_events.py``.
+    """
 
     def test_infer_unknown_mode_raises(self, registry_with_members):
-        config = self._setup_inference(registry_with_members)
-        config.metadata["inference"]["input_mode"] = "unknown_mode"
-
-        pipeline = EnsembleInferencePipeline(config, ensemble_version="infer_test")
-        with pytest.raises(ValueError, match="Unknown input_mode"):
-            pipeline.run()
-
-    def test_infer_missing_member_inputs_raises(self, registry_with_members):
+        """An unsupported ``input_mode`` raises before any work is done."""
         registry, versions, config = registry_with_members
         ens_reg = EnsembleRegistry(config.registry_dir)
-        ens_reg.register(config, versions, tags=["empty_test"])
+        ens_reg.register(config, versions, tags=["unknown_mode_test"])
 
-        config.metadata["inference"] = {
-            "input_mode": "new_scenarios",
-        }
+        config.metadata["inference"] = {"input_mode": "unknown_mode"}
 
-        pipeline = EnsembleInferencePipeline(config, ensemble_version="empty_test")
-        with pytest.raises(ValueError, match="member_inputs"):
+        pipeline = EnsembleInferencePipeline(
+            config, ensemble_version="unknown_mode_test",
+        )
+        with pytest.raises(ValueError, match="Unknown input_mode"):
             pipeline.run()

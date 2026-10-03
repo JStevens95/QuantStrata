@@ -1,0 +1,30 @@
+# Dependencies for the rade_xl Torch engine.
+#
+# Separate from `requirements_rade_xl.txt` on purpose.  Installing Torch pulls
+# in a CUDA runtime on Linux, which is the single largest dependency in the
+# project.  A host that only reads specifications, opens bundles or serves
+# predictions from a saved state has no use for it, and the layered design is
+# what makes leaving it out possible: `core`, `sources`, `analysis` and
+# `storage` contain no Torch import, so they work without this file.
+#
+# Install alongside the base requirements:
+#   .venv/bin/python -m pip install -r requirements_rade_xl.txt \
+#                                  -r requirements_rade_xl_torch.txt
+
+# The engine, its learners, callbacks and the distributed wrapper.
+#
+# The floor is 2.2 rather than 2.0 for three specific reasons, each of which
+# the engine relies on rather than merely prefers:
+#
+#   * `torch.load(..., weights_only=True)` is the default-safe path the
+#     checkpoint module requires.  Earlier versions accept the argument but
+#     unpickle more permissively, which would defeat the point of refusing a
+#     pickled checkpoint at all.
+#   * `torch.nn.modules.lazy` materialisation via a dummy forward pass is
+#     stable from 2.1; before that, re-registering a materialised parameter
+#     could leave the optimiser holding a reference to the placeholder -- the
+#     exact failure defect 6 is about.
+#   * `torch.use_deterministic_algorithms(..., warn_only=True)` is what makes
+#     the three-valued `determinism` setting expressible.  Without
+#     `warn_only`, `warn` and `strict` would collapse into one level.
+torch>=2.2

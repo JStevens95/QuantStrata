@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Rade Analytics - browser-tab favicon.
+
+  Modern browsers (Chrome, Firefox, Safari) honour SVG favicons.  We
+  wire this file in via an explicit <link rel="icon" type="image/svg+xml">
+  tag in the Dash index_string (see layouts/head.py).  Dash's built-in
+  {%favicon%} placeholder only looks for favicon.ico, so the extra link
+  is harmless and lets browsers that support SVG icons render this one
+  at native resolution.
+
+  Visually identical to logo.svg but with a thicker stroke (3.5) so it
+  remains legible at 16x16.
+-->
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 40 40"
+     width="40" height="40"
+     fill="none">
+  <defs>
+    <linearGradient id="rade-fv-gradient"
+                    x1="0" y1="0" x2="40" y2="40"
+                    gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#22d3ee"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="40" height="40" rx="10" ry="10"
+        fill="url(#rade-fv-gradient)"/>
+  <path d="M13 29 L13 11 L23 11 A5 5 0 0 1 23 21 L13 21 M18 21 L26 29"
+        stroke="#020617"
+        stroke-width="3.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+</svg>

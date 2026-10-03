@@ -6,8 +6,8 @@ This file contains the **complete source code** for every file created or modifi
 
 1. For **MODIFIED** files — replace the existing file entirely with the contents below.
 2. For **NEW** files — create the file at the specified path and paste the contents.
-3. After copying, ensure the `db_ready/` artifacts exist by running the ensemble evaluation pipeline with `save_db_artifacts=True` (the default).
-4. Optionally publish to SQLite: `from src.rade_ml_pt.ensemble.publish_to_db import publish_to_sqlite; publish_to_sqlite("/path/to/db_ready")`
+3. After copying, ensure the `evaluation/` artifacts exist by running the ensemble evaluation pipeline with `save_db_artifacts=True` (the default).
+4. Optionally publish to SQLite: `from src.rade_ml_pt.ensemble.publish_to_db import publish_to_sqlite; publish_to_sqlite("/path/to/evaluation")`
 
 ---
 
@@ -851,7 +851,7 @@ class EnsembleEvalPipeline:
         split_targets: Dict[str, Dict[str, np.ndarray]],
         combined_arrays: Dict[str, Dict[str, np.ndarray]],
     ) -> None:
-        """Save pre-computed, dashboard-optimised artifacts to ``db_ready/``.
+        """Save pre-computed, dashboard-optimised artifacts to ``evaluation/``.
 
         These files provide instant loading for the dashboard without
         constructing the expensive ``GlobalPredictionStore``.  All data
@@ -874,8 +874,8 @@ class EnsembleEvalPipeline:
             ``{split: {"predictions": ndarray, "targets": ndarray}}``.
         """
         t0 = time.perf_counter()
-        db_dir = Path(self.config.artifacts_dir) / "ensemble" / version / "db_ready"
-        db_dir.mkdir(parents=True, exist_ok=True)
+        eval_dir = Path(self.config.artifacts_dir) / "ensemble" / version / "evaluation"
+        eval_dir.mkdir(parents=True, exist_ok=True)
 
         # ── Ensemble version metadata ────────────────────────────────
         version_meta = {
@@ -886,29 +886,29 @@ class EnsembleEvalPipeline:
             "execution_strategy": config.execution_strategy,
             "splits": sorted(all_split_results.keys()),
         }
-        self._write_json(db_dir / "ensemble_version.json", version_meta)
+        self._write_json(eval_dir / "ensemble_version.json", version_meta)
 
         # ── Cluster attributes ───────────────────────────────────────
         cluster_attrs = self._build_cluster_attributes(config)
-        self._write_json(db_dir / "cluster_attributes.json", cluster_attrs)
+        self._write_json(eval_dir / "cluster_attributes.json", cluster_attrs)
 
         # ── Trade-cluster mapping (inverted for fast lookup) ─────────
         trade_cluster_map = {}
         for cid in config.cluster_ids:
             for tid in config.cluster_mapping.get(cid, []):
                 trade_cluster_map[str(tid)] = cid
-        self._write_json(db_dir / "trade_cluster_map.json", trade_cluster_map)
+        self._write_json(eval_dir / "trade_cluster_map.json", trade_cluster_map)
 
         # ── Per-split pre-computed artifacts ──────────────────────────
-        portfolio_dir = db_dir / "portfolio_summary"
+        portfolio_dir = eval_dir / "portfolio_summary"
         portfolio_dir.mkdir(exist_ok=True)
-        cluster_dir = db_dir / "cluster_summary"
+        cluster_dir = eval_dir / "cluster_summary"
         cluster_dir.mkdir(exist_ok=True)
-        trade_dir = db_dir / "trade_metrics"
+        trade_dir = eval_dir / "trade_metrics"
         trade_dir.mkdir(exist_ok=True)
-        group_dir = db_dir / "group_summaries"
+        group_dir = eval_dir / "group_summaries"
         group_dir.mkdir(exist_ok=True)
-        corr_dir = db_dir / "group_correlations"
+        corr_dir = eval_dir / "group_correlations"
         corr_dir.mkdir(exist_ok=True)
 
         for split in all_split_results:
@@ -929,11 +929,11 @@ class EnsembleEvalPipeline:
             )
 
         # ── Graph stats (reads joblib from registry) ─────────────────
-        self._save_graph_stats(db_dir, config)
+        self._save_graph_stats(eval_dir, config)
 
         elapsed = time.perf_counter() - t0
         logger.info(
-            "DB-ready artifacts saved to %s (%.2fs)", db_dir, elapsed,
+            "Evaluation artifacts saved to %s (%.2fs)", eval_dir, elapsed,
         )
 
     # ------------------------------------------------------------------
@@ -1101,10 +1101,12 @@ class EnsembleEvalPipeline:
             group_data = {}
             group_residuals: Dict[str, np.ndarray] = {}
             for grp, cids in sorted(groups.items()):
-                grp_pred = sum(cluster_sums[c] for c in cids if c in cluster_sums)
-                grp_tgt = sum(cluster_target_sums[c] for c in cids if c in cluster_target_sums)
-                if isinstance(grp_pred, (int, float)):
+                valid_preds = [cluster_sums[c] for c in cids if c in cluster_sums]
+                valid_tgts = [cluster_target_sums[c] for c in cids if c in cluster_target_sums]
+                if not valid_preds:
                     continue
+                grp_pred = np.add.reduce(valid_preds)
+                grp_tgt = np.add.reduce(valid_tgts)
                 residual = grp_pred - grp_tgt
                 n_trades = sum(cluster_attrs.get(c, {}).get("n_trades", 0) for c in cids)
                 group_data[grp] = {
@@ -1131,7 +1133,7 @@ class EnsembleEvalPipeline:
             self._write_json(corr_dir / f"{split}.json", correlations)
 
     def _save_graph_stats(
-        self, db_dir: Path, config: EnsembleConfig,
+        self, out_dir: Path, config: EnsembleConfig,
     ) -> None:
         """Compute and save per-cluster graph statistics from registry joblobs."""
         stats: Dict[str, Any] = {}
@@ -1151,7 +1153,6 @@ class EnsembleEvalPipeline:
             try:
                 import joblib
                 gr = joblib.load(graph_path)
-                indices = gr.get("sparse_indices")
                 values = gr.get("sparse_values")
                 shape = gr.get("sparse_shape", [0, 0])
                 n_nodes = shape[0] if shape[0] > 0 else 0
@@ -1168,7 +1169,7 @@ class EnsembleEvalPipeline:
                 logger.debug("Could not read graph stats for '%s': %s", cid, exc)
                 stats[cid] = {"n_nodes": 0, "n_edges": 0, "density": 0, "mean_weight": 0}
 
-        self._write_json(db_dir / "graph_stats.json", stats)
+        self._write_json(out_dir / "graph_stats.json", stats)
 ```
 
 ---
@@ -1311,7 +1312,7 @@ CREATE TABLE IF NOT EXISTS group_correlations (
 
 ```python
 """
-Publish ``db_ready/`` artifacts to a SQLite database.
+Publish ``evaluation/`` artifacts to a SQLite database.
 
 Reads the JSON and NPZ files produced by
 ``EnsembleEvalPipeline._save_artifacts_db()`` and inserts them into
@@ -1324,7 +1325,7 @@ Usage
     from src.rade_ml_pt.ensemble.publish_to_db import publish_to_sqlite
 
     publish_to_sqlite(
-        db_ready_dir="/path/to/evaluation/db_ready",
+        eval_dir="/path/to/evaluation",
         db_path="/path/to/ensemble.db",  # created if missing
     )
 """
@@ -1345,18 +1346,18 @@ _SCHEMA_FILE = Path(__file__).parent / "db_schema.sql"
 
 
 def publish_to_sqlite(
-    db_ready_dir: str,
+    eval_dir: str,
     db_path: Optional[str] = None,
 ) -> str:
     """
-    Read ``db_ready/`` files and insert into a SQLite database.
+    Read ``evaluation/`` files and insert into a SQLite database.
 
     Parameters
     ----------
-    db_ready_dir : str
-        Path to the ``db_ready/`` directory.
+    eval_dir : str
+        Path to the ``evaluation/`` directory.
     db_path : str or None
-        Output database path.  Defaults to ``db_ready/ensemble.db``.
+        Output database path.  Defaults to ``evaluation/ensemble.db``.
 
     Returns
     -------
@@ -1364,7 +1365,7 @@ def publish_to_sqlite(
         Path to the created/updated database file.
     """
     t0 = time.perf_counter()
-    root = Path(db_ready_dir)
+    root = Path(eval_dir)
 
     if db_path is None:
         db_path = str(root / "ensemble.db")
@@ -1590,7 +1591,7 @@ def _read_json(path: Path):
 """
 DB-ready Ensemble Analytics dashboard.
 
-Uses pre-computed artifacts from ``db_ready/`` instead of building
+Uses pre-computed artifacts from ``evaluation/`` instead of building
 a ``GlobalPredictionStore``, resulting in sub-second load times
 even at 75K+ targets.
 """
@@ -1805,7 +1806,7 @@ Data backend abstraction for the DB-ready dashboard.
 
 Defines the ``DataBackend`` protocol and two concrete implementations:
 
-* ``FileBackend``  — reads from ``db_ready/`` files (JSON + NPZ).
+* ``FileBackend``  — reads from ``evaluation/`` files (JSON + NPZ).
 * ``SqliteBackend`` — reads from a local SQLite database.
 
 Both return identical data shapes so callbacks are backend-agnostic.
@@ -1892,23 +1893,23 @@ class DataBackend(ABC):
 
 
 # ======================================================================
-# File backend — reads from db_ready/ directory
+# File backend — reads from evaluation/ directory
 # ======================================================================
 
 class FileBackend(DataBackend):
-    """Reads pre-computed artifacts directly from the ``db_ready/`` directory.
+    """Reads pre-computed artifacts directly from the ``evaluation/`` directory.
 
     Parameters
     ----------
-    db_ready_dir : str or Path
-        Path to ``{artifacts_dir}/ensemble/{version}/db_ready/``.
+    eval_dir : str or Path
+        Path to ``{artifacts_dir}/ensemble/{version}/evaluation/``.
     eval_dir : str or Path
         Path to ``{artifacts_dir}/ensemble/{version}/evaluation/``.
         Used for on-demand per-trade predictions (the existing NPZ files).
     """
 
-    def __init__(self, db_ready_dir: str, eval_dir: str) -> None:
-        self._root = Path(db_ready_dir)
+    def __init__(self, eval_dir: str) -> None:
+        self._root = Path(eval_dir)
         self._eval_dir = Path(eval_dir)
         self._cache: Dict[str, Any] = {}
 
@@ -2193,7 +2194,7 @@ class SqliteBackend(DataBackend):
 
 ```python
 """
-Singleton wrapper around ``DbEnsembleSession``.
+Singleton wrapper around ``EnsembleSession`` for the pre-computed dashboard.
 
 Mirrors the interface of ``ensemble_analytics.data.session_manager``
 but initialises from a ``DataBackend`` (file or SQLite) instead of
@@ -2255,20 +2256,20 @@ def initialise(
     eval_dir = str(
         Path(artifacts_dir) / "ensemble" / resolved_version / "evaluation"
     )
-    db_ready_dir = str(
-        Path(artifacts_dir) / "ensemble" / resolved_version / "db_ready"
+    eval_dir = str(
+        Path(artifacts_dir) / "ensemble" / resolved_version / "evaluation"
     )
 
     if backend == "sqlite":
         if db_path is None:
-            db_path = str(Path(db_ready_dir) / "ensemble.db")
+            db_path = str(Path(eval_dir) / "ensemble.db")
         from src.ui.apps.ensemble_analytics_db.data.backend import SqliteBackend
         _backend = SqliteBackend(db_path, eval_dir, resolved_version)
         logger.info("Initialised SqliteBackend: %s", db_path)
     else:
         from src.ui.apps.ensemble_analytics_db.data.backend import FileBackend
-        _backend = FileBackend(db_ready_dir, eval_dir)
-        logger.info("Initialised FileBackend: %s", db_ready_dir)
+        _backend = FileBackend(eval_dir)
+        logger.info("Initialised FileBackend: %s", eval_dir)
 
     logger.info(
         "DB session initialised: version=%s, clusters=%d, backend=%s",
@@ -2392,7 +2393,7 @@ def get_group_correlations(split: str = "test") -> Dict[str, Any]:
 
 ```python
 """
-Trade catalogue built from pre-computed ``db_ready/`` artifacts.
+Trade catalogue built from pre-computed ``evaluation/`` artifacts.
 
 Constructs a pandas DataFrame from ``trade_cluster_map.json`` and
 ``cluster_attributes.json`` without loading the full cluster displays.
@@ -2458,7 +2459,7 @@ def invalidate() -> None:
 Cluster graph-data loader — delegates to the original session.
 
 Graph adjacency data lives in ``graph_results.joblib`` in the registry
-and is not pre-computed into ``db_ready/``.  This module proxies to the
+and is not pre-computed into ``evaluation/``.  This module proxies to the
 original ``EnsembleSession.load_cluster_graph_data``.
 """
 from __future__ import annotations
@@ -2489,7 +2490,7 @@ def get_graph_data(cluster_id: str) -> Dict[str, Any]:
 Cluster market-data loader — delegates to the original session.
 
 Market data lives in ``cluster_assets.joblib`` in the registry and is
-not pre-computed into ``db_ready/``.  This module proxies to the
+not pre-computed into ``evaluation/``.  This module proxies to the
 original ``EnsembleSession.load_cluster_market_data``.
 """
 from __future__ import annotations
@@ -4726,19 +4727,19 @@ def register(app):
 Launch the DB-ready Ensemble Analytics dashboard.
 
 This is the fast-loading version of the ensemble dashboard that reads
-from pre-computed ``db_ready/`` files instead of building the full
+from pre-computed ``evaluation/`` files instead of building the full
 ``GlobalPredictionStore``.  Supports both ``file`` and ``sqlite``
 backends.
 
 Prerequisites
 -------------
 Run the ensemble evaluation pipeline with ``save_db_artifacts=True``
-(the default) to generate the ``db_ready/`` directory.
+(the default) to generate the ``evaluation/`` directory.
 
 Optionally, publish to SQLite for query-based access::
 
     from src.rade_ml_pt.ensemble.publish_to_db import publish_to_sqlite
-    publish_to_sqlite("/path/to/evaluation/db_ready")
+    publish_to_sqlite("/path/to/evaluation/evaluation")
 """
 import sys
 from pathlib import Path
@@ -4753,12 +4754,12 @@ REGISTRY_DIR = "/path/to/your/registry"
 ARTIFACTS_DIR = "/path/to/your/artifacts"
 VERSION = "latest"
 
-# Backend: "file" reads from db_ready/ JSON+NPZ (zero deps, recommended)
+# Backend: "file" reads from evaluation/ JSON+NPZ (zero deps, recommended)
 #          "sqlite" reads from a local .db file (requires publish_to_sqlite first)
 BACKEND = "file"
 
 # Only needed for sqlite backend — path to the .db file.
-# If None, defaults to db_ready/ensemble.db
+# If None, defaults to evaluation/ensemble.db
 DB_PATH = None
 
 

@@ -1,0 +1,30 @@
+# Rade Analytics — Dash UI dependencies.
+#
+# Install with:
+#     pip install -r requirements-rade-ui.txt
+#
+# Run with:
+#     python -m src.ui.apps.rade_analytics.app
+#
+# Kept separate from requirements-ui.txt so the legacy
+# `ensemble_analytics` / `ensemble_analytics_db` apps don't pick up
+# Mantine + AG Grid until they opt in.
+
+# ── Core Dash stack ────────────────────────────────────────────────
+dash>=2.14.0
+plotly>=5.18.0
+
+# ── Design-system primitives (see RADE_UI_DESIGN.md §6) ───────────
+dash-mantine-components>=0.14.0   # AppShell, Button, Badge, Skeleton, Modal, Spotlight, ...
+dash-ag-grid>=31.0.0              # Every data table
+dash-cytoscape>=1.0.0             # Trade graph network
+dash-iconify>=0.1.2               # Icon set used in sidebar + topbar
+dash-draggable>=0.1.2             # Report Builder (Phase F)
+
+# ── API + caching ─────────────────────────────────────────────────
+httpx>=0.27.0                     # RadeApiClient transport (already a top-level dep)
+flask-caching>=2.1.0              # RadeBackend cache per Decision #2
+
+# ── Config / validation ───────────────────────────────────────────
+pydantic>=2.0.0
+pydantic-settings>=2.0.0          # RadeUiSettings

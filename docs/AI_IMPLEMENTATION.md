@@ -21,6 +21,7 @@
   - [1.6 Per-tier requirements](#16-per-tier-requirements)
   - [1.7 Compliance and audit](#17-compliance-and-audit)
   - [1.8 Cost and rate-limit considerations](#18-cost-and-rate-limit-considerations)
+  - [1.9 Knowledge augmentation (RAG over technical docs)](#19-knowledge-augmentation-rag-over-technical-docs)
 - [Part 2 — `rade_analytics` Integration](#part-2--rade_analytics-integration)
   - [2.1 Where the AI assistant lives in the architecture](#21-where-the-ai-assistant-lives-in-the-architecture)
   - [2.2 Backend script structure (FastAPI)](#22-backend-script-structure-fastapi)
@@ -30,6 +31,7 @@
   - [2.6 Request lifecycle — concrete example](#26-request-lifecycle--concrete-example)
   - [2.7 Page Contract compliance](#27-page-contract-compliance)
   - [2.8 Activity log integration](#28-activity-log-integration)
+  - [2.9 Document index for `rade_analytics`](#29-document-index-for-rade_analytics)
 - [Part 3 — Capabilities Catalogue](#part-3--capabilities-catalogue)
   - [3.1 Stakeholder personas](#31-stakeholder-personas)
   - [3.2 Tier 1 — Conversational data access](#32-tier-1--conversational-data-access)
@@ -44,6 +46,7 @@
 - [Appendix B — Tool registry skeleton](#appendix-b--tool-registry-skeleton)
 - [Appendix C — System prompt templates](#appendix-c--system-prompt-templates)
 - [Appendix D — Implementation phase plan](#appendix-d--implementation-phase-plan)
+- [Appendix E — RAG ingestion pipeline reference](#appendix-e--rag-ingestion-pipeline-reference)
 
 ---
 
@@ -261,6 +264,132 @@ Mitigations:
 - Cache common tool results (e.g. "latest ensemble version") for 5 minutes.
 - Trim conversation history aggressively — keep only the last 10 turns by default, with explicit "extend context" option.
 - For background jobs, batch into hourly windows and use the OpenAI Batch API for 50% discount.
+
+## 1.9 Knowledge augmentation (RAG over technical docs)
+
+Tools (Section 1.3) give the AI access to *live data*. **Retrieval-Augmented Generation (RAG)** gives it access to *documented knowledge* — methodology, framework guides, pipeline contracts, model risk write-ups — so it can answer questions like "how does the residual MLP work?" or "what's our PSI threshold methodology?" with citations to the actual project documentation.
+
+### 1.9.1 Why RAG, not fine-tuning
+
+Two common approaches to give an LLM domain knowledge:
+
+| Aspect | Fine-tuning | RAG |
+| --- | --- | --- |
+| **Cost** | Re-train per significant doc change ($$$) | Cents per query, near-zero index update |
+| **Update latency** | Hours/days | Seconds (re-embed the changed doc) |
+| **Citation / traceability** | Impossible — knowledge is baked into weights | Mandatory — every claim links to its source chunk |
+| **Hallucination control** | Worse — model improvises confidently | Better — model is constrained to "answer only from these chunks" |
+| **Versioning** | Painful — which doc version is in the weights? | Metadata-driven — `doc.version=v2025-12-01` |
+| **Compliance** | "How did the model conclude that?" → unanswerable | "Show me the paragraph it cited" → trivial |
+| **Best for** | Style, tone, vocabulary — *not* facts | Facts, definitions, methodology lookups |
+
+For regulated quant finance use cases where every claim should be auditable, **RAG wins on every dimension**. The only argument for fine-tuning is teaching the AI house writing style for MRM documents — and even that is usually better solved with a few-shot example in the system prompt.
+
+### 1.9.2 The RAG pipeline
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│ Build-time (one-off + incremental)                                       │
+│                                                                          │
+│   docs/**/*.md  ─────►  chunker  ─────►  embedder  ─────►  vector store  │
+│   src/**/README                          (OpenAI or local)               │
+│   *.tex paper                                                            │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│ Query-time (every relevant chat turn)                                    │
+│                                                                          │
+│   user question  ─►  LLM decides: call search_docs(query, top_k)         │
+│                                          │                               │
+│                                          ▼                               │
+│                                  embed(query)  ─►  vector store          │
+│                                          │                               │
+│                                          ▼                               │
+│                                  top-k chunks  ─►  (optional) re-rank    │
+│                                          │                               │
+│                                          ▼                               │
+│                                  return chunks + citations               │
+│                                          │                               │
+│                                          ▼                               │
+│                                  LLM answers, citing chunks              │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+The query-time path is **one additional tool call** in the existing session loop — no architectural changes to `ai_session.py` or the streaming machinery.
+
+### 1.9.3 Document tiering
+
+Not all docs are equal — methodology pages should be retrievable for serious investigation questions, while operational READMEs are more useful for "how do I use the dashboard?" questions. Tag every chunk with a tier so the retriever can filter:
+
+| Tier | Examples | Used for |
+| --- | --- | --- |
+| **A — Model / methodology** | `reference/models/*.md`, `paper/section_data_pipeline.tex`, `inference_pipeline_contract.md`, `RADE_ML_IMPLEMENTATION_PLAN.md` | "How does the hybrid GNN-RNN work?", "What's our PSI methodology?", "Why do we standardise residuals?" |
+| **B — Architecture / pipelines** | `RADE_UI_DESIGN.md`, `PIPELINE.md`, `page_contract.md`, `ensemble_implementation.md` | "How is inference structured?", "What's the page contract?", "Where do scenario shocks get injected?" |
+| **C — Framework guides** | `guides/machine_learning/*`, `guides/risk/risk_framework.md`, `guides/instruments/*` | "How do we price X?", "What's our risk framework?", onboarding |
+| **D — User / operational** | `guides/ui/dash_ui_tutorial.md`, `BEST_PRACTICES.md`, READMEs | "How do I use the dashboard?", "What are our coding conventions?" |
+
+The tier filter is a tool input — the LLM (steered by the system prompt) chooses which tiers to search per query. Methodology questions hit A; "how do I…" questions hit C and D.
+
+### 1.9.4 Chunking strategy
+
+Chunking is the single highest-leverage decision. Three options:
+
+| Strategy | How it works | Pro | Con |
+| --- | --- | --- | --- |
+| **Fixed-size** | 500-token chunks with 50-token overlap | Trivial to implement | Splits mid-section; loses semantic boundaries |
+| **Markdown-aware** | Split on `##` headers; preserve section context in each chunk | Section semantics preserved; small implementation cost | Long sections need sub-chunking |
+| **Semantic** | LLM-assisted boundary detection | Best recall | Costs $0.01–$0.05 per doc to chunk |
+
+**Recommended starter: markdown-aware**. The `LangChain` `MarkdownHeaderTextSplitter` does this in 10 lines. Each chunk carries the H1/H2/H3 chain as metadata so the retriever sees `Hybrid GNN-RNN › Residual MLP › Standardisation` and the LLM can quote the section.
+
+### 1.9.5 Vector store options
+
+Three tiers based on scale:
+
+| Option | Setup | Best for | Caveats |
+| --- | --- | --- | --- |
+| **In-memory `numpy`** | 50 LoC, no dependencies | <10k chunks (basically your whole repo today) | Lost on restart; not multi-process |
+| **`chromadb` local file** | One pip install, transparent persistence | 10k–1M chunks, single-host | Adds a file-system dep, but zero ops |
+| **`pgvector` on existing DB** | SQL extension | When you want SQL joins with other tables | Needs PostgreSQL |
+| **Hosted (`pinecone`, `weaviate`)** | API account | Multi-region, large team | Cost + data egress |
+
+For `rade_analytics` today: **chromadb** is the sweet spot — persistent, zero ops, and the index sits next to the rest of the API state.
+
+### 1.9.6 Embedding model options
+
+| Model | Cost (per 1M tokens) | Recall | Notes |
+| --- | --- | --- | --- |
+| OpenAI `text-embedding-3-small` (1536d) | $0.02 | Good | Pragmatic default |
+| OpenAI `text-embedding-3-large` (3072d) | $0.13 | Best | 6x cost, ~10% recall gain |
+| Local `sentence-transformers/all-MiniLM-L6-v2` (384d) | Free | Decent | No data leaves; recall ~20% below OpenAI |
+| Local `BAAI/bge-large-en-v1.5` (1024d) | Free | Good | Bigger local model; on par with `3-small` |
+
+For compliance-sensitive docs, the local model is the right answer even at modest recall cost — only the retrieved chunks leave your network with the LLM call, not the entire corpus during indexing.
+
+### 1.9.7 Hallucination control
+
+The cheapest hallucination defence is in the system prompt:
+
+```
+When you call search_docs, your answer MUST be derived from the returned chunks.
+Quote the source: include `[<doc>, §<section>]` after each factual claim.
+If the chunks do not answer the question, say so plainly — do not improvise.
+```
+
+The expensive but worthwhile defence is **citation validation**: after the LLM finishes, parse its citations and verify each `[doc, section]` reference actually appears in the retrieved chunks. Discard or flag any uncited claims.
+
+### 1.9.8 Compliance considerations specific to RAG
+
+RAG sends document chunks to OpenAI in every relevant prompt. For sensitive docs the same policy questions as for prompts apply, at higher volume:
+
+| Mitigation | What it does |
+| --- | --- |
+| **`confidentiality` metadata** | Tag docs (`public` / `internal` / `restricted`); retriever filters to allowed levels per user |
+| **Local embedding** | Embedding lookup is on-prem; only retrieved chunks leave |
+| **Local LLM fallback** | Sensitive-tier queries route to an on-prem model; OpenAI skipped entirely |
+| **PII redactor in the indexer** | Trade IDs, counterparty names redacted at index time, not query time |
+| **Doc versioning** | When MRM doc v2 supersedes v1, index marks v1 `superseded=true` and retriever filters it out |
 
 ---
 
@@ -653,6 +782,202 @@ event(
 
 This means stakeholders never wonder "did the AI do that or did the user do that?" — both routes flow through the same observability stack.
 
+## 2.9 Document index for `rade_analytics`
+
+This section maps Section 1.9 (general RAG theory) onto the actual `rade_analytics` repository: which folders to index, where the indexer lives, how the `search_docs` tool plugs into the existing tool registry, and the re-indexing schedule.
+
+### 2.9.1 What gets indexed
+
+The current repository contains ~132 markdown files, 10+ READMEs, a LaTeX paper, and `PIPELINE.md` documents. The proposed source coverage:
+
+```
+Indexed in tier A (model methodology):
+  docs/reference/models/**/*.md
+  docs/reference/machine_learning/*.md
+  docs/reference/risk/*.md
+  docs/rade_ml/RADE_ML_IMPLEMENTATION_PLAN.md
+  docs/rade_ml_pt_implementation_guide.md
+  docs/inference_pipeline_contract.md
+  docs/paper/section_data_pipeline.tex
+  docs/paper/section_data_pipeline_companion.md
+
+Indexed in tier B (architecture / pipelines):
+  docs/platform_designs/RADE_UI_DESIGN.md
+  docs/platform_designs/ensemble_analytics_db_v3_blueprint.md
+  docs/rade_analytics/page_contract.md
+  docs/rade_analytics/inference_implementation.md
+  docs/rade_analytics/ensemble_infer_refactor.md
+  docs/ensemble_implementation.md
+  docs/ensemble_dashboard_design.md
+  docs/hybrid_gnn_rnn_pipeline_suggested_changes.md
+  docs/AI_IMPLEMENTATION.md            (this very document)
+  src/rade_sr/PIPELINE.md
+  src/rade_ml_pt/**/README.md
+  src/rade_sr/README.md
+
+Indexed in tier C (framework guides):
+  docs/guides/**/*.md
+  docs/architecture/**/*.md
+
+Indexed in tier D (user / operational):
+  docs/guides/ui/dash_ui_tutorial.md
+  docs/BEST_PRACTICES.md
+  src/ui/**/README.md
+  README.md
+  UPDATE.md
+```
+
+**Explicitly excluded** (curated):
+
+```
+docs/testing/**/*                  ← test failure logs, noisy
+docs/development/roadmap.md        ← changes weekly; cite via tool not RAG
+docs/project_assessment.md         ← internal status; not useful to AI
+docs/paper/*.aux                   ← LaTeX build artefacts
+docs/paper/*.out
+```
+
+### 2.9.2 Where the indexer code lives
+
+Additive only — no existing files modified. Two new service modules, one new model file, one new CLI script:
+
+```
+src/rade_ml_pt/ensemble/api/
+├── services/
+│   ├── ai_doc_index.py         ← NEW: ingestion + chunking + embedding
+│   │   - DocChunk dataclass (text, doc_path, section_chain, tier, version_hash)
+│   │   - DocIndexer class
+│   │     - ingest_directory(root, tier, exclude_globs) → n_chunks
+│   │     - ingest_file(path, tier) → list[DocChunk]
+│   │     - _chunk_markdown(text) → list[(section_chain, text)]
+│   │     - _embed_batch(texts) → np.ndarray
+│   │     - _upsert(chunks) → None
+│   │     - delete_by_path(path) → None
+│   │   - watch_for_changes(roots, interval_seconds=300) → background task
+│   ├── ai_doc_retriever.py     ← NEW: query-side
+│   │   - DocRetriever class
+│   │     - search(query, top_k=5, tier=None, confidentiality=None) → list[DocChunk]
+│   │     - rerank(chunks, query, top_k) → list[DocChunk]   (optional)
+│   │     - format_for_llm(chunks) → str  (with [<doc>, §<section>] citations)
+│   └── ai_tools.py             ← MODIFY: register search_docs tool (see Appendix B)
+├── models/
+│   └── ai.py                   ← MODIFY: add DocChunkModel, SearchDocsResponse
+├── routers/
+│   └── ai.py                   ← MODIFY: add GET /ai/docs/health
+│                                         GET /ai/docs/stats
+│                                         POST /ai/docs/reindex (admin only)
+├── dependencies.py             ← MODIFY: add get_doc_indexer(), get_doc_retriever()
+└── app.py                      ← MODIFY: kick off watch_for_changes in lifespan
+
+scripts/
+└── reindex_docs.py             ← NEW: CLI for bulk rebuild
+                                   python scripts/reindex_docs.py --full
+                                   python scripts/reindex_docs.py --tier A
+                                   python scripts/reindex_docs.py --path docs/reference/
+```
+
+### 2.9.3 Storage layout
+
+Chroma persists to disk. The path is configurable but the default sits next to the existing API state:
+
+```
+<project_root>/.cache/rade_ai/
+├── chroma/                       ← chromadb persistent dir
+│   ├── <collection_uuid>/
+│   │   ├── chroma.sqlite3
+│   │   └── ...
+├── ingestion_log.jsonl           ← every indexed file: path, hash, ts, tier
+└── index_meta.json               ← n_chunks, n_docs, last_full_rebuild, model_id
+```
+
+Add this to `.gitignore`.
+
+### 2.9.4 Re-indexing strategy
+
+Three triggers, in order of importance:
+
+1. **On-demand CLI** — `python scripts/reindex_docs.py --full` for the initial build and major restructures. Runtime: ~2 minutes for the current corpus.
+2. **Background file-watcher** — `apscheduler` job every 5 minutes that compares file mtimes against `ingestion_log.jsonl` and re-embeds only the changed files. <200ms overhead when nothing changed.
+3. **Pre-commit hook (optional)** — re-indexes the changed docs in the developer's local copy so writers see their changes available to the assistant immediately.
+
+Each re-index produces a row in `ingestion_log.jsonl`:
+
+```json
+{"path": "docs/reference/models/hybrid_gnn_rnn.md",
+ "tier": "model_methodology",
+ "n_chunks": 18,
+ "hash_before": "9f3a...",
+ "hash_after":  "ab21...",
+ "ts": "2026-06-09T22:47:12Z",
+ "embedded_in_seconds": 1.4,
+ "tokens_embedded": 4811,
+ "cost_usd": 0.00010}
+```
+
+### 2.9.5 Config additions
+
+Extend the `Settings` from §2.4:
+
+```python
+class Settings(BaseSettings):
+    # ... existing fields ...
+
+    # RAG / document index
+    ai_rag_enabled:        bool = Field(default=True, env="AI_RAG_ENABLED")
+    ai_rag_store_path:     str  = Field(default=".cache/rade_ai/chroma", env="AI_RAG_STORE_PATH")
+    ai_rag_embed_model:    str  = Field(default="text-embedding-3-small", env="AI_RAG_EMBED_MODEL")
+    ai_rag_chunk_size:     int  = Field(default=800,  env="AI_RAG_CHUNK_SIZE")
+    ai_rag_chunk_overlap:  int  = Field(default=120,  env="AI_RAG_CHUNK_OVERLAP")
+    ai_rag_default_top_k:  int  = Field(default=5,    env="AI_RAG_DEFAULT_TOP_K")
+    ai_rag_watch_interval_seconds: int = Field(default=300, env="AI_RAG_WATCH_INTERVAL")
+    ai_rag_local_embeddings: bool = Field(default=False, env="AI_RAG_LOCAL_EMBEDDINGS")
+    ai_rag_doc_roots:      List[str] = Field(
+        default=["docs/", "src/rade_sr/PIPELINE.md", "src/**/README.md"],
+        env="AI_RAG_DOC_ROOTS",
+    )
+```
+
+### 2.9.6 How retrieval is woven into the chat loop
+
+The `search_docs` tool is registered alongside the existing 12 (see Appendix B). The system prompt is extended with one paragraph to teach the LLM when to use it:
+
+```
+KNOWLEDGE TOOLS
+You have access to `search_docs` for questions about how the system works,
+not what it currently shows. Use it for:
+  - "How does X work?" / "What is X?"
+  - "Why is X structured this way?"
+  - "What's our methodology for X?"
+  - "Where is X defined / documented?"
+For numerical or state questions ("what is cl-7's MAE?") use the data
+tools instead. Cite every methodology claim as [<doc>, §<section>].
+```
+
+For investigations (Tier 3 capabilities), the prompt is stronger:
+
+```
+For each hypothesis, prefer to cite our own documentation when the
+methodology is the explanation. e.g. if the residual MLP behaviour is
+the suspected cause, search_docs("residual MLP standardisation") and
+quote the relevant section rather than improvising.
+```
+
+### 2.9.7 Capacity & cost sizing
+
+Order-of-magnitude numbers for your current corpus:
+
+| Metric | Value |
+| --- | --- |
+| Documents indexed | ~150 |
+| Total tokens | ~500k–800k (markdown is sparse) |
+| Total chunks | ~1,500 at 800-token chunks |
+| Full-rebuild embedding cost | ~$0.02 (text-embedding-3-small) |
+| Per-query embedding cost | ~$0.000002 |
+| Per-query retrieval latency | <50ms (in-memory chromadb) |
+| Index storage | ~10 MB on disk |
+
+A full rebuild costs less than one cup of coffee, and incremental updates are free at this scale.
+
 ---
 
 # Part 3 — Capabilities Catalogue
@@ -756,7 +1081,21 @@ Replaces clicking through tabs with a sentence. Low risk, fast to build, immedia
 | **Effort** | S (½ day) |
 | **Risk** | Low |
 
-**Tier 1 cumulative effort: ~5 days**, after which 70% of conversational questions are answered.
+### T1.7 — Methodology Q&A (RAG-backed)
+
+> **"How does our residual MLP work?"** / **"What's our PSI threshold methodology?"** / **"Why do we standardise PnL before training?"**
+
+| Aspect | Detail |
+| --- | --- |
+| **Stakeholders** | All (onboarding for Quants, comfort for Risk, context for FO/Trader) |
+| **Value** | Replaces "ask a senior quant" or "go read 5 markdown files" for any methodology question. Onboarding for new joiners drops from weeks to days. |
+| **Tools required** | `search_docs` (RAG over project docs, see §1.9 and §2.9) |
+| **System prompt** | "When a methodology question is asked, call search_docs first; cite every claim as `[<doc>, §<section>]`; refuse to improvise if chunks don't cover the question" |
+| **UI rendering** | AI bubble with prose answer + citation chips at end of each paragraph; chip click opens the source doc at the right anchor |
+| **Effort** | M (3 days — most of the lift is in §2.9 plumbing, then this capability is free) |
+| **Risk** | Low — read-only, well-cited |
+
+**Tier 1 cumulative effort: ~8 days** (was 5 days; +3 for the RAG plumbing). After this, ~85% of conversational *and* methodology questions are answered.
 
 ## 3.3 Tier 2 — Cross-source synthesis
 
@@ -1206,6 +1545,21 @@ Specific to your codebase and data; not buildable by anyone without your stack. 
 | **Effort** | XL (8 days) |
 | **Risk** | Medium |
 
+### T6.7 — Documentation drift detection (RAG-enabled)
+
+> **"The PSI threshold in code is 0.15 but the methodology doc still says 0.10. Which is correct, and when did this diverge?"**
+
+| Aspect | Detail |
+| --- | --- |
+| **Stakeholders** | Quant (primary), Risk Management |
+| **Value** | Catches documentation that no longer matches the code — a major audit/regulatory risk. The AI cross-checks key constants and method choices between code and documented methodology. |
+| **Tools required** | `search_docs` (for documented value), `extract_constant_from_code` (NEW, AST-based), `git_blame_constant` (NEW, finds when the code value last changed) |
+| **System prompt** | Heavy: must compare doc value vs code value vs git history and flag discrepancies as either *doc-stale* (code is right) or *code-drift* (doc is right) or *ambiguous* |
+| **Triggering** | (a) on-demand "audit cl-7's methodology vs code", (b) background nightly sweep over a curated list of "important constants" with notification on new mismatches |
+| **UI rendering** | Mismatch card with three columns: doc value + code value + last-changed-when |
+| **Effort** | L (6 days) |
+| **Risk** | Medium — false positives possible if the AI misinterprets either side |
+
 ## 3.8 Prioritisation matrix
 
 Plotting effort vs. value (qualitative; calibrate as you go):
@@ -1366,7 +1720,7 @@ The session manager accumulates `tool_calls[i].function.arguments` across chunks
 
 # Appendix B — Tool registry skeleton
 
-The initial registry of 12 tools covers ~70% of conversational use cases.
+The initial registry of 13 tools covers ~85% of conversational and methodology use cases.
 
 ```python
 # src/rade_ml_pt/ensemble/api/services/ai_tools.py
@@ -1546,6 +1900,47 @@ TOOLS: List[ToolDef] = [
         },
         handler=lambda inp, ctx: {"rendered": True, "spec": inp},
     ),
+
+    # ── Knowledge augmentation (RAG) ───────────────────────────────
+    ToolDef(
+        name="search_docs",
+        description=(
+            "Search project documentation (model methodology, framework guides, pipeline "
+            "contracts, architecture docs) for explanatory content. Use when the user asks "
+            "'how does X work?', 'why is X structured this way?', 'what is our methodology "
+            "for X?', or any question about the system's design rather than its current "
+            "state. Returns 3-5 most relevant chunks with citations of the form "
+            "[<doc>, §<section>]. ALWAYS cite chunks when answering; refuse to improvise "
+            "if the returned chunks do not cover the question."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Natural-language query describing what to find."
+                },
+                "tier": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": ["model_methodology", "architecture",
+                                 "framework_guide", "user_doc"]
+                    },
+                    "description": (
+                        "Restrict search to one or more document tiers. "
+                        "Use ['model_methodology', 'architecture'] for serious "
+                        "methodology questions; add 'framework_guide' for broader "
+                        "onboarding-style questions; add 'user_doc' for "
+                        "'how do I use the dashboard' questions."
+                    ),
+                },
+                "top_k": {"type": "integer", "default": 5, "maximum": 10},
+            },
+            "required": ["query"],
+        },
+        handler=lambda inp, ctx: ctx.doc_retriever.search(**inp),
+    ),
 ]
 
 
@@ -1706,6 +2101,24 @@ If the request requires data you cannot fetch, return a draft with [MISSING:
 
 **Effort**: 6–8 days. **Risk**: tool dispatch edge cases (timeouts, exceptions, large results).
 
+### Phase B+ — Knowledge augmentation (RAG over docs, optional within Week 3)
+
+**Goal**: AI can answer methodology / "how does it work?" questions citing project docs (T1.7).
+
+- [ ] Add `chromadb` + `openai` embeddings (or local `sentence-transformers`) to dependencies
+- [ ] Implement `ai_doc_index.py` with markdown-aware chunker
+- [ ] Implement `ai_doc_retriever.py`
+- [ ] Implement `scripts/reindex_docs.py` CLI
+- [ ] Register `search_docs` tool in `ai_tools.py`
+- [ ] Extend system prompt with knowledge-tool guidance (Appendix C C.1)
+- [ ] Configure doc roots + tier mapping in `Settings`
+- [ ] Initial bulk index of `docs/`, READMEs, and `paper/` LaTeX
+- [ ] Wire `apscheduler` background re-index every 5 minutes
+- [ ] Add `GET /ai/docs/health` and `GET /ai/docs/stats` endpoints
+- [ ] **Acceptance**: ask "how does our residual MLP work?" → answer with `[<doc>, §<section>]` citations that resolve to the right line in the source markdown
+
+**Effort**: 3 days. **Risk**: chunking quality — iterate on chunk size if recall is poor.
+
 ## Phase C — Streaming + inline charts (Week 4)
 
 **Goal**: the panel feels like ChatGPT.
@@ -1773,13 +2186,462 @@ Build T6 capabilities individually as appetite + stakeholder priority dictates. 
 | --- | --- | --- | --- |
 | A | 1 | Hello-world chat | ~5 dev days |
 | B | 2–3 | Tier 1 (all 6 caps) | ~13 dev days |
-| C | 4 | Streaming + inline charts | ~18 dev days |
-| D | 5 | Tier 2.1, 2.2, 2.3 + context | ~21 dev days |
-| E | 6–7 | Tier 2.4–6, Tier 3.1–2, Tier 4.6 | ~31 dev days |
-| F | 8–10 | Tier 5.1, 5.2 + parts of 5.3–4 | ~43 dev days |
-| G | 11+ | Tier 6 (one at a time) | open-ended |
+| **B+** | **3** | **RAG + T1.7 methodology Q&A** | **~16 dev days** |
+| C | 4 | Streaming + inline charts | ~21 dev days |
+| D | 5 | Tier 2.1, 2.2, 2.3 + context | ~24 dev days |
+| E | 6–7 | Tier 2.4–6, Tier 3.1–2, Tier 4.6 | ~34 dev days |
+| F | 8–10 | Tier 5.1, 5.2 + parts of 5.3–4 | ~46 dev days |
+| G | 11+ | Tier 6 (one at a time, incl. T6.7) | open-ended |
 
 Roughly **3 months for Phases A–F**, after which the AI assistant is a genuine differentiator. Phase G is "best in class" territory.
+
+---
+
+# Appendix E — RAG ingestion pipeline reference
+
+Reference implementation for §1.9 + §2.9. ~150 lines covering chunking, embedding, persistence, and retrieval. Drop-in compatible with the `search_docs` tool from Appendix B.
+
+## E.1 — `ai_doc_index.py`
+
+```python
+# src/rade_ml_pt/ensemble/api/services/ai_doc_index.py
+"""Document indexer for RAG. Chunks markdown/LaTeX, embeds, persists to chromadb."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import time
+from dataclasses import dataclass, field, asdict
+from pathlib import Path
+from typing import Iterable, List, Optional
+
+import chromadb
+from chromadb.config import Settings as ChromaSettings
+from openai import OpenAI
+
+logger = logging.getLogger(__name__)
+
+_COLLECTION_NAME = "rade_docs"
+
+
+@dataclass
+class DocChunk:
+    """One indexed unit of documentation."""
+    chunk_id:       str          # deterministic: f"{doc_hash}:{section_path}:{ord}"
+    text:           str
+    doc_path:       str          # repo-relative
+    section_chain:  str          # "Hybrid GNN-RNN › Residual MLP › Standardisation"
+    tier:           str          # 'model_methodology' | 'architecture' | ...
+    doc_hash:       str          # sha256 of source file at index time
+    chunk_ord:      int          # position within doc
+    tokens:         int
+    metadata:       dict = field(default_factory=dict)
+
+
+class DocIndexer:
+    """Build and maintain the document index."""
+
+    def __init__(
+        self,
+        store_path: str,
+        embed_model: str = "text-embedding-3-small",
+        chunk_size: int = 800,
+        chunk_overlap: int = 120,
+        openai_client: Optional[OpenAI] = None,
+        ingestion_log_path: Optional[str] = None,
+    ):
+        self.client = chromadb.PersistentClient(
+            path=store_path,
+            settings=ChromaSettings(anonymized_telemetry=False),
+        )
+        self.collection = self.client.get_or_create_collection(_COLLECTION_NAME)
+        self.embed_model = embed_model
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+        self.openai = openai_client or OpenAI()
+        self.log_path = Path(ingestion_log_path) if ingestion_log_path else None
+
+    # ── public API ──────────────────────────────────────────────────────
+
+    def ingest_directory(
+        self,
+        root: str | Path,
+        tier: str,
+        exclude_globs: Iterable[str] = (),
+    ) -> int:
+        """Index every markdown/LaTeX file under `root`. Returns total chunks indexed."""
+        root = Path(root)
+        n_chunks = 0
+        for path in self._walk(root, exclude_globs):
+            n_chunks += self.ingest_file(path, tier)
+        return n_chunks
+
+    def ingest_file(self, path: str | Path, tier: str) -> int:
+        """Index a single file. Skip if hash unchanged. Returns chunks indexed."""
+        path = Path(path)
+        text = path.read_text(encoding="utf-8")
+        doc_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+        # Skip if unchanged
+        existing = self.collection.get(where={"doc_path": str(path)}, limit=1)
+        if existing and existing["metadatas"]:
+            if existing["metadatas"][0].get("doc_hash") == doc_hash:
+                return 0
+
+        # Delete superseded
+        self.collection.delete(where={"doc_path": str(path)})
+
+        # Chunk + embed + upsert
+        chunks = list(self._chunk_markdown(text, str(path), tier, doc_hash))
+        if not chunks:
+            return 0
+        embeddings = self._embed_batch([c.text for c in chunks])
+        self.collection.add(
+            ids=[c.chunk_id for c in chunks],
+            documents=[c.text for c in chunks],
+            embeddings=embeddings,
+            metadatas=[{
+                "doc_path": c.doc_path,
+                "section_chain": c.section_chain,
+                "tier": c.tier,
+                "doc_hash": c.doc_hash,
+                "chunk_ord": c.chunk_ord,
+                "tokens": c.tokens,
+            } for c in chunks],
+        )
+        self._log_ingestion(path, tier, len(chunks), doc_hash)
+        return len(chunks)
+
+    def delete_by_path(self, path: str | Path) -> None:
+        self.collection.delete(where={"doc_path": str(path)})
+
+    def stats(self) -> dict:
+        return {
+            "n_chunks": self.collection.count(),
+            "model":    self.embed_model,
+        }
+
+    # ── internal ────────────────────────────────────────────────────────
+
+    def _walk(self, root: Path, exclude_globs: Iterable[str]) -> Iterable[Path]:
+        if root.is_file():
+            yield root
+            return
+        excludes = list(exclude_globs)
+        for path in root.rglob("*"):
+            if not path.is_file():
+                continue
+            if path.suffix not in {".md", ".tex"}:
+                continue
+            if any(path.match(g) for g in excludes):
+                continue
+            yield path
+
+    def _chunk_markdown(
+        self,
+        text: str,
+        doc_path: str,
+        tier: str,
+        doc_hash: str,
+    ) -> Iterable[DocChunk]:
+        """Markdown-aware chunker: splits on headers, packs sections into ~chunk_size tokens."""
+        lines = text.splitlines()
+        section_stack: List[str] = []
+        buf: List[str] = []
+        ord_ = 0
+
+        def flush() -> Iterable[DocChunk]:
+            nonlocal buf, ord_
+            if not buf:
+                return
+            joined = "\n".join(buf).strip()
+            if not joined:
+                buf = []
+                return
+            section_chain = " › ".join(section_stack) or "(root)"
+            for sub in self._split_to_size(joined):
+                yield DocChunk(
+                    chunk_id=f"{doc_hash[:12]}:{ord_:04d}",
+                    text=sub,
+                    doc_path=doc_path,
+                    section_chain=section_chain,
+                    tier=tier,
+                    doc_hash=doc_hash,
+                    chunk_ord=ord_,
+                    tokens=_approx_tokens(sub),
+                )
+                ord_ += 1
+            buf = []
+
+        for line in lines:
+            stripped = line.lstrip()
+            if stripped.startswith("#"):
+                yield from flush()
+                level = len(stripped) - len(stripped.lstrip("#"))
+                heading = stripped.lstrip("# ").strip()
+                section_stack = section_stack[: level - 1] + [heading]
+            else:
+                buf.append(line)
+        yield from flush()
+
+    def _split_to_size(self, text: str) -> Iterable[str]:
+        if _approx_tokens(text) <= self.chunk_size:
+            yield text
+            return
+        # Approximate split by paragraph then by sentence
+        paras = text.split("\n\n")
+        cur: List[str] = []
+        cur_tok = 0
+        for p in paras:
+            t = _approx_tokens(p)
+            if cur_tok + t > self.chunk_size and cur:
+                yield "\n\n".join(cur)
+                # Overlap: keep last paragraph
+                cur = [cur[-1], p] if self.chunk_overlap > 0 else [p]
+                cur_tok = sum(_approx_tokens(x) for x in cur)
+            else:
+                cur.append(p)
+                cur_tok += t
+        if cur:
+            yield "\n\n".join(cur)
+
+    def _embed_batch(self, texts: List[str], batch_size: int = 100) -> List[List[float]]:
+        out: List[List[float]] = []
+        for i in range(0, len(texts), batch_size):
+            chunk = texts[i : i + batch_size]
+            resp = self.openai.embeddings.create(model=self.embed_model, input=chunk)
+            out.extend([d.embedding for d in resp.data])
+        return out
+
+    def _log_ingestion(self, path: Path, tier: str, n_chunks: int, doc_hash: str) -> None:
+        if not self.log_path:
+            return
+        self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        with self.log_path.open("a") as f:
+            f.write(json.dumps({
+                "path": str(path),
+                "tier": tier,
+                "n_chunks": n_chunks,
+                "doc_hash": doc_hash,
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }) + "\n")
+
+
+def _approx_tokens(text: str) -> int:
+    """Cheap token estimate: ~4 chars per token for English."""
+    return max(1, len(text) // 4)
+```
+
+## E.2 — `ai_doc_retriever.py`
+
+```python
+# src/rade_ml_pt/ensemble/api/services/ai_doc_retriever.py
+"""Query-side: similarity search + citation formatting for the LLM."""
+
+from __future__ import annotations
+
+from typing import List, Optional
+
+import chromadb
+from chromadb.config import Settings as ChromaSettings
+from openai import OpenAI
+
+
+class DocRetriever:
+    def __init__(
+        self,
+        store_path: str,
+        embed_model: str = "text-embedding-3-small",
+        openai_client: Optional[OpenAI] = None,
+    ):
+        client = chromadb.PersistentClient(
+            path=store_path,
+            settings=ChromaSettings(anonymized_telemetry=False),
+        )
+        self.collection = client.get_collection("rade_docs")
+        self.embed_model = embed_model
+        self.openai = openai_client or OpenAI()
+
+    def search(
+        self,
+        query: str,
+        top_k: int = 5,
+        tier: Optional[List[str]] = None,
+    ) -> dict:
+        """Return chunks + LLM-ready formatted block."""
+        qvec = self.openai.embeddings.create(
+            model=self.embed_model, input=[query]
+        ).data[0].embedding
+
+        where = {"tier": {"$in": tier}} if tier else None
+        result = self.collection.query(
+            query_embeddings=[qvec],
+            n_results=top_k,
+            where=where,
+        )
+        chunks = self._unpack(result)
+        return {
+            "chunks":    chunks,
+            "formatted": self.format_for_llm(chunks),
+        }
+
+    def format_for_llm(self, chunks: List[dict]) -> str:
+        """Render chunks as a single string the LLM can read + cite."""
+        blocks = []
+        for c in chunks:
+            citation = f"[{c['doc_path']}, §{c['section_chain']}]"
+            blocks.append(f"{citation}\n{c['text']}\n")
+        return "\n---\n".join(blocks)
+
+    def _unpack(self, result: dict) -> List[dict]:
+        out = []
+        ids = result.get("ids", [[]])[0]
+        docs = result.get("documents", [[]])[0]
+        metas = result.get("metadatas", [[]])[0]
+        dists = result.get("distances", [[]])[0]
+        for i, _id in enumerate(ids):
+            out.append({
+                "chunk_id":      _id,
+                "text":          docs[i],
+                "doc_path":      metas[i]["doc_path"],
+                "section_chain": metas[i]["section_chain"],
+                "tier":          metas[i]["tier"],
+                "similarity":    1.0 - dists[i],
+            })
+        return out
+```
+
+## E.3 — `scripts/reindex_docs.py` (CLI)
+
+```python
+# scripts/reindex_docs.py
+"""CLI to (re)build the RAG index for rade_analytics."""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import time
+from pathlib import Path
+
+from rade_ml_pt.ensemble.api.config import get_settings
+from rade_ml_pt.ensemble.api.services.ai_doc_index import DocIndexer
+
+logger = logging.getLogger("reindex_docs")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+
+_TIER_ROOTS = {
+    "model_methodology": [
+        "docs/reference/models",
+        "docs/reference/machine_learning",
+        "docs/reference/risk",
+        "docs/rade_ml/RADE_ML_IMPLEMENTATION_PLAN.md",
+        "docs/rade_ml_pt_implementation_guide.md",
+        "docs/inference_pipeline_contract.md",
+        "docs/paper/section_data_pipeline.tex",
+        "docs/paper/section_data_pipeline_companion.md",
+    ],
+    "architecture": [
+        "docs/platform_designs/RADE_UI_DESIGN.md",
+        "docs/platform_designs/ensemble_analytics_db_v3_blueprint.md",
+        "docs/rade_analytics/page_contract.md",
+        "docs/rade_analytics/inference_implementation.md",
+        "docs/rade_analytics/ensemble_infer_refactor.md",
+        "docs/ensemble_implementation.md",
+        "docs/ensemble_dashboard_design.md",
+        "docs/hybrid_gnn_rnn_pipeline_suggested_changes.md",
+        "docs/AI_IMPLEMENTATION.md",
+        "src/rade_sr/PIPELINE.md",
+        "src/rade_ml_pt",          # walk recursively for READMEs
+        "src/rade_sr/README.md",
+    ],
+    "framework_guide": [
+        "docs/guides",
+        "docs/architecture",
+    ],
+    "user_doc": [
+        "docs/guides/ui/dash_ui_tutorial.md",
+        "docs/BEST_PRACTICES.md",
+        "src/ui",                  # walk for READMEs
+        "README.md",
+        "UPDATE.md",
+    ],
+}
+
+_EXCLUDES = ["*.aux", "*.out", "**/testing/**", "**/development/roadmap.md"]
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--tier", choices=list(_TIER_ROOTS), help="Index only one tier")
+    parser.add_argument("--path", help="Index only this single path")
+    parser.add_argument("--full", action="store_true", help="Wipe and rebuild from scratch")
+    args = parser.parse_args()
+
+    settings = get_settings()
+    indexer = DocIndexer(
+        store_path=settings.ai_rag_store_path,
+        embed_model=settings.ai_rag_embed_model,
+        chunk_size=settings.ai_rag_chunk_size,
+        chunk_overlap=settings.ai_rag_chunk_overlap,
+        ingestion_log_path=".cache/rade_ai/ingestion_log.jsonl",
+    )
+
+    if args.full:
+        logger.info("Full rebuild requested — wiping existing index")
+        indexer.client.delete_collection("rade_docs")
+        indexer.collection = indexer.client.get_or_create_collection("rade_docs")
+
+    t0 = time.time()
+    total = 0
+    if args.path:
+        tier = args.tier or _infer_tier(args.path)
+        total = indexer.ingest_file(args.path, tier)
+    else:
+        tiers = [args.tier] if args.tier else list(_TIER_ROOTS)
+        for tier in tiers:
+            for root in _TIER_ROOTS[tier]:
+                if not Path(root).exists():
+                    continue
+                n = indexer.ingest_directory(root, tier, exclude_globs=_EXCLUDES)
+                logger.info("tier=%s root=%s → %d chunks", tier, root, n)
+                total += n
+
+    stats = indexer.stats()
+    logger.info("Done: %d new chunks · total %d · %.1fs",
+                total, stats["n_chunks"], time.time() - t0)
+
+
+def _infer_tier(path: str) -> str:
+    for tier, roots in _TIER_ROOTS.items():
+        for r in roots:
+            if path.startswith(r):
+                return tier
+    return "user_doc"
+
+
+if __name__ == "__main__":
+    main()
+```
+
+## E.4 — Test smoke check
+
+After running `python scripts/reindex_docs.py --full`, verify with:
+
+```python
+from rade_ml_pt.ensemble.api.services.ai_doc_retriever import DocRetriever
+
+retriever = DocRetriever(store_path=".cache/rade_ai/chroma")
+result = retriever.search("How does the residual MLP standardise outputs?", top_k=3)
+
+for c in result["chunks"]:
+    print(f"{c['similarity']:.3f}  {c['doc_path']} § {c['section_chain']}")
+```
+
+Expected: top hit should be in a `hybrid_gnn_rnn` reference doc, section about the residual MLP / standardisation. If you get unrelated chunks, the chunking is over-fragmenting and `chunk_size` should be increased.
 
 ---
 

@@ -81,6 +81,7 @@ class EnsembleConfig:
     gpu_device_ids: Optional[List[int]] = None
     registry_dir: Optional[str] = None
     artifacts_dir: Optional[str] = None
+    save_db_artifacts: bool = True
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     # ------------------------------------------------------------------
