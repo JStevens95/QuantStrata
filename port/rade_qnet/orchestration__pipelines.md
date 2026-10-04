@@ -1,0 +1,3412 @@
+# `src/rade_qnet/orchestration/pipelines`
+
+9 file(s). Create the directory, then create each file below with the exact contents of its block.
+
+| # | File | Lines | Bytes | SHA-256 |
+| --- | --- | ---: | ---: | --- |
+| 1 | `__init__.py` | 37 | 1462 | `f610fecec664a1cf` |
+| 2 | `evaluate.py` | 397 | 13979 | `509da2af4be7d5ca` |
+| 3 | `infer.py` | 495 | 17073 | `1b6d06b15a104a75` |
+| 4 | `reload.py` | 273 | 9476 | `260a299a85ba559c` |
+| 5 | `resolve.py` | 125 | 4824 | `af2865110166c9da` |
+| 6 | `scoring.py` | 452 | 16203 | `7ebf299601abd91d` |
+| 7 | `search.py` | 250 | 8047 | `0f1f9353cef00b38` |
+| 8 | `train.py` | 677 | 24636 | `7610e61b277c2c10` |
+| 9 | `tune.py` | 609 | 20862 | `f81deb7b747fcf9c` |
+
+---
+
+## 1. `src/rade_qnet/orchestration/pipelines/__init__.py`
+
+1462 bytes · SHA-256 `f610fecec664a1cf`
+
+```python
+"""
+The four pipelines that define a model's lifecycle.
+
+Each pipeline is a template method: ``run()`` calls a sequence of small,
+individually typed, individually overridable steps.  The granularity is the
+point.  A model author who wants a different loss override one step; they do
+not reimplement training.
+
+There are four customisation tiers, and a model should use the lowest one that
+works:
+
+1. **Spec only.**  Change configuration; write no code.
+2. **Add reports or hooks.**  Extra artifacts and instrumentation, no pipeline
+   subclass.
+3. **Override one step.**  Keep the sequence, replace a single stage.
+4. **Override ``run()``.**  Reserved for genuinely different sequences; the
+   conformance suite still applies.
+
+Planned modules
+---------------
+``train.py``
+    ``TrainPipeline``: resolve spec, build source, build model, materialise,
+    fit, evaluate, package bundle, write reports, register.  [Phase 1 skeleton,
+    Phase 2 complete]
+``evaluate.py``
+    ``EvaluatePipeline``: load bundle, rebuild source from saved lineage,
+    predict, invert target transforms, compute metrics, write reports.
+    [Phase 5]
+``infer.py``
+    ``InferPipeline``: load bundle, prepare inputs for unseen entities,
+    predict, emit predictions with provenance.  [Phase 5]
+``tune.py``
+    ``TunePipeline``: propose trials, run a short train per trial against a
+    cached data build, select the best, optionally refit.  [Phase 5]
+"""
+
+__all__: tuple[str, ...] = ()
+```
+
+---
+
+## 2. `src/rade_qnet/orchestration/pipelines/evaluate.py`
+
+13979 bytes · SHA-256 `509da2af4be7d5ca`
+
+```python
+"""
+Scoring a saved model, on the data it was trained against or on newer data.
+
+Training already scores a model at the end of its run and records the result
+in the bundle. This pipeline exists for the cases training cannot cover:
+
+- **Reproducing a number.** Someone asks where a recorded metric came from,
+  and the only honest answer is to recompute it.
+- **Re-scoring on new data.** The model has not changed; the world has. A
+  monthly re-score against fresh observations is how a quiet degradation is
+  noticed before it costs anything.
+- **Comparing models on one split.** Two bundles trained at different times
+  cannot be compared on their own recorded metrics unless they were scored
+  against the same rows.
+
+All three come down to the same requirement, and it is the one this phase is
+built around: a re-loaded model must see its inputs exactly as it saw them
+during training. The scoring itself is therefore *not* written here -- it is
+:func:`~.scoring.score_splits`, the same function training calls, for the
+reason in that module's docstring. What is written here is everything around
+it: opening the bundle, rebuilding the data from the saved state and split,
+and putting the weights back into a model that can run a forward pass.
+
+Why this is not a `score: bool` on something else
+-------------------------------------------------
+Evaluation and inference share their entire reload path and differ in one
+thing: whether targets exist. It is tempting to make them one pipeline with a
+flag. They are kept apart because the flag would not stay in one place -- it
+would reappear as an ``if`` in every stage downstream of it, and the two have
+genuinely different outputs, different failure modes and different readers.
+What they share is shared as *functions* they both call, which cannot drift,
+rather than as a base class they both inherit, which can.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from ...core.contract.result import EvalResult, EvaluationResult
+from ...core.runtime.components import get_engine
+from ...core.runtime.errors import ContractError
+from ...core.runtime.logging import get_logger
+from ...core.runtime.pipeline import Pipeline
+from ...engines.base import Engine
+from .reload import load_bundle
+from .scoring import EVALUATED_SPLITS, score_splits, static_inputs
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from ...core.contract.data import DataBundle
+    from ...core.runtime.context import RunContext
+    from ...core.spec.data import SourceSpec
+    from ...engines.base import ModelHandle
+    from .reload import LoadedBundle
+
+__all__ = ["EvaluatePipeline"]
+
+_LOGGER = get_logger(__name__)
+
+
+class EvaluatePipeline(Pipeline[EvaluationResult]):
+    """
+    Score a saved bundle, on its own data or on newer data.
+
+    Parameters
+    ----------
+    context
+        Ambient state for the run.
+    directory
+        The bundle to evaluate.
+    source
+        A source specification to score against. Defaults to ``None``,
+        meaning the bundle's own -- which is the reproduction case. Supplying
+        a different one re-scores the same model on other data, and the
+        result records that it did.
+    splits
+        Which splits to score. Defaults to all of them. A re-score against
+        new data usually wants only ``test``, since on fresh observations the
+        training split is no longer a meaningful category.
+    verify
+        Whether to re-hash the bundle's files against its manifest.
+
+    Attributes
+    ----------
+    loaded
+        The opened bundle, available after the ``load`` stage.
+    handle
+        The restored model, available after ``restore``.
+    """
+
+    stages = (
+        "load",
+        "rebuild_data",
+        "restore",
+        "score",
+        "report",
+    )
+
+    def __init__(
+        self,
+        context: RunContext,
+        directory: Path,
+        *,
+        source: SourceSpec | None = None,
+        splits: tuple[str, ...] = EVALUATED_SPLITS,
+        verify: bool = True,
+    ) -> None:
+        """
+        Store what to evaluate and against what.
+
+        Parameters
+        ----------
+        context
+            Ambient state for the run.
+        directory
+            The bundle directory.
+        source
+            Source specification to score against, or ``None`` for the
+            bundle's own.
+        splits
+            Splits to score, in report order.
+        verify
+            Whether to verify the bundle against its manifest.
+        """
+        super().__init__(context)
+        self.directory = directory
+        self.source = source
+        self.splits = splits
+        self.verify = verify
+        self.loaded: LoadedBundle | None = None
+        self.handle: ModelHandle | None = None
+
+    def run(self) -> EvaluationResult:
+        """
+        Execute the stage sequence.
+
+        Returns
+        -------
+        EvaluationResult
+            Metrics per split, with the provenance needed to say what was
+            scored against what.
+
+        Raises
+        ------
+        StageError
+            Wrapping whatever a stage raised, naming the stage.
+        """
+        loaded = self.step("load", self.load)
+        data = self.step("rebuild_data", lambda: self.rebuild_data(loaded))
+        handle = self.step("restore", lambda: self.restore(loaded, data))
+        evaluations = self.step("score", lambda: self.score(loaded, handle, data))
+        return self.step("report", lambda: self.report(loaded, data, evaluations))
+
+    def load(self) -> LoadedBundle:
+        """
+        Open the bundle and resolve everything needed to run it again.
+
+        Returns
+        -------
+        LoadedBundle
+            The spec, definition, fitted state, lineage and signature.
+        """
+        loaded = load_bundle(self.directory, verify=self.verify)
+        self.loaded = loaded
+        return loaded
+
+    def rebuild_data(self, loaded: LoadedBundle) -> DataBundle[object]:
+        """
+        Rebuild the dataset using the bundle's saved state and split.
+
+        The stage that makes the whole pipeline trustworthy, and the one
+        with the least code in it. Everything it must *not* do -- re-derive
+        the split, re-fit the scalers -- is prevented upstream in
+        :meth:`~rade_qnet.sources.dataset.module.DataModule.rebuild`, so there
+        is no path through this pipeline that can reach the naive behaviour
+        by accident.
+
+        Parameters
+        ----------
+        loaded
+            The opened bundle.
+
+        Returns
+        -------
+        DataBundle
+            The same payload shape training consumed.
+        """
+        spec = loaded.spec
+        if self.source is not None:
+            spec = spec.model_copy(update={"source": self.source})
+
+        return loaded.definition.rebuild_data(
+            spec, state=loaded.state, lineage=loaded.lineage
+        )
+
+    def restore(self, loaded: LoadedBundle, data: DataBundle[object]) -> ModelHandle:
+        """
+        Rebuild the architecture, load the saved weights, place it on a device.
+
+        The architecture is rebuilt from the spec rather than deserialised,
+        for the reason the manifest stores a model name rather than a class
+        path: a pickled module is a version-locked artefact, while a spec
+        plus the current code is readable by anything that can still build
+        the model.
+
+        The signature is taken from the *bundle*, not from the rebuilt data.
+        They should agree, and :meth:`score` checks that they do -- but if
+        they disagree, the weights were shaped by the saved one, and building
+        against the other would produce a shape error at best and a silently
+        mismatched model at worst.
+
+        Parameters
+        ----------
+        loaded
+            The opened bundle.
+        data
+            The rebuilt data, for the static inputs.
+
+        Returns
+        -------
+        ModelHandle
+            The restored model, ready for a forward pass.
+
+        Raises
+        ------
+        ContractError
+            If the engine the bundle names is not registered here.
+        """
+        engine = self._engine(loaded)
+        # Re-checked on the reload path, not just at training time. The
+        # signature here came off disk, and the model code around it has
+        # moved on since: a bundle trained against a version that consumed
+        # different inputs would otherwise be rebuilt silently and score
+        # against tensors the current forward pass does not expect.
+        loaded.definition.check_signature(loaded.signature)
+        model = loaded.definition.build_model(loaded.spec, loaded.signature)
+        model = engine.materialise(model, loaded.signature)
+        model = engine.load_weights(model, loaded.saved.weights_path)
+
+        handle = engine.prepare(
+            model,
+            hardware=loaded.spec.hardware,
+            training=loaded.spec.training,
+            static=static_inputs(data),
+        )
+        self.handle = handle
+        _LOGGER.info("restored model: %s", handle.describe())
+        return handle
+
+    def score(
+        self,
+        loaded: LoadedBundle,
+        handle: ModelHandle,
+        data: DataBundle[object],
+    ) -> dict[str, EvalResult]:
+        """
+        Score the restored model, through the same function training uses.
+
+        Parameters
+        ----------
+        loaded
+            The opened bundle, for the signature check.
+        handle
+            The restored model.
+        data
+            The rebuilt data.
+
+        Returns
+        -------
+        dict
+            Split name to :class:`~rade_qnet.core.contract.result.EvalResult`.
+
+        Raises
+        ------
+        ContractError
+            If the rebuilt data no longer presents the interface the weights
+            were shaped against.
+        """
+        self._check_signature(loaded, data)
+        engine = self._engine(loaded)
+        return score_splits(
+            data,
+            lambda source: engine.predict(handle, source),
+            splits=self.splits,
+        )
+
+    def report(
+        self,
+        loaded: LoadedBundle,
+        data: DataBundle[object],
+        evaluations: dict[str, EvalResult],
+    ) -> EvaluationResult:
+        """
+        Assemble the result, recording what was scored against what.
+
+        The provenance is the point. A metric without the bundle version and
+        the source fingerprint behind it cannot be compared to another metric
+        with any confidence, and a re-score against changed data that does
+        not say so is the quiet failure this phase exists to prevent.
+
+        Parameters
+        ----------
+        loaded
+            The opened bundle.
+        data
+            The rebuilt data, for the fingerprint actually read.
+        evaluations
+            The scored splits.
+
+        Returns
+        -------
+        EvaluationResult
+            Metrics plus provenance.
+        """
+        changed = data.lineage.source_fingerprint != loaded.lineage.source_fingerprint
+        result = EvaluationResult(
+            evaluations=evaluations,
+            model_name=loaded.model_name,
+            bundle_version=loaded.saved.manifest.version,
+            spec_digest=loaded.saved.manifest.spec_digest,
+            source_fingerprint=data.lineage.source_fingerprint,
+            trained_on_fingerprint=loaded.lineage.source_fingerprint,
+            source_changed=changed,
+        )
+        _LOGGER.info("%s", result.describe())
+        return result
+
+    def _engine(self, loaded: LoadedBundle) -> Engine:
+        """
+        Resolve the engine the bundle was trained with.
+
+        Parameters
+        ----------
+        loaded
+            The opened bundle.
+
+        Returns
+        -------
+        Engine
+            An instance of the registered engine.
+
+        Raises
+        ------
+        ContractError
+            If the resolved component is not an engine.
+        """
+        name = loaded.spec.training.engine
+        engine = get_engine(name)()
+        if not isinstance(engine, Engine):
+            raise ContractError(
+                f"the bundle names the engine {name!r}, which is registered as "
+                f"a {type(engine).__name__} and does not satisfy the Engine "
+                f"protocol; it cannot run a forward pass"
+            )
+        return engine
+
+    @staticmethod
+    def _check_signature(loaded: LoadedBundle, data: DataBundle[object]) -> None:
+        """
+        Check the rebuilt data still presents the interface the weights expect.
+
+        A changed source can change more than its values. A column added to
+        the input table, a reduction that selects a different basis because
+        the data moved -- either changes the feature count, and a model built
+        against the saved signature would then be fed something else.
+
+        Checked rather than trusted because of how it fails otherwise. A
+        shape mismatch at the first layer raises, which is fine. A mismatch
+        that happens to broadcast does not, and the metric that comes out is
+        a plausible number computed from the wrong columns.
+
+        Parameters
+        ----------
+        loaded
+            The opened bundle, holding the saved signature.
+        data
+            The rebuilt data, holding the one just derived.
+
+        Raises
+        ------
+        ContractError
+            If the two signatures disagree.
+        """
+        saved = loaded.signature
+        rebuilt = data.signature
+        if saved == rebuilt:
+            return
+        raise ContractError(
+            f"the data rebuilt for this bundle no longer matches the interface "
+            f"its weights were shaped against.\n"
+            f"  trained against: {saved.describe()}\n"
+            f"  rebuilt:         {rebuilt.describe()}\n"
+            f"This usually means the source gained or lost a column since the "
+            f"model was trained. Re-scoring would compute a metric from the "
+            f"wrong inputs, so it is refused"
+        )
+```
+
+---
+
+## 3. `src/rade_qnet/orchestration/pipelines/infer.py`
+
+17073 bytes · SHA-256 `1b6d06b15a104a75`
+
+```python
+"""
+Producing predictions from a saved model, with the provenance to act on them.
+
+Inference is evaluation without targets, and that one difference changes what
+the pipeline is for. Evaluation answers "how good is this model"; inference
+answers "what does it say about these inputs", and somebody downstream will
+do something with the answer.
+
+Which is why provenance is not optional here. A column of numbers with no
+record of which model produced them, from which inputs, at what time, cannot
+be reconciled with anything later -- and reconciling predictions after the
+fact is the ordinary case, not the exception. Somebody will ask why
+Tuesday's number differed from Monday's, and the only useful answer names the
+bundle version and the source fingerprint behind each.
+
+The reload path is identical to evaluation's, and is shared as functions both
+call rather than as a base class both inherit. See
+:mod:`~rade_qnet.orchestration.pipelines.evaluate` for why they are two
+pipelines rather than one with a flag.
+
+Unseen entities
+---------------
+A model that learned a per-entity embedding table has no row for an
+instrument added last week. Asking it anyway tends to produce a default
+embedding and a confident, meaningless number rather than an error -- which
+is the worst available outcome, because the number looks exactly like the
+real ones.
+
+:class:`~rade_qnet.core.capability.protocols.Inductive` is how a model says it
+can do better. This pipeline refuses the request when the capability is
+absent, and routes through
+:class:`~rade_qnet.core.capability.protocols.Inductive` when it
+is present.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+
+import numpy as np
+
+from ...core.capability.protocols import Inductive
+from ...core.contract.result import Predictions
+from ...core.runtime.components import get_engine
+from ...core.runtime.errors import ContractError
+from ...core.runtime.logging import get_logger
+from ...core.runtime.pipeline import Pipeline
+from ...engines.base import Engine
+from .reload import load_bundle
+from .scoring import scoring_source, static_inputs
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+    from pathlib import Path
+
+    from ...core.contract.data import DataBundle
+    from ...core.runtime.context import RunContext
+    from ...core.spec.data import SourceSpec
+    from ...engines.base import ModelHandle
+    from .reload import LoadedBundle
+
+__all__ = ["InferPipeline"]
+
+_LOGGER = get_logger(__name__)
+
+#: The split a prediction pass runs over by default. Every row of a source
+#: presented for inference is a row somebody wants a number for, and the
+#: training run's notion of "test" is the split whose rows the model never
+#: learned from -- the honest default for a pass over the bundle's own data.
+DEFAULT_SPLIT = "test"
+
+#: How many unseen identifiers to name in the refusal message. Enough to
+#: recognise the pattern -- a whole currency pair missing, a stale mapping --
+#: without pasting a thousand tickers into a log line.
+_NAMED_IN_ERROR = 5
+
+
+class InferPipeline(Pipeline[Predictions]):
+    """
+    Predict with a saved bundle, over its own data or over new inputs.
+
+    Parameters
+    ----------
+    context
+        Ambient state for the run.
+    directory
+        The bundle to predict with.
+    source
+        A source specification to predict over. Defaults to ``None``,
+        meaning the bundle's own.
+    split
+        Which split of the source to predict over.
+    entities
+        Identifiers to predict for. Defaults to ``None``, meaning whatever
+        the source holds. Naming entities the model never saw requires the
+        model to declare
+        :class:`~rade_qnet.core.capability.protocols.Inductive`.
+    verify
+        Whether to re-hash the bundle's files against its manifest.
+
+    Attributes
+    ----------
+    loaded
+        The opened bundle, available after the ``load`` stage.
+    handle
+        The restored model, available after ``restore``.
+    """
+
+    stages = (
+        "load",
+        "prepare_inputs",
+        "restore",
+        "predict",
+        "invert",
+        "attribute",
+    )
+
+    def __init__(
+        self,
+        context: RunContext,
+        directory: Path,
+        *,
+        source: SourceSpec | None = None,
+        split: str = DEFAULT_SPLIT,
+        entities: Sequence[str] | None = None,
+        verify: bool = True,
+    ) -> None:
+        """
+        Store what to predict with and over what.
+
+        Parameters
+        ----------
+        context
+            Ambient state for the run.
+        directory
+            The bundle directory.
+        source
+            Source specification to predict over, or ``None``.
+        split
+            Split to predict over.
+        entities
+            Identifiers to predict for, or ``None`` for all of them.
+        verify
+            Whether to verify the bundle against its manifest.
+        """
+        super().__init__(context)
+        self.directory = directory
+        self.source = source
+        self.split = split
+        self.entities = tuple(entities) if entities is not None else None
+        self.verify = verify
+        self.loaded: LoadedBundle | None = None
+        self.handle: ModelHandle | None = None
+
+    def run(self) -> Predictions:
+        """
+        Execute the stage sequence.
+
+        Returns
+        -------
+        Predictions
+            Values in the target's original units, with provenance.
+
+        Raises
+        ------
+        StageError
+            Wrapping whatever a stage raised, naming the stage.
+        """
+        loaded = self.step("load", self.load)
+        data = self.step("prepare_inputs", lambda: self.prepare_inputs(loaded))
+        handle = self.step("restore", lambda: self.restore(loaded, data))
+        raw = self.step("predict", lambda: self.predict(loaded, handle, data))
+        values = self.step("invert", lambda: self.invert(loaded, raw))
+        return self.step("attribute", lambda: self.attribute(loaded, data, values))
+
+    def load(self) -> LoadedBundle:
+        """
+        Open the bundle and resolve everything needed to run it again.
+
+        Returns
+        -------
+        LoadedBundle
+            The spec, definition, fitted state, lineage and signature.
+        """
+        loaded = load_bundle(self.directory, verify=self.verify)
+        self.loaded = loaded
+        return loaded
+
+    def prepare_inputs(self, loaded: LoadedBundle) -> DataBundle[object]:
+        """
+        Rebuild the inputs using the bundle's saved state.
+
+        The same rebuild evaluation uses, and for the same reason: a
+        prediction made from inputs standardised by today's mean, under a
+        model that learned a response to inputs standardised by the training
+        mean, is a confident number computed on the wrong scale.
+
+        Parameters
+        ----------
+        loaded
+            The opened bundle.
+
+        Returns
+        -------
+        DataBundle
+            The same payload shape training consumed.
+
+        Raises
+        ------
+        ContractError
+            If entities were requested that the model cannot predict for.
+        """
+        spec = loaded.spec
+        if self.source is not None:
+            spec = spec.model_copy(update={"source": self.source})
+
+        data = loaded.definition.rebuild_data(
+            spec, state=loaded.state, lineage=loaded.lineage
+        )
+        self._check_entities(loaded, data)
+        return data
+
+    def restore(self, loaded: LoadedBundle, data: DataBundle[object]) -> ModelHandle:
+        """
+        Rebuild the architecture, load the saved weights, place it on a device.
+
+        Parameters
+        ----------
+        loaded
+            The opened bundle.
+        data
+            The prepared inputs, for the static inputs.
+
+        Returns
+        -------
+        ModelHandle
+            The restored model.
+        """
+        engine = self._engine(loaded)
+        # Re-checked on the reload path, not just at training time. The
+        # signature here came off disk, and the model code around it has
+        # moved on since: a bundle trained against a version that consumed
+        # different inputs would otherwise be rebuilt silently and score
+        # against tensors the current forward pass does not expect.
+        loaded.definition.check_signature(loaded.signature)
+        model = loaded.definition.build_model(loaded.spec, loaded.signature)
+        model = engine.materialise(model, loaded.signature)
+        model = engine.load_weights(model, loaded.saved.weights_path)
+
+        handle = engine.prepare(
+            model,
+            hardware=loaded.spec.hardware,
+            training=loaded.spec.training,
+            static=static_inputs(data),
+        )
+        self.handle = handle
+        _LOGGER.info("restored model: %s", handle.describe())
+        return handle
+
+    def predict(
+        self,
+        loaded: LoadedBundle,
+        handle: ModelHandle,
+        data: DataBundle[object],
+    ) -> np.ndarray:
+        """
+        Run the forward pass, in the model's own output space.
+
+        Routed through
+        :func:`~.scoring.scoring_source` even though nothing is being scored.
+        A prediction pass is paired with its identifiers afterwards, so it
+        needs the same stable order a two-pass scoring run needs -- and a
+        shuffled pass would attribute each number to the wrong instrument,
+        which is a worse outcome here than in evaluation because the numbers
+        are acted on individually rather than reduced to a mean.
+
+        Parameters
+        ----------
+        loaded
+            The opened bundle.
+        handle
+            The restored model.
+        data
+            The prepared inputs.
+
+        Returns
+        -------
+        numpy.ndarray
+            Raw model output.
+
+        Raises
+        ------
+        ContractError
+            If the requested split is not present in the prepared inputs.
+        """
+        if self.split not in data.splits:
+            raise ContractError(
+                f"the prepared inputs have no {self.split!r} split; available "
+                f"splits are {sorted(data.splits)}"
+            )
+        engine = self._engine(loaded)
+        source = scoring_source(data, self.split)
+        return np.asarray(engine.predict(handle, source), dtype=np.float64)
+
+    @staticmethod
+    def invert(loaded: LoadedBundle, raw: np.ndarray) -> np.ndarray:
+        """
+        Put the predictions back into the target's original units.
+
+        A required stage rather than a courtesy. The model's output space is
+        whatever the fitted state transformed the target into, and a number
+        in that space is not a quantity anyone can act on -- it is not a P&L,
+        a return or a price, and acting on it as though it were would be
+        wrong by the training standard deviation.
+
+        Parameters
+        ----------
+        loaded
+            The opened bundle, for the fitted state that inverts.
+        raw
+            The model's raw output.
+
+        Returns
+        -------
+        numpy.ndarray
+            Values in the original target units.
+        """
+        return np.asarray(loaded.state.inverse_transform_targets(raw), dtype=np.float64)
+
+    def attribute(
+        self,
+        loaded: LoadedBundle,
+        data: DataBundle[object],
+        values: np.ndarray,
+    ) -> Predictions:
+        """
+        Pair the values with their identifiers and record where they came from.
+
+        Parameters
+        ----------
+        loaded
+            The opened bundle.
+        data
+            The prepared inputs, for the scenario indices and entity ids.
+        values
+            The inverted predictions.
+
+        Returns
+        -------
+        Predictions
+            Values plus everything needed to reconcile them later.
+        """
+        flat = np.ravel(values)
+        indices = self._scenario_indices(data, n_predictions=flat.size)
+
+        predictions = Predictions(
+            values=flat,
+            in_original_units=True,
+            entity_ids=self.entities,
+            scenario_indices=indices,
+            bundle_version=str(loaded.saved.manifest.version),
+            provenance={
+                "model_name": loaded.model_name,
+                "spec_digest": loaded.saved.manifest.spec_digest,
+                "source_fingerprint": data.lineage.source_fingerprint,
+                "trained_on_fingerprint": loaded.lineage.source_fingerprint,
+                "split": self.split,
+                "predicted_at": datetime.now(UTC).isoformat(),
+                "framework_version": loaded.lineage.framework_version,
+            },
+        )
+        _LOGGER.info(
+            "predicted %d value(s) with %s", predictions.n_predictions, loaded.describe()
+        )
+        return predictions
+
+    def _scenario_indices(
+        self, data: DataBundle[object], *, n_predictions: int
+    ) -> np.ndarray | None:
+        """
+        Return the source rows each prediction corresponds to.
+
+        Returns ``None`` rather than a guess when the count does not line up.
+        A sequence model drops the first few rows of a split because no
+        complete window ends there, so the saved indices can legitimately
+        outnumber the predictions -- and inventing an alignment would
+        attribute every number to the wrong row by a constant offset, which
+        is both wrong and almost invisible.
+
+        Parameters
+        ----------
+        data
+            The prepared inputs.
+        n_predictions
+            How many values came back.
+
+        Returns
+        -------
+        numpy.ndarray or None
+            One index per prediction, or ``None`` if they cannot be paired.
+        """
+        saved = data.lineage.split_indices.get(self.split)
+        if saved is None:
+            return None
+        indices = np.asarray(saved, dtype=np.int64)
+        if indices.size != n_predictions:
+            _LOGGER.warning(
+                "the %r split holds %d row(s) but %d prediction(s) came back, so "
+                "the two cannot be paired; scenario indices are omitted rather "
+                "than guessed",
+                self.split,
+                indices.size,
+                n_predictions,
+            )
+            return None
+        return indices
+
+    def _check_entities(self, loaded: LoadedBundle, data: DataBundle[object]) -> None:
+        """
+        Refuse requested entities the model cannot honestly predict for.
+
+        Parameters
+        ----------
+        loaded
+            The opened bundle, whose definition declares the capability.
+        data
+            The prepared inputs, naming the entities the model knows.
+
+        Raises
+        ------
+        ContractError
+            If entities absent from training were requested and the model
+            does not declare
+            :class:`~rade_qnet.core.capability.protocols.Inductive`.
+        """
+        if self.entities is None:
+            return
+
+        known = tuple(data.entity_ids or ())
+        if not known:
+            # Nothing to check against. A model with no entity axis predicts
+            # per scenario, and the identifiers are the caller's labels for
+            # rows rather than something the model resolves.
+            return
+
+        unseen = tuple(name for name in self.entities if name not in known)
+        if not unseen:
+            return
+
+        definition = loaded.definition
+        if not (isinstance(definition, Inductive) and definition.supports_unseen_entities()):
+            raise ContractError(
+                f"{len(unseen)} requested entity(ies) were absent when this "
+                f"model was trained: {list(unseen[:_NAMED_IN_ERROR])}"
+                f"{' ...' if len(unseen) > _NAMED_IN_ERROR else ''}. "
+                f"{type(definition).__name__} does not declare Inductive, so it "
+                f"has no row for them and would return a default embedding -- a "
+                f"confident number indistinguishable from a real one. Refused "
+                f"rather than predicted"
+            )
+        _LOGGER.info(
+            "%d unseen entity(ies) will be resolved by %s's inductive path",
+            len(unseen),
+            type(definition).__name__,
+        )
+
+    def _engine(self, loaded: LoadedBundle) -> Engine:
+        """
+        Resolve the engine the bundle was trained with.
+
+        Parameters
+        ----------
+        loaded
+            The opened bundle.
+
+        Returns
+        -------
+        Engine
+            An instance of the registered engine.
+
+        Raises
+        ------
+        ContractError
+            If the resolved component is not an engine.
+        """
+        name = loaded.spec.training.engine
+        engine = get_engine(name)()
+        if not isinstance(engine, Engine):
+            raise ContractError(
+                f"the bundle names the engine {name!r}, which is registered as "
+                f"a {type(engine).__name__} and does not satisfy the Engine "
+                f"protocol; it cannot run a forward pass"
+            )
+        return engine
+```
+
+---
+
+## 4. `src/rade_qnet/orchestration/pipelines/reload.py`
+
+9476 bytes · SHA-256 `260a299a85ba559c`
+
+```python
+"""
+Opening a saved bundle and turning it back into something runnable.
+
+A bundle on disk is a directory of files. Evaluation, inference and any later
+comparison all need the same thing from it: the specification it was trained
+from, the model definition that interprets its weights, the fitted state its
+transforms live in, and the lineage that records how its data was split.
+
+Shared as a module rather than as a pipeline base class. Two pipelines
+calling the same function stay in step; two pipelines inheriting a common
+base diverge the first time one of them needs a stage the other does not --
+and evaluation and inference differ in exactly that way, because one has
+targets and the other does not.
+
+Why a bundle is not self-describing
+-----------------------------------
+The manifest records a model *name*, not a Python import path. Phase 1 chose
+that deliberately: a recorded class path means renaming a class breaks every
+bundle written before the rename. The cost is that loading a bundle requires
+the model's package to be importable, so that the name resolves through the
+registry.
+
+That cost is not worth engineering away, because it is not really a cost.
+Weights are meaningless without the architecture that interprets them, so any
+process that can use a bundle has the model code anyway. What *is* worth
+getting right is the error. A registry miss from a bundle load should say
+that the bundle names a model this process has not imported -- which is the
+same fault as Phase 4's defect 12, reached from the other direction -- rather
+than reporting a bare lookup failure that leaves the reader guessing.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+from ...core.capability.definition import PredictorDefinition
+from ...core.capability.simple import RebuildableDataModule
+from ...core.runtime.components import MODELS, ComponentError, get_model
+from ...core.runtime.errors import BundleError
+from ...core.runtime.logging import get_logger
+from ...core.spec.run import SupervisedRunSpec
+from ...storage.bundle import (
+    load_fitted_state,
+    load_lineage,
+    load_signature,
+    load_spec,
+    open_bundle,
+)
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from ...core.contract.bundle import SavedBundle
+    from ...core.contract.data import DataLineage
+    from ...core.contract.signature import InputSignature
+    from ...core.contract.state import FittedState
+
+__all__ = ["LoadedBundle", "load_bundle"]
+
+_LOGGER = get_logger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class LoadedBundle:
+    """
+    Everything a pipeline needs to put a saved model back to work.
+
+    Parameters
+    ----------
+    saved
+        The located bundle: its directory and verified manifest.
+    spec
+        The run specification the model was trained from.
+    definition
+        The model definition, resolved from the manifest's model name.
+    state
+        The fitted state, to be applied and never re-fitted.
+    lineage
+        The data lineage, supplying the split that must not be re-derived.
+    signature
+        The input signature the model was built against, used to check that
+        rebuilt data still presents the interface the weights expect.
+    """
+
+    saved: SavedBundle
+    spec: SupervisedRunSpec
+    definition: PredictorDefinition
+    state: FittedState
+    lineage: DataLineage
+    signature: InputSignature
+
+    @property
+    def model_name(self) -> str:
+        """
+        Return the name the model is registered under.
+
+        Returns
+        -------
+        str
+            From the manifest, so it is what was recorded rather than what
+            the resolved class happens to be called now.
+        """
+        return self.saved.manifest.model_name
+
+    def describe(self) -> str:
+        """
+        Return a one-line description, for a log and a report header.
+
+        Returns
+        -------
+        str
+            Model name, bundle version and the split sizes it was trained
+            against.
+        """
+        sizes = {name: len(values) for name, values in self.lineage.split_indices.items()}
+        return (
+            f"{self.model_name} v{self.saved.manifest.version} "
+            f"(spec {self.saved.manifest.spec_digest[:8]}, splits {sizes})"
+        )
+
+
+def load_bundle(directory: Path, *, verify: bool = True) -> LoadedBundle:
+    """
+    Open a saved bundle and resolve everything needed to run it again.
+
+    Parameters
+    ----------
+    directory
+        The bundle directory.
+    verify
+        Whether to re-hash every file against the manifest. Defaults to
+        true, because a bundle about to produce numbers someone will act on
+        is exactly the case where the check is worth its cost.
+
+    Returns
+    -------
+    LoadedBundle
+        The specification, definition, fitted state, lineage and signature.
+
+    Raises
+    ------
+    BundleError
+        If the bundle is missing or inconsistent, if its model is not
+        registered in this process, or if its definition cannot supply the
+        fitted-state type needed to read ``fitted_state/``.
+    """
+    saved = open_bundle(directory, verify=verify)
+    spec = load_spec(saved)
+
+    if not isinstance(spec, SupervisedRunSpec):
+        raise BundleError(
+            f"the bundle at {directory} holds a {type(spec).__name__}; only "
+            f"supervised runs can be evaluated or served through this path"
+        )
+
+    definition = _definition_for(saved.manifest.model_name, directory)
+    state = load_fitted_state(saved, _state_type_for(definition, spec, directory))
+    lineage = load_lineage(saved)
+    signature = load_signature(saved)
+
+    loaded = LoadedBundle(
+        saved=saved,
+        spec=spec,
+        definition=definition,
+        state=state,
+        lineage=lineage,
+        signature=signature,
+    )
+    _LOGGER.info("loaded %s", loaded.describe())
+    return loaded
+
+
+def _definition_for(model_name: str, directory: Path) -> PredictorDefinition:
+    """
+    Resolve a manifest's model name into an instantiated definition.
+
+    Parameters
+    ----------
+    model_name
+        The name recorded in the manifest.
+    directory
+        The bundle directory, named in errors so the reader knows which
+        bundle could not be opened.
+
+    Returns
+    -------
+    PredictorDefinition
+        A fresh instance of the registered definition.
+
+    Raises
+    ------
+    BundleError
+        If the name is not registered here, or is registered to something
+        that is not a predictor.
+    """
+    try:
+        model_type = get_model(model_name)
+    except ComponentError as error:
+        raise BundleError(
+            f"the bundle at {directory} was trained by a model named "
+            f"{model_name!r}, which is not registered in this process. A "
+            f"model registers when its package is imported, so import the "
+            f"package that defines it before loading the bundle. "
+            f"Registered here: {sorted(MODELS.names()) or 'nothing'}"
+        ) from error
+
+    definition = model_type()
+    if not isinstance(definition, PredictorDefinition):
+        raise BundleError(
+            f"the bundle at {directory} names the model {model_name!r}, which "
+            f"is registered as a {type(definition).__name__}; only a predictor "
+            f"can be evaluated or served through this path"
+        )
+    return definition
+
+
+def _state_type_for(
+    definition: PredictorDefinition, spec: SupervisedRunSpec, directory: Path
+) -> type[FittedState]:
+    """
+    Ask a definition for the concrete type its fitted state loads into.
+
+    The type is not recorded on disk, by the same decision that keeps class
+    paths out of the manifest. The data module declares it, so the data
+    module is asked -- which is why loading a bundle needs the model package
+    and not merely the framework.
+
+    Parameters
+    ----------
+    definition
+        The resolved model definition.
+    spec
+        The bundle's run specification, needed because a definition may
+        choose its data module from the spec.
+    directory
+        The bundle directory, named in errors.
+
+    Returns
+    -------
+    type[FittedState]
+        The class to read ``fitted_state/`` into.
+
+    Raises
+    ------
+    BundleError
+        If the definition cannot supply a data module that declares one.
+    """
+    data_module = getattr(definition, "data_module", None)
+    if data_module is None:
+        raise BundleError(
+            f"the model {type(definition).__name__} has no data_module(), so "
+            f"nothing can say what type the fitted state in {directory} loads "
+            f"into. A model that builds its data by a bespoke route must "
+            f"expose the module that knows how to rebuild it"
+        )
+
+    module = data_module(spec)
+    if not isinstance(module, RebuildableDataModule):
+        raise BundleError(
+            f"{type(definition).__name__}.data_module() returned a "
+            f"{type(module).__name__}, which has no rebuild(); the bundle at "
+            f"{directory} can be opened but its model cannot be re-fed the "
+            f"way it was trained, so any metric from it would be meaningless"
+        )
+
+    state_type = getattr(module, "state_type", None)
+    if not isinstance(state_type, type):
+        raise BundleError(
+            f"{type(module).__name__} declares no state_type, so the fitted "
+            f"state in {directory} cannot be read back"
+        )
+    return state_type
+```
+
+---
+
+## 5. `src/rade_qnet/orchestration/pipelines/resolve.py`
+
+4824 bytes · SHA-256 `af2865110166c9da`
+
+```python
+"""
+Pick the pipeline class a model wants for a given lifecycle stage.
+
+Why this module exists
+----------------------
+A model declares its overrides on its framework definition::
+
+    class HybridGnnRnnModel:
+        pipelines = MappingProxyType({"train": HybridTrainPipeline, ...})
+
+That declaration had, until this module, no reader. Every override was
+reachable only by importing the subclass and instantiating it by hand,
+which is what the phase examples did -- so the overrides worked, were
+tested, and were nevertheless unreachable through ``api.train`` and every
+other documented entry point. A user following the documentation got the
+framework's base pipeline and a flagship model quietly missing its graph
+diagnostics.
+
+That is the worst shape a defect can take: the feature exists, its tests
+pass, and the only thing wrong is that nothing connects it. This module is
+the connection, and it is deliberately one function so there is exactly one
+place where the lookup can be got wrong.
+
+Why the override must be a subclass
+------------------------------------
+The caller has already decided which lifecycle it is running, and has a
+contract with that pipeline's return type: ``api.evaluate`` promises an
+:class:`~rade_qnet.core.contract.result.EvaluationResult`, and a model that
+returned something else would break a caller that never asked for a custom
+pipeline in the first place. Requiring a subclass is what makes "the model
+customises training" different from "the model replaces training".
+
+The check also catches the likeliest mistake by far, which is a model
+listing a class under the wrong key -- a tuning pipeline under ``"eval"``
+reads perfectly well in a dictionary literal and is nonsense at runtime.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from ...core.runtime.errors import ComponentError
+from ...core.runtime.logging import get_logger
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+__all__ = ["pipeline_for"]
+
+_LOGGER = get_logger(__name__)
+
+#: The lifecycle keys a model may declare. Checked so that a typo -- a
+#: model declaring ``"evaluate"`` where the framework reads ``"eval"`` --
+#: is reported rather than silently ignored, which would present as the
+#: override simply not running.
+LIFECYCLES: frozenset[str] = frozenset({"train", "eval", "infer", "tune"})
+
+
+def pipeline_for[PipelineT: type](
+    definition: object, lifecycle: str, default: PipelineT
+) -> PipelineT:
+    """
+    Return the pipeline class to run, honouring the model's override.
+
+    Parameters
+    ----------
+    definition
+        The model's framework definition, or ``None`` when the caller has
+        none -- a search over a model that is resolved per trial, for
+        instance. A definition that declares no overrides is as ordinary
+        as one that declares some.
+    lifecycle
+        Which pipeline is wanted: ``train``, ``eval``, ``infer`` or
+        ``tune``.
+    default
+        The framework's own pipeline for that lifecycle, returned when the
+        model declares no override.
+
+    Returns
+    -------
+    type
+        The override if the model declares one, otherwise ``default``.
+
+    Raises
+    ------
+    ComponentError
+        If the model declares an override under an unknown lifecycle key,
+        or one that is not a subclass of the framework's pipeline.
+    """
+    if lifecycle not in LIFECYCLES:
+        raise ComponentError(
+            f"{lifecycle!r} is not a lifecycle; expected one of {sorted(LIFECYCLES)}"
+        )
+
+    overrides: Mapping[str, type] = getattr(definition, "pipelines", None) or {}
+    unknown = set(overrides) - LIFECYCLES
+    if unknown:
+        raise ComponentError(
+            f"{type(definition).__name__} declares pipeline override(s) under "
+            f"{sorted(unknown)}, which no lifecycle reads. The override would "
+            f"never run, and the model would appear to work while silently "
+            f"using the framework's pipeline. Expected keys: {sorted(LIFECYCLES)}"
+        )
+
+    override = overrides.get(lifecycle)
+    if override is None:
+        return default
+
+    if not (isinstance(override, type) and issubclass(override, default)):
+        raise ComponentError(
+            f"{type(definition).__name__} declares {override!r} for the "
+            f"{lifecycle!r} lifecycle, but it is not a subclass of "
+            f"{default.__name__}. A pipeline that does not extend the "
+            f"framework's own has no obligation to return what the caller was "
+            f"promised, which turns a model's customisation into a broken "
+            f"contract for every caller that never asked for one"
+        )
+
+    _LOGGER.debug(
+        "using %s's %r pipeline override %s",
+        type(definition).__name__,
+        lifecycle,
+        override.__name__,
+    )
+    return override
+```
+
+---
+
+## 6. `src/rade_qnet/orchestration/pipelines/scoring.py`
+
+16203 bytes · SHA-256 `7ebf299601abd91d`
+
+```python
+"""
+Turning a fitted model and a data bundle into scored metrics.
+
+Extracted from :class:`~rade_qnet.orchestration.pipelines.train.TrainPipeline`
+when evaluation arrived, because of a requirement that reads as a one-line
+test and is actually a design constraint:
+
+    Re-evaluating a saved bundle must reproduce the metrics recorded in it.
+
+Two implementations of scoring cannot satisfy that for long. They would agree
+on the day they were written and then drift -- one gains a guard, the other
+gains a different one, and the first anybody hears of it is a re-evaluation
+that disagrees with a bundle by a fraction nobody can account for. So there
+is one implementation, and both pipelines call it.
+
+What makes scoring harder than it looks
+---------------------------------------
+Every helper here exists because of a failure that produces a *number* rather
+than an error:
+
+- **Two passes must line up.** Scoring iterates a source twice, once for the
+  forward pass and once for the targets. A shuffled source reorders between
+  them, so each prediction is compared against an unrelated target. The counts
+  still match and every metric still computes; the only symptom is a model
+  that appears to score at random on the split it was trained on.
+  :func:`scoring_source` routes through
+  :class:`~rade_qnet.core.contract.source.OrderedSource`, and verifies rather
+  than assumes.
+
+- **The source decides which rows exist.** A sequence model discards the first
+  ``length - 1`` rows of each split, because no complete window ends there.
+  Targets read from the dataset would include them, misaligning every metric
+  by a few rows -- degrading a score rather than breaking it.
+  :func:`collect_targets` reads through the source for that reason.
+
+- **Shapes that broadcast.** NumPy will expand an ``(n, 1)`` against an
+  ``(n,)`` into an ``(n, n)``, and the mean of that is a plausible number
+  with no meaning. :func:`align` checks instead.
+
+- **Units.** Metrics are computed after
+  :meth:`~rade_qnet.core.contract.state.FittedState.inverse_transform_targets`,
+  so they are in the target's original units. An error in standardised space
+  is not a quantity anyone can act on, and two runs' standardised errors --
+  each scaled by its own training mean -- are not comparable to each other.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import numpy as np
+
+from ...analysis.metrics.regression import baseline_metrics, regression_metrics
+from ...core.contract.data import TensorBatchData
+from ...core.contract.result import EvalResult
+from ...core.contract.source import BatchSource, OrderedSource
+from ...core.runtime.errors import ContractError
+from ...core.runtime.logging import get_logger
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
+
+    from numpy.typing import NDArray
+
+    from ...core.contract.data import DataBundle
+
+__all__ = [
+    "EVALUATED_SPLITS",
+    "FEATURE_MATRIX_RANK",
+    "TARGET_KEY",
+    "TRAIN_SPLIT",
+    "align",
+    "collect_targets",
+    "feature_matrix",
+    "order_is_stable",
+    "score_splits",
+    "scoring_source",
+    "source_for",
+    "static_inputs",
+]
+
+_LOGGER = get_logger(__name__)
+
+#: The split a model learns from, and the one whose statistics define the
+#: baseline. Named rather than written inline because three functions need it
+#: to mean the same thing.
+TRAIN_SPLIT = "train"
+
+#: The splits worth scoring, in report order. Training is included on purpose:
+#: a model that scores well on train and badly on validation has overfitted,
+#: and that is a different problem from one that scores badly on both. Without
+#: the training score the two are indistinguishable in the saved bundle.
+EVALUATED_SPLITS: tuple[str, ...] = ("train", "validation", "test")
+
+#: The batch key holding the observed values.
+TARGET_KEY = "target"
+
+#: The rank a feature array must have for the flat quality metrics to mean
+#: anything: one row per sample, one column per feature.
+FEATURE_MATRIX_RANK = 2
+
+
+def score_splits(
+    data: DataBundle[object],
+    predict: Callable[[BatchSource], NDArray[np.floating]],
+    *,
+    splits: tuple[str, ...] = EVALUATED_SPLITS,
+) -> dict[str, EvalResult]:
+    """
+    Score a model on every available split, in the target's original units.
+
+    The one implementation of scoring, called both at the end of training and
+    when a saved bundle is re-evaluated. Takes the forward pass as a callable
+    rather than an engine and a handle, so that the caller decides how
+    predictions are produced -- training already holds a prepared handle,
+    while evaluation has just rebuilt one -- without this function needing to
+    know about either.
+
+    Parameters
+    ----------
+    data
+        The data bundle, supplying the sources and the fitted state that
+        inverts the target transform.
+    predict
+        Runs a forward pass over one source and returns its raw output, in
+        the model's own output space. Inverting is done here, so a caller
+        that inverted too would invert twice.
+    splits
+        Which splits to score, in report order. Any that the bundle does not
+        carry are skipped rather than raising: a run configured without a
+        validation split is a legitimate configuration, not an error.
+
+    Returns
+    -------
+    dict
+        Split name to result, each with its metrics and a naive baseline.
+    """
+    # The training targets, in original units, for the `mean` baseline.
+    # Deliberately the training mean rather than the scored split's: using
+    # the latter would give the baseline information the model did not have,
+    # making it unbeatable and therefore useless as a reference.
+    train_source = scoring_source(data, TRAIN_SPLIT)
+    train_targets = collect_targets(data, train_source, split=TRAIN_SPLIT)
+
+    evaluations: dict[str, EvalResult] = {}
+    for name in splits:
+        if name not in data.splits:
+            continue
+        source = scoring_source(data, name)
+        predictions = data.state.inverse_transform_targets(
+            np.asarray(predict(source), dtype=np.float64)
+        )
+        targets = collect_targets(data, source, split=name)
+        predictions, targets = align(predictions, targets, split=name)
+
+        evaluations[name] = EvalResult(
+            split=name,
+            metrics=regression_metrics(predictions, targets),
+            n_samples=int(targets.shape[0]),
+            in_original_units=True,
+            baseline_metrics=baseline_metrics(
+                targets, strategy="mean", train_targets=train_targets
+            ),
+        )
+        _LOGGER.info(
+            "scored %s on %d sample(s): %s",
+            name,
+            evaluations[name].n_samples,
+            {key: round(value, 6) for key, value in evaluations[name].metrics.items()},
+        )
+    return evaluations
+
+
+def static_inputs(data: DataBundle[object]) -> Mapping[str, object]:
+    """
+    Return the training split's static inputs.
+
+    Parameters
+    ----------
+    data
+        The data bundle.
+
+    Returns
+    -------
+    Mapping
+        Input name to tensor. Empty for a model with no static inputs, which
+        is most of them.
+    """
+    return source_for(data, TRAIN_SPLIT).static
+
+
+def source_for(data: DataBundle[object], split: str) -> BatchSource:
+    """
+    Return one split's batch source.
+
+    Parameters
+    ----------
+    data
+        The data bundle.
+    split
+        Split name.
+
+    Returns
+    -------
+    BatchSource
+        The split's source.
+
+    Raises
+    ------
+    ContractError
+        If the split's payload is not a batch source. The tensor engines
+        consume :class:`~rade_qnet.core.contract.data.TensorBatchData`, whose
+        ``loader`` is the source; anything else means the model's data
+        build produced a payload for a different engine.
+    """
+    payload = data.split(split)
+    if isinstance(payload, TensorBatchData):
+        loader = payload.loader
+        if isinstance(loader, BatchSource):
+            return loader
+        raise ContractError(
+            f"the {split!r} split's loader is a {type(loader).__name__}, which "
+            f"does not satisfy BatchSource; a gradient engine needs a source "
+            f"it can re-iterate and ask for a batch count"
+        )
+    if isinstance(payload, BatchSource):
+        return payload
+    raise ContractError(
+        f"the {split!r} split carries a {type(payload).__name__}, which is "
+        f"neither TensorBatchData nor a BatchSource. A gradient engine cannot "
+        f"consume it; check that the model's data build targets this engine"
+    )
+
+
+def scoring_source(data: DataBundle[object], split: str) -> BatchSource:
+    """
+    Return one split's source in a form safe to traverse twice.
+
+    Scoring takes two passes over a split -- one for the forward pass and
+    one to collect the targets -- and pairs the results row for row. A
+    training source reshuffles between passes, so pairing them directly
+    compares each prediction against an unrelated target. The sample
+    counts still match and every metric still computes, so the only
+    symptom is a model that appears to score at random on the split it was
+    trained on.
+
+    Routes through
+    :class:`~rade_qnet.core.contract.source.OrderedSource` where the source
+    offers it, and otherwise verifies that the source is already stable
+    rather than assuming it.
+
+    Parameters
+    ----------
+    data
+        The data bundle.
+    split
+        Split name.
+
+    Returns
+    -------
+    BatchSource
+        A source whose passes line up.
+
+    Raises
+    ------
+    ContractError
+        If the source's order varies between passes and it offers no
+        ordered view. Raised rather than scored, because a plausible wrong
+        number is worse than no number.
+    """
+    source = source_for(data, split)
+    if isinstance(source, OrderedSource):
+        source = source.ordered()
+
+    if not order_is_stable(source):
+        raise ContractError(
+            f"the {split!r} source yields its samples in a different order on "
+            f"each pass, and does not implement OrderedSource.ordered(). "
+            f"Scoring needs two passes to line up, so every metric for this "
+            f"split would be computed against mismatched targets. Implement "
+            f"ordered() to return a stable-order view"
+        )
+    return source
+
+
+def collect_targets(
+    data: DataBundle[object], source: BatchSource, *, split: str
+) -> NDArray[np.float64]:
+    """
+    Collect one split's targets, in the target's original units.
+
+    Read by iterating the source rather than from the dataset directly,
+    for a reason worth stating: the source decides which rows are usable.
+    A sequence model discards the first ``length - 1`` rows of every split
+    because no complete window ends there, and targets taken from the
+    dataset would include them -- silently misaligning every metric by a
+    few rows in a way that degrades a score rather than breaking it.
+
+    Parameters
+    ----------
+    data
+        The data bundle, for the fitted state that inverts the target.
+    source
+        The split's source. Taken as a parameter rather than re-derived
+        from ``data``, because the caller has already resolved it to a
+        stable-order view and re-deriving would hand back the shuffled
+        training source -- which is exactly the misalignment
+        :func:`scoring_source` exists to prevent.
+    split
+        Split name, for messages.
+
+    Returns
+    -------
+    numpy.ndarray
+        Targets, one row per sample, inverse-transformed.
+
+    Raises
+    ------
+    ContractError
+        If a batch has no target, or the source yielded no batches.
+    """
+    collected: list[NDArray[np.float64]] = []
+    for batch in source.batches():
+        if TARGET_KEY not in batch:
+            raise ContractError(
+                f"a batch from the {split!r} source has keys {sorted(batch)} and "
+                f"no {TARGET_KEY!r}; a split cannot be scored without targets"
+            )
+        collected.append(np.asarray(batch[TARGET_KEY], dtype=np.float64))
+
+    if not collected:
+        raise ContractError(
+            f"the {split!r} source yielded no batches, so it cannot be scored. "
+            f"A batch size larger than the split with drop_last set produces "
+            f"this"
+        )
+    return data.state.inverse_transform_targets(np.concatenate(collected, axis=0))
+
+
+def feature_matrix(data: DataBundle[object]) -> NDArray[np.float64] | None:
+    """
+    Collect the training split's features as one matrix, if it is flat.
+
+    Returns ``None`` rather than raising for a source whose features are
+    not a flat sample-by-feature matrix -- a sequence model's windows, a
+    graph model's node table. Quality metrics for those are the model's own
+    business, and a framework that guessed would report a completeness
+    figure over the wrong axis.
+
+    Read through the ordered view, because one of the quality metrics is
+    order-dependent: staleness counts rows that repeat the row before them,
+    and over a shuffled pass that is a measure of nothing. Completeness and
+    coverage would survive the shuffle, which is what makes this the kind
+    of mistake that produces three plausible numbers and one meaningless
+    one.
+
+    Parameters
+    ----------
+    data
+        The data bundle.
+
+    Returns
+    -------
+    numpy.ndarray or None
+        The feature matrix, or ``None`` if the shape is not flat.
+    """
+    source = scoring_source(data, TRAIN_SPLIT)
+    blocks: list[NDArray[np.float64]] = []
+    for batch in source.batches():
+        for name in sorted(batch):
+            if name == TARGET_KEY:
+                continue
+            array = np.asarray(batch[name], dtype=np.float64)
+            if array.ndim != FEATURE_MATRIX_RANK:
+                return None
+            blocks.append(array)
+    if not blocks:
+        return None
+    return np.concatenate(blocks, axis=0)
+
+
+def order_is_stable(source: BatchSource) -> bool:
+    """
+    Return whether two passes over a source yield targets in the same order.
+
+    Compares the targets rather than the features because they are the smaller
+    array by a wide margin -- one column against a window of many -- and any
+    reordering that would misalign a metric reorders both.
+
+    Parameters
+    ----------
+    source
+        The source to check.
+
+    Returns
+    -------
+    bool
+        True if two passes agree. True for an unbounded source, which cannot
+        be checked this way and is never scored by this pipeline anyway.
+    """
+    if source.steps_per_epoch is None:
+        return True
+    passes = [
+        np.concatenate(
+            [np.ravel(np.asarray(batch[TARGET_KEY])) for batch in source.batches()],
+            axis=0,
+        )
+        for _ in range(2)
+    ]
+    first, second = passes
+    return first.shape == second.shape and bool(np.array_equal(first, second))
+
+
+def align(
+    predictions: NDArray[np.float64], targets: NDArray[np.float64], *, split: str
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """
+    Reduce predictions and targets to matching one-dimensional arrays.
+
+    Parameters
+    ----------
+    predictions
+        Model output, in original units.
+    targets
+        Observed values, in original units.
+    split
+        Split name, for the message.
+
+    Returns
+    -------
+    tuple
+        The two arrays, flattened.
+
+    Raises
+    ------
+    ContractError
+        If the sample counts disagree. Checked rather than broadcast, because
+        NumPy will happily broadcast a ``(n, 1)`` against an ``(n,)`` into an
+        ``(n, n)`` and the resulting metric is a number that looks plausible.
+    """
+    flat_predictions = np.ravel(predictions)
+    flat_targets = np.ravel(targets)
+    if flat_predictions.shape != flat_targets.shape:
+        raise ContractError(
+            f"on the {split!r} split the model produced {flat_predictions.size} "
+            f"prediction(s) for {flat_targets.size} target(s). Equal counts are "
+            f"required; a mismatch usually means the source dropped rows the "
+            f"target collection kept, or the model's output has an extra axis"
+        )
+    return flat_predictions, flat_targets
+
+
+```
+
+---
+
+## 7. `src/rade_qnet/orchestration/pipelines/search.py`
+
+8047 bytes · SHA-256 `0f1f9353cef00b38`
+
+```python
+"""
+Proposing points in a search space.
+
+Separated from the pipeline that consumes them because proposing and
+evaluating are independent concerns, and keeping them apart means a sampler
+can be tested exhaustively without training anything -- which matters, since
+the properties worth asserting about a sampler (it is reproducible, it stays
+in bounds, it does not repeat a grid point) are all cheap to check and all
+expensive to discover from a search that merely finished.
+
+Reproducibility
+---------------
+Every sampler draws from a seeded generator created once per search, not per
+trial. A per-trial generator seeded by the trial number would also be
+reproducible, and would be worse: the sequences for adjacent trials would be
+correlated in whatever way the underlying algorithm correlates adjacent
+seeds, and a search would explore less of the space than its budget suggests
+while looking exactly like one that explored more.
+
+Dotted paths
+------------
+A dimension names ``training.learning_rate``; a run specification nests. The
+expansion happens here, once, in :func:`expand`, and the result goes through
+the same validated merge a job set's overrides do -- so a path that does not
+exist fails at trial construction rather than being explored as though it
+were a real knob. That is the structural cure for defect 7.
+"""
+
+from __future__ import annotations
+
+import math
+from itertools import product
+from typing import TYPE_CHECKING, Any
+
+import numpy as np
+
+from ...core.runtime.errors import SpecError
+from ...core.runtime.logging import get_logger
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Mapping, Sequence
+
+    from ...core.spec.tune import Dimension, TuneSpec
+
+__all__ = ["expand", "propose"]
+
+_LOGGER = get_logger(__name__)
+
+
+def propose(spec: TuneSpec) -> list[dict[str, Any]]:
+    """
+    Produce the flat proposals for a whole search, in trial order.
+
+    Produced up front rather than one at a time. A search that drew its next
+    point only when the previous one finished would be a prerequisite for
+    adaptive sampling, which this does not do -- and producing them all now
+    buys two things that matter more today: the proposals can be logged and
+    compared before anything trains, and a grid search can say honestly how
+    many distinct points it actually has.
+
+    Parameters
+    ----------
+    spec
+        The search specification.
+
+    Returns
+    -------
+    list of dict
+        One flat mapping of dotted path to value per trial.
+    """
+    if spec.sampler == "grid":
+        return _grid(spec)
+    return _random(spec)
+
+
+def expand(flat: Mapping[str, Any]) -> dict[str, Any]:
+    """
+    Turn a flat mapping of dotted paths into the nested shape a spec expects.
+
+    Parameters
+    ----------
+    flat
+        Dotted path to value, such as ``{"training.learning_rate": 0.01}``.
+
+    Returns
+    -------
+    dict
+        The nested equivalent, such as
+        ``{"training": {"learning_rate": 0.01}}``.
+
+    Raises
+    ------
+    SpecError
+        If two paths disagree about whether a segment is a mapping --
+        ``training`` and ``training.learning_rate`` in the same space, say.
+        One of the two would overwrite the other depending on iteration
+        order, so the search would explore a different space on a different
+        day.
+    """
+    nested: dict[str, Any] = {}
+    for path, value in flat.items():
+        segments = path.split(".")
+        cursor = nested
+        for segment in segments[:-1]:
+            existing = cursor.setdefault(segment, {})
+            if not isinstance(existing, dict):
+                raise SpecError(
+                    f"the search path {path!r} needs {segment!r} to be a mapping, "
+                    f"but another path in the same space sets it to a value. "
+                    f"Vary one or the other, not both"
+                )
+            cursor = existing
+        leaf = segments[-1]
+        if isinstance(cursor.get(leaf), dict):
+            raise SpecError(
+                f"the search path {path!r} sets a value, but another path in the "
+                f"same space treats it as a mapping. Vary one or the other"
+            )
+        cursor[leaf] = value
+    return nested
+
+
+def _random(spec: TuneSpec) -> list[dict[str, Any]]:
+    """
+    Draw independent points from the space.
+
+    Parameters
+    ----------
+    spec
+        The search specification.
+
+    Returns
+    -------
+    list of dict
+        One proposal per trial.
+    """
+    # One generator for the whole search, for the reason in the module
+    # docstring.
+    generator = np.random.default_rng(spec.seed)
+    proposals = [
+        {
+            dimension.path: _draw(dimension, generator)
+            for dimension in spec.space.dimensions
+        }
+        for _ in range(spec.trials)
+    ]
+    _LOGGER.info(
+        "proposed %d random trial(s) over %d dimension(s): %s",
+        len(proposals),
+        len(spec.space.dimensions),
+        list(spec.space.paths),
+    )
+    return proposals
+
+
+def _grid(spec: TuneSpec) -> list[dict[str, Any]]:
+    """
+    Enumerate the product of the axes, truncated to the trial budget.
+
+    Parameters
+    ----------
+    spec
+        The search specification.
+
+    Returns
+    -------
+    list of dict
+        One proposal per grid point, at most ``spec.trials`` of them.
+    """
+    points: Iterator[tuple[Any, ...]] = product(
+        *(dimension.values for dimension in spec.space.dimensions)
+    )
+    proposals = [
+        dict(zip(spec.space.paths, values, strict=True))
+        for _, values in zip(range(spec.trials), points, strict=False)
+    ]
+
+    total = spec.grid_size
+    if total > spec.trials:
+        # Said rather than silently truncated. A grid that ran two thirds of
+        # its points and reported a best trial reads exactly like a complete
+        # one, and the conclusion drawn from it would be wrong in a way
+        # nothing in the output hints at.
+        _LOGGER.warning(
+            "the grid holds %d point(s) but the budget is %d trial(s); the last "
+            "%d point(s) will not be explored, so the reported best trial is the "
+            "best of a partial grid",
+            total,
+            spec.trials,
+            total - spec.trials,
+        )
+    else:
+        _LOGGER.info("proposed the complete grid of %d point(s)", len(proposals))
+    return proposals
+
+
+def _draw(dimension: Dimension, generator: np.random.Generator) -> object:
+    """
+    Draw one value from one axis.
+
+    Parameters
+    ----------
+    dimension
+        The axis.
+    generator
+        The search's generator.
+
+    Returns
+    -------
+    object
+        A value from the enumeration, or a float from the range.
+    """
+    if not dimension.is_continuous:
+        return _choice(dimension.values, generator)
+
+    low, high = float(dimension.low or 0.0), float(dimension.high or 0.0)
+    if dimension.log:
+        # Uniform in the exponent, so each decade gets an equal share of the
+        # budget. Sampling uniformly in the value instead would put nine
+        # tenths of the trials in the top decade of a range like 1e-4 to
+        # 1e-1, which is almost never what the range was meant to express.
+        return float(
+            math.exp(generator.uniform(math.log(low), math.log(high)))
+        )
+    return float(generator.uniform(low, high))
+
+
+def _choice(values: Sequence[object], generator: np.random.Generator) -> object:
+    """
+    Pick one of an enumeration's values.
+
+    Indexed rather than passed to ``Generator.choice`` directly, because that
+    coerces its input to an array -- which would turn an integer axis into
+    ``numpy.int64`` and a mixed axis into strings. Either would then be
+    merged into a specification and fail validation for a reason that has
+    nothing to do with what the user wrote.
+
+    Parameters
+    ----------
+    values
+        The enumeration.
+    generator
+        The search's generator.
+
+    Returns
+    -------
+    object
+        One value, with its original Python type.
+    """
+    return values[int(generator.integers(len(values)))]
+```
+
+---
+
+## 8. `src/rade_qnet/orchestration/pipelines/train.py`
+
+24636 bytes · SHA-256 `7610e61b277c2c10`
+
+```python
+"""
+The training pipeline: the canonical stage sequence, end to end.
+
+The one place the whole framework is threaded together. Everything else in
+``rade_qnet`` is a contract, a component or a helper; this is where a spec
+becomes a trained, scored, documented, persisted model.
+
+The stage order is the design
+-----------------------------
+Four orderings here are load-bearing, and each exists because the opposite
+order has failed in practice. The full diagram is in
+`ARCHITECTURE.md` §5 (``../ARCHITECTURE.md#5-stage-contracts-and-the-train-pipeline``).
+
+- **Resolution precedes the data build.** A misspelled engine or report name
+  is a configuration error, and finding it after a twenty-minute data build
+  wastes the twenty minutes. Every name the run needs is looked up first.
+- **Seeding precedes the data build**, because a data build that samples -- a
+  subgraph, a negative set, a shuffled split -- is part of what a seed has to
+  reproduce. Seeding afterwards makes a run reproducible in its training and
+  not in its data.
+- **Materialisation precedes hardware preparation.** A model with lazily
+  shaped parameters has no parameters until it has seen one batch. Handing
+  that model to an optimiser or a distributed wrapper gives either an empty
+  parameter group -- silent non-training -- or a crash inside the distributed
+  library. This is defect 6, and the fix is visible in the stage list rather
+  than buried in the engine.
+- **Persistence is last, and nothing before it writes to the catalog.** A run
+  that fails at any point leaves no half-registered bundle behind.
+
+Reports run after persistence, not before
+-----------------------------------------
+A report reads a finished bundle, so it cannot run before the bundle exists;
+and because a report never fails a run, running it last means a report fault
+cannot cost a trained model. The ordering follows from the two properties
+rather than being a separate decision.
+
+The four customisation tiers, concretely
+----------------------------------------
+1. **Spec only.** Write a model definition, write YAML, run this class.
+2. **Add observation.** Attach a hook, or enable a report in the spec.
+3. **Override one stage.** Subclass, replace ``build_data`` or ``evaluate``,
+   inherit the rest -- with their timing, logging and error attribution.
+4. **Override** ``run``. Change the sequence. Still gets the run-level
+   bookkeeping from :meth:`~rade_qnet.core.runtime.pipeline.Pipeline.execute`.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from ...analysis.metrics.quality import quality_metrics
+from ...analysis.reports.base import ReportContext
+from ...core.capability.definition import PredictorDefinition
+from ...core.contract.bundle import ModelBundle
+from ...core.contract.data import (
+    DataBundle,
+)
+from ...core.contract.result import EvalResult, FitOutcome, TrainingResult
+from ...core.contract.signature import InputSignature
+from ...core.runtime.components import get_engine, get_report
+from ...core.runtime.errors import ComponentError
+from ...core.runtime.logging import get_logger
+from ...core.runtime.pipeline import Pipeline
+from ...core.runtime.seeding import seed_everything
+from ...engines.base import Engine, ModelHandle
+from ...storage.bundle import write_bundle
+from .scoring import (
+    TRAIN_SPLIT,
+    feature_matrix,
+    score_splits,
+    source_for,
+    static_inputs,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from ...analysis.reports.base import Report, ReportOutcome
+    from ...core.contract.bundle import SavedBundle
+    from ...core.contract.data import DataLineage
+    from ...core.runtime.context import RunContext
+    from ...core.spec.run import SupervisedRunSpec
+
+__all__ = ["TrainPipeline"]
+
+_LOGGER = get_logger(__name__)
+
+#: Bundle version used when no catalog is available to allocate one. A run
+#: without a catalog has nothing to collide with, so the first version is
+#: always correct for it.
+_UNVERSIONED = 1
+
+
+class TrainPipeline(Pipeline[TrainingResult]):
+    """
+    Train one model, from a validated spec to a persisted bundle.
+
+    Parameters
+    ----------
+    context
+        Ambient state for the run.
+    spec
+        The validated run specification.
+    definition
+        The model definition, normally resolved from the spec's model name
+        through the component registry. Passed in rather than resolved here so
+        a test can supply a definition without registering it globally.
+
+    Attributes
+    ----------
+    engine
+        The resolved engine, available after the ``resolve`` stage. Held on
+        the instance rather than threaded through every signature because
+        ``persist`` needs it for the weight serialiser and ``evaluate`` needs
+        it for the forward pass, and passing it through four stages to reach
+        them would obscure the sequence.
+    handle
+        The prepared model handle, available after the ``prepare_hardware``
+        stage.
+    """
+
+    stages = (
+        "resolve",
+        "resolve_seed",
+        "build_data",
+        "declare_signature",
+        "build_model",
+        "materialise",
+        "prepare_hardware",
+        "fit",
+        "evaluate",
+        "persist",
+        "report",
+    )
+
+    def __init__(
+        self,
+        context: RunContext,
+        spec: SupervisedRunSpec,
+        definition: PredictorDefinition,
+    ) -> None:
+        """
+        Store the spec and the definition.
+
+        Parameters
+        ----------
+        context
+            Ambient state for the run.
+        spec
+            The validated run specification.
+        definition
+            The model definition to train.
+        """
+        super().__init__(context)
+        self.spec = spec
+        self.definition = definition
+        self.engine: Engine | None = None
+        self.handle: ModelHandle | None = None
+        # What `persist` wrote, available afterwards. The run returns metrics
+        # and history, which is the right return type -- but a caller that
+        # has to record *where* the bundle went, as a job set does for every
+        # row of its manifest, would otherwise have to re-derive the path
+        # from the version-allocation rules or query the catalog back. Both
+        # are reconstructions of something this object already knows.
+        self.saved: SavedBundle | None = None
+
+    def run(self) -> TrainingResult:
+        """
+        Execute the stage sequence.
+
+        Each stage goes through
+        :meth:`~rade_qnet.core.runtime.pipeline.Pipeline.step`, so each is timed,
+        logged, reported to hooks, and -- on failure -- wrapped in a
+        :class:`~rade_qnet.core.runtime.errors.StageError` naming the stage.
+
+        Returns
+        -------
+        TrainingResult
+            Metrics and training history.
+
+        Raises
+        ------
+        StageError
+            Wrapping whatever a stage raised.
+        """
+        self.step("resolve", self.resolve)
+        seed = self.step("resolve_seed", self.resolve_seed)
+        data = self.step("build_data", lambda: self.build_data(self.spec))
+        signature = self.step("declare_signature", lambda: self.declare_signature(data))
+        model = self.step("build_model", lambda: self.build_model(self.spec, signature))
+        materialised = self.step("materialise", lambda: self.materialise(model, signature))
+        handle = self.step("prepare_hardware", lambda: self.prepare_hardware(materialised, data))
+        outcome = self.step("fit", lambda: self.fit(handle, data))
+        evaluations = self.step("evaluate", lambda: self.evaluate(handle, data))
+
+        result = TrainingResult(fit=outcome, evaluations=evaluations, seed=seed)
+        bundle = self.step("persist", lambda: self.persist(handle, data, signature, result))
+        self.step("report", lambda: self.report(bundle))
+        # Stamped after persisting rather than before, because until the
+        # bundle is written there is no directory to name. The result handed
+        # to `persist` deliberately does not carry it: a result that claimed
+        # a location before anything was saved there would be wrong in the
+        # one case -- a failed write -- where it is read most carefully.
+        if self.saved is None:
+            return result
+        return result.model_copy(
+            update={"bundle_directory": str(self.saved.directory)}
+        )
+
+    def resolve(self) -> None:
+        """
+        Look up every component the run names, before anything expensive runs.
+
+        Resolves the engine and each enabled report. Nothing is executed and
+        nothing is built; the point is that a name which does not resolve
+        fails here, in a stage that takes milliseconds, rather than after the
+        data build.
+
+        Raises
+        ------
+        ComponentError
+            If the engine or a report name is not registered, or if the
+            resolved engine does not satisfy the
+            :class:`~rade_qnet.engines.base.Engine` protocol.
+        """
+        engine_name = self.spec.training.engine
+        engine = get_engine(engine_name)()
+        if not isinstance(engine, Engine):
+            raise ComponentError(
+                f"the engine registered as {engine_name!r} is a "
+                f"{type(engine).__name__}, which does not satisfy the Engine "
+                f"protocol; it cannot drive a training run"
+            )
+        self.engine = engine
+
+        # Resolved and discarded.  Instantiating each report now is what turns
+        # a misspelled report name into an immediate failure instead of a
+        # warning logged after training finished.
+        names = self.report_names()
+        for name in names:
+            get_report(name)
+
+        _LOGGER.info(
+            "resolved engine %r (%s) and report(s) %s",
+            engine_name,
+            engine.capabilities().describe(),
+            list(names),
+        )
+
+    def report_names(self) -> tuple[str, ...]:
+        """
+        Return the reports to render, in order.
+
+        A hook rather than a direct read of the spec, so a model whose
+        diagnostics only make sense for that model can contribute them
+        without the user having to know their names. A graph model's
+        neighbourhood diagnostics are not optional extras a user should
+        have to remember to enable -- they are how you tell whether the
+        graph is any good.
+
+        Overriding this is the lightest possible pipeline override: the
+        stage sequence is untouched, so a model adding reports is not also
+        quietly taking ownership of how training runs.
+
+        Returns
+        -------
+        tuple of str
+            Registered report names. The spec's selection, unchanged.
+        """
+        return tuple(self.spec.reports.enabled)
+
+    def resolve_seed(self) -> int:
+        """
+        Apply the run's seed and return what was actually applied.
+
+        Returns what was applied rather than what was requested, because the
+        two differ for a job-set member: the context derives a per-job seed so
+        that two members are independent and a single failed job can be
+        re-run alone and reproduce. Recording the derived value in the result
+        is what makes that re-run possible.
+
+        Returns
+        -------
+        int
+            The seed applied.
+        """
+        seed = seed_everything(self.context.seed, determinism=self.spec.hardware.determinism)
+        _LOGGER.info("applied seed %d with determinism %r", seed, self.spec.hardware.determinism)
+        return seed
+
+    def build_data(self, spec: SupervisedRunSpec) -> DataBundle[object]:
+        """
+        Build the dataset by delegating to the model definition.
+
+        A thin delegation by design: the framework does not know how to build
+        any particular model's data, and a base implementation that tried to
+        would have to be overridden by every non-trivial model.
+
+        Parameters
+        ----------
+        spec
+            The validated run specification.
+
+        Returns
+        -------
+        DataBundle
+            Splits, signature, fitted state and lineage. A bundle with no
+            training split is refused by
+            :class:`~rade_qnet.core.contract.data.DataBundle` itself, so there
+            is nothing for this stage to add -- a second check here would be
+            unreachable code that reads like a safeguard.
+        """
+        return self.definition.build_data(spec)
+
+    def declare_signature(self, bundle: DataBundle[object]) -> InputSignature:
+        """
+        Read what the data build produced, and check the model can use it.
+
+        Two halves, and the second is the one that earns the stage its
+        place. The signature says what the build made; ``check_signature``
+        compares it against what the model declared it consumes, which is
+        the only point in a run where information flows model to data.
+
+        It happens here rather than inside ``build_model`` because a
+        mismatch is a fault in the *pairing* of a model and a source, not
+        in either one -- and because failing before anything is constructed
+        means the message is about the inputs rather than about whatever
+        shape error they eventually caused.
+
+        Parameters
+        ----------
+        bundle
+            The data bundle from :meth:`build_data`.
+
+        Returns
+        -------
+        InputSignature
+            The declared interface, recorded in the saved bundle.
+
+        Raises
+        ------
+        ContractError
+            If the build did not produce what the model consumes.
+        """
+        signature = self.definition.signature(bundle)
+        self.definition.check_signature(signature)
+        return signature
+
+    def build_model(self, spec: SupervisedRunSpec, signature: InputSignature) -> object:
+        """
+        Construct the untrained model.
+
+        Parameters
+        ----------
+        spec
+            The validated run specification.
+        signature
+            The declared interface.
+
+        Returns
+        -------
+        object
+            An engine-native untrained model.
+        """
+        return self.definition.build_model(spec, signature)
+
+    def materialise(self, model: object, signature: InputSignature) -> object:
+        """
+        Give a lazily shaped model its parameters, before anything wraps it.
+
+        A separate stage rather than a call inside the engine's ``prepare``,
+        so that the ordering which fixes defect 6 is visible in
+        :attr:`stages` and cannot be reordered by accident. Engines whose
+        models are never lazy return the model unchanged, which costs one
+        no-op stage and keeps the sequence the same for every backend.
+
+        Parameters
+        ----------
+        model
+            The untrained model from :meth:`build_model`.
+        signature
+            The declared interface, from which the dummy batch is synthesised.
+            This is why the signature exists: the dummy forward needs exact
+            shapes and dtypes with no data present.
+
+        Returns
+        -------
+        object
+            The same model, with its parameters now real.
+        """
+        return self._engine().materialise(model, signature)
+
+    def prepare_hardware(self, model: object, data: DataBundle[object]) -> ModelHandle:
+        """
+        Place the model on its device, wrap it, and build the optimiser.
+
+        Parameters
+        ----------
+        model
+            The materialised model.
+        data
+            The data bundle, for the training split's static inputs. Taken
+            from the training split because static inputs are constant by
+            definition -- an adjacency matrix that differed between train and
+            test would not be static -- and uploading them once here is what
+            removes the per-sample collation of defect 4.
+
+        Returns
+        -------
+        ModelHandle
+            The model, its device, its precision, and whatever state the
+            engine needs to train it.
+        """
+        handle = self._engine().prepare(
+            model,
+            hardware=self.spec.hardware,
+            training=self.spec.training,
+            static=static_inputs(data),
+        )
+        self.handle = handle
+        _LOGGER.info("prepared model: %s", handle.describe())
+        return handle
+
+    def fit(self, handle: ModelHandle, data: DataBundle[object]) -> FitOutcome:
+        """
+        Train the model.
+
+        Parameters
+        ----------
+        handle
+            The prepared model from :meth:`prepare_hardware`.
+        data
+            The data bundle from :meth:`build_data`.
+
+        Returns
+        -------
+        FitOutcome
+            Training history and the best epoch.
+        """
+        sources = {
+            name: source_for(data, name)
+            for name in (TRAIN_SPLIT, "validation")
+            if name in data.splits
+        }
+        return self._engine().fit(handle, sources, self.spec.training)
+
+    def evaluate(self, handle: ModelHandle, data: DataBundle[object]) -> dict[str, EvalResult]:
+        """
+        Score the fitted model on every available split.
+
+        Delegates to :func:`~.scoring.score_splits`, which is also what
+        re-evaluating a saved bundle calls. One implementation rather than
+        two, so that a bundle's recorded metrics and its re-computed ones
+        cannot drift apart -- see that module's docstring.
+
+        Parameters
+        ----------
+        handle
+            The fitted model.
+        data
+            The data bundle.
+
+        Returns
+        -------
+        dict
+            Metrics per split, each against a naive baseline.
+        """
+        engine = self._engine()
+        return score_splits(data, lambda source: engine.predict(handle, source))
+
+    def persist(
+        self,
+        handle: ModelHandle,
+        data: DataBundle[object],
+        signature: InputSignature,
+        result: TrainingResult,
+    ) -> ModelBundle:
+        """
+        Assemble the bundle and write it.
+
+        The engine's weight serialiser is passed as the ``write_weights``
+        callback rather than being called here, which is the seam that keeps
+        ``storage`` free of any engine import: the storage layer decides
+        *where* and *when* weights are written, the engine decides *how*.
+
+        Parameters
+        ----------
+        handle
+            The fitted model.
+        data
+            The data bundle, for its fitted state and lineage.
+        signature
+            The declared interface.
+        result
+            Metrics and history.
+
+        Returns
+        -------
+        ModelBundle
+            The bundle that was written.
+        """
+        engine = self._engine()
+        lineage = self._lineage_with_quality(data)
+        bundle = ModelBundle(
+            model=handle.unwrapped,
+            state=data.state,
+            signature=signature,
+            spec=self.spec,
+            lineage=lineage,
+            result=result,
+        )
+
+        saved = write_bundle(
+            bundle,
+            root=self.context.bundles_directory,
+            version=self._next_version(),
+            framework_version=lineage.framework_version,
+            engine=self.spec.training.engine,
+            model_name=self.spec.model.name,
+            write_weights=lambda path: engine.save_weights(handle, path),
+            job_id=self.context.job_id,
+            tags=self.spec.tags,
+        )
+        _LOGGER.info("wrote bundle to %s", saved.directory)
+        self.saved = saved
+
+        # Last, and only on success: a run that failed earlier leaves nothing
+        # registered, so the catalog never advertises a bundle that is not
+        # there.
+        if self.context.catalog is not None and saved.manifest is not None:
+            self.context.catalog.record(saved.manifest)
+        return bundle
+
+    def _next_version(self) -> int:
+        """
+        Allocate this bundle's version number.
+
+        Returns
+        -------
+        int
+            The next version for this model from the catalog, or
+            :data:`_UNVERSIONED` when the run has no catalog.
+        """
+        if self.context.catalog is None:
+            return _UNVERSIONED
+        return self.context.catalog.next_version(self.spec.model.name, job_id=self.context.job_id)
+
+    def report(self, bundle: ModelBundle) -> dict[str, ReportOutcome]:
+        """
+        Render every enabled report.
+
+        Each goes through :meth:`~rade_qnet.analysis.reports.base.Report.render_safely`,
+        so a report that fails is logged and skipped. A completed, scored,
+        persisted training run is not discarded because a figure could not be
+        drawn -- unless the spec sets ``reports.fail_fast``, which exists for
+        the case where the report *is* the deliverable.
+
+        Parameters
+        ----------
+        bundle
+            The persisted bundle.
+
+        Returns
+        -------
+        dict
+            One outcome per enabled report.
+
+        Raises
+        ------
+        ComponentError
+            If a report failed and the spec set ``reports.fail_fast``. Wrapped
+            in a ``StageError`` by the step runner, like any stage failure.
+        """
+        directory = self.context.reports_directory
+        context = ReportContext(
+            bundle=bundle,
+            directory=directory,
+            figure_format=self.spec.reports.figure_format,
+            figure_dpi=self.spec.reports.figure_dpi,
+        )
+
+        outcomes: dict[str, ReportOutcome] = {}
+        for name in self.report_names():
+            report: Report = get_report(name)()
+            outcomes[name] = report.render_safely(context, self.context)
+
+        failed = {
+            name: outcome.skipped_reason
+            for name, outcome in outcomes.items()
+            if not outcome.succeeded
+        }
+        if failed and self.spec.reports.fail_fast:
+            raise ComponentError(
+                f"report(s) {sorted(failed)} failed and reports.fail_fast is set, "
+                f"so the run does not complete: {failed}"
+            )
+        _LOGGER.info(
+            "rendered %d of %d report(s) into %s",
+            len(outcomes) - len(failed),
+            len(outcomes),
+            directory,
+        )
+        return outcomes
+
+    def _engine(self) -> Engine:
+        """
+        Return the resolved engine.
+
+        Returns
+        -------
+        Engine
+            The engine resolved by :meth:`resolve`.
+
+        Raises
+        ------
+        ComponentError
+            If called before :meth:`resolve`, which only happens in a subclass
+            that overrode :meth:`run` and dropped the stage. Named explicitly
+            rather than left as an ``AttributeError`` on ``None``, because the
+            fix -- restore the stage -- is not obvious from the latter.
+        """
+        if self.engine is None:
+            raise ComponentError(
+                "no engine has been resolved; TrainPipeline.resolve must run "
+                "before any stage that needs the engine. An overridden run() "
+                "that omits the 'resolve' stage produces this"
+            )
+        return self.engine
+
+
+    @classmethod
+    def _static_inputs(cls, data: DataBundle[object]) -> Mapping[str, object]:
+        """
+        Return the training split's static inputs.
+
+        Parameters
+        ----------
+        data
+            The data bundle.
+
+        Returns
+        -------
+        Mapping
+            Input name to tensor. Empty for a model with no static inputs,
+            which is most of them.
+        """
+        return cls._source_for(data, TRAIN_SPLIT).static
+
+    def _lineage_with_quality(self, data: DataBundle[object]) -> DataLineage:
+        """
+        Return the data lineage with quality metrics attached.
+
+        Computed here rather than in the data module because ``sources`` may
+        not import ``analysis`` -- orchestration is the first layer that can
+        see both. Recording them at training time is the point: once the run
+        is over the dataset may not be reconstructable, so numbers describing
+        it are captured in the bundle or lost.
+
+        Parameters
+        ----------
+        data
+            The data bundle.
+
+        Returns
+        -------
+        DataLineage
+            The lineage, with ``quality`` populated where it could be computed.
+        """
+        if data.lineage.quality:
+            return data.lineage
+
+        features = feature_matrix(data)
+        if features is None:
+            return data.lineage
+        return data.lineage.model_copy(update={"quality": quality_metrics(features)})
+
+
+```
+
+---
+
+## 9. `src/rade_qnet/orchestration/pipelines/tune.py`
+
+20862 bytes · SHA-256 `f81deb7b747fcf9c`
+
+```python
+"""
+Searching a space of configurations for the one that scores best.
+
+A search is forty training runs that differ in a handful of values, and
+almost everything that makes it useful or useless is about the bookkeeping
+around those runs rather than the runs themselves.
+
+What this pipeline is careful about
+-----------------------------------
+**Building the data once.** Forty trials over one dataset should read it
+once. The outline asked for a general step cache to achieve that; this holds
+the prepared dataset for the search instead, for the reasons recorded in
+[Phase 5 §8.1](../../docs/phases/PHASE_5_EVALUATE_INFER_TUNE.md). Where the
+trials vary the *source*, there is nothing to reuse and the pipeline says so
+rather than quietly reusing the wrong thing.
+
+**Failing trials are recorded, not swallowed.** A search that drops a failing
+trial and reports the best of the rest looks exactly like a search in which
+every trial succeeded. If eleven of forty failed because an override was
+nonsense, the conclusion drawn from the remaining twenty-nine is probably
+wrong, and nothing in a swallowed-failure report would suggest it. Same
+decision as a job set, for the same reason.
+
+**The winner is picked once, by a stated rule.** Direction comes from the
+specification rather than from guessing at the metric's name, and ties go to
+the earlier trial so a re-run picks the same winner.
+
+**Selection is on validation.** The default objective split is validation,
+because selecting on test turns the held-out split into part of the training
+procedure -- and the test metric then reported for the winner overstates it
+by however much the search exploited that split.
+"""
+
+from __future__ import annotations
+
+import time
+from dataclasses import replace
+from typing import TYPE_CHECKING, Any
+
+from ...core.contract.result import TrialRecord, TuningResult
+from ...core.runtime.components import get_model
+from ...core.runtime.context import RunContext
+from ...core.runtime.errors import ComponentError, ContractError, SpecError
+from ...core.runtime.logging import get_logger
+from ...core.runtime.pipeline import Pipeline
+from ...core.spec.run import SupervisedRunSpec
+from .search import expand, propose
+from .train import TrainPipeline
+
+if TYPE_CHECKING:
+    from ...core.capability.definition import PredictorDefinition
+    from ...core.contract.data import DataBundle
+    from ...core.spec.tune import TuneSpec
+
+__all__ = ["TunePipeline"]
+
+_LOGGER = get_logger(__name__)
+
+
+class TunePipeline(Pipeline[TuningResult]):
+    """
+    Run a search and return its trials, with the best one identified.
+
+    Parameters
+    ----------
+    context
+        Ambient state for the run.
+    spec
+        The search specification.
+    definition
+        The model definition. Defaults to ``None``, meaning resolve it from
+        the base specification's model name. Passed in rather than always
+        resolved so a test can supply a definition without registering it
+        globally, exactly as :class:`~.train.TrainPipeline` allows.
+
+    Attributes
+    ----------
+    shared_data
+        The dataset reused across trials, available after ``build_data``.
+        ``None`` when the search varies the source, in which case each trial
+        builds its own.
+    """
+
+    stages = (
+        "resolve",
+        "propose",
+        "build_data",
+        "run_trials",
+        "select",
+        "refit",
+    )
+
+    def __init__(
+        self,
+        context: RunContext,
+        spec: TuneSpec,
+        definition: PredictorDefinition | None = None,
+    ) -> None:
+        """
+        Store the search and the model it searches over.
+
+        Parameters
+        ----------
+        context
+            Ambient state for the run.
+        spec
+            The search specification.
+        definition
+            The model definition, or ``None`` to resolve it by name.
+        """
+        super().__init__(context)
+        self.spec = spec
+        self.definition = definition
+        self.shared_data: DataBundle[object] | None = None
+        self._builds = 0
+
+    @property
+    def data_builds(self) -> int:
+        """
+        Return how many times the dataset was actually built.
+
+        Exposed because "built once per search" is a claim worth testing,
+        and a test that could only time the search would be measuring the
+        machine rather than the pipeline.
+
+        Returns
+        -------
+        int
+            The count.
+        """
+        return self._builds
+
+    def run(self) -> TuningResult:
+        """
+        Execute the stage sequence.
+
+        Returns
+        -------
+        TuningResult
+            Every trial, and which one won.
+
+        Raises
+        ------
+        StageError
+            Wrapping whatever a stage raised, naming the stage.
+        """
+        definition = self.step("resolve", self.resolve)
+        proposals = self.step("propose", self.propose)
+        self.step("build_data", lambda: self.build_data(definition))
+        trials = self.step("run_trials", lambda: self.run_trials(definition, proposals))
+        result = self.step("select", lambda: self.select(trials))
+        return self.step("refit", lambda: self.refit(definition, result))
+
+    def resolve(self) -> PredictorDefinition:
+        """
+        Resolve the model, and validate every proposal's *shape* before any run.
+
+        Resolution first, for the same reason training resolves before
+        building: a misspelled model name should cost milliseconds rather
+        than a data build.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        PredictorDefinition
+            The definition every trial trains.
+
+        Raises
+        ------
+        ContractError
+            If the base specification names no model and none was supplied.
+        """
+        if self.definition is not None:
+            return self.definition
+
+        name = self.spec.base.get("model")
+        if isinstance(name, dict):
+            name = name.get("name")
+        if not isinstance(name, str):
+            raise ContractError(
+                "the search's base specification names no model, and no "
+                "definition was supplied; a search has to know what it is "
+                "searching over"
+            )
+        try:
+            definition = get_model(name)()
+        except ComponentError as error:
+            raise ContractError(
+                f"the search names the model {name!r}, which is not registered "
+                f"in this process; import the package that defines it first"
+            ) from error
+        self.definition = definition
+        return definition
+
+    def propose(self) -> list[dict[str, Any]]:
+        """
+        Produce every trial's proposal, and validate each one now.
+
+        Validating the whole set before the first trial runs is the cure for
+        defect 7. A typo in a dotted path is a mistake nobody typed -- the
+        values are generated -- and left unchecked it would be explored,
+        measured and reported as a dimension that makes no difference, which
+        reads as a finding rather than a bug.
+
+        Returns
+        -------
+        list of dict
+            One flat proposal per trial.
+
+        Raises
+        ------
+        SpecError
+            If any proposal does not merge into a valid run specification.
+        """
+        proposals = propose(self.spec)
+        failures: list[str] = []
+        for index, proposal in enumerate(proposals):
+            try:
+                self.spec.run_spec_for(expand(proposal), trial=index)
+            except SpecError as error:
+                failures.append(f"  trial {index} ({proposal}): {error}")
+
+        if failures:
+            raise SpecError(
+                f"{len(failures)} of {len(proposals)} proposed trial(s) do not "
+                f"produce a valid run specification. The search space names a "
+                f"path the specification does not have, so the search would "
+                f"explore it and report that it makes no difference:\n"
+                + "\n".join(failures[: self._REPORTED_FAILURES])
+            )
+        return proposals
+
+    #: How many invalid proposals to spell out. A broken path breaks every
+    #: trial, so printing forty identical messages buries the one that
+    #: matters.
+    _REPORTED_FAILURES = 3
+
+    def build_data(self, definition: PredictorDefinition) -> DataBundle[object] | None:
+        """
+        Build the dataset once, when every trial shares one.
+
+        Skipped when the space varies anything under ``source``: the trials
+        then have genuinely different datasets, and handing them a shared
+        one would mean the search measured something other than what it
+        proposed -- the quietest possible way for a search to be wrong.
+
+        Parameters
+        ----------
+        definition
+            The model definition.
+
+        Returns
+        -------
+        DataBundle or None
+            The shared dataset, or ``None`` when each trial builds its own.
+        """
+        if self._varies_the_source():
+            _LOGGER.info(
+                "the search varies the source, so each trial builds its own "
+                "dataset; there is nothing shared to reuse"
+            )
+            return None
+
+        spec = self.spec.run_spec_for(expand({}), trial=0)
+        if not isinstance(spec, SupervisedRunSpec):
+            raise ContractError(
+                f"tuning builds data for a supervised run; the base "
+                f"specification resolves to a {type(spec).__name__}"
+            )
+
+        data = definition.build_data(spec)
+        self._builds += 1
+        self.shared_data = data
+        _LOGGER.info(
+            "built the dataset once for %d trial(s): %s",
+            self.spec.trials,
+            {name: data.splits[name] is not None for name in data.split_names},
+        )
+        return data
+
+    def run_trials(
+        self, definition: PredictorDefinition, proposals: list[dict[str, Any]]
+    ) -> list[TrialRecord]:
+        """
+        Train and score one model per proposal.
+
+        Parameters
+        ----------
+        definition
+            The model definition.
+        proposals
+            The flat proposals.
+
+        Returns
+        -------
+        list of TrialRecord
+            One record per trial, in trial order, successes and failures
+            alike.
+        """
+        records: list[TrialRecord] = []
+        for index, proposal in enumerate(proposals):
+            records.append(self._trial(definition, proposal, index=index))
+        succeeded = sum(1 for record in records if record.succeeded)
+        _LOGGER.info("%d of %d trial(s) succeeded", succeeded, len(records))
+        return records
+
+    def select(self, trials: list[TrialRecord]) -> TuningResult:
+        """
+        Pick the winner, by the direction the specification states.
+
+        Parameters
+        ----------
+        trials
+            Every trial.
+
+        Returns
+        -------
+        TuningResult
+            The trials and the winning index.
+
+        Raises
+        ------
+        ContractError
+            If no trial produced the objective. Raised rather than returning
+            a result with no winner, because a search that selected nothing
+            and said so quietly would be read as a search that found nothing
+            good.
+        """
+        scored = [record for record in trials if record.objective is not None]
+        if not scored:
+            raise ContractError(
+                f"no trial produced the objective {self.spec.objective!r} on the "
+                f"{self.spec.objective_split!r} split, so there is nothing to "
+                f"select between. {len(trials)} trial(s) ran and "
+                f"{sum(1 for record in trials if not record.succeeded)} failed"
+            )
+
+        best = scored[0]
+        for record in scored[1:]:
+            # Ties go to the incumbent, which makes the winner the earliest
+            # best trial and therefore stable across a re-run.
+            if self.spec.is_better(record.objective, best.objective):
+                best = record
+
+        result = TuningResult(
+            trials=tuple(trials),
+            best_trial=best.trial,
+            objective=self.spec.objective,
+            direction=self.spec.direction,
+            objective_split=self.spec.objective_split,
+            name=self.spec.name,
+        )
+        _LOGGER.info("%s", result.describe())
+        return result
+
+    def refit(
+        self, definition: PredictorDefinition, result: TuningResult
+    ) -> TuningResult:
+        """
+        Optionally retrain the winner on train and validation combined.
+
+        Off unless asked for. The extra data usually helps, but the
+        resulting model's reported objective was measured on rows it has now
+        trained on, so the number beside it is no longer a held-out estimate
+        -- and that trade should be a choice someone made rather than a
+        default they inherited.
+
+        Not yet implemented beyond recording the intent: combining two
+        splits means re-deriving a split, which this phase spent its effort
+        making impossible to do by accident. It is Phase 6 work, and the
+        specification field exists so the search's shape is settled now.
+
+        Parameters
+        ----------
+        definition
+            The model definition.
+        result
+            The selected result.
+
+        Returns
+        -------
+        TuningResult
+            The result, unchanged when no refit was asked for.
+
+        Raises
+        ------
+        ContractError
+            If a refit was asked for. Refused rather than silently skipped:
+            a user who set ``refit: true`` and received a model trained on
+            the training split alone would have no way to tell.
+        """
+        del definition
+        if not self.spec.refit:
+            return result
+        raise ContractError(
+            "refit is not implemented yet. Combining the training and "
+            "validation splits means deriving a new split, which this phase "
+            "deliberately made hard to do by accident; it is Phase 6 work. "
+            "Set refit: false and retrain the winning configuration directly "
+            "if you need the combined fit now"
+        )
+
+    def _trial(
+        self,
+        definition: PredictorDefinition,
+        proposal: dict[str, Any],
+        *,
+        index: int,
+    ) -> TrialRecord:
+        """
+        Run one trial, recording its outcome whether it worked or not.
+
+        Parameters
+        ----------
+        definition
+            The model definition.
+        proposal
+            The flat proposal.
+        index
+            Trial number.
+
+        Returns
+        -------
+        TrialRecord
+            The outcome.
+        """
+        started = time.perf_counter()
+        spec = self.spec.run_spec_for(expand(proposal), trial=index)
+
+        try:
+            pipeline = _SharedDataTrainPipeline(
+                context=self._trial_context(index),
+                spec=spec,
+                definition=definition,
+                shared=self.shared_data,
+            )
+            outcome = pipeline.execute()
+            objective = self._objective_of(outcome)
+            record = TrialRecord(
+                trial=index,
+                overrides=dict(proposal),
+                status="succeeded",
+                objective=objective,
+                metrics=dict(
+                    outcome.evaluations[self.spec.objective_split].metrics
+                    if self.spec.objective_split in outcome.evaluations
+                    else {}
+                ),
+                bundle_directory=(
+                    None if pipeline.saved is None else str(pipeline.saved.directory)
+                ),
+                wall_seconds=time.perf_counter() - started,
+            )
+        except Exception as error:
+            # Recorded rather than raised, for the reason in the module
+            # docstring: a search that stopped at the first bad trial would
+            # lose thirty-nine good ones, and one that dropped it silently
+            # would report a conclusion drawn from a partial sweep.
+            record = TrialRecord(
+                trial=index,
+                overrides=dict(proposal),
+                status="failed",
+                wall_seconds=time.perf_counter() - started,
+                failure_kind=type(error).__name__,
+                failure_message=str(error),
+            )
+            _LOGGER.warning("trial %d failed: %s: %s", index, type(error).__name__, error)
+
+        return record
+
+    def _trial_context(self, index: int) -> RunContext:
+        """
+        Give one trial its own directory beneath the search's.
+
+        Every trial trains a model, and a trained model is persisted -- so
+        without this, forty trials would all claim version 1 of the same
+        bundle path and thirty-nine would fail on a refusal to overwrite.
+        The refusal is correct; sharing the directory was the mistake.
+
+        A directory per trial also keeps the winner's bundle on disk, which
+        is the difference between acting on a search and repeating it. The
+        cost is that a long search leaves forty bundles behind, which is the
+        honest price of being able to use the one that won.
+
+        Parameters
+        ----------
+        index
+            Trial number.
+
+        Returns
+        -------
+        RunContext
+            The search's context, redirected at the trial's directory and
+            carrying the trial number as its job identifier so log lines
+            from concurrent-looking output can be told apart.
+        """
+        return replace(
+            self.context,
+            output_directory=self.context.output_directory / "trials" / f"trial-{index}",
+            job_id=f"trial-{index}",
+        )
+
+    def _objective_of(self, outcome: object) -> float | None:
+        """
+        Read the objective metric from a trial's result.
+
+        Parameters
+        ----------
+        outcome
+            The trial's training result.
+
+        Returns
+        -------
+        float or None
+            The value, or ``None`` if the split or the metric is absent --
+            which :meth:`select` then reports rather than treating as a
+            score of zero.
+        """
+        evaluations = getattr(outcome, "evaluations", {})
+        evaluation = evaluations.get(self.spec.objective_split)
+        if evaluation is None:
+            return None
+        return evaluation.metrics.get(self.spec.objective)
+
+    def _varies_the_source(self) -> bool:
+        """
+        Return whether any search axis changes how the data is built.
+
+        Checked on the path prefix rather than by building twice and
+        comparing: the point is to decide *before* building anything.
+
+        Returns
+        -------
+        bool
+            True if a shared dataset would be wrong.
+        """
+        return any(
+            path == "source" or path.startswith("source.")
+            for path in self.spec.space.paths
+        )
+
+
+class _SharedDataTrainPipeline(TrainPipeline):
+    """
+    A training pipeline that reuses a dataset instead of building one.
+
+    A subclass overriding one stage rather than a flag on
+    :class:`~.train.TrainPipeline`, so that the ordinary training path has
+    no branch in it at all. Training is the pipeline every other phase
+    depends on, and a conditional there would be reachable from every run
+    rather than only from a search.
+
+    Parameters
+    ----------
+    context
+        Ambient state for the run.
+    spec
+        The trial's validated specification.
+    definition
+        The model definition.
+    shared
+        The dataset to reuse, or ``None`` to build one normally.
+    """
+
+    def __init__(
+        self,
+        context: RunContext,
+        spec: SupervisedRunSpec,
+        definition: PredictorDefinition,
+        *,
+        shared: DataBundle[object] | None,
+    ) -> None:
+        """
+        Store the shared dataset alongside the usual arguments.
+
+        Parameters
+        ----------
+        context
+            Ambient state for the run.
+        spec
+            The trial's specification.
+        definition
+            The model definition.
+        shared
+            The dataset to reuse, or ``None``.
+        """
+        super().__init__(context=context, spec=spec, definition=definition)
+        self._shared = shared
+
+    def build_data(self, spec: SupervisedRunSpec) -> DataBundle[object]:
+        """
+        Return the shared dataset, or build one when there is none.
+
+        Parameters
+        ----------
+        spec
+            The trial's specification.
+
+        Returns
+        -------
+        DataBundle
+            The dataset.
+        """
+        if self._shared is not None:
+            return self._shared
+        return super().build_data(spec)
+```
+
