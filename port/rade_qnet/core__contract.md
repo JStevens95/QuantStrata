@@ -6,7 +6,7 @@
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 58 | 2574 | `03e5e8f82e62f796` |
 | 2 | `base.py` | 65 | 2674 | `81ce5965d3e537f2` |
-| 3 | `bundle.py` | 288 | 8644 | `231daf12828c92fa` |
+| 3 | `bundle.py` | 311 | 10031 | `f89d48966cd37a1d` |
 | 4 | `data.py` | 376 | 13517 | `7683689102e6d630` |
 | 5 | `requirement.py` | 442 | 16835 | `b0fd78b19bc479cd` |
 | 6 | `result.py` | 641 | 21578 | `42cbfb1d3debd019` |
@@ -159,7 +159,7 @@ class ContractModel(BaseModel):
 
 ## 3. `src/rade_qnet/core/contract/bundle.py`
 
-8644 bytes · SHA-256 `231daf12828c92fa`
+10031 bytes · SHA-256 `f89d48966cd37a1d`
 
 ```python
 """
@@ -192,7 +192,7 @@ from ..spec.run import ReinforcementRunSpec, SupervisedRunSpec
 from .base import ContractModel
 from .data import DataLineage
 from .result import TrainingResult
-from .signature import InputSignature
+from .signature import InputSignature, PolicySignature
 from .state import FittedState
 
 __all__ = [
@@ -376,13 +376,36 @@ class ModelBundle:
         The trained model. Typed as ``object`` because ``core`` cannot name an
         engine's model type; the engine that produced it knows what it is.
     state
-        What was fitted beyond the model's parameters.
+        What was fitted beyond the model's parameters. A policy fits nothing
+        beyond its parameters, so an interactive run supplies
+        :class:`~.state.IdentityFittedState`.
     signature
-        The declared input interface, sufficient to rebuild the model.
+        The declared interface of the thing that was trained, sufficient to
+        rebuild it.
+
+        An :class:`~.signature.InputSignature` for a supervised model --
+        inputs and a target. A :class:`~.signature.PolicySignature` for a
+        policy -- an observation space and an action space, and no target,
+        because a policy has none.
+
+        A union rather than one type, because this field means "what does the
+        saved object expect", and for a policy the honest answer is the
+        second. The alternative was to record the experience stream's input
+        signature instead, which would have type-checked and been wrong in a
+        way that only shows up much later: a tensor description loses the
+        number of discrete actions and the bounds of a continuous space, so
+        the policy could no longer be rebuilt from its own bundle -- the one
+        thing the field exists for.
+
+        Readers that only make sense for one paradigm check which they have
+        and refuse the other by name; see ``orchestration.pipelines.reload``.
     spec
         The run specification that produced this bundle.
     lineage
-        Where the data came from.
+        Where the experience came from. For a supervised run that is the
+        dataset and its split; for an interactive one it is the environment
+        and how much was collected, recorded in the same shape so two runs
+        remain comparable.
     result
         Metrics and training history.
     manifest
@@ -393,7 +416,7 @@ class ModelBundle:
 
     model: object
     state: FittedState
-    signature: InputSignature
+    signature: InputSignature | PolicySignature
     spec: SupervisedRunSpec | ReinforcementRunSpec
     lineage: DataLineage
     result: TrainingResult

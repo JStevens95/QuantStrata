@@ -53,7 +53,7 @@ from ..core.contract.bundle import (
 )
 from ..core.contract.data import DataLineage
 from ..core.contract.result import TrainingResult
-from ..core.contract.signature import InputSignature
+from ..core.contract.signature import InputSignature, PolicySignature
 from ..core.runtime.errors import BundleError, SpecError
 from ..core.runtime.logging import get_logger
 from ..core.spec.run import RunSpec, parse_run_spec
@@ -67,6 +67,7 @@ __all__ = [
     "load_fitted_state",
     "load_lineage",
     "load_manifest",
+    "load_policy_signature",
     "load_result",
     "load_signature",
     "load_spec",
@@ -306,7 +307,7 @@ def load_manifest(directory: Path) -> Manifest:
 
 def load_signature(saved: SavedBundle) -> InputSignature:
     """
-    Read a bundle's input signature.
+    Read a supervised bundle's input signature.
 
     This is what makes a model rebuildable: the signature plus the spec is
     enough to reconstruct the model object without re-running the data build.
@@ -324,9 +325,46 @@ def load_signature(saved: SavedBundle) -> InputSignature:
     Raises
     ------
     BundleError
-        If the file is missing or invalid.
+        If the file is missing or invalid -- which includes the case of an
+        interactive bundle, whose signature file holds a
+        :class:`~rade_qnet.core.contract.signature.PolicySignature` with no
+        target. Call :func:`load_policy_signature` for one of those.
     """
     return _read_contract(saved.signature_path, InputSignature)
+
+
+def load_policy_signature(saved: SavedBundle) -> PolicySignature:
+    """
+    Read an interactive bundle's policy signature.
+
+    The counterpart of :func:`load_signature`, reading the same file into the
+    other member of the union
+    :attr:`~rade_qnet.core.contract.bundle.ModelBundle.signature` permits.
+
+    Two functions rather than one that sniffs the file, because the caller
+    always knows which it wants: the bundle's spec names the task, and a
+    reader that guessed would turn a mismatch -- a supervised pipeline handed
+    an interactive bundle -- into a successful parse of the wrong thing
+    instead of an error.
+
+    Parameters
+    ----------
+    saved
+        The located bundle.
+
+    Returns
+    -------
+    PolicySignature
+        The saved observation and action spaces, which together with the spec
+        are enough to rebuild the policy with no environment present.
+
+    Raises
+    ------
+    BundleError
+        If the file is missing or invalid, which includes the case of a
+        supervised bundle.
+    """
+    return _read_contract(saved.signature_path, PolicySignature)
 
 
 def load_lineage(saved: SavedBundle) -> DataLineage:

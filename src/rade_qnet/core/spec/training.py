@@ -295,8 +295,10 @@ class RlTrainingSpec(Spec):
     discount
         Reward discount factor. Ignored by ``pathwise``, which optimises a
         risk measure of the terminal outcome directly.
-    gradient_clip_norm, learning_rate, optimiser
-        Optimiser settings, as for supervised training.
+    gradient_clip_norm, learning_rate, optimiser, weight_decay
+        Optimiser settings, as for supervised training, and spelled the same
+        way so that one engine method can build an optimiser from either
+        kind of spec.
     evaluate_every_steps, evaluation_episodes
         How often to run evaluation episodes, and how many.
     """
@@ -309,6 +311,7 @@ class RlTrainingSpec(Spec):
     discount: float = Field(default=0.99, ge=0.0, le=1.0)
     learning_rate: float = Field(default=3e-4, gt=0.0)
     optimiser: Literal["adam", "adamw", "sgd"] = "adam"
+    weight_decay: float = Field(default=0.0, ge=0.0)
     gradient_clip_norm: float | None = Field(default=0.5, gt=0.0)
     evaluate_every_steps: int = Field(default=10_000, ge=1)
     evaluation_episodes: int = Field(default=10, ge=1)

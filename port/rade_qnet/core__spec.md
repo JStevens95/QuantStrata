@@ -12,7 +12,7 @@
 | 6 | `merge.py` | 182 | 7103 | `89eeb600e0a48ae8` |
 | 7 | `reports.py` | 76 | 2488 | `090156f7b9a0c8a7` |
 | 8 | `run.py` | 383 | 12864 | `1b82a04a916ca8f0` |
-| 9 | `training.py` | 336 | 12006 | `70e3ec454e04fd70` |
+| 9 | `training.py` | 343 | 12529 | `da18514db9d1da2b` |
 | 10 | `tune.py` | 520 | 17451 | `80cff9f039f91d2f` |
 
 ---
@@ -2015,7 +2015,7 @@ def dump_run_spec(spec: RunSpec, path: Path | str) -> Path:
 
 ## 9. `src/rade_qnet/core/spec/training.py`
 
-12006 bytes · SHA-256 `70e3ec454e04fd70`
+12529 bytes · SHA-256 `da18514db9d1da2b`
 
 ```python
 """
@@ -2300,9 +2300,13 @@ class RlTrainingSpec(Spec):
         Fixed to ``torch``. Present for symmetry with
         :data:`TrainingSpec` and because a future engine would need it.
     learner
-        Which update rule. ``pathwise`` requires a differentiable
-        environment and back-propagates a risk measure through the simulated
-        dynamics; the others are transition-based.
+        Which update rule. ``random`` samples actions from the untrained
+        policy and updates nothing -- the baseline an algorithm is compared
+        against, and the only one implemented so far, which is why it is the
+        default: a default naming an algorithm that does not exist would make
+        the simplest possible spec unrunnable. ``pathwise`` will require a
+        differentiable environment and back-propagate a risk measure through
+        the simulated dynamics; the others are transition-based.
     total_steps
         Total optimisation steps.
     steps_per_update, batch_size
@@ -2311,20 +2315,23 @@ class RlTrainingSpec(Spec):
     discount
         Reward discount factor. Ignored by ``pathwise``, which optimises a
         risk measure of the terminal outcome directly.
-    gradient_clip_norm, learning_rate, optimiser
-        Optimiser settings, as for supervised training.
+    gradient_clip_norm, learning_rate, optimiser, weight_decay
+        Optimiser settings, as for supervised training, and spelled the same
+        way so that one engine method can build an optimiser from either
+        kind of spec.
     evaluate_every_steps, evaluation_episodes
         How often to run evaluation episodes, and how many.
     """
 
     engine: Literal["torch"] = "torch"
-    learner: Literal["dqn", "ppo", "sac", "pathwise"] = "ppo"
+    learner: Literal["random", "dqn", "ppo", "sac", "pathwise"] = "random"
     total_steps: int = Field(default=100_000, ge=1)
     steps_per_update: int = Field(default=2048, ge=1)
     batch_size: int = Field(default=256, ge=1)
     discount: float = Field(default=0.99, ge=0.0, le=1.0)
     learning_rate: float = Field(default=3e-4, gt=0.0)
     optimiser: Literal["adam", "adamw", "sgd"] = "adam"
+    weight_decay: float = Field(default=0.0, ge=0.0)
     gradient_clip_norm: float | None = Field(default=0.5, gt=0.0)
     evaluate_every_steps: int = Field(default=10_000, ge=1)
     evaluation_episodes: int = Field(default=10, ge=1)

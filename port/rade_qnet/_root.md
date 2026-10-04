@@ -5,7 +5,7 @@
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 85 | 3952 | `f0aa795153b0a74e` |
-| 2 | `api.py` | 705 | 23887 | `d1c1797478f192a4` |
+| 2 | `api.py` | 733 | 25433 | `65fad72bf2dd336c` |
 | 3 | `ruff.toml` | 111 | 5119 | `f84c1e95253049a7` |
 
 ---
@@ -106,7 +106,7 @@ __all__: tuple[str, ...] = ("__version__",)
 
 ## 2. `src/rade_qnet/api.py`
 
-23887 bytes · SHA-256 `d1c1797478f192a4`
+25433 bytes · SHA-256 `65fad72bf2dd336c`
 
 ```python
 """
@@ -140,6 +140,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .core.capability.definition import PolicyDefinition, PredictorDefinition
 from .core.runtime.components import get_model
 from .core.runtime.context import RunContext
 from .core.runtime.errors import ComponentError, SpecError
@@ -160,6 +161,7 @@ from .orchestration.jobs.groups import read_group_set
 from .orchestration.jobs.set import JobSetRunner
 from .orchestration.pipelines.evaluate import EvaluatePipeline
 from .orchestration.pipelines.infer import InferPipeline
+from .orchestration.pipelines.reinforce import ReinforcePipeline
 from .orchestration.pipelines.resolve import pipeline_for
 from .orchestration.pipelines.scoring import EVALUATED_SPLITS
 from .orchestration.pipelines.train import TrainPipeline
@@ -228,20 +230,46 @@ def train(
     Raises
     ------
     SpecError
-        If the configuration describes a reinforcement-learning run.
-        Interactive training arrives in Phase 7; saying so here beats
+        If the configuration describes a reinforcement-learning run. Routed
+        rather than refused -- see the note below -- but a configuration
+        whose task is neither is rejected here, in milliseconds, rather than
         failing several stages later with a message about a missing data
         source.
+
+    Notes
+    -----
+    An interactive configuration is forwarded to
+    :class:`~rade_qnet.orchestration.pipelines.reinforce.ReinforcePipeline`
+    rather than refused. One entry point for both, because "train the thing
+    this file describes" is one intent, and a user who wrote
+    ``task: reinforcement`` has already said which kind it is -- asking them
+    to call a differently named function as well would be asking them to say
+    it twice.
     """
     spec = _run_spec(configuration)
-    if not isinstance(spec, SupervisedRunSpec):
-        raise SpecError(
-            f"api.train runs supervised training; this configuration is a {spec.task!r} run"
-        )
-
     context = _context(spec, output_root=output_root, catalog_root=catalog_root, metadata=metadata)
+
     with context.activate():
         definition = get_model(spec.model.name)()
+
+        if isinstance(spec, ReinforcementRunSpec):
+            if not isinstance(definition, PolicyDefinition):
+                raise SpecError(
+                    f"this configuration is a {spec.task!r} run, but the model "
+                    f"{spec.model.name!r} is a {type(definition).__name__}, which "
+                    f"learns from a fixed dataset. An interactive run needs a "
+                    f"model that builds an environment and a policy"
+                )
+            interactive = pipeline_for(definition, "train", ReinforcePipeline)
+            return interactive(context=context, spec=spec, definition=definition).run()
+
+        if not isinstance(definition, PredictorDefinition):
+            raise SpecError(
+                f"this configuration is a {spec.task!r} run, but the model "
+                f"{spec.model.name!r} is a {type(definition).__name__}, which "
+                f"learns by interacting with an environment. A supervised run "
+                f"needs a model that builds a dataset"
+            )
         pipeline = pipeline_for(definition, "train", TrainPipeline)
         return pipeline(context=context, spec=spec, definition=definition).run()
 

@@ -30,10 +30,16 @@ from typing import TYPE_CHECKING
 import numpy as np
 import torch
 
+from ...core.runtime.components import LEARNERS, ComponentError, get_learner
 from ...core.runtime.components import engine as register_engine
 from ...core.runtime.errors import EngineError
 from ...core.runtime.logging import get_logger
-from ...core.spec.training import CheckpointSpec, EarlyStoppingSpec, TorchTrainingSpec
+from ...core.spec.training import (
+    CheckpointSpec,
+    EarlyStoppingSpec,
+    RlTrainingSpec,
+    TorchTrainingSpec,
+)
 from ..base import EngineCapabilities, ModelHandle
 from .callbacks import BestCheckpoint, EarlyStopping, GradientNorms, LearningRateSchedule
 from .checkpoint import load_weights, save_weights
@@ -45,10 +51,12 @@ from .hardware import (
     resolve_hardware,
 )
 from .learners.supervised import SupervisedLearner
-from .loops import fit_epochs
+from .loaders import to_tensor
+from .loops import fit_epochs, fit_steps
 from .losses import build_loss
 from .materialise import count_parameters
 from .materialise import materialise as materialise_model
+from .materialise import materialise_policy as materialise_policy_model
 from .predictor import predict_batches
 
 if TYPE_CHECKING:
@@ -59,10 +67,11 @@ if TYPE_CHECKING:
 
     from ...core.contract.data import TensorLike
     from ...core.contract.result import FitOutcome
-    from ...core.contract.signature import InputSignature
+    from ...core.contract.signature import InputSignature, PolicySignature
     from ...core.contract.source import BatchSource
     from ...core.spec.hardware import HardwareSpec
     from .callbacks import Callback
+    from .loops import PolicyLearner
 
 __all__ = ["TorchEngine"]
 
@@ -215,7 +224,7 @@ class TorchEngine:
             a Torch module.
         """
         module = self._module(model)
-        spec = self._training_spec(training)
+        spec = self._optimiser_spec(training)
         resolved = resolve_hardware(hardware)
 
         # The order below is the contract; see the module docstring.
@@ -364,6 +373,136 @@ class TorchEngine:
             if handle.is_distributed:
                 shutdown_distributed()
 
+    def materialise_policy(self, policy: object, signature: PolicySignature) -> object:
+        """
+        Give a lazily shaped policy its parameters.
+
+        Parameters
+        ----------
+        policy
+            The untrained policy.
+        signature
+            The observation and action spaces, from which the dummy
+            observation is synthesised.
+
+        Returns
+        -------
+        object
+            The policy, with parameters.
+
+        Raises
+        ------
+        EngineError
+            If the policy is not a Torch module, or the dummy pass fails.
+        """
+        return materialise_policy_model(self._module(policy), signature)
+
+    def fit_policy(
+        self,
+        handle: ModelHandle,
+        source: BatchSource,
+        training: object,
+    ) -> FitOutcome:
+        """
+        Train a policy against a budget of interaction.
+
+        The interactive counterpart of :meth:`fit`, and structurally the
+        same: narrow the spec, build the callbacks, resolve the update rule,
+        hand everything to a driver.
+
+        One difference is worth naming. The learner here is resolved through
+        the registry by the name in the spec, where :meth:`fit` constructs
+        :class:`~.learners.supervised.SupervisedLearner` directly. The
+        registry is how a third algorithm arrives without this method
+        changing, which matters far more on this path than on the supervised
+        one: there is exactly one supervised update rule and there will be
+        several interactive ones.
+
+        Parameters
+        ----------
+        handle
+            The prepared policy.
+        source
+            One unbounded source of experience.
+        training
+            An :class:`~rade_qnet.core.spec.training.RlTrainingSpec`.
+
+        Returns
+        -------
+        FitOutcome
+            The block history and the step budget's outcome.
+
+        Raises
+        ------
+        EngineError
+            If the spec is not an interactive one, or the named learner is
+            not registered.
+        """
+        spec = self._rl_training_spec(training)
+        module = self._module(handle.model)
+        resolved = self._resolved_hardware(handle)
+        optimiser = self._optimiser(handle)
+
+        gradient_norms = GradientNorms(clip_norm=spec.gradient_clip_norm)
+        learner = self._policy_learner(
+            spec,
+            source=source,
+            optimiser=optimiser,
+            hardware=resolved,
+            gradient_norms=gradient_norms,
+        )
+
+        # The source collects by acting, and what it acts with is this
+        # learner on this policy. Bound here rather than passed to the source
+        # at construction because the learner is built *from* the source's
+        # policy signature, so the two cannot be created in that order. This
+        # is the only place that knows both.
+        bind = getattr(source, "bind", None)
+        if bind is None:
+            raise EngineError(
+                f"the {type(source).__name__} handed to fit_policy has no "
+                f"bind(), so nothing can tell it how to act. An interactive run "
+                f"is driven by a source built over an environment, such as a "
+                f"RolloutSource"
+            )
+        # The observation is placed on the device here, not in the learner.
+        # Device placement is the engine's job everywhere else on this path --
+        # `to_device_batches` for a dataset, `fit_steps` for experience -- and
+        # a learner that had to do its own would get it wrong exactly once per
+        # learner. The symptom is specific and unhelpful: the policy is on the
+        # accelerator, the environment's observation is a NumPy array on the
+        # host, and the forward pass fails inside a linear layer.
+        bind(
+            lambda observation: learner.act(module, to_tensor(observation, device=resolved.device))
+        )
+
+        try:
+            return fit_steps(
+                module,
+                source,
+                learner=learner,
+                device=resolved.device,
+                total_steps=spec.total_steps,
+                # The spec's evaluation period doubles as the reporting
+                # period, rather than a second field meaning almost the same
+                # thing. A block boundary is exactly where an interactive run
+                # would evaluate, so two numbers could only ever disagree.
+                report_every_steps=spec.evaluate_every_steps,
+                gradient_norms=gradient_norms,
+                # No best-weight selection. Choosing a best policy needs a
+                # metric that says whether the agent improved, and the only
+                # honest one is an evaluation return, which nothing can
+                # produce until a learner has a greedy mode. Selecting on the
+                # training loss instead -- the supervised fallback -- would be
+                # worse than not selecting: for a policy-gradient objective a
+                # falling loss does not mean a better agent.
+                checkpoint=None,
+                learning_rate=spec.learning_rate,
+            )
+        finally:
+            if handle.is_distributed:
+                shutdown_distributed()
+
     def predict(self, handle: ModelHandle, source: BatchSource) -> NDArray[np.floating]:
         """
         Run a forward pass over a source and return the raw output.
@@ -458,6 +597,139 @@ class TorchEngine:
                 f"engine matches what the model definition builds"
             )
         return model
+
+    @staticmethod
+    def _optimiser_spec(training: object) -> TorchTrainingSpec | RlTrainingSpec:
+        """
+        Narrow a training spec to either kind this engine can prepare from.
+
+        :meth:`prepare` places a module on a device and builds an optimiser
+        over it, and that is identical work for a predictor and for a policy.
+        So it accepts both specs rather than one, and the two paths diverge
+        only where they genuinely differ -- in :meth:`fit` and
+        :meth:`fit_policy`, each of which narrows to the one spec it can
+        actually drive.
+
+        Parameters
+        ----------
+        training
+            The training spec.
+
+        Returns
+        -------
+        TorchTrainingSpec or RlTrainingSpec
+            The same spec, narrowed.
+
+        Raises
+        ------
+        EngineError
+            If it is another engine's spec.
+        """
+        if not isinstance(training, TorchTrainingSpec | RlTrainingSpec):
+            raise EngineError(
+                f"the Torch engine was given a {type(training).__name__}; "
+                f"prepare() needs a TorchTrainingSpec or an RlTrainingSpec"
+            )
+        return training
+
+    @staticmethod
+    def _rl_training_spec(training: object) -> RlTrainingSpec:
+        """
+        Narrow an engine-opaque training spec to an interactive one.
+
+        Parameters
+        ----------
+        training
+            The training spec.
+
+        Returns
+        -------
+        RlTrainingSpec
+            The same spec, narrowed.
+
+        Raises
+        ------
+        EngineError
+            If it is a supervised spec or another engine's. Named separately
+            from :meth:`_training_spec` so that handing a supervised spec to
+            the interactive path says so, rather than reporting a missing
+            field much later.
+        """
+        if not isinstance(training, RlTrainingSpec):
+            raise EngineError(
+                f"fit_policy needs an RlTrainingSpec; received a "
+                f"{type(training).__name__}. A supervised configuration trains "
+                f"through fit(), not here"
+            )
+        return training
+
+    @staticmethod
+    def _policy_learner(
+        spec: RlTrainingSpec,
+        *,
+        source: BatchSource,
+        optimiser: torch.optim.Optimizer,
+        hardware: ResolvedHardware,
+        gradient_norms: GradientNorms,
+    ) -> PolicyLearner:
+        """
+        Resolve and construct the named interactive update rule.
+
+        Every policy learner is constructed with the same keyword set, and
+        each takes what it needs. That uniformity is the price of resolving
+        by name: the engine cannot know which arguments the algorithm it was
+        asked for wants, so the contract is that it is offered all of them.
+        :class:`~.learners.random.RandomLearner` uses one and ignores the
+        rest, which is what a learner that performs no update should do.
+
+        Parameters
+        ----------
+        spec
+            The interactive training spec, naming the learner.
+        source
+            The experience source, asked for the signature the learner needs
+            to interpret an action.
+        optimiser
+            Built over the policy's materialised parameters.
+        hardware
+            Resolved device, precision and gradient scaler.
+        gradient_norms
+            Tracker for the per-block gradient-norm summary.
+
+        Returns
+        -------
+        PolicyLearner
+            The constructed update rule.
+
+        Raises
+        ------
+        EngineError
+            If the name is not registered, or resolves to something that
+            cannot act and update.
+        """
+        try:
+            learner_type = get_learner(spec.learner)
+        except ComponentError as error:
+            raise EngineError(
+                f"no learner is registered as {spec.learner!r}; the interactive "
+                f"learners available here are {sorted(LEARNERS.names())}"
+            ) from error
+
+        learner = learner_type(
+            signature=_policy_signature_of(source),
+            training=spec,
+            optimiser=optimiser,
+            hardware=hardware,
+            gradient_norms=gradient_norms,
+        )
+        if not (hasattr(learner, "act") and hasattr(learner, "update")):
+            raise EngineError(
+                f"the learner registered as {spec.learner!r} is a "
+                f"{type(learner).__name__}, which does not have both act() and "
+                f"update(); it is a supervised learner and cannot drive a policy"
+            )
+        _LOGGER.info("resolved interactive learner %r", spec.learner)
+        return learner
 
     @staticmethod
     def _training_spec(training: object) -> TorchTrainingSpec:
@@ -576,3 +848,45 @@ class TorchEngine:
             lr=spec.learning_rate,
             weight_decay=spec.weight_decay,
         )
+
+
+def _policy_signature_of(source: BatchSource) -> PolicySignature:
+    """
+    Ask an experience source for the policy signature it was built against.
+
+    A source that yields experience knows the environment behind it, so it is
+    the one object in the fit call that can answer. The alternative was to
+    thread the signature from the pipeline through
+    :meth:`TorchEngine.fit_policy`, which would have put the same value in
+    two places -- and two copies of a signature is how a policy comes to be
+    built against one action space and driven against another.
+
+    Read by attribute rather than through a declared protocol because it is
+    one optional member on an otherwise ordinary ``BatchSource``, in the same
+    way ``ordered()`` is.
+
+    Parameters
+    ----------
+    source
+        The experience source.
+
+    Returns
+    -------
+    PolicySignature
+        The observation and action spaces.
+
+    Raises
+    ------
+    EngineError
+        If the source cannot supply one, which means it is a dataset source
+        and this is a supervised run reaching the wrong method.
+    """
+    signature = getattr(source, "policy_signature", None)
+    if signature is None:
+        raise EngineError(
+            f"the {type(source).__name__} handed to fit_policy has no "
+            f"policy_signature, so nothing can say what spaces the policy acts "
+            f"in. An interactive run is driven by a source built over an "
+            f"environment, such as a RolloutSource"
+        )
+    return signature

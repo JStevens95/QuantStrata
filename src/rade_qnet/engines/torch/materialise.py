@@ -40,19 +40,21 @@ from typing import TYPE_CHECKING
 
 import torch
 
+from ...core.contract.signature import TensorSpec
 from ...core.runtime.errors import EngineError
 from ...core.runtime.logging import get_logger
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from ...core.contract.signature import InputSignature, TensorSpec
+    from ...core.contract.signature import InputSignature, PolicySignature
 
 __all__ = [
     "count_parameters",
     "dummy_batch",
     "has_lazy_parameters",
     "materialise",
+    "materialise_policy",
     "torch_dtype",
 ]
 
@@ -327,3 +329,136 @@ def materialise(
 
     _LOGGER.info("materialised %d parameter element(s)", count_parameters(model))
     return model
+
+
+def materialise_policy(
+    policy: torch.nn.Module,
+    signature: PolicySignature,
+    *,
+    device: torch.device | None = None,
+) -> torch.nn.Module:
+    """
+    Run one dummy forward pass so a lazy policy acquires its shapes.
+
+    The interactive counterpart of :func:`materialise`, and it exists for the
+    same defect: an optimiser built over unmaterialised parameters tracks
+    nothing, so the run appears to train while changing no weights.
+
+    Separate from :func:`materialise` rather than folded into it, because the
+    dummy input is built from a different description. A supervised dummy
+    batch is a mapping of named inputs plus a target, synthesised from an
+    :class:`~rade_qnet.core.contract.signature.InputSignature`. A policy
+    takes one thing -- an observation -- and its signature has no target to
+    synthesise. A single function would have had to branch on which
+    signature it received, which is the branch the two call sites remove.
+
+    Parameters
+    ----------
+    policy
+        The constructed policy, possibly unmaterialised.
+    signature
+        The observation and action spaces. Only the observation space is
+        read: the action space constrains what the policy's *output* means,
+        which a forward pass does not need to know.
+    device
+        Where to run the pass.
+
+    Returns
+    -------
+    torch.nn.Module
+        The same policy, materialised.
+
+    Raises
+    ------
+    EngineError
+        If the dummy pass fails, or if it completes without materialising the
+        parameters.
+    """
+    if not has_lazy_parameters(policy):
+        _LOGGER.debug("policy has no lazy parameters; nothing to materialise")
+        return policy
+
+    observation = _dummy_observation(signature, device=device)
+    _LOGGER.info(
+        "materialising lazy policy parameters with an observation of %s",
+        tuple(observation.shape),
+    )
+
+    was_training = policy.training
+    policy.eval()
+    try:
+        with torch.no_grad():
+            # Passed by keyword, matching the convention every model in this
+            # framework is called with: a policy declares what it consumes in
+            # its own signature rather than depending on positional order.
+            policy(observation=observation)
+    except Exception as error:
+        raise EngineError(
+            f"the dummy forward pass used to materialise a lazy policy failed: "
+            f"{type(error).__name__}: {error}. The observation was built from the "
+            f"policy signature's observation space "
+            f"({signature.observation.kind}, shape {signature.observation.shape}). "
+            f"Either the space disagrees with what forward() accepts, or forward() "
+            f"does not take an 'observation' keyword"
+        ) from error
+    finally:
+        policy.train(was_training)
+
+    if has_lazy_parameters(policy):
+        raise EngineError(
+            "the dummy forward pass completed but the policy still has "
+            "uninitialised parameters; its forward() does not route through "
+            "every lazy submodule. An optimiser built now would track nothing "
+            "and the run would appear to train while changing no weights"
+        )
+
+    _LOGGER.info("materialised %d parameter element(s)", count_parameters(policy))
+    return policy
+
+
+def _dummy_observation(
+    signature: PolicySignature, *, device: torch.device | None = None
+) -> torch.Tensor:
+    """
+    Synthesise one batch of observations from a policy signature.
+
+    A batch of one, because the shapes a lazy module needs are fixed by the
+    trailing dimensions and a larger batch would only cost more.
+
+    Parameters
+    ----------
+    signature
+        The policy signature, whose observation space gives shape and dtype.
+    device
+        Where to place the tensor.
+
+    Returns
+    -------
+    torch.Tensor
+        A synthetic observation with a leading batch dimension.
+
+    Raises
+    ------
+    EngineError
+        If the observation space names a kind this function cannot
+        synthesise.
+    """
+    space = signature.observation
+    if space.kind == "box":
+        spec = TensorSpec(shape=(None, *space.shape), dtype=space.dtype)
+    elif space.kind == "discrete":
+        # One index per sample, not a one-hot row: a discrete observation
+        # reaches a network as something to look up, and widening it here
+        # would make every policy undo the widening.
+        spec = TensorSpec(shape=(None,), dtype="int64")
+    else:
+        raise EngineError(
+            f"observation space kind {space.kind!r} cannot be synthesised; "
+            f"expected 'box' or 'discrete'"
+        )
+
+    # Built through the same helper the supervised dummy batch uses, so the
+    # choice between zeros and ones is made in one place -- and it matters:
+    # a zero-filled float input makes a multiplicative layer's output
+    # independent of its weights, hiding a shape error in the initialisation.
+    return _dummy_tensor(spec, batch_size=1, device=device or torch.device("cpu"))

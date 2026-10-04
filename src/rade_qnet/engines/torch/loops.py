@@ -186,14 +186,18 @@ class PolicyLearner(Protocol):
         policy
             The prepared policy.
         observation
-            One observation, as the environment produced it -- not batched,
-            and not necessarily a tensor.
+            One observation, already placed on the policy's device by the
+            engine and not batched. Device placement happens there rather
+            than here for the same reason it does for a batch: a learner
+            that had to do its own would get it wrong once per learner, and
+            the symptom -- a forward pass failing inside a linear layer -- is
+            a long way from the cause.
 
         Returns
         -------
         object
-            One action the environment will accept. Not a tensor
-            necessarily: a discrete environment wants an index.
+            One action the environment will accept. Not necessarily a
+            tensor: a discrete environment wants an index.
         """
         ...
 

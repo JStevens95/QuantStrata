@@ -198,14 +198,21 @@ class TestTrainingOneModel:
 
         assert elsewhere.exists()
 
-    def test_a_reinforcement_configuration_is_refused_clearly(self, tmp_path):
+    def test_a_supervised_model_in_an_interactive_run_is_refused_clearly(self, tmp_path):
         """
         Said here, not several stages later.
 
-        Interactive training arrives in Phase 7, and the alternative to
-        this message is a failure about a missing data source.
+        ``api.train`` routes on the task, so an interactive configuration is
+        no longer refused outright -- it goes to the interactive pipeline.
+        What is refused is the *mismatch*: a model that learns from a fixed
+        dataset cannot be trained by interaction, and the message names the
+        model rather than reporting a missing environment from four stages
+        in.
+
+        The interactive path's own tests live in
+        ``orchestration/pipelines/test_pipelines_reinforce.py``.
         """
-        with pytest.raises(SpecError, match="supervised"):
+        with pytest.raises(SpecError, match="learns from a fixed dataset"):
             api.train(
                 {
                     "task": "reinforcement",

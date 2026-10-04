@@ -51,7 +51,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ...core.contract.data import TARGET_KEY
-from ...core.contract.signature import InputSignature, TensorSpec
+from ...core.contract.signature import InputSignature, PolicySignature, TensorSpec
 from ...core.runtime.errors import ContractError
 from ...core.runtime.logging import get_logger
 from ..environment.protocol import Environment
@@ -114,6 +114,14 @@ class RolloutSource:
     act
         Chooses an action for one observation. Supplied by the engine, for
         the layering reason in the module docstring.
+
+        May be ``None`` at construction and supplied later through
+        :meth:`bind`, because the two cannot always be built in that order: a
+        learner is constructed from this source's own
+        :attr:`policy_signature`, so a pipeline that had to pass a selector
+        up front would need the learner before the source it is built from.
+        A source with no selector refuses to collect rather than acting
+        arbitrarily.
     batch_size
         Transitions per batch.
     seed
@@ -138,7 +146,7 @@ class RolloutSource:
         self,
         environment: Environment,
         *,
-        act: Callable[[TensorLike], TensorLike],
+        act: Callable[[TensorLike], TensorLike] | None = None,
         batch_size: int,
         seed: int = 0,
         max_episode_steps: int | None = None,
@@ -206,6 +214,47 @@ class RolloutSource:
                 TRUNCATED_KEY: flag,
             },
             target=TensorSpec(shape=(None,), dtype="float32", description="step reward"),
+        )
+
+    def bind(self, act: Callable[[TensorLike], TensorLike]) -> None:
+        """
+        Supply the action selector, replacing any already set.
+
+        Called by the engine once it has resolved the learner that acts.
+        Separate from the constructor because of the ordering described under
+        the ``act`` parameter, and a method rather than a bare attribute
+        assignment so that the hand-off is a named, searchable event rather
+        than something a reader has to notice.
+
+        Parameters
+        ----------
+        act
+            Chooses an action for one observation.
+        """
+        self.act = act
+        _LOGGER.debug("bound an action selector to the rollout source")
+
+    @property
+    def policy_signature(self) -> PolicySignature:
+        """
+        The declared interface of the *policy*, as distinct from the batches.
+
+        Two signatures, because the source sits between two things that need
+        different descriptions. :attr:`signature` describes the experience it
+        yields, in tensor terms, which is what a loop and a bundle read.
+        This describes the spaces, which is what a learner needs to turn a
+        network's output into an action the environment will accept -- and a
+        tensor description cannot serve: it loses the number of discrete
+        actions and the bounds of a continuous space.
+
+        Returns
+        -------
+        PolicySignature
+            The environment's two declared spaces.
+        """
+        return PolicySignature(
+            observation=self.environment.observation_space,
+            action=self.environment.action_space,
         )
 
     @property
@@ -280,6 +329,11 @@ class RolloutSource:
         -------
         Batch
             One batch, keyed as the signature declares.
+
+        Raises
+        ------
+        ContractError
+            If no action selector has been bound.
         """
         observations: list[TensorLike] = []
         actions: list[TensorLike] = []
@@ -287,6 +341,14 @@ class RolloutSource:
         rewards: list[float] = []
         terminated: list[bool] = []
         truncated: list[bool] = []
+
+        if self.act is None:
+            raise ContractError(
+                "this rollout source has no action selector, so it cannot "
+                "collect: something must call bind() with the learner that "
+                "acts on the policy. An interactive engine does this when it "
+                "resolves the learner"
+            )
 
         for _ in range(self.batch_size):
             observation = self._current_observation()

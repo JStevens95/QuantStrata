@@ -85,12 +85,47 @@ class RandomLearner:
     seed
         Seeds the action sampling, so a run with this learner is reproducible
         end to end. Kept in a dedicated generator rather than taken from the
-        global Torch stream, because a job set runs several of these in one
-        process and a shared stream would make their sampling interleave.
+        global Torch stream for every draw, because a job set runs several of
+        these in one process and a shared stream would make their sampling
+        interleave.
+
+        ``None`` -- the default, and what the engine passes -- draws the seed
+        *once* from the global stream, which the pipeline has already seeded.
+        So the run's declared seed governs this learner without the engine
+        having to forward it, and the per-draw independence is still kept.
+    training, optimiser, hardware, gradient_norms
+        Accepted and unused.
+
+        The engine resolves a learner by name and therefore cannot know which
+        arguments the algorithm it was handed wants, so the contract is that
+        every policy learner is offered all of them and takes what it needs.
+        A learner that performs no update needs none of these: there is no
+        objective to configure, no parameter to step, no precision to
+        autocast under and no gradient to measure. Accepting them is what
+        lets this learner be resolved by exactly the same code path as a real
+        one, which is the point -- a seam only tested through a special case
+        is not tested.
     """
 
-    def __init__(self, *, signature: PolicySignature, seed: int = 0) -> None:
+    def __init__(
+        self,
+        *,
+        signature: PolicySignature,
+        seed: int | None = None,
+        training: object = None,
+        optimiser: object = None,
+        hardware: object = None,
+        gradient_norms: object = None,
+    ) -> None:
+        del training, optimiser, hardware, gradient_norms
         self.signature = signature
+        if seed is None:
+            # Drawn from the global stream, which `seed_everything` has
+            # already set from the run's spec. Taken as a single draw so the
+            # generator below stays independent of anything else sampling
+            # later in the process.
+            seed = int(torch.randint(0, 2**31 - 1, (1,)).item())
+        self.seed = seed
         self.generator = torch.Generator().manual_seed(seed)
 
     def act(self, policy: torch.nn.Module, observation: object) -> object:
@@ -136,6 +171,15 @@ class RandomLearner:
         """
         Turn one unbatched policy output into one action.
 
+        Sampled and returned on the host, whatever device the policy is on,
+        for two reasons that happen to agree. The environment runs on the
+        host, so the action has to cross back anyway. And a dedicated
+        generator is bound to one device -- an accelerator generator cannot
+        draw from a host tensor and vice versa -- so keeping the draw on the
+        CPU is what makes a seeded run produce the same actions on a laptop
+        and on a GPU box. A run whose trajectory depended on the accelerator
+        would be reproducible only on the machine that produced it.
+
         Parameters
         ----------
         output
@@ -144,7 +188,7 @@ class RandomLearner:
         Returns
         -------
         torch.Tensor
-            An action the environment will accept.
+            An action the environment will accept, on the host.
 
         Raises
         ------
@@ -157,6 +201,7 @@ class RandomLearner:
             actions the environment rejects at an unrelated moment.
         """
         space: SpaceSpec = self.signature.action
+        output = output.cpu()
         if space.kind == "discrete":
             if space.n is None or output.numel() != space.n:
                 raise EngineError(

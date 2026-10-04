@@ -645,8 +645,58 @@ What you must implement, by base class:
 | Base | Abstract methods | Use when |
 | --- | --- | --- |
 | `PredictorDefinition` | `build_data`, `signature`, `build_model` | Your data module cannot return the standard prepared dataset and you want full control |
-| `SupervisedModel` | `data_module`, `build_model` | Almost always |
-| `PolicyDefinition` | `build_environment`, `signature`, `build_policy` | Reinforcement learning (Phase 7) |
+| `SupervisedModel` | `data_module`, `build_model` | Almost always, for learning from inputs with known targets |
+| `PolicyDefinition` | `build_environment`, `signature`, `build_policy` | Your policy's spaces cannot be read off its environment — a multi-agent setup, say |
+| `PolicyModel` | `build_environment`, `build_policy` | Learning by acting in an environment |
+
+One base per *learning paradigm*, not per data shape. `SupervisedModel` serves
+a table, a sequence and a graph alike; what distinguishes `PolicyModel` is that
+there are no targets at all, only a reward for what the policy did.
+
+#### Writing an agent
+
+```python
+@model("my_hedger", engine="torch")
+class MyHedger(PolicyModel):
+    def build_environment(self, spec):
+        return MyMarket(**spec.environment.params)
+
+    def build_policy(self, spec, signature):
+        return MyNetwork(signature)
+```
+
+Two methods, because `PolicyModel` supplies the third: it reads the two spaces
+off the environment. It *reads* them rather than measuring them by resetting —
+which matters six months later, when the bundle has a `PolicySignature` and no
+environment, and the policy has to be rebuilt from the spec and that signature
+alone.
+
+Run it the same way as anything else. `api.train` reads the task and routes:
+
+```yaml
+task: reinforcement
+model: my_hedger
+environment:
+  name: my_market
+  params: {horizon: 30}
+training:
+  learner: random      # the no-update control; algorithms arrive with the rest of Phase 7
+  total_steps: 100_000
+  steps_per_update: 2048
+  evaluate_every_steps: 10_000
+```
+
+The environment belongs to your model package, not to the framework. Its
+reward *is* the problem being solved, and a shared layer of reward functions is
+the last thing that should be shared by accident. A hedging environment used
+by three models is a module inside whichever package owns it, imported by the
+other two.
+
+What you get is what a supervised run gets: a validated spec, a seeded and
+reproducible run, a versioned bundle, a catalog entry, tags, and fan-out across
+a job set. What you do not get yet is an algorithm — `random` samples from the
+untrained policy and updates nothing. It is the control a real algorithm is
+measured against.
 
 Optional class attributes on any of them:
 

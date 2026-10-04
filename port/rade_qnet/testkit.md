@@ -6,7 +6,7 @@
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 42 | 2099 | `be147ade92895e66` |
 | 2 | `conformance.py` | 1183 | 40426 | `0523b7740d3d7d62` |
-| 3 | `fixtures.py` | 1366 | 43686 | `77c26e7f74462931` |
+| 3 | `fixtures.py` | 1494 | 47504 | `144395b1b0724dde` |
 | 4 | `parity.py` | 1009 | 36687 | `ed3df40d131fa2e1` |
 
 ---
@@ -1256,7 +1256,7 @@ def _mean_squared_error(predictions: NDArray[np.floating], targets: NDArray[np.f
 
 ## 3. `src/rade_qnet/testkit/fixtures.py`
 
-43686 bytes · SHA-256 `77c26e7f74462931`
+47504 bytes · SHA-256 `144395b1b0724dde`
 
 ```python
 """
@@ -1303,7 +1303,7 @@ from ..core.contract.data import (
     TensorLike,
 )
 from ..core.contract.result import EpochRecord, EvalResult, FitOutcome, TrainingResult
-from ..core.contract.signature import InputSignature, TensorSpec
+from ..core.contract.signature import InputSignature, SpaceSpec, TensorSpec
 from ..core.contract.source import BatchSource
 from ..core.contract.state import FittedState
 from ..core.runtime.components import ENGINES, LEARNERS, MODELS, REPORTS
@@ -1312,6 +1312,7 @@ from ..core.runtime.errors import EngineError
 from ..core.runtime.hooks import PipelineHook
 from ..core.spec.run import RunSpec, parse_run_spec
 from ..engines.base import EngineCapabilities, ModelHandle
+from ..sources.environment import StepOutcome
 from ..storage.catalog import InMemoryCatalog
 
 __all__ = [
@@ -1321,6 +1322,7 @@ __all__ = [
     "StandardisingState",
     "SyntheticArraySource",
     "SyntheticEngine",
+    "SyntheticEnvironment",
     "SyntheticTensorSource",
     "isolated_registries",
     "make_lineage",
@@ -2625,6 +2627,132 @@ def _mean_squared_error(predictions: NDArray[np.floating], targets: NDArray[np.f
     """
     residuals = np.ravel(predictions) - np.ravel(targets)
     return float(np.mean(np.square(residuals)))
+
+
+#: Default size of the synthetic environment's observation.
+DEFAULT_N_OBSERVATIONS = 3
+
+#: Default number of discrete actions the synthetic environment accepts.
+DEFAULT_N_ACTIONS = 2
+
+#: Default episode length for the synthetic environment. Short, so that a
+#: test collecting one small batch still sees an episode end -- which is the
+#: part of a collector most worth exercising.
+DEFAULT_EPISODE_LENGTH = 4
+
+
+class SyntheticEnvironment:
+    """
+    A tiny deterministic environment, for exercising the interactive path.
+
+    Satisfies
+    :class:`~rade_qnet.sources.environment.protocol.Environment`. The
+    observation is the step index broadcast to the observation width, so a
+    test can read a batch back and see exactly which transitions it holds and
+    where an episode restarted. The reward is one per step, so an episode's
+    return is its length -- which makes an assertion about episode statistics
+    a statement about arithmetic rather than about the environment.
+
+    The action genuinely affects nothing. That is deliberate: this fixture is
+    for testing the *plumbing*, and an environment whose dynamics depended on
+    the action would make every such test depend on which action a policy
+    happened to choose.
+
+    Parameters
+    ----------
+    n_observations
+        Width of the observation vector.
+    n_actions
+        Number of discrete actions accepted.
+    episode_length
+        Steps before the episode terminates.
+    """
+
+    def __init__(
+        self,
+        *,
+        n_observations: int = DEFAULT_N_OBSERVATIONS,
+        n_actions: int = DEFAULT_N_ACTIONS,
+        episode_length: int = DEFAULT_EPISODE_LENGTH,
+    ) -> None:
+        self.n_observations = n_observations
+        self.n_actions = n_actions
+        self.episode_length = episode_length
+        self.step_index = 0
+        self.resets = 0
+
+    @property
+    def observation_space(self) -> SpaceSpec:
+        """
+        What the policy sees.
+
+        Returns
+        -------
+        SpaceSpec
+            A bounded continuous space.
+        """
+        return SpaceSpec(
+            kind="box",
+            shape=(self.n_observations,),
+            dtype="float32",
+            low=0.0,
+            high=float(self.episode_length),
+        )
+
+    @property
+    def action_space(self) -> SpaceSpec:
+        """
+        What the policy must produce.
+
+        Returns
+        -------
+        SpaceSpec
+            A finite space of ``n_actions`` actions.
+        """
+        return SpaceSpec(kind="discrete", n=self.n_actions)
+
+    def reset(self, *, seed: int | None = None) -> NDArray[np.float32]:
+        """
+        Start a new episode.
+
+        Parameters
+        ----------
+        seed
+            Accepted and unused: this environment is deterministic, so a
+            seed would change nothing and pretending otherwise would make a
+            reproducibility test pass for the wrong reason.
+
+        Returns
+        -------
+        numpy.ndarray
+            The zero observation.
+        """
+        del seed
+        self.resets += 1
+        self.step_index = 0
+        return np.zeros(self.n_observations, dtype=np.float32)
+
+    def step(self, action: object) -> StepOutcome:
+        """
+        Advance one step.
+
+        Parameters
+        ----------
+        action
+            Accepted and unused; see the class docstring.
+
+        Returns
+        -------
+        StepOutcome
+            A unit reward, terminating at the episode length.
+        """
+        del action
+        self.step_index += 1
+        return StepOutcome(
+            observation=np.full(self.n_observations, self.step_index, dtype=np.float32),
+            reward=1.0,
+            terminated=self.step_index >= self.episode_length,
+        )
 ```
 
 ---

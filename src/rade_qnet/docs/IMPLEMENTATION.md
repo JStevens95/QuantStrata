@@ -367,14 +367,28 @@ justifying complexity even though it remains sound for pinning determinism.
 
 ### Phase 7 — [Reinforcement learning](phases/PHASE_7_REINFORCEMENT_LEARNING.md)
 
-`sources.environment`, the four interactive `BatchSource` adapters, the DQN,
-PPO, SAC and pathwise learners, `fit_steps`, differentiable risk measures, and
-`domains.hedging`.
+`sources.environment`, the interactive `BatchSource` adapters, the DQN, PPO,
+SAC and pathwise learners, `fit_steps`, and differentiable risk measures.
+Environments belong to the model packages that train in them, for the reason
+the `domains` layer was removed: an environment's reward *is* the business
+problem.
+
+**Scaffold delivered.** The whole interactive path runs end to end —
+`Environment`, `RolloutSource`, `PolicyModel`, `fit_steps`, `PolicyLearner`,
+`InteractiveEngine`, `ReinforcePipeline` — driven by a `random` learner that
+samples from the untrained policy and updates nothing. That learner is the
+control a real algorithm is measured against, and it is what gives every new
+contract a reader from the day it is declared. Three deviations from the
+phase's own decisions are recorded in its §8; the load-bearing one is that a
+policy has no target, so interactive learners implement a second protocol
+rather than `Learner`.
 
 A clean redesign, not a port of `q_learning`. `DifferentiableEnvironment` is
-first-class, because hedging and replication problems have differentiable
-dynamics and forcing them through a transition interface throws away the exact
-gradients that make them tractable.
+first-class by design, because hedging and replication problems have
+differentiable dynamics and forcing them through a transition interface throws
+away the exact gradients that make them tractable — but it is declared with
+the pathwise learner rather than ahead of it, since a runtime-checkable
+protocol with no distinguishing member is satisfied by every environment.
 
 ---
 

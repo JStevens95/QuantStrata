@@ -5,7 +5,7 @@
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 64 | 2983 | `dbdaff90f6102a01` |
-| 2 | `base.py` | 479 | 19050 | `ce0c99c5a7fb68bc` |
+| 2 | `base.py` | 575 | 22897 | `3f4891657eff86f4` |
 
 ---
 
@@ -84,7 +84,7 @@ __all__: tuple[str, ...] = ()
 
 ## 2. `src/rade_qnet/engines/base.py`
 
-19050 bytes · SHA-256 `ce0c99c5a7fb68bc`
+22897 bytes · SHA-256 `3f4891657eff86f4`
 
 ```python
 """
@@ -147,11 +147,11 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
 
     from ..core.contract.result import FitOutcome
-    from ..core.contract.signature import InputSignature
+    from ..core.contract.signature import InputSignature, PolicySignature
     from ..core.contract.source import BatchSource
     from ..core.spec.hardware import HardwareSpec
 
-__all__ = ["Engine", "EngineCapabilities", "ModelHandle"]
+__all__ = ["Engine", "EngineCapabilities", "InteractiveEngine", "ModelHandle"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -564,6 +564,102 @@ class Engine(Protocol):
             If the payload does not match the model -- a missing or unexpected
             parameter name. Reported rather than tolerated: a partially loaded
             model predicts confidently from random weights.
+        """
+        ...
+
+
+@runtime_checkable
+class InteractiveEngine(Protocol):
+    """
+    An opt-in capability: an engine that can also train a policy.
+
+    Two methods, checked with ``isinstance`` and absent from :class:`Engine`
+    on purpose. Adding them to the main protocol would make every engine
+    declare them -- and the gradient-boosted-tree engine cannot train a
+    policy by any amount of plumbing, so its implementation could only be a
+    method that raises. A capability an engine opts into lets the pipeline
+    say "this engine does not do interactive training" before anything is
+    built, which is a better answer than a ``NotImplementedError`` from four
+    stages in.
+
+    This is the same pattern as ``core.capability.protocols``, used for the
+    same reason, and it is why the interactive pipeline resolves an engine
+    through the ordinary registry and then asks one question of it.
+
+    Why these two and not more
+    --------------------------
+    Everything else an interactive run needs, :class:`Engine` already
+    provides and already means the same thing. ``prepare`` places a module on
+    a device and builds an optimiser, which is identical work for a policy;
+    ``save_weights`` and ``load_weights`` do not care what the weights are
+    for. Only two operations genuinely differ, and both differ because a
+    policy signature is not an input signature:
+
+    - materialisation has to synthesise an observation rather than a batch of
+      named inputs, and
+    - fitting drives a step budget against one unbounded source rather than
+      epochs over a mapping of splits.
+
+    A third method for evaluation is deliberately absent. Evaluating a policy
+    means running episodes with exploration turned off, and nothing in the
+    interactive path yet knows how to turn it off -- ``PolicyLearner``
+    declares ``act``, not a greedy variant of it. Declaring the method now
+    would repeat :class:`EngineCapabilities`, which spent four phases
+    asserting a contract nothing honoured. It arrives with the first learner
+    that has a meaningful greedy mode.
+    """
+
+    def materialise_policy(self, policy: object, signature: PolicySignature) -> object:
+        """
+        Give a lazily shaped policy its parameters.
+
+        The counterpart of :meth:`Engine.materialise`, separate because the
+        dummy forward pass it performs has to be built from an observation
+        space rather than from named inputs and a target.
+
+        Parameters
+        ----------
+        policy
+            The untrained policy.
+        signature
+            The observation and action spaces.
+
+        Returns
+        -------
+        object
+            The policy, with parameters.
+        """
+        ...
+
+    def fit_policy(
+        self,
+        handle: ModelHandle,
+        source: BatchSource,
+        training: object,
+    ) -> FitOutcome:
+        """
+        Train a policy against a budget of interaction.
+
+        Parameters
+        ----------
+        handle
+            The prepared policy, from :meth:`Engine.prepare`.
+        source
+            One unbounded source of experience. Singular, where
+            :meth:`Engine.fit` takes a mapping: an environment has no
+            held-out split to hold a second source, and accepting a mapping
+            would invite a caller to pass a ``validation`` entry that
+            nothing could honestly use.
+        training
+            An interactive training spec. Typed as ``object`` for the same
+            reason :meth:`Engine.fit` is -- ``engines`` must not pin the
+            pipeline to one engine's spec type.
+
+        Returns
+        -------
+        FitOutcome
+            The block history and the step budget's outcome, in the same
+            shape a supervised run produces, so two runs can be compared.
         """
         ...
 ```

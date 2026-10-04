@@ -483,27 +483,54 @@ flowchart TD
     OF --> BS
     SS --> BS
 
-    BS --> LOOP["Training loop<br/><i>fit_epochs · fit_steps</i>"]
-    LOOP --> LEARNER["Learner<br/><i>what one update means</i>"]
+    DS --> EP["<b>fit_epochs</b><br/>passes over a dataset"]
+    RO --> ST["<b>fit_steps</b><br/>a budget of interaction"]
+    RP --> ST
+    OF --> EP
+    SS --> ST
+
+    EP --> LEARNER["Learner<br/><i>model, inputs, target</i>"]
+    ST --> PLEARNER["PolicyLearner<br/><i>act, and update a transition</i>"]
 
     LEARNER --> L1["supervised"]
-    LEARNER --> L2["dqn"]
-    LEARNER --> L3["ppo"]
-    LEARNER --> L4["sac"]
-    LEARNER --> L5["pathwise"]
+    PLEARNER --> L0["random<br/><i>the control</i>"]
+    PLEARNER --> L2["dqn"]
+    PLEARNER --> L3["ppo"]
+    PLEARNER --> L4["sac"]
+    PLEARNER --> L5["pathwise"]
 
     style BS fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
-    style LOOP fill:#e8f5e9,stroke:#2e7d32
+    style EP fill:#e8f5e9,stroke:#2e7d32
+    style ST fill:#e8f5e9,stroke:#2e7d32
 ```
 
 The loop decides *when* to step, validate, checkpoint and stop. The learner
 decides *what one update means*. A supervised regression, a deep Q-network and
-a pathwise hedging objective are then three learners sharing one loop, instead
-of three training scripts that drift apart.
+a pathwise hedging objective are then three learners sharing one loop shape,
+instead of three training scripts that drift apart.
 
-Two loop drivers, chosen by what the source can offer: `fit_epochs` for a
-finite dataset with a meaningful notion of a pass, `fit_steps` for an unbounded
-source where only the update count is meaningful.
+**Two drivers, chosen by the source and nothing else.** A source that reports
+`steps_per_epoch=None` is unbounded, and that single value selects the driver:
+`fit_epochs` for a finite dataset with a meaningful notion of a pass,
+`fit_steps` for an environment where only the step count is meaningful. Each
+driver refuses the other's source by name, rather than inventing the missing
+number — an invented pass length would silently become the denominator of every
+reported metric and the period of every schedule.
+
+**Two learner protocols, because a policy has no target.** This is the one
+place the unification is narrower than it first looks, and it is worth being
+precise about. `Learner` takes `(model, inputs, target)`, because `fit_epochs`
+splits each batch using the signature's declared target. `PolicySignature` has
+an observation space and an action space and nothing resembling a target, and
+an interactive update consumes a whole transition rather than a pair. So
+`PolicyLearner` declares `act` and `update` instead.
+
+The alternative — widening `Learner` so `target` is optional — would have
+pushed an interactive branch into every supervised learner, which is the
+coupling the loop/learner split exists to prevent. What the split bought is
+still real: both drivers are the same shape, share their callbacks and
+records, and the interactive pipeline is a sibling of the supervised one rather
+than a forked lifecycle.
 
 ### Why `DifferentiableEnvironment` is first-class
 
@@ -517,6 +544,14 @@ back-propagated straight through a simulated path. No value function, no policy
 gradient estimator, no variance to fight. For a quantitative-finance framework
 this is not an exotic case; it is a large fraction of the interesting problems,
 so it gets its own protocol rather than an adapter.
+
+The protocol is not declared yet, and the reason is a rule worth stating
+generally: **a `runtime_checkable` protocol with no distinguishing member is
+satisfied by everything.** An `isinstance` check against a
+`DifferentiableEnvironment` that added no members would answer `True` for a
+plainly non-differentiable environment, which is worse than having no check.
+The member it needs is whatever the pathwise learner reads, so it arrives with
+that learner.
 
 **On the existing `q_learning` package:** the reinforcement-learning design
 here is a clean redesign, not a port. `q_learning`'s agent and environment

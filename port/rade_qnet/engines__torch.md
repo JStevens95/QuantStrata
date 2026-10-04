@@ -4,16 +4,16 @@
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
-| 1 | `__init__.py` | 90 | 4121 | `a386a3c89b5a653f` |
+| 1 | `__init__.py` | 92 | 4234 | `573598b91851be88` |
 | 2 | `callbacks.py` | 689 | 21954 | `dd2f519795a353cc` |
 | 3 | `checkpoint.py` | 300 | 10634 | `ede6db2968503f60` |
 | 4 | `distributed.py` | 276 | 9479 | `0c0492e6dc473abb` |
-| 5 | `engine.py` | 578 | 19124 | `2d7faa241a18fb2b` |
+| 5 | `engine.py` | 892 | 30855 | `85597009a5c6b063` |
 | 6 | `hardware.py` | 369 | 12848 | `1e6d10f5dc810e55` |
 | 7 | `loaders.py` | 288 | 10182 | `856ddcfb1c2ca4e9` |
-| 8 | `loops.py` | 462 | 14963 | `f43d783b05f0da87` |
+| 8 | `loops.py` | 908 | 31723 | `bff69a0ec94c1958` |
 | 9 | `losses.py` | 348 | 9939 | `43b81664fc961647` |
-| 10 | `materialise.py` | 329 | 11265 | `b19a9c1b5031cb03` |
+| 10 | `materialise.py` | 464 | 16375 | `7c5f89e61ae6de0d` |
 | 11 | `predictor.py` | 179 | 6452 | `87c7e1bff8d8aba1` |
 | 12 | `seeding.py` | 124 | 5679 | `34f9f4cfe1207350` |
 
@@ -21,7 +21,7 @@
 
 ## 1. `src/rade_qnet/engines/torch/__init__.py`
 
-4121 bytes · SHA-256 `a386a3c89b5a653f`
+4234 bytes · SHA-256 `573598b91851be88`
 
 ```python
 """
@@ -42,10 +42,11 @@ Modules
     The ``Engine`` implementation: build, materialise, fit, checkpoint,
     predict.  [Phase 2]
 ``loops.py``
-    ``fit_epochs`` -- passes over a finite dataset -- and the ``Learner``
-    protocol it drives.  ``fit_steps``, for a fixed number of updates against
-    an unbounded source, arrives with reinforcement learning.  Supervised
-    learning naturally wants the first, reinforcement learning the second.
+    The two drivers and the two learner protocols they drive.  ``fit_epochs``
+    makes passes over a finite dataset, driving a ``Learner``; ``fit_steps``
+    runs a budget of environment steps against an unbounded source, driving a
+    ``PolicyLearner``.  The source's ``steps_per_epoch`` selects which, and
+    each refuses the other's source by name.
     [Phase 2 / Phase 7]
 ``learners/``
     Update rules, one per algorithm.
@@ -107,13 +108,14 @@ does not use it.
 """
 
 from .engine import TorchEngine
+from .learners.random import RandomLearner
 from .learners.supervised import SupervisedLearner
 
 # Importing the name is what registers the seeder, since registration happens
 # at that module's import.
 from .seeding import seed_torch
 
-__all__ = ["SupervisedLearner", "TorchEngine", "seed_torch"]
+__all__ = ["RandomLearner", "SupervisedLearner", "TorchEngine", "seed_torch"]
 ```
 
 ---
@@ -1412,7 +1414,7 @@ def shutdown_distributed() -> None:
 
 ## 5. `src/rade_qnet/engines/torch/engine.py`
 
-19124 bytes · SHA-256 `2d7faa241a18fb2b`
+30855 bytes · SHA-256 `85597009a5c6b063`
 
 ```python
 """
@@ -1447,10 +1449,16 @@ from typing import TYPE_CHECKING
 import numpy as np
 import torch
 
+from ...core.runtime.components import LEARNERS, ComponentError, get_learner
 from ...core.runtime.components import engine as register_engine
 from ...core.runtime.errors import EngineError
 from ...core.runtime.logging import get_logger
-from ...core.spec.training import CheckpointSpec, EarlyStoppingSpec, TorchTrainingSpec
+from ...core.spec.training import (
+    CheckpointSpec,
+    EarlyStoppingSpec,
+    RlTrainingSpec,
+    TorchTrainingSpec,
+)
 from ..base import EngineCapabilities, ModelHandle
 from .callbacks import BestCheckpoint, EarlyStopping, GradientNorms, LearningRateSchedule
 from .checkpoint import load_weights, save_weights
@@ -1462,10 +1470,12 @@ from .hardware import (
     resolve_hardware,
 )
 from .learners.supervised import SupervisedLearner
-from .loops import fit_epochs
+from .loaders import to_tensor
+from .loops import fit_epochs, fit_steps
 from .losses import build_loss
 from .materialise import count_parameters
 from .materialise import materialise as materialise_model
+from .materialise import materialise_policy as materialise_policy_model
 from .predictor import predict_batches
 
 if TYPE_CHECKING:
@@ -1476,10 +1486,11 @@ if TYPE_CHECKING:
 
     from ...core.contract.data import TensorLike
     from ...core.contract.result import FitOutcome
-    from ...core.contract.signature import InputSignature
+    from ...core.contract.signature import InputSignature, PolicySignature
     from ...core.contract.source import BatchSource
     from ...core.spec.hardware import HardwareSpec
     from .callbacks import Callback
+    from .loops import PolicyLearner
 
 __all__ = ["TorchEngine"]
 
@@ -1632,7 +1643,7 @@ class TorchEngine:
             a Torch module.
         """
         module = self._module(model)
-        spec = self._training_spec(training)
+        spec = self._optimiser_spec(training)
         resolved = resolve_hardware(hardware)
 
         # The order below is the contract; see the module docstring.
@@ -1781,6 +1792,136 @@ class TorchEngine:
             if handle.is_distributed:
                 shutdown_distributed()
 
+    def materialise_policy(self, policy: object, signature: PolicySignature) -> object:
+        """
+        Give a lazily shaped policy its parameters.
+
+        Parameters
+        ----------
+        policy
+            The untrained policy.
+        signature
+            The observation and action spaces, from which the dummy
+            observation is synthesised.
+
+        Returns
+        -------
+        object
+            The policy, with parameters.
+
+        Raises
+        ------
+        EngineError
+            If the policy is not a Torch module, or the dummy pass fails.
+        """
+        return materialise_policy_model(self._module(policy), signature)
+
+    def fit_policy(
+        self,
+        handle: ModelHandle,
+        source: BatchSource,
+        training: object,
+    ) -> FitOutcome:
+        """
+        Train a policy against a budget of interaction.
+
+        The interactive counterpart of :meth:`fit`, and structurally the
+        same: narrow the spec, build the callbacks, resolve the update rule,
+        hand everything to a driver.
+
+        One difference is worth naming. The learner here is resolved through
+        the registry by the name in the spec, where :meth:`fit` constructs
+        :class:`~.learners.supervised.SupervisedLearner` directly. The
+        registry is how a third algorithm arrives without this method
+        changing, which matters far more on this path than on the supervised
+        one: there is exactly one supervised update rule and there will be
+        several interactive ones.
+
+        Parameters
+        ----------
+        handle
+            The prepared policy.
+        source
+            One unbounded source of experience.
+        training
+            An :class:`~rade_qnet.core.spec.training.RlTrainingSpec`.
+
+        Returns
+        -------
+        FitOutcome
+            The block history and the step budget's outcome.
+
+        Raises
+        ------
+        EngineError
+            If the spec is not an interactive one, or the named learner is
+            not registered.
+        """
+        spec = self._rl_training_spec(training)
+        module = self._module(handle.model)
+        resolved = self._resolved_hardware(handle)
+        optimiser = self._optimiser(handle)
+
+        gradient_norms = GradientNorms(clip_norm=spec.gradient_clip_norm)
+        learner = self._policy_learner(
+            spec,
+            source=source,
+            optimiser=optimiser,
+            hardware=resolved,
+            gradient_norms=gradient_norms,
+        )
+
+        # The source collects by acting, and what it acts with is this
+        # learner on this policy. Bound here rather than passed to the source
+        # at construction because the learner is built *from* the source's
+        # policy signature, so the two cannot be created in that order. This
+        # is the only place that knows both.
+        bind = getattr(source, "bind", None)
+        if bind is None:
+            raise EngineError(
+                f"the {type(source).__name__} handed to fit_policy has no "
+                f"bind(), so nothing can tell it how to act. An interactive run "
+                f"is driven by a source built over an environment, such as a "
+                f"RolloutSource"
+            )
+        # The observation is placed on the device here, not in the learner.
+        # Device placement is the engine's job everywhere else on this path --
+        # `to_device_batches` for a dataset, `fit_steps` for experience -- and
+        # a learner that had to do its own would get it wrong exactly once per
+        # learner. The symptom is specific and unhelpful: the policy is on the
+        # accelerator, the environment's observation is a NumPy array on the
+        # host, and the forward pass fails inside a linear layer.
+        bind(
+            lambda observation: learner.act(module, to_tensor(observation, device=resolved.device))
+        )
+
+        try:
+            return fit_steps(
+                module,
+                source,
+                learner=learner,
+                device=resolved.device,
+                total_steps=spec.total_steps,
+                # The spec's evaluation period doubles as the reporting
+                # period, rather than a second field meaning almost the same
+                # thing. A block boundary is exactly where an interactive run
+                # would evaluate, so two numbers could only ever disagree.
+                report_every_steps=spec.evaluate_every_steps,
+                gradient_norms=gradient_norms,
+                # No best-weight selection. Choosing a best policy needs a
+                # metric that says whether the agent improved, and the only
+                # honest one is an evaluation return, which nothing can
+                # produce until a learner has a greedy mode. Selecting on the
+                # training loss instead -- the supervised fallback -- would be
+                # worse than not selecting: for a policy-gradient objective a
+                # falling loss does not mean a better agent.
+                checkpoint=None,
+                learning_rate=spec.learning_rate,
+            )
+        finally:
+            if handle.is_distributed:
+                shutdown_distributed()
+
     def predict(self, handle: ModelHandle, source: BatchSource) -> NDArray[np.floating]:
         """
         Run a forward pass over a source and return the raw output.
@@ -1875,6 +2016,139 @@ class TorchEngine:
                 f"engine matches what the model definition builds"
             )
         return model
+
+    @staticmethod
+    def _optimiser_spec(training: object) -> TorchTrainingSpec | RlTrainingSpec:
+        """
+        Narrow a training spec to either kind this engine can prepare from.
+
+        :meth:`prepare` places a module on a device and builds an optimiser
+        over it, and that is identical work for a predictor and for a policy.
+        So it accepts both specs rather than one, and the two paths diverge
+        only where they genuinely differ -- in :meth:`fit` and
+        :meth:`fit_policy`, each of which narrows to the one spec it can
+        actually drive.
+
+        Parameters
+        ----------
+        training
+            The training spec.
+
+        Returns
+        -------
+        TorchTrainingSpec or RlTrainingSpec
+            The same spec, narrowed.
+
+        Raises
+        ------
+        EngineError
+            If it is another engine's spec.
+        """
+        if not isinstance(training, TorchTrainingSpec | RlTrainingSpec):
+            raise EngineError(
+                f"the Torch engine was given a {type(training).__name__}; "
+                f"prepare() needs a TorchTrainingSpec or an RlTrainingSpec"
+            )
+        return training
+
+    @staticmethod
+    def _rl_training_spec(training: object) -> RlTrainingSpec:
+        """
+        Narrow an engine-opaque training spec to an interactive one.
+
+        Parameters
+        ----------
+        training
+            The training spec.
+
+        Returns
+        -------
+        RlTrainingSpec
+            The same spec, narrowed.
+
+        Raises
+        ------
+        EngineError
+            If it is a supervised spec or another engine's. Named separately
+            from :meth:`_training_spec` so that handing a supervised spec to
+            the interactive path says so, rather than reporting a missing
+            field much later.
+        """
+        if not isinstance(training, RlTrainingSpec):
+            raise EngineError(
+                f"fit_policy needs an RlTrainingSpec; received a "
+                f"{type(training).__name__}. A supervised configuration trains "
+                f"through fit(), not here"
+            )
+        return training
+
+    @staticmethod
+    def _policy_learner(
+        spec: RlTrainingSpec,
+        *,
+        source: BatchSource,
+        optimiser: torch.optim.Optimizer,
+        hardware: ResolvedHardware,
+        gradient_norms: GradientNorms,
+    ) -> PolicyLearner:
+        """
+        Resolve and construct the named interactive update rule.
+
+        Every policy learner is constructed with the same keyword set, and
+        each takes what it needs. That uniformity is the price of resolving
+        by name: the engine cannot know which arguments the algorithm it was
+        asked for wants, so the contract is that it is offered all of them.
+        :class:`~.learners.random.RandomLearner` uses one and ignores the
+        rest, which is what a learner that performs no update should do.
+
+        Parameters
+        ----------
+        spec
+            The interactive training spec, naming the learner.
+        source
+            The experience source, asked for the signature the learner needs
+            to interpret an action.
+        optimiser
+            Built over the policy's materialised parameters.
+        hardware
+            Resolved device, precision and gradient scaler.
+        gradient_norms
+            Tracker for the per-block gradient-norm summary.
+
+        Returns
+        -------
+        PolicyLearner
+            The constructed update rule.
+
+        Raises
+        ------
+        EngineError
+            If the name is not registered, or resolves to something that
+            cannot act and update.
+        """
+        try:
+            learner_type = get_learner(spec.learner)
+        except ComponentError as error:
+            raise EngineError(
+                f"no learner is registered as {spec.learner!r}; the interactive "
+                f"learners available here are {sorted(LEARNERS.names())}"
+            ) from error
+
+        learner = learner_type(
+            signature=_policy_signature_of(source),
+            training=spec,
+            optimiser=optimiser,
+            hardware=hardware,
+            gradient_norms=gradient_norms,
+        )
+        if not (hasattr(learner, "act") and hasattr(learner, "update")):
+            raise EngineError(
+                f"the learner registered as {spec.learner!r} is a "
+                f"{type(learner).__name__}, which does not have both act() and "
+                f"update(); it is a supervised learner and cannot drive a policy"
+            )
+        _LOGGER.info("resolved interactive learner %r", spec.learner)
+        return learner
 
     @staticmethod
     def _training_spec(training: object) -> TorchTrainingSpec:
@@ -1993,6 +2267,48 @@ class TorchEngine:
             lr=spec.learning_rate,
             weight_decay=spec.weight_decay,
         )
+
+
+def _policy_signature_of(source: BatchSource) -> PolicySignature:
+    """
+    Ask an experience source for the policy signature it was built against.
+
+    A source that yields experience knows the environment behind it, so it is
+    the one object in the fit call that can answer. The alternative was to
+    thread the signature from the pipeline through
+    :meth:`TorchEngine.fit_policy`, which would have put the same value in
+    two places -- and two copies of a signature is how a policy comes to be
+    built against one action space and driven against another.
+
+    Read by attribute rather than through a declared protocol because it is
+    one optional member on an otherwise ordinary ``BatchSource``, in the same
+    way ``ordered()`` is.
+
+    Parameters
+    ----------
+    source
+        The experience source.
+
+    Returns
+    -------
+    PolicySignature
+        The observation and action spaces.
+
+    Raises
+    ------
+    EngineError
+        If the source cannot supply one, which means it is a dataset source
+        and this is a supervised run reaching the wrong method.
+    """
+    signature = getattr(source, "policy_signature", None)
+    if signature is None:
+        raise EngineError(
+            f"the {type(source).__name__} handed to fit_policy has no "
+            f"policy_signature, so nothing can say what spaces the policy acts "
+            f"in. An interactive run is driven by a source built over an "
+            f"environment, such as a RolloutSource"
+        )
+    return signature
 ```
 
 ---
@@ -2674,43 +2990,74 @@ def to_device_batches(
 
 ## 8. `src/rade_qnet/engines/torch/loops.py`
 
-14963 bytes · SHA-256 `f43d783b05f0da87`
+31723 bytes · SHA-256 `bff69a0ec94c1958`
 
 ```python
 """
-``fit_epochs`` -- passes over a finite source, driving a learner.
+The two loop drivers: ``fit_epochs`` over a dataset, ``fit_steps`` over an environment.
 
 The library split described in ``ARCHITECTURE.md`` §6: the loop decides *when*
 to step, validate, checkpoint and stop; the learner decides *what* one update
 means. A supervised regression, a deep Q-network and a pathwise hedging
-objective are then three learners sharing this one function, rather than three
+objective are then three learners sharing a driver, rather than three
 training scripts.
 
-Why the ``Learner`` protocol is declared here
----------------------------------------------
+Why the learner protocols are declared here
+-------------------------------------------
 The loop is the consumer, so the loop declares the interface it needs. The
 same dependency inversion puts ``Catalog`` and ``Tracker`` in
 ``core.runtime.context`` rather than in ``storage``: the party that depends on
 a capability owns its definition, and the party that provides it satisfies a
 contract it need not import.
 
-Two drivers, one of them deferred
----------------------------------
+Two drivers, selected by the source
+-----------------------------------
 :attr:`~rade_qnet.core.contract.source.BatchSource.steps_per_epoch` returning
 ``None`` means the source is unbounded, and that single value selects the
-driver. A fixed dataset has a meaningful notion of a pass, so it is driven
-here by epochs. An environment does not, so Phase 7 adds ``fit_steps``.
+driver. A fixed dataset has a meaningful notion of a pass, so it is driven by
+epochs. An environment does not, so it is driven by a step budget. The source
+declares which it is; the engine does not guess.
 
-:func:`fit_epochs` refuses an unbounded source rather than inventing a pass
-length for it, because the invented number would silently become the
-denominator of every reported metric and the period of every schedule.
+Each driver refuses the other's source rather than coping, because the
+invented number -- a pass length for an environment, a step budget for a
+dataset -- would silently become the denominator of every reported metric and
+the period of every schedule.
+
+Record: why there are two learner protocols
+-------------------------------------------
+``PHASE_7_REINFORCEMENT_LEARNING.md`` §3.1 claimed Phase 7 would add its
+learners "against an unchanged loop", and said that if a second loop were
+needed, *that* was the finding rather than a licence to fork. So, recorded as
+the finding:
+
+The second **driver** was never the surprise -- ``core.contract.source`` has
+specified since Phase 1 that an unbounded source "is driven by ``fit_steps``",
+and :func:`fit_epochs` has always refused one by name. What did not survive
+contact is the **learner protocol**. :class:`Learner` takes
+``(model, inputs, target)``, because :func:`fit_epochs` splits each batch into
+inputs and a target using the signature's declared target.
+
+A policy has no target. ``PolicySignature`` has an observation space and an
+action space and nothing resembling one, and what an interactive update
+consumes is a whole transition -- observation, action, reward, next
+observation, and the two episode-end flags -- not a pair. Passing a reward as
+``target`` would type-check and would be a lie: a reward is not a label, and
+a learner reading it as one is the exact confusion the paradigm split exists
+to prevent.
+
+Hence :class:`PolicyLearner`, with its own two methods. The alternative --
+widening :class:`Learner` to make ``target`` optional and adding the five
+other fields -- would push the branch *into every supervised learner*, which
+is the coupling the split was for. The loop/learner split itself held: both
+drivers below are the same shape, and the pipeline is a sibling of the
+supervised one rather than a forked lifecycle.
 """
 
 from __future__ import annotations
 
 import math
 import time
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import torch
 
@@ -2718,7 +3065,7 @@ from ...core.contract.result import EpochRecord, FitOutcome
 from ...core.runtime.errors import EngineError
 from ...core.runtime.logging import get_logger
 from .callbacks import EpochContext
-from .loaders import StaticInputs, to_device_batches
+from .loaders import TARGET_KEY, StaticInputs, to_device_batches, to_tensor
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -2727,7 +3074,7 @@ if TYPE_CHECKING:
     from ...core.contract.source import BatchSource
     from .callbacks import BestCheckpoint, Callback, GradientNorms
 
-__all__ = ["Learner", "fit_epochs"]
+__all__ = ["ExperienceSummary", "Learner", "PolicyLearner", "fit_epochs", "fit_steps"]
 
 _LOGGER = get_logger(__name__)
 
@@ -2740,10 +3087,11 @@ _NON_FINITE_KEY = "non_finite_steps"
 
 class Learner(Protocol):
     """
-    What one optimisation step means.
+    What one optimisation step means, for supervised learning.
 
-    Implemented by :class:`~.learners.supervised.SupervisedLearner` and, from
-    Phase 7, by the reinforcement-learning update rules.
+    Implemented by :class:`~.learners.supervised.SupervisedLearner`. An
+    interactive update rule implements :class:`PolicyLearner` instead -- see
+    the record in the module docstring for why the two are separate.
     """
 
     def train_step(
@@ -2794,6 +3142,90 @@ class Learner(Protocol):
         -------
         dict
             Must carry ``loss``.
+        """
+        ...
+
+
+class PolicyLearner(Protocol):
+    """
+    What one interactive update means, and how the policy chooses an action.
+
+    Two methods rather than :class:`Learner`'s two, because interaction needs
+    a different pair.
+
+    :meth:`act` is here, and not on the model, because exploration is a
+    property of the *algorithm*: the same network is acted on greedily by one
+    learner, epsilon-greedily by another, and sampled from by a third. Putting
+    it on the policy would force every network to carry every exploration
+    scheme, and would make a saved policy's behaviour depend on which
+    algorithm had trained it.
+
+    There is no ``eval_step``. A dataset has a held-out split; an environment
+    does not, and the only honest way to evaluate a policy is to run more
+    episodes with exploration turned off. That is a different *amount of
+    interaction*, not a different step, so it belongs to the pipeline which
+    can collect it -- not here.
+    """
+
+    def act(self, policy: torch.nn.Module, observation: object) -> object:
+        """
+        Choose one action for one observation.
+
+        Called by the collector, not by the driver, and therefore outside any
+        gradient graph: an implementation must detach or use ``no_grad``, or
+        the graph of every action taken is retained until the update, which
+        for a replay buffer means retaining it for the whole run.
+
+        Parameters
+        ----------
+        policy
+            The prepared policy.
+        observation
+            One observation, already placed on the policy's device by the
+            engine and not batched. Device placement happens there rather
+            than here for the same reason it does for a batch: a learner
+            that had to do its own would get it wrong once per learner, and
+            the symptom -- a forward pass failing inside a linear layer -- is
+            a long way from the cause.
+
+        Returns
+        -------
+        object
+            One action the environment will accept. Not necessarily a
+            tensor: a discrete environment wants an index.
+        """
+        ...
+
+    def update(
+        self,
+        policy: torch.nn.Module,
+        experience: Mapping[str, torch.Tensor],
+    ) -> dict[str, float]:
+        """
+        Perform one update from a batch of experience and report its scalars.
+
+        Parameters
+        ----------
+        policy
+            The prepared policy.
+        experience
+            One batch of transitions, on the device, keyed as the source's
+            signature declares: observations, actions, next observations, the
+            two episode-end flags, and the reward under
+            :data:`~rade_qnet.core.contract.data.TARGET_KEY`.
+
+            Passed whole rather than pre-split, because what an algorithm
+            reads varies -- a policy-gradient method ignores the next
+            observation entirely, a value-based one depends on it -- and a
+            driver that split it would have to know which algorithm it was
+            driving.
+
+        Returns
+        -------
+        dict
+            Must carry ``loss``; any other key is averaged into the reported
+            block's metrics. A learner that performs no update still reports
+            one, so that "nothing happened" is visible rather than absent.
         """
         ...
 
@@ -3137,6 +3569,336 @@ def _log_epoch(record: EpochRecord, epochs: int) -> None:
         epochs,
         record.train_loss,
         validation,
+        record.seconds,
+    )
+
+
+@runtime_checkable
+class ExperienceSummary(Protocol):
+    """
+    An opt-in capability: a source that can summarise the episodes it has seen.
+
+    Checked with ``isinstance`` and skipped when absent, which is the
+    framework's standard capability pattern -- see
+    ``core.capability.protocols``. Optional rather than part of
+    :class:`~rade_qnet.core.contract.source.BatchSource` because a replay
+    source serving stored transitions has no episodes of its own to report,
+    and widening the source protocol would force it to invent an answer.
+    """
+
+    def episode_summary(self) -> Mapping[str, float]:
+        """
+        Summarise the finished episodes.
+
+        Returns
+        -------
+        Mapping
+            Named statistics, or empty when no episode has finished.
+        """
+        ...
+
+
+def fit_steps(
+    policy: torch.nn.Module,
+    source: BatchSource,
+    *,
+    learner: PolicyLearner,
+    device: torch.device,
+    total_steps: int,
+    report_every_steps: int,
+    callbacks: Sequence[Callback] = (),
+    gradient_norms: GradientNorms | None = None,
+    checkpoint: BestCheckpoint | None = None,
+    learning_rate: float | None = None,
+) -> FitOutcome:
+    """
+    Train for a budget of environment steps against an unbounded source.
+
+    The interactive counterpart of :func:`fit_epochs`, and deliberately the
+    same shape: collect, update, record, consult the callbacks, maybe stop.
+    What differs is only the unit of progress -- steps taken rather than
+    passes completed -- and that the experience arrives whole rather than
+    split into inputs and a target.
+
+    How the budget is counted
+    ------------------------
+    One update per batch, and the steps in that batch are counted from the
+    batch itself rather than from a configured batch size. The source decides
+    how much experience one update gets; the driver counts what it was
+    handed. A second number here could disagree with the source's, and the
+    disagreement would be invisible -- the run would simply stop at the wrong
+    time.
+
+    Parameters
+    ----------
+    policy
+        The prepared policy. Must already be materialised, for the reason in
+        :func:`fit_epochs`.
+    source
+        An unbounded source of experience, normally a
+        :class:`~rade_qnet.sources.batching.rollout.RolloutSource`.
+    learner
+        The update rule, which also chooses the actions.
+    device
+        Where tensors are placed.
+    total_steps
+        Environment steps to run before stopping.
+    report_every_steps
+        Steps per reported block. One :class:`EpochRecord` is emitted per
+        block, and the callbacks are consulted once per block.
+
+        Blocks rather than updates because an interactive run does thousands
+        of small updates, and a history with one entry each would be useless
+        to read and would make early stopping fire on the noise of a single
+        batch.
+    callbacks
+        Consulted at the end of each block, in order. Any one of them may end
+        the run.
+    gradient_norms
+        Tracker whose summary is folded into each block's metrics.
+    checkpoint
+        Best-weight tracker. For an interactive run the metric worth
+        monitoring is the episode return, not a loss, because a policy-
+        gradient loss falling says almost nothing about whether the agent
+        improved.
+    learning_rate
+        Rate to record against the first block when no schedule is in use.
+
+    Returns
+    -------
+    FitOutcome
+        The block history, the best block, and whether the run stopped early
+        and restored the best weights.
+
+    Raises
+    ------
+    EngineError
+        If the source is bounded, if the budget or block size is not
+        positive, if a learner reports no ``loss``, or if the loss becomes
+        non-finite.
+    """
+    if source.steps_per_epoch is not None:
+        raise EngineError(
+            f"fit_steps drives an unbounded source, but this one reports "
+            f"steps_per_epoch={source.steps_per_epoch}. A bounded source has a "
+            f"meaningful pass, so a step budget would cut it off mid-dataset or "
+            f"silently repeat it. Use fit_epochs instead"
+        )
+    if total_steps <= 0 or report_every_steps <= 0:
+        raise EngineError(
+            f"fit_steps needs positive total_steps and report_every_steps; "
+            f"received {total_steps} and {report_every_steps}"
+        )
+
+    history: list[EpochRecord] = []
+    stopped_early = False
+    started = time.perf_counter()
+
+    steps_taken = 0
+    block = 0
+    block_started = time.perf_counter()
+    totals: dict[str, float] = {}
+    updates_in_block = 0
+    next_report = min(report_every_steps, total_steps)
+
+    policy.train(True)
+    for batch in source.batches():
+        experience = {name: to_tensor(value, device=device) for name, value in batch.items()}
+        scalars = learner.update(policy, experience)
+        if LOSS_KEY not in scalars:
+            raise EngineError(
+                f"the learner reported {sorted(scalars)} for the update at step "
+                f"{steps_taken} but not {LOSS_KEY!r}; every learner must report "
+                f"its objective under that key, because the loop and the "
+                f"callbacks are written against it"
+            )
+
+        for name, value in scalars.items():
+            totals[name] = totals.get(name, 0.0) + value
+        updates_in_block += 1
+        steps_taken += _steps_in(experience)
+
+        if steps_taken < next_report:
+            continue
+
+        record = _block_record(
+            block,
+            totals=totals,
+            updates=updates_in_block,
+            source=source,
+            gradient_norms=gradient_norms,
+            learning_rate=learning_rate,
+            seconds=time.perf_counter() - block_started,
+        )
+        # Non-finite for the same reason as in `fit_epochs`: the parameters
+        # are already NaN and no later update recovers.  Raised here rather
+        # than after the callbacks so a checkpoint is never taken from
+        # weights that are known to be broken.
+        if not math.isfinite(record.train_loss):
+            raise EngineError(
+                f"the training loss became {record.train_loss} after "
+                f"{steps_taken} step(s), so the parameters are no longer finite "
+                f"and no later update can recover. In an interactive run the "
+                f"usual causes are an unbounded reward, a value target that "
+                f"bootstrapped past a terminal state, or a learning rate too "
+                f"high for the objective. Check the episode return first: if it "
+                f"diverged before the loss did, the reward is the problem"
+            )
+
+        history.append(record)
+        _log_block(record, steps_taken=steps_taken, total_steps=total_steps)
+
+        context = _context_from(record)
+        if checkpoint is not None:
+            checkpoint.on_epoch_end(context)
+        for callback in callbacks:
+            callback.on_epoch_end(context)
+
+        if any(callback.should_stop for callback in callbacks):
+            stopped_early = True
+            break
+
+        learning_rate = _current_rate(callbacks, default=learning_rate)
+
+        if steps_taken >= total_steps:
+            break
+
+        block += 1
+        block_started = time.perf_counter()
+        totals = {}
+        updates_in_block = 0
+        next_report = min(steps_taken + report_every_steps, total_steps)
+
+    restored = checkpoint.restore_best() if checkpoint is not None else False
+    outcome = FitOutcome(
+        history=tuple(history),
+        monitor=checkpoint.monitor.monitor if checkpoint is not None else LOSS_KEY,
+        best_epoch=checkpoint.monitor.best_epoch if checkpoint is not None else None,
+        best_monitor_value=checkpoint.monitor.best_value if checkpoint is not None else None,
+        stopped_early=stopped_early,
+        restored_best=restored,
+        total_seconds=time.perf_counter() - started,
+    )
+    _LOGGER.info(
+        "fit finished: %d step(s) over %d block(s) in %.1fs%s",
+        steps_taken,
+        outcome.n_epochs,
+        outcome.total_seconds,
+        " (weights restored)" if restored else "",
+    )
+    return outcome
+
+
+def _steps_in(experience: Mapping[str, torch.Tensor]) -> int:
+    """
+    Count the transitions in one batch of experience.
+
+    Read from the target -- the reward -- because it is the one entry
+    guaranteed to be exactly one value per transition. An observation may
+    carry extra dimensions, and a source may add keys this driver has never
+    heard of.
+
+    Parameters
+    ----------
+    experience
+        One batch, on the device.
+
+    Returns
+    -------
+    int
+        The number of transitions.
+
+    Raises
+    ------
+    EngineError
+        If the batch carries no reward, which means it is not experience.
+    """
+    reward = experience.get(TARGET_KEY)
+    if reward is None:
+        raise EngineError(
+            f"the experience batch has {sorted(experience)} but no {TARGET_KEY!r}; "
+            f"fit_steps counts its budget in transitions, and a batch with no "
+            f"reward is not experience"
+        )
+    return int(reward.shape[0]) if reward.ndim else 1
+
+
+def _block_record(
+    block: int,
+    *,
+    totals: Mapping[str, float],
+    updates: int,
+    source: BatchSource,
+    gradient_norms: GradientNorms | None,
+    learning_rate: float | None,
+    seconds: float,
+) -> EpochRecord:
+    """
+    Summarise one block of updates as a history record.
+
+    Parameters
+    ----------
+    block
+        Zero-based block index.
+    totals
+        Scalars summed over the block's updates.
+    updates
+        How many updates the block contained.
+    source
+        Asked for its episode summary, if it can give one.
+    gradient_norms
+        Tracker whose summary is folded in, if present.
+    learning_rate
+        Rate in effect for the block.
+    seconds
+        Wall-clock duration of the block.
+
+    Returns
+    -------
+    EpochRecord
+        The block's record, with ``val_loss`` left ``None`` -- an environment
+        has no held-out split, and reporting the training loss there would
+        make a monitor watching it think it was watching validation.
+    """
+    means = _mean_of(totals, updates)
+    metrics = {name: value for name, value in means.items() if name != LOSS_KEY}
+    if isinstance(source, ExperienceSummary):
+        metrics.update(source.episode_summary())
+    if gradient_norms is not None:
+        metrics.update(gradient_norms.summarise())
+
+    return EpochRecord(
+        epoch=block,
+        train_loss=means[LOSS_KEY],
+        val_loss=None,
+        metrics=metrics,
+        learning_rate=learning_rate,
+        seconds=seconds,
+    )
+
+
+def _log_block(record: EpochRecord, *, steps_taken: int, total_steps: int) -> None:
+    """
+    Log one block's headline numbers.
+
+    Parameters
+    ----------
+    record
+        The block's record.
+    steps_taken
+        Steps completed so far, logged instead of a block index because the
+        budget is in steps and that is what a reader is tracking.
+    total_steps
+        The step budget.
+    """
+    episode_return = record.metrics.get("episode_return")
+    reported = "" if episode_return is None else f" episode_return={episode_return:.6g}"
+    _LOGGER.info(
+        "step %d/%d loss=%.6g%s (%.2fs)",
+        steps_taken,
+        total_steps,
+        record.train_loss,
+        reported,
         record.seconds,
     )
 ```
@@ -3502,7 +4264,7 @@ def build_loss(name: str, *, options: Mapping[str, object] | None = None) -> Los
 
 ## 10. `src/rade_qnet/engines/torch/materialise.py`
 
-11265 bytes · SHA-256 `b19a9c1b5031cb03`
+16375 bytes · SHA-256 `7c5f89e61ae6de0d`
 
 ```python
 """
@@ -3547,19 +4309,21 @@ from typing import TYPE_CHECKING
 
 import torch
 
+from ...core.contract.signature import TensorSpec
 from ...core.runtime.errors import EngineError
 from ...core.runtime.logging import get_logger
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from ...core.contract.signature import InputSignature, TensorSpec
+    from ...core.contract.signature import InputSignature, PolicySignature
 
 __all__ = [
     "count_parameters",
     "dummy_batch",
     "has_lazy_parameters",
     "materialise",
+    "materialise_policy",
     "torch_dtype",
 ]
 
@@ -3834,6 +4598,139 @@ def materialise(
 
     _LOGGER.info("materialised %d parameter element(s)", count_parameters(model))
     return model
+
+
+def materialise_policy(
+    policy: torch.nn.Module,
+    signature: PolicySignature,
+    *,
+    device: torch.device | None = None,
+) -> torch.nn.Module:
+    """
+    Run one dummy forward pass so a lazy policy acquires its shapes.
+
+    The interactive counterpart of :func:`materialise`, and it exists for the
+    same defect: an optimiser built over unmaterialised parameters tracks
+    nothing, so the run appears to train while changing no weights.
+
+    Separate from :func:`materialise` rather than folded into it, because the
+    dummy input is built from a different description. A supervised dummy
+    batch is a mapping of named inputs plus a target, synthesised from an
+    :class:`~rade_qnet.core.contract.signature.InputSignature`. A policy
+    takes one thing -- an observation -- and its signature has no target to
+    synthesise. A single function would have had to branch on which
+    signature it received, which is the branch the two call sites remove.
+
+    Parameters
+    ----------
+    policy
+        The constructed policy, possibly unmaterialised.
+    signature
+        The observation and action spaces. Only the observation space is
+        read: the action space constrains what the policy's *output* means,
+        which a forward pass does not need to know.
+    device
+        Where to run the pass.
+
+    Returns
+    -------
+    torch.nn.Module
+        The same policy, materialised.
+
+    Raises
+    ------
+    EngineError
+        If the dummy pass fails, or if it completes without materialising the
+        parameters.
+    """
+    if not has_lazy_parameters(policy):
+        _LOGGER.debug("policy has no lazy parameters; nothing to materialise")
+        return policy
+
+    observation = _dummy_observation(signature, device=device)
+    _LOGGER.info(
+        "materialising lazy policy parameters with an observation of %s",
+        tuple(observation.shape),
+    )
+
+    was_training = policy.training
+    policy.eval()
+    try:
+        with torch.no_grad():
+            # Passed by keyword, matching the convention every model in this
+            # framework is called with: a policy declares what it consumes in
+            # its own signature rather than depending on positional order.
+            policy(observation=observation)
+    except Exception as error:
+        raise EngineError(
+            f"the dummy forward pass used to materialise a lazy policy failed: "
+            f"{type(error).__name__}: {error}. The observation was built from the "
+            f"policy signature's observation space "
+            f"({signature.observation.kind}, shape {signature.observation.shape}). "
+            f"Either the space disagrees with what forward() accepts, or forward() "
+            f"does not take an 'observation' keyword"
+        ) from error
+    finally:
+        policy.train(was_training)
+
+    if has_lazy_parameters(policy):
+        raise EngineError(
+            "the dummy forward pass completed but the policy still has "
+            "uninitialised parameters; its forward() does not route through "
+            "every lazy submodule. An optimiser built now would track nothing "
+            "and the run would appear to train while changing no weights"
+        )
+
+    _LOGGER.info("materialised %d parameter element(s)", count_parameters(policy))
+    return policy
+
+
+def _dummy_observation(
+    signature: PolicySignature, *, device: torch.device | None = None
+) -> torch.Tensor:
+    """
+    Synthesise one batch of observations from a policy signature.
+
+    A batch of one, because the shapes a lazy module needs are fixed by the
+    trailing dimensions and a larger batch would only cost more.
+
+    Parameters
+    ----------
+    signature
+        The policy signature, whose observation space gives shape and dtype.
+    device
+        Where to place the tensor.
+
+    Returns
+    -------
+    torch.Tensor
+        A synthetic observation with a leading batch dimension.
+
+    Raises
+    ------
+    EngineError
+        If the observation space names a kind this function cannot
+        synthesise.
+    """
+    space = signature.observation
+    if space.kind == "box":
+        spec = TensorSpec(shape=(None, *space.shape), dtype=space.dtype)
+    elif space.kind == "discrete":
+        # One index per sample, not a one-hot row: a discrete observation
+        # reaches a network as something to look up, and widening it here
+        # would make every policy undo the widening.
+        spec = TensorSpec(shape=(None,), dtype="int64")
+    else:
+        raise EngineError(
+            f"observation space kind {space.kind!r} cannot be synthesised; "
+            f"expected 'box' or 'discrete'"
+        )
+
+    # Built through the same helper the supervised dummy batch uses, so the
+    # choice between zeros and ones is made in one place -- and it matters:
+    # a zero-filled float input makes a multiplicative layer's output
+    # independent of its weights, hiding a shape error in the initialisation.
+    return _dummy_tensor(spec, batch_size=1, device=device or torch.device("cpu"))
 ```
 
 ---
