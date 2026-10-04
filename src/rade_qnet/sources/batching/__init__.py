@@ -20,12 +20,13 @@ Modules
 ``dataset.py``
     ``DatasetSource`` -- iterates one split of a prepared dataset.  Supervised
     learning.  [Phase 2]
+``rollout.py``
+    ``RolloutSource`` -- collects a fresh batch of on-policy experience from an
+    environment before each update.  Unbounded, which is what selects the
+    ``fit_steps`` driver.  [Phase 7]
 
 Planned modules
 ---------------
-``rollout.py``
-    ``RolloutSource`` -- collects a fresh batch of on-policy experience from an
-    environment before each update.  Policy-gradient methods.  [Phase 7]
 ``replay.py``
     ``ReplaySource`` -- maintains a buffer and samples from it, uniformly or by
     priority.  Off-policy value-based methods.  [Phase 7]

@@ -3,8 +3,10 @@ The supervised update rule: forward, loss, backward.
 
 A learner knows what one optimisation step means and nothing else. It has no
 notion of epochs, checkpoints, schedules, logging or devices -- the loop owns
-all of those. That separation is what lets Phase 7 add four reinforcement-
-learning learners against an unchanged loop.
+all of those. That separation is what lets an interactive update rule be
+added as one focused module, driven by the same loop shape; it implements
+:class:`~..loops.PolicyLearner` rather than :class:`~..loops.Learner`,
+because a policy has no target. See the record in ``loops.py``.
 
 Reconciling prediction and target shapes
 ----------------------------------------

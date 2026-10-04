@@ -43,11 +43,18 @@ Modules
     writes one line of data wiring and ``build_model``.  Named for the
     learning paradigm rather than the data shape -- tables, sequences and
     graphs all use it.  [Phase 2 as ``simple.py``, renamed after Phase 6]
-
-Planned modules
----------------
 ``policy.py``
-    The equivalent base for reinforcement-learning models.  [Phase 7]
+    ``PolicyModel``, the equivalent base for reinforcement-learning models:
+    it supplies the signature by reading the environment's declared spaces,
+    so a model writes ``build_environment`` and ``build_policy``.  [Phase 7]
+
+One base per learning paradigm
+------------------------------
+Two bases, not three.  An unsupervised base is deliberately absent until a
+pipeline exists that can train one -- an empty base with no reader is a
+promise the framework cannot keep, and the cost of adding it later is one
+module, whereas the cost of publishing it early is every model author who
+subclasses something that does not work.
 """
 
 __all__: tuple[str, ...] = ()

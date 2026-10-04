@@ -280,9 +280,13 @@ class RlTrainingSpec(Spec):
         Fixed to ``torch``. Present for symmetry with
         :data:`TrainingSpec` and because a future engine would need it.
     learner
-        Which update rule. ``pathwise`` requires a differentiable
-        environment and back-propagates a risk measure through the simulated
-        dynamics; the others are transition-based.
+        Which update rule. ``random`` samples actions from the untrained
+        policy and updates nothing -- the baseline an algorithm is compared
+        against, and the only one implemented so far, which is why it is the
+        default: a default naming an algorithm that does not exist would make
+        the simplest possible spec unrunnable. ``pathwise`` will require a
+        differentiable environment and back-propagate a risk measure through
+        the simulated dynamics; the others are transition-based.
     total_steps
         Total optimisation steps.
     steps_per_update, batch_size
@@ -298,7 +302,7 @@ class RlTrainingSpec(Spec):
     """
 
     engine: Literal["torch"] = "torch"
-    learner: Literal["dqn", "ppo", "sac", "pathwise"] = "ppo"
+    learner: Literal["random", "dqn", "ppo", "sac", "pathwise"] = "random"
     total_steps: int = Field(default=100_000, ge=1)
     steps_per_update: int = Field(default=2048, ge=1)
     batch_size: int = Field(default=256, ge=1)

@@ -16,10 +16,11 @@ Modules
     The ``Engine`` implementation: build, materialise, fit, checkpoint,
     predict.  [Phase 2]
 ``loops.py``
-    ``fit_epochs`` -- passes over a finite dataset -- and the ``Learner``
-    protocol it drives.  ``fit_steps``, for a fixed number of updates against
-    an unbounded source, arrives with reinforcement learning.  Supervised
-    learning naturally wants the first, reinforcement learning the second.
+    The two drivers and the two learner protocols they drive.  ``fit_epochs``
+    makes passes over a finite dataset, driving a ``Learner``; ``fit_steps``
+    runs a budget of environment steps against an unbounded source, driving a
+    ``PolicyLearner``.  The source's ``steps_per_epoch`` selects which, and
+    each refuses the other's source by name.
     [Phase 2 / Phase 7]
 ``learners/``
     Update rules, one per algorithm.
@@ -81,10 +82,11 @@ does not use it.
 """
 
 from .engine import TorchEngine
+from .learners.random import RandomLearner
 from .learners.supervised import SupervisedLearner
 
 # Importing the name is what registers the seeder, since registration happens
 # at that module's import.
 from .seeding import seed_torch
 
-__all__ = ["SupervisedLearner", "TorchEngine", "seed_torch"]
+__all__ = ["RandomLearner", "SupervisedLearner", "TorchEngine", "seed_torch"]

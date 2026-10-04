@@ -1,5 +1,5 @@
 """
-Tests for the epoch loop.
+Tests for the two loop drivers.
 
 The loop's job is bookkeeping, and the tests here are mostly about the
 bookkeeping being honest, because a loop that trains correctly while recording
@@ -14,9 +14,15 @@ unbounded source is rejected outright: it has no notion of a pass, so an epoch
 count over it is arbitrary and silently becomes the denominator of every
 averaged metric.
 
-The loop is driven here with a stub learner rather than the real supervised
-one, so that a failure in these tests is a failure in the loop. The learner
-has its own tests.
+The step driver is tested in the second half of this module, and the mirror
+image of that second refusal is one of its tests: ``fit_steps`` rejects a
+*bounded* source, because a step budget over a dataset would cut it off
+mid-pass or silently repeat it. Between them the two refusals are what make
+the source's ``steps_per_epoch`` the single thing that selects a driver.
+
+Both drivers are exercised here with stub learners rather than the real ones,
+so that a failure in these tests is a failure in a driver. The learners have
+their own tests.
 """
 
 from __future__ import annotations
@@ -28,6 +34,8 @@ import pytest
 import torch
 from torch import nn
 
+from src.rade_qnet.core.contract.data import TARGET_KEY
+from src.rade_qnet.core.contract.signature import SpaceSpec
 from src.rade_qnet.core.runtime.errors import EngineError
 from src.rade_qnet.core.spec.training import CheckpointSpec, EarlyStoppingSpec
 from src.rade_qnet.engines.torch.callbacks import (
@@ -35,7 +43,9 @@ from src.rade_qnet.engines.torch.callbacks import (
     EarlyStopping,
     GradientNorms,
 )
-from src.rade_qnet.engines.torch.loops import fit_epochs
+from src.rade_qnet.engines.torch.loops import fit_epochs, fit_steps
+from src.rade_qnet.sources.batching.rollout import RolloutSource
+from src.rade_qnet.sources.environment import StepOutcome
 from src.rade_qnet.testkit.fixtures import SyntheticTensorSource
 
 CPU = torch.device("cpu")
@@ -448,3 +458,546 @@ class TestTheOutcome:
     def test_the_total_duration_is_recorded(self, sources):
         """For a cost estimate, which per-epoch times do not directly give."""
         assert run(sources, StubLearner(), epochs=2).total_seconds > 0
+
+
+@dataclass
+class StubPolicyLearner:
+    """
+    A ``PolicyLearner`` that records what it was handed.
+
+    Stubbed for the same reason :class:`StubLearner` is: a failure in the
+    tests below should be a failure in the driver, not in an algorithm.
+
+    Parameters
+    ----------
+    losses
+        Loss to report for each successive update, cycling when exhausted.
+    """
+
+    losses: list[float] = field(default_factory=lambda: [1.0])
+    batches: list[int] = field(default_factory=list)
+    keys: list[tuple[str, ...]] = field(default_factory=list)
+    updates: int = 0
+
+    def act(self, policy, observation):
+        """
+        Choose a constant action.
+
+        Parameters
+        ----------
+        policy
+            Unused.
+        observation
+            Unused.
+
+        Returns
+        -------
+        numpy.int64
+            Always zero.
+        """
+        del policy, observation
+        return np.int64(0)
+
+    def update(self, policy, experience):
+        """
+        Record the batch and report the next scripted loss.
+
+        Parameters
+        ----------
+        policy
+            Unused.
+        experience
+            Recorded, so a test can assert what the driver passed.
+
+        Returns
+        -------
+        dict
+            The scripted loss, plus a counter that averages to one.
+        """
+        del policy
+        self.batches.append(int(experience[TARGET_KEY].shape[0]))
+        self.keys.append(tuple(sorted(experience)))
+        loss = self.losses[self.updates % len(self.losses)]
+        self.updates += 1
+        return {"loss": loss, "updates": 1.0}
+
+
+class StepCounter:
+    """
+    An environment that rewards one per step and terminates every third.
+
+    Parameters
+    ----------
+    episode_length
+        Steps before termination.
+    """
+
+    observation_space = SpaceSpec(kind="box", shape=(1,), dtype="float32")
+    action_space = SpaceSpec(kind="discrete", n=2)
+
+    def __init__(self, episode_length: int = 3) -> None:
+        self.episode_length = episode_length
+        self.index = 0
+
+    def reset(self, *, seed=None):
+        """
+        Start an episode.
+
+        Parameters
+        ----------
+        seed
+            Unused.
+
+        Returns
+        -------
+        numpy.ndarray
+            The zero observation.
+        """
+        del seed
+        self.index = 0
+        return np.zeros(1, dtype=np.float32)
+
+    def step(self, action):
+        """
+        Advance one step.
+
+        Parameters
+        ----------
+        action
+            Unused.
+
+        Returns
+        -------
+        StepOutcome
+            A unit reward, terminating at the episode length.
+        """
+        del action
+        self.index += 1
+        return StepOutcome(
+            np.full(1, self.index, dtype=np.float32),
+            reward=1.0,
+            terminated=self.index >= self.episode_length,
+        )
+
+
+def rollout(learner, *, batch_size=4, episode_length=3):
+    """
+    Build a rollout source driven by a learner's ``act``.
+
+    Parameters
+    ----------
+    learner
+        Supplies the action selector.
+    batch_size
+        Transitions per batch, and therefore per update.
+    episode_length
+        Steps before the environment terminates.
+
+    Returns
+    -------
+    RolloutSource
+        An unbounded source of experience.
+    """
+    policy = nn.Linear(1, 2)
+    return RolloutSource(
+        StepCounter(episode_length=episode_length),
+        act=lambda observation: learner.act(policy, observation),
+        batch_size=batch_size,
+    )
+
+
+class TestTheStepBudget:
+    """How many steps run, and how they are grouped into records."""
+
+    def test_the_budget_is_counted_in_transitions(self):
+        """
+        Not in updates, and not from a configured batch size.
+
+        The source decides how much experience one update gets; the driver
+        counts what it was handed. A second number here could disagree, and
+        the run would simply stop at the wrong time.
+        """
+        learner = StubPolicyLearner()
+        source = rollout(learner, batch_size=4)
+
+        fit_steps(
+            nn.Linear(1, 2),
+            source,
+            learner=learner,
+            device=CPU,
+            total_steps=12,
+            report_every_steps=12,
+        )
+        assert learner.updates == 3
+        assert learner.batches == [4, 4, 4]
+
+    def test_one_record_per_block_not_per_update(self):
+        """
+        A history with one entry per update would be unreadable.
+
+        It would also make early stopping fire on the noise of a single
+        batch, which for an interactive run is a very small sample.
+        """
+        learner = StubPolicyLearner()
+        outcome = fit_steps(
+            nn.Linear(1, 2),
+            rollout(learner, batch_size=2),
+            learner=learner,
+            device=CPU,
+            total_steps=12,
+            report_every_steps=6,
+        )
+        assert learner.updates == 6
+        assert outcome.n_epochs == 2
+
+    def test_the_final_block_is_cut_to_the_budget(self):
+        """
+        A budget that is not a whole number of blocks stops on the budget.
+
+        Overrunning would make two runs with different block sizes do
+        different amounts of work for the same declared budget.
+        """
+        learner = StubPolicyLearner()
+        fit_steps(
+            nn.Linear(1, 2),
+            rollout(learner, batch_size=2),
+            learner=learner,
+            device=CPU,
+            total_steps=10,
+            report_every_steps=4,
+        )
+        assert learner.updates == 5
+
+    def test_block_indices_are_consecutive_from_zero(self):
+        """So a reader can line a record up against the run's progress."""
+        learner = StubPolicyLearner()
+        outcome = fit_steps(
+            nn.Linear(1, 2),
+            rollout(learner, batch_size=2),
+            learner=learner,
+            device=CPU,
+            total_steps=12,
+            report_every_steps=4,
+        )
+        assert [record.epoch for record in outcome.history] == [0, 1, 2]
+
+
+class TestWhatTheLearnerReceives:
+    """The experience arrives whole, on the device, not pre-split."""
+
+    def test_the_whole_transition_is_passed(self):
+        """
+        Including the keys a policy-gradient method would ignore.
+
+        A driver that split the batch would have to know which algorithm it
+        was driving, which is exactly the coupling the learner split removes.
+        """
+        learner = StubPolicyLearner()
+        fit_steps(
+            nn.Linear(1, 2),
+            rollout(learner, batch_size=4),
+            learner=learner,
+            device=CPU,
+            total_steps=4,
+            report_every_steps=4,
+        )
+        assert learner.keys[0] == (
+            "action",
+            "next_observation",
+            "observation",
+            "target",
+            "terminated",
+            "truncated",
+        )
+
+    def test_the_batch_arrives_as_tensors(self):
+        """Converted once by the driver, so no learner converts its own."""
+
+        class Inspect(StubPolicyLearner):
+            def update(self, policy, experience):
+                """Assert every entry is a tensor, then defer."""
+                assert all(isinstance(value, torch.Tensor) for value in experience.values())
+                return super().update(policy, experience)
+
+        learner = Inspect()
+        fit_steps(
+            nn.Linear(1, 2),
+            rollout(learner, batch_size=2),
+            learner=learner,
+            device=CPU,
+            total_steps=2,
+            report_every_steps=2,
+        )
+        assert learner.updates == 1
+
+
+class TestTheHistoryOfAnInteractiveRun:
+    """What a block's record says, and what it deliberately does not."""
+
+    def test_the_block_loss_is_the_mean_over_its_updates(self):
+        """Not the last update's, which would make the history a random walk."""
+        learner = StubPolicyLearner(losses=[1.0, 3.0])
+        outcome = fit_steps(
+            nn.Linear(1, 2),
+            rollout(learner, batch_size=2),
+            learner=learner,
+            device=CPU,
+            total_steps=4,
+            report_every_steps=4,
+        )
+        assert outcome.history[0].train_loss == pytest.approx(2.0)
+
+    def test_there_is_no_validation_loss(self):
+        """
+        Left ``None``, because an environment has no held-out split.
+
+        Reporting the training loss there would make a monitor watching
+        ``val_loss`` believe it was watching validation.
+        """
+        learner = StubPolicyLearner()
+        outcome = fit_steps(
+            nn.Linear(1, 2),
+            rollout(learner, batch_size=2),
+            learner=learner,
+            device=CPU,
+            total_steps=4,
+            report_every_steps=2,
+        )
+        assert all(record.val_loss is None for record in outcome.history)
+
+    def test_the_episode_return_is_folded_in(self):
+        """
+        The interpretable number, taken from the source's own bookkeeping.
+
+        A loss is barely comparable between runs; a mean episode return is
+        what answers "is this agent any good".
+        """
+        learner = StubPolicyLearner()
+        outcome = fit_steps(
+            nn.Linear(1, 2),
+            rollout(learner, batch_size=3, episode_length=3),
+            learner=learner,
+            device=CPU,
+            total_steps=6,
+            report_every_steps=6,
+        )
+        assert outcome.history[0].metrics["episode_return"] == pytest.approx(3.0)
+
+    def test_a_source_that_cannot_summarise_is_simply_not_asked(self):
+        """
+        The capability is optional, so a replay source need not invent one.
+
+        Checked with ``isinstance`` and skipped when absent, which is the
+        framework's standard capability pattern.
+        """
+
+        class Bare:
+            steps_per_epoch = None
+
+            def batches(self):
+                """Yield constant experience forever."""
+                while True:
+                    yield {TARGET_KEY: np.ones(2, dtype=np.float32)}
+
+        learner = StubPolicyLearner()
+        outcome = fit_steps(
+            nn.Linear(1, 2),
+            Bare(),
+            learner=learner,
+            device=CPU,
+            total_steps=4,
+            report_every_steps=4,
+        )
+        assert "episode_return" not in outcome.history[0].metrics
+
+    def test_other_scalars_are_averaged_into_the_metrics(self):
+        """A learner's extra keys survive, as they do for the epoch driver."""
+        learner = StubPolicyLearner()
+        outcome = fit_steps(
+            nn.Linear(1, 2),
+            rollout(learner, batch_size=2),
+            learner=learner,
+            device=CPU,
+            total_steps=4,
+            report_every_steps=4,
+        )
+        assert outcome.history[0].metrics["updates"] == pytest.approx(1.0)
+
+
+class TestTheStepDriverRefusals:
+    """Each driver refuses the other's source, and says which to use."""
+
+    def test_a_bounded_source_is_refused(self):
+        """
+        The mirror of ``fit_epochs`` refusing an unbounded one.
+
+        A step budget over a dataset would cut it off mid-pass or silently
+        repeat it, and either way the reported numbers would describe
+        something other than the dataset.
+        """
+
+        class Bounded:
+            steps_per_epoch = 10
+
+            def batches(self):
+                """Never called."""
+                raise AssertionError("the source should be refused before use")
+
+        learner = StubPolicyLearner()
+        with pytest.raises(EngineError, match="Use fit_epochs instead"):
+            fit_steps(
+                nn.Linear(1, 2),
+                Bounded(),
+                learner=learner,
+                device=CPU,
+                total_steps=4,
+                report_every_steps=2,
+            )
+
+    def test_a_learner_reporting_no_loss_is_refused(self):
+        """
+        Rather than defaulted to zero.
+
+        Zero is the best possible value, so a default would make the first
+        block the permanent best block -- the same reasoning as for the
+        epoch driver.
+        """
+
+        class Silent(StubPolicyLearner):
+            def update(self, policy, experience):
+                """Report a scalar that is not the objective."""
+                del policy, experience
+                return {"entropy": 0.5}
+
+        learner = Silent()
+        with pytest.raises(EngineError, match="loss"):
+            fit_steps(
+                nn.Linear(1, 2),
+                rollout(learner, batch_size=2),
+                learner=learner,
+                device=CPU,
+                total_steps=2,
+                report_every_steps=2,
+            )
+
+    def test_a_non_positive_budget_is_refused(self):
+        """A run that does nothing is a configuration error, not a no-op."""
+        learner = StubPolicyLearner()
+        with pytest.raises(EngineError, match="positive"):
+            fit_steps(
+                nn.Linear(1, 2),
+                rollout(learner, batch_size=2),
+                learner=learner,
+                device=CPU,
+                total_steps=0,
+                report_every_steps=2,
+            )
+
+    def test_a_non_finite_loss_stops_the_run(self):
+        """
+        The parameters are already NaN and no later update recovers.
+
+        Raised at the block boundary rather than carried forward, so a
+        checkpoint is never taken from weights known to be broken.
+        """
+        learner = StubPolicyLearner(losses=[float("nan")])
+        with pytest.raises(EngineError, match="no longer finite"):
+            fit_steps(
+                nn.Linear(1, 2),
+                rollout(learner, batch_size=2),
+                learner=learner,
+                device=CPU,
+                total_steps=2,
+                report_every_steps=2,
+            )
+
+    def test_experience_with_no_reward_is_refused(self):
+        """The budget is counted in transitions, so a batch must carry rewards."""
+
+        class Rewardless:
+            steps_per_epoch = None
+
+            def batches(self):
+                """Yield a batch with no target."""
+                while True:
+                    yield {"observation": np.zeros((2, 1), dtype=np.float32)}
+
+        learner = StubPolicyLearner()
+
+        class Tolerant(StubPolicyLearner):
+            def update(self, policy, experience):
+                """Report a loss without inspecting the batch."""
+                del policy, experience
+                return {"loss": 1.0}
+
+        learner = Tolerant()
+        with pytest.raises(EngineError, match="not experience"):
+            fit_steps(
+                nn.Linear(1, 2),
+                Rewardless(),
+                learner=learner,
+                device=CPU,
+                total_steps=2,
+                report_every_steps=2,
+            )
+
+
+class TestTheStepDriverAndCallbacks:
+    """Early stopping works unchanged, which is why the split was worth keeping."""
+
+    def test_early_stopping_ends_the_run_between_blocks(self):
+        """
+        The same callbacks serve both drivers.
+
+        Consulted per block rather than per update, so a stopping decision
+        is made from a sample worth deciding on.
+
+        ``has_validation=False`` is the honest setting for an interactive
+        run, and the callback's existing guard already refuses a ``val_*``
+        monitor in that case -- so the one monitor an interactive run could
+        have watched by mistake is rejected without this driver adding a
+        check of its own.
+
+        The blocks here are deliberately longer than an episode. A block in
+        which no episode finished reports no episode return -- empty rather
+        than zero, by design -- and a callback monitoring it then fails with
+        ``nothing monitors 'episode_return'``. That message is accurate and
+        the constraint is real: a block has to be long enough to contain an
+        episode before an episode statistic can be monitored.
+        """
+        learner = StubPolicyLearner(losses=[5.0])
+        stopping = EarlyStopping(
+            EarlyStoppingSpec(
+                enabled=True,
+                patience=1,
+                # The metric worth watching in an interactive run, and it
+                # reaches the callback only because the driver folds the
+                # source's episode summary into each block's metrics.
+                monitor="episode_return",
+                mode="max",
+            ),
+            has_validation=False,
+        )
+
+        unstopped = fit_steps(
+            nn.Linear(1, 2),
+            rollout(learner, batch_size=2, episode_length=3),
+            learner=learner,
+            device=CPU,
+            total_steps=60,
+            report_every_steps=6,
+        )
+        assert unstopped.n_epochs == 10
+        assert not unstopped.stopped_early
+
+        stopped = fit_steps(
+            nn.Linear(1, 2),
+            rollout(learner, batch_size=2, episode_length=3),
+            learner=learner,
+            device=CPU,
+            total_steps=60,
+            report_every_steps=6,
+            callbacks=[stopping],
+        )
+        assert stopped.stopped_early
+        assert stopped.n_epochs < unstopped.n_epochs
