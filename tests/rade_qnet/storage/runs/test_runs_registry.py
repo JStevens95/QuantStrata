@@ -27,8 +27,8 @@ import pytest
 
 from src.rade_qnet.core.contract.bundle import Manifest
 from src.rade_qnet.core.runtime.errors import BundleError, SpecError
-from src.rade_qnet.storage.catalog import JsonlCatalog
-from src.rade_qnet.storage.registry import (
+from src.rade_qnet.storage.runs.catalog import JsonlCatalog
+from src.rade_qnet.storage.runs.registry import (
     REGISTRY_FILENAME,
     RegisteredRun,
     RunRegistry,

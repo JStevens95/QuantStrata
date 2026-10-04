@@ -20,8 +20,8 @@ import json
 from collections.abc import Mapping
 from pathlib import Path
 
-from ..core.runtime.hashing import canonical_json
-from ..core.runtime.logging import get_logger
+from ...core.runtime.hashing import canonical_json
+from ...core.runtime.logging import get_logger
 
 __all__ = ["JsonlTracker", "NullTracker"]
 

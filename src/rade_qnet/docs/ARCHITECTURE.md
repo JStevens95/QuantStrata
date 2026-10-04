@@ -709,7 +709,7 @@ read-modify-write loses entries. Not often. Just often enough that nobody
 trusts the catalog, and the index gets rebuilt by hand.
 
 **Decisions are events, not edits.** Choosing among runs -- by tag, by best
-metric, by an alias such as `production` -- is `storage.registry`. A tag
+metric, by an alias such as `production` -- is `storage.runs.registry`. A tag
 added after training, or a promotion, is appended to a log beside the
 catalog rather than written into the bundle, so the record of what was
 trained never depends on what was decided later, and the log is the audit

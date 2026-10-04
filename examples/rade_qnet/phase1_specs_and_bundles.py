@@ -47,7 +47,7 @@ from src.rade_qnet.core.runtime.hashing import digest_spec
 from src.rade_qnet.core.runtime.logging import configure_logging
 from src.rade_qnet.core.spec.run import RunSpec, load_run_spec, parse_run_spec
 from src.rade_qnet.storage.bundle import load_fitted_state, open_bundle, write_bundle
-from src.rade_qnet.storage.catalog import JsonlCatalog
+from src.rade_qnet.storage.runs.catalog import JsonlCatalog
 from src.rade_qnet.testkit.fixtures import StandardisingState, make_lineage, make_model_bundle
 
 #: A complete run specification. Only `model` is strictly required; the rest is

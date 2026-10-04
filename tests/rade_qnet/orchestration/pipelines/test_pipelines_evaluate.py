@@ -32,7 +32,7 @@ from src.rade_qnet.core.spec.data import ScalingSpec, TabularSourceSpec, Transfo
 from src.rade_qnet.orchestration.pipelines.evaluate import EvaluatePipeline
 from src.rade_qnet.orchestration.pipelines.train import TrainPipeline
 from src.rade_qnet.storage.bundle import load_lineage, load_spec, open_bundle
-from src.rade_qnet.storage.catalog import InMemoryCatalog
+from src.rade_qnet.storage.runs.catalog import InMemoryCatalog
 from src.rade_qnet.testkit.fixtures import isolated_registries, make_run_context
 
 from .support import (

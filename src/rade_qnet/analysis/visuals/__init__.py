@@ -15,7 +15,7 @@ Modules
     applies them without mutating global state for the rest of the process.
     Also the reason this package never imports ``pyplot``.
     [Phase 1, delivered]
-``primitives.py``
+``figures.py``
     Shared building blocks -- training curve, prediction scatter with a parity
     line, residual histogram, metric comparison against a baseline -- that the
     higher-level modules compose.  [Phase 1, delivered]
@@ -35,7 +35,7 @@ Modules
 ``training.py``
     Learning-rate trace, gradient-norm trace, per-epoch timing, and the
     stacked three-panel diagnostic that relates them.  The loss curve itself
-    lives in ``primitives.py``, since every engine produces one.
+    lives in ``figures.py``, since every engine produces one.
     [Phase 2, delivered]
 
 Planned modules

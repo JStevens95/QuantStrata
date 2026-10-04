@@ -49,7 +49,7 @@ class Catalog(Protocol):
     """
     The registry of what has been trained, and where it was put.
 
-    Implemented by ``rade_qnet.storage.catalog``; declared here for the reason
+    Implemented by ``rade_qnet.storage.runs.catalog``; declared here for the reason
     given in the module docstring.
 
     The implementation is single-writer by construction. Version assignment
@@ -59,14 +59,14 @@ class Catalog(Protocol):
 
     Only the three methods a *pipeline* calls are declared here. The query
     side -- ``entries`` and ``records``, which
-    :class:`~rade_qnet.storage.registry.RunRegistry` reads -- is deliberately
+    :class:`~rade_qnet.storage.runs.registry.RunRegistry` reads -- is deliberately
     absent, for the reason given at
     :class:`~rade_qnet.core.capability.supervised.RebuildableDataModule`: an
     ``isinstance`` check against a runtime-checkable protocol only tests that
     the methods exist, so widening this one would make every three-method
     stub in the suite stop satisfying it, failing training runs over methods
     the training path never calls. The registry constructs a concrete
-    :class:`~rade_qnet.storage.catalog.JsonlCatalog` instead of accepting any
+    :class:`~rade_qnet.storage.runs.catalog.JsonlCatalog` instead of accepting any
     ``Catalog``, which is what makes that safe.
     """
 

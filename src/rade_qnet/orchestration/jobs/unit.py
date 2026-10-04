@@ -46,7 +46,7 @@ from ...core.runtime.components import get_model, import_registrations
 from ...core.runtime.context import RunContext
 from ...core.runtime.errors import SpecError
 from ...core.runtime.logging import get_logger
-from ...storage.catalog import JsonlCatalog
+from ...storage.runs.catalog import JsonlCatalog
 from ..pipelines.train import TrainPipeline
 from ..stages.resolve import pipeline_for
 
@@ -89,7 +89,7 @@ class JobPayload:
         job identifier inside :meth:`RunContext.for_job`.
     catalog_root
         Where bundles are recorded, or ``None`` to skip recording. A path
-        rather than a :class:`~rade_qnet.storage.catalog.Catalog`, because the
+        rather than a :class:`~rade_qnet.storage.runs.catalog.Catalog`, because the
         catalog holds a lock file handle and a handle is meaningless in
         another process. Each worker opens its own against the same path,
         which is exactly what the single-writer design is built for.

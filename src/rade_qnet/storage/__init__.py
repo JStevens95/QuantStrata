@@ -11,39 +11,45 @@ state which model produced it, from which spec, against which data
 fingerprint, at which code version, and can rebuild the model and invert its
 target transforms without consulting the original run.
 
+One run, or all of them
+-----------------------
+That is the seam this package is organised on, and it was invisible while
+six modules sat flat.  ``bundle.py`` and ``manifest.py`` are about a single
+directory: what is in it, whether it is intact, how to write it without ever
+leaving a half-finished one that looks valid.  ``runs/`` is about the
+collection: which runs happened, which are blessed, which is running now.
+
+The two halves are read by different people at different times.  A pipeline
+writes a bundle once and never looks at the index; a quant choosing a model
+for Monday queries the index and never opens a bundle by hand.
+
 Modules
 -------
-``manifest.py``
-    The manifest schema plus content hashes for every file, making corruption
-    and silent drift detectable at load time.  Verification is an explicit step
-    rather than automatic, because hashing a large checkpoint to populate a
-    listing would make the listing unusable.  [Phase 1, delivered]
 ``bundle.py``
     Writing and reading a versioned bundle: weights, fitted state, spec,
     signature, metrics and manifest.  Written to a staging directory and
     renamed into place, so a crash can never leave a half-written bundle that
     looks valid.  Parameters are stored, never pickled model objects.
     [Phase 1, delivered]
-``catalog.py``
-    The index of bundles, queryable by model, job and tag, with a single-writer
-    discipline and an append-oriented log rather than whole-file rewrites.
-    ``JsonlCatalog`` for real runs, ``InMemoryCatalog`` for tests and
-    notebooks.  [Phase 1, delivered]
-``registry.py``
-    ``RunRegistry``: choose a trained run by tag, by best metric or by an
-    alias such as ``production``, and record promotions and tags added after
-    training as append-only events beside the catalog -- never by rewriting a
-    bundle.  [Delivered after Phase 6]
+``manifest.py``
+    The manifest schema plus content hashes for every file, making corruption
+    and silent drift detectable at load time.  Verification is an explicit step
+    rather than automatic, because hashing a large checkpoint to populate a
+    listing would make the listing unusable.  [Phase 1, delivered]
 ``locking.py``
     The exclusive file lock that makes the catalog's single-writer discipline
-    real, with one implementation per platform behind one function.  Separate
-    from ``catalog.py`` because ``fcntl`` is POSIX-only: imported there, it
-    made the entire library fail to load on Windows rather than lose a
-    feature.  [Phase 1, delivered]
-``tracker.py``
-    Experiment tracking behind one interface, with a no-op default.  Tracking
-    is optional infrastructure; a run must never fail because a tracking server
-    is unreachable.  [Phase 1, delivered]
+    real, with one implementation per platform behind one function.  It sits
+    at this level rather than inside ``runs/`` because it is infrastructure
+    both halves may take, and because ``fcntl`` is POSIX-only: imported from
+    the catalog directly, it made the entire library fail to load on Windows
+    rather than lose a feature.  [Phase 1, delivered]
+
+Sub-packages
+------------
+``runs/``
+    The index across runs: ``catalog.py`` records every run that happened,
+    ``registry.py`` records which ones are blessed and under what tag, and
+    ``tracker.py`` follows one that is still going.
 
 Planned modules
 ---------------

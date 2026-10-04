@@ -52,7 +52,7 @@ from ..core.runtime.hooks import PipelineHook
 from ..core.spec.run import RunSpec, parse_run_spec
 from ..engines.base import EngineCapabilities, ModelHandle
 from ..sources.environment import StepOutcome
-from ..storage.catalog import InMemoryCatalog
+from ..storage.runs.catalog import InMemoryCatalog
 
 __all__ = [
     "PLACEHOLDER_DIGEST",
@@ -749,7 +749,7 @@ def make_run_context(
         Base seed.
     catalog
         Catalog to attach. Defaults to a fresh
-        :class:`~rade_qnet.storage.catalog.InMemoryCatalog`; pass one explicitly
+        :class:`~rade_qnet.storage.runs.catalog.InMemoryCatalog`; pass one explicitly
         when the test needs to inspect what was registered.
     job_id
         Job identifier, for a context standing in for a job-set member.

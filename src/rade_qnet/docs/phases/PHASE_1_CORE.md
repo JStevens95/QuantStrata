@@ -56,7 +56,7 @@ flowchart TD
             RT["runtime<br/><i>context · pipeline · hooks · components ·<br/>seeding · hashing · logging · errors</i>"]
         end
         STOR["storage<br/><i>bundle · manifest · catalog · tracker</i>"]
-        ANA["analysis<br/><i>metrics.regression · visuals.style ·<br/>visuals.primitives · visuals.export ·<br/>reports.base · reports.summary</i>"]
+        ANA["analysis<br/><i>metrics.regression · visuals.style ·<br/>visuals.figures · visuals.export ·<br/>reports.base · reports.summary</i>"]
         TK["testkit<br/><i>conformance · fixtures</i>"]
         ORCH["orchestration.pipelines.train<br/><i>skeleton only — steps declared,<br/>fit raises NotImplementedError</i>"]
     end

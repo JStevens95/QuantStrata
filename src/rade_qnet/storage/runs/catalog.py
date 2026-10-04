@@ -46,7 +46,7 @@ Where each bundle lives
 -----------------------
 An entry records the bundle's directory alongside its manifest. A reader
 selecting a run -- by tag, by alias, by best metric, through
-:mod:`rade_qnet.storage.registry` -- needs to open it, and cannot derive the
+:mod:`rade_qnet.storage.runs.registry` -- needs to open it, and cannot derive the
 directory: a single run and a job set lay bundles out differently, and the
 catalog may sit somewhere else entirely. The location is stored relative to
 the catalog when the bundle is beneath it, so a model store copied to another
@@ -69,9 +69,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO
 
-from ..core.contract.bundle import Manifest
-from ..core.runtime.logging import get_logger
-from .locking import exclusive_lock
+from ...core.contract.bundle import Manifest
+from ...core.runtime.logging import get_logger
+from ..locking import exclusive_lock
 
 __all__ = ["CatalogEntry", "InMemoryCatalog", "JsonlCatalog"]
 

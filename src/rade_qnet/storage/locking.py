@@ -3,7 +3,7 @@ An exclusive file lock that works on every platform the framework runs on.
 
 Why this module exists
 ----------------------
-Version assignment in :mod:`rade_qnet.storage.catalog` must be exclusive: two
+Version assignment in :mod:`rade_qnet.storage.runs.catalog` must be exclusive: two
 workers in a job set that both compute ``max(existing) + 1`` are given the
 same number, and the second bundle write makes the first invisible. The lock
 is what makes that section single-writer.
@@ -168,7 +168,7 @@ if sys.platform == "win32":  # pragma: no cover - selected by platform
         handle
             An open file. Its position is moved to the locked region, so a
             caller that also writes through this handle must seek first --
-            which :mod:`rade_qnet.storage.catalog` does not, holding the lock
+            which :mod:`rade_qnet.storage.runs.catalog` does not, holding the lock
             on a file separate from the data it guards.
         subject
             The lock file, for the error message.

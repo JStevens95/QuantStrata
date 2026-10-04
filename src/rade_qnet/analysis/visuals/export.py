@@ -5,7 +5,7 @@ The only module in ``visuals`` that touches the filesystem.
 
 Keeping writing here, and out of the figure factories, is what lets the same
 factory serve a report, a notebook and a test. See
-:mod:`rade_qnet.analysis.visuals.primitives` for the other half of that rule.
+:mod:`rade_qnet.analysis.visuals.figures` for the other half of that rule.
 
 Why this module closes figures
 ------------------------------

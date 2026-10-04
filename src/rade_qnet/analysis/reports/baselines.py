@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING
 
 from ...core.runtime.logging import get_logger
 from ..visuals.export import save_figure
-from ..visuals.primitives import metric_comparison_figure
+from ..visuals.figures import metric_comparison_figure
 from .base import Report, ReportContext, report
 
 if TYPE_CHECKING:

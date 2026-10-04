@@ -22,7 +22,7 @@ from matplotlib.figure import Figure
 from numpy.typing import NDArray
 
 from ...core.runtime.errors import ContractError
-from .primitives import DEFAULT_FIGSIZE
+from .figures import DEFAULT_FIGSIZE
 from .style import figure_style
 
 __all__ = [

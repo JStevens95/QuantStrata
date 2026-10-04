@@ -56,8 +56,8 @@ from .orchestration.pipelines.tune import TunePipeline
 from .orchestration.stages.resolve import pipeline_for
 from .orchestration.stages.scoring import EVALUATED_SPLITS
 from .storage.bundle import BundleError, load_manifest
-from .storage.catalog import JsonlCatalog
-from .storage.registry import RunRegistry
+from .storage.runs.catalog import JsonlCatalog
+from .storage.runs.registry import RunRegistry
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable

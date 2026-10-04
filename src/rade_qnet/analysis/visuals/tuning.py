@@ -37,7 +37,7 @@ import numpy as np
 from matplotlib.figure import Figure
 
 from ...core.runtime.errors import ContractError
-from .primitives import DEFAULT_FIGSIZE
+from .figures import DEFAULT_FIGSIZE
 from .style import PALETTE, figure_style
 
 if TYPE_CHECKING:

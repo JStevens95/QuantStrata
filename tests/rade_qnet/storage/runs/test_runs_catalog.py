@@ -26,7 +26,7 @@ import pytest
 
 from src.rade_qnet.core.contract.bundle import Manifest
 from src.rade_qnet.core.runtime.errors import BundleError
-from src.rade_qnet.storage.catalog import (
+from src.rade_qnet.storage.runs.catalog import (
     CATALOG_FILENAME,
     LOCK_FILENAME,
     InMemoryCatalog,

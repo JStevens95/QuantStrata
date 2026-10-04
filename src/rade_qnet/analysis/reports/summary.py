@@ -20,7 +20,7 @@ from pathlib import Path
 
 from ...core.runtime.logging import get_logger
 from ..visuals.export import save_figure
-from ..visuals.primitives import metric_comparison_figure, training_curve_figure
+from ..visuals.figures import metric_comparison_figure, training_curve_figure
 from .base import Report, ReportContext, report
 
 __all__ = ["SummaryReport"]

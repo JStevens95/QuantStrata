@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 from matplotlib.figure import Figure
 
-from src.rade_qnet.analysis.visuals.primitives import (
+from src.rade_qnet.analysis.visuals.figures import (
     metric_comparison_figure,
     prediction_scatter_figure,
     residual_histogram_figure,
