@@ -61,7 +61,7 @@ from src.rade_qnet.core.runtime.errors import SpecError
 from src.rade_qnet.core.spec.base import Spec
 from src.rade_qnet.core.spec.run import parse_run_spec
 from src.rade_qnet.engines import sklearn as _sklearn_engine  # noqa: F401
-from src.rade_qnet.sources.dataset.module import TabularDataModule
+from src.rade_qnet.sources.dataset.tabular import TabularDataModule
 from src.rade_qnet.testkit.fixtures import SyntheticEngine, isolated_registries
 
 #: The name the out-of-tree model claims. Registered inside a fixture rather

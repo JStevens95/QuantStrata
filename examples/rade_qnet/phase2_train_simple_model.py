@@ -68,7 +68,7 @@ from src.rade_qnet.core.spec.run import SupervisedRunSpec
 from src.rade_qnet.engines.base import ModelHandle
 from src.rade_qnet.engines.torch import TorchEngine  # noqa: F401  (registers 'torch')
 from src.rade_qnet.orchestration.pipelines.train import TrainPipeline
-from src.rade_qnet.sources.dataset.module import TabularDataModule
+from src.rade_qnet.sources.dataset.tabular import TabularDataModule
 from src.rade_qnet.storage.runs.catalog import JsonlCatalog
 
 #: Identifies the model in the registry, the specification and the catalog. A

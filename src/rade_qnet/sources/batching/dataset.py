@@ -2,7 +2,7 @@
 ``DatasetSource`` -- one split of a prepared dataset, as a ``BatchSource``.
 
 The adapter that makes supervised learning a special case of the framework's
-single training loop. It takes a :class:`~..dataset.io.PreparedDataset`, a
+single training loop. It takes a :class:`~..dataset.cache.PreparedDataset`, a
 split name and a :class:`~rade_qnet.core.spec.data.LoaderSpec`, and presents them
 as the same protocol a live environment presents.
 
@@ -58,7 +58,7 @@ if TYPE_CHECKING:
     from ...core.contract.data import Batch, TensorLike
     from ...core.contract.signature import InputSignature
     from ...core.spec.data import LoaderSpec, SequenceSpec
-    from ..dataset.io import PreparedDataset
+    from ..dataset.cache import PreparedDataset
 
 __all__ = ["TARGET_KEY", "DatasetSource", "sources_for"]
 

@@ -855,7 +855,7 @@ from rade_qnet.core.capability.supervised import SupervisedModel
 from rade_qnet.core.runtime.components import model
 from rade_qnet.core.spec.base import Spec
 from rade_qnet.engines import sklearn as _engine     # registers the engine
-from rade_qnet.sources.dataset.module import TabularDataModule
+from rade_qnet.sources.dataset.tabular import TabularDataModule
 
 
 class AcmeMomentumSpec(Spec):

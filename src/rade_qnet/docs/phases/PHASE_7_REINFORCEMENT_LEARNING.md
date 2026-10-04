@@ -79,7 +79,7 @@ this phase is in that position.
 | `sources.environment.vector` | Batched environments, synchronous and process-backed | Planned |
 | `sources.environment.wrappers` | Observation, action and reward wrappers; each recorded in lineage | Planned |
 | `sources.environment.recording` | Episode capture to transition tables | Planned |
-| `sources.environment.adapters.gymnasium` | Third-party bridge | Planned |
+| `sources.environment.gymnasium` | Third-party bridge | Planned |
 | `sources.dataset.transitions` | Reads transition tables back as a dataset source | Planned |
 | `sources.batching.{replay,offline,simulation}` | The remaining interactive adapters | Planned |
 | `engines.torch.learners.{dqn,ppo,sac,pathwise}` | Four update rules | Planned |

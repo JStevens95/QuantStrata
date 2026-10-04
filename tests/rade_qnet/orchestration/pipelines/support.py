@@ -30,7 +30,7 @@ from src.rade_qnet.core.runtime.components import engine as register_engine
 from src.rade_qnet.core.runtime.components import model as register_model
 from src.rade_qnet.core.spec.data import TabularSourceSpec
 from src.rade_qnet.core.spec.run import SupervisedRunSpec
-from src.rade_qnet.sources.dataset.module import TabularDataModule
+from src.rade_qnet.sources.dataset.tabular import TabularDataModule
 from src.rade_qnet.testkit.fixtures import LinearModel, SyntheticEngine
 
 __all__ = [

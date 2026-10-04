@@ -50,7 +50,7 @@ from src.rade_qnet.core.spec.data import (
 )
 from src.rade_qnet.orchestration.pipelines.train import TrainPipeline
 from src.rade_qnet.orchestration.stages.scoring import scoring_source, source_for
-from src.rade_qnet.sources.dataset.module import TabularDataModule
+from src.rade_qnet.sources.dataset.tabular import TabularDataModule
 from src.rade_qnet.storage.bundle import load_signature, open_bundle
 from src.rade_qnet.storage.runs.catalog import InMemoryCatalog
 from src.rade_qnet.testkit.fixtures import (

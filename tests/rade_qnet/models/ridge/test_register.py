@@ -13,7 +13,7 @@ from src.rade_qnet.core.runtime.components import MODELS, get_model
 from src.rade_qnet.core.spec.run import parse_run_spec
 from src.rade_qnet.models.ridge.register import RidgeModel
 from src.rade_qnet.models.ridge.spec import RidgeSpec
-from src.rade_qnet.sources.dataset.module import TabularDataModule
+from src.rade_qnet.sources.dataset.tabular import TabularDataModule
 
 
 def specification(path: str) -> dict:

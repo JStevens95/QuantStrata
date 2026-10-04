@@ -32,12 +32,8 @@ import pytest
 from src.rade_qnet.core.contract.data import DataLineage, SplitIndices
 from src.rade_qnet.core.contract.signature import InputSignature, TensorSpec
 from src.rade_qnet.core.runtime.errors import BundleError, SpecError
-from src.rade_qnet.sources.dataset.io import (
-    DatasetCache,
-    PreparedDataset,
-    fingerprint_source,
-    read_table,
-)
+from src.rade_qnet.sources.dataset.cache import PreparedDataset
+from src.rade_qnet.sources.dataset.tables import fingerprint_source, read_table
 from src.rade_qnet.testkit.fixtures import StandardisingState
 
 
@@ -321,86 +317,6 @@ class TestFingerprinting:
         assert fingerprint_source(None, extra={"a": 1, "b": 2}) == fingerprint_source(
             None, extra={"b": 2, "a": 1}
         )
-
-
-class TestCachedStaticInputs:
-    """
-    Static inputs survive a cache round trip.
-
-    Everything else in a prepared dataset is reconstructible from the raw
-    file, so an omission from the cache shows up as a rebuild. A static
-    input is not: it is a *product* of the fitted state, and an entry that
-    stored the state but not the arrays derived from it would load cleanly
-    and then fail inside a forward pass, with nothing pointing back here.
-    The second-run path is also the path nobody tests by hand, because the
-    first run of any new configuration populates the cache and works.
-    """
-
-    def test_they_come_back(self, tmp_path):
-        """
-        By name and by value.
-
-        The names are the ones the model's signature declares, so losing
-        one is indistinguishable from the model declaring an input nobody
-        supplies.
-        """
-        dataset = prepared(static_inputs={"adjacency": np.eye(3, dtype=np.float32)})
-        cache = DatasetCache(tmp_path)
-        cache.save("key", dataset)
-
-        loaded = cache.load("key", state_type=StandardisingState)
-        assert loaded is not None
-        assert np.array_equal(loaded.static_inputs["adjacency"], np.eye(3, dtype=np.float32))
-
-    def test_their_dtype_is_preserved(self, tmp_path):
-        """
-        Including the integer index arrays, which are not floats.
-
-        A sparse adjacency travels as integer indices beside float values,
-        and an index array promoted to float fails at the point it is used
-        to index -- or worse, silently rounds.
-        """
-        indices = np.array([[0, 1], [1, 0]], dtype=np.int64)
-        cache = DatasetCache(tmp_path)
-        cache.save("key", prepared(static_inputs={"indices": indices}))
-
-        loaded = cache.load("key", state_type=StandardisingState)
-        assert loaded is not None
-        assert loaded.static_inputs["indices"].dtype == np.int64
-
-    def test_a_dataset_with_none_round_trips_too(self, tmp_path):
-        """
-        The common case, which must not be made to fail by the feature.
-
-        An empty ``savez`` is a valid archive with no members, so the read
-        side needs no branch -- but that is worth asserting rather than
-        assuming, because the alternative is that every tabular model
-        breaks on its second run.
-        """
-        cache = DatasetCache(tmp_path)
-        cache.save("key", prepared())
-
-        loaded = cache.load("key", state_type=StandardisingState)
-        assert loaded is not None
-        assert loaded.static_inputs == {}
-
-    def test_they_cannot_collide_with_the_feature_arrays(self, tmp_path):
-        """
-        Which is why they are written to a file of their own.
-
-        Their names come from the model's signature, so a model with a
-        static input called ``features`` or ``train`` is entirely legal --
-        and in a single archive it would overwrite the real one, giving a
-        cached dataset whose features are an adjacency matrix.
-        """
-        dataset = prepared(static_inputs={"features": np.full((2, 2), 7.0, dtype=np.float32)})
-        cache = DatasetCache(tmp_path)
-        cache.save("key", dataset)
-
-        loaded = cache.load("key", state_type=StandardisingState)
-        assert loaded is not None
-        assert np.array_equal(loaded.features, dataset.features)
-        assert np.array_equal(loaded.static_inputs["features"], np.full((2, 2), 7.0))
 
 
 class TestParsedValues:

@@ -26,7 +26,7 @@ from .spec import LstmTabularSpec
 if TYPE_CHECKING:
     from ...core.contract.signature import InputSignature
     from ...core.spec.run import SupervisedRunSpec
-    from ...sources.dataset.module import TabularDataModule
+    from ...sources.dataset.tabular import TabularDataModule
     from .model import LstmTabular
 
 __all__ = ["LstmTabularModel"]

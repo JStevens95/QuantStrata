@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ...core.contract.requirement import InputRequirement, RequiredInput
-from ...sources.dataset.module import TabularDataModule
+from ...sources.dataset.tabular import TabularDataModule
 
 if TYPE_CHECKING:
     from ...core.spec.run import SupervisedRunSpec

@@ -53,8 +53,15 @@ Planned modules
 ``recording.py``
     Episode capture to disk, producing the transition tables that an offline
     source reads back.
-``adapters/``
-    Bridges to third-party environment interfaces.
+``gymnasium.py``
+    A bridge from the Gymnasium interface, mapping its spaces onto framework
+    spaces and normalising its step-return convention.
+
+    This was an ``adapters/`` sub-package holding nothing but a charter, and
+    it was deleted for the same reason ``DifferentiableEnvironment`` is not
+    yet declared: a package with no modules is a promise with no reader, and
+    it costs a directory level on every import for a file that does not
+    exist.  One bridge is one module.  A second one can make it a package.
 """
 
 from .protocol import Environment, StepOutcome

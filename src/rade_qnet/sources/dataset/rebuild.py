@@ -59,7 +59,7 @@ from ...core.contract.data import DataLineage, SplitIndices
 from ...core.runtime.errors import ContractError
 from ...core.runtime.hashing import digest_spec
 from ...core.runtime.logging import get_logger
-from .io import PreparedDataset
+from .cache import PreparedDataset
 
 if TYPE_CHECKING:
     from ...core.contract.state import FittedState

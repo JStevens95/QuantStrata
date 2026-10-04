@@ -37,7 +37,8 @@ from src.rade_qnet.core.spec.data import (
     TabularSourceSpec,
     TransformsSpec,
 )
-from src.rade_qnet.sources.dataset.module import DataModule, TabularDataModule
+from src.rade_qnet.sources.dataset.module import DataModule
+from src.rade_qnet.sources.dataset.tabular import TabularDataModule
 
 
 @pytest.fixture

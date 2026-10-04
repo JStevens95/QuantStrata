@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from ...core.contract.signature import InputSignature
     from ...core.spec.run import SupervisedRunSpec
     from ...engines.xgboost import BoosterModel
-    from ...sources.dataset.module import TabularDataModule
+    from ...sources.dataset.tabular import TabularDataModule
 
 __all__ = ["XgbTabularModel"]
 

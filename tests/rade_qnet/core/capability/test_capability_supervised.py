@@ -34,7 +34,7 @@ from src.rade_qnet.core.capability.supervised import DataModuleLike, SupervisedM
 from src.rade_qnet.core.runtime.errors import ComponentError
 from src.rade_qnet.core.spec.data import TabularSourceSpec
 from src.rade_qnet.core.spec.run import SupervisedRunSpec
-from src.rade_qnet.sources.dataset.module import TabularDataModule
+from src.rade_qnet.sources.dataset.tabular import TabularDataModule
 
 
 @pytest.fixture

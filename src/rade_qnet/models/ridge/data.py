@@ -19,7 +19,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ...core.contract.requirement import InputRequirement
-from ...sources.dataset.module import TabularDataModule
+from ...sources.dataset.tabular import TabularDataModule
 
 if TYPE_CHECKING:
     from ...core.spec.run import SupervisedRunSpec
@@ -46,7 +46,7 @@ def data_module(spec: SupervisedRunSpec) -> TabularDataModule:
     Return the data module that builds this model's dataset.
 
     The framework's own, unmodified: a ridge regression reads a table, and
-    a table is what :class:`~rade_qnet.sources.dataset.module.TabularDataModule`
+    a table is what :class:`~rade_qnet.sources.dataset.tabular.TabularDataModule`
     already knows how to load, split, scale, window and batch.
 
     A real deployment usually replaces this. The moment the data lives in
