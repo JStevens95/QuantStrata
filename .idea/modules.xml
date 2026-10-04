@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/QuantStrata.iml" filepath="$PROJECT_DIR$/.idea/QuantStrata.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/rade-static-replication.iml" filepath="$PROJECT_DIR$/.idea/rade-static-replication.iml" />
     </modules>
   </component>
 </project>

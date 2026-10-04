@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>rade_qnet — Model Lab</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .cat-group { padding: 10px 0 4px; }
+  .cat-group > .gh {
+    color: var(--dim); font-size: 9px; text-transform: uppercase;
+    letter-spacing: 1px; padding: 0 14px 6px;
+  }
+  .cat-item {
+    display: block; padding: 7px 14px; cursor: pointer;
+    border-left: 2px solid transparent; text-decoration: none; color: var(--text);
+  }
+  .cat-item:hover { background: var(--panel-2); }
+  .cat-item.on { background: var(--panel-2); border-left-color: var(--accent); }
+  .cat-item .nm { font-family: var(--mono); font-size: 12px; }
+  .cat-item .mt { color: var(--dim); font-size: 10px; margin-top: 1px; }
+  .cat-item.soon .nm, .cat-item.soon .mt { opacity: .45; }
+
+  .chart-legend { display: flex; gap: 18px; font-size: 11px; color: var(--muted); margin-top: 8px; }
+  .chart-legend i { display: inline-block; width: 14px; height: 2px; vertical-align: middle; margin-right: 6px; }
+
+  .sv { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .sv ul { margin: 6px 0 0; padding-left: 16px; color: var(--muted); font-size: 12px; }
+  .sv li { margin-bottom: 5px; }
+  .sv h4 { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--dim); }
+
+  .mini { background: var(--bg); border: 1px solid var(--line-soft); border-radius: 6px; padding: 8px; }
+  .mini .t { font-family: var(--mono); font-size: 11px; margin-bottom: 2px; }
+  .mini .s { color: var(--dim); font-size: 10px; margin-bottom: 4px; }
+  .mini .m { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-top: 4px; }
+
+  .slider-row { display: flex; justify-content: space-between; align-items: baseline; }
+  .slider-row .val { font-family: var(--mono); font-size: 11px; color: var(--accent); }
+
+  .imp-row { display: grid; grid-template-columns: 76px 1fr 38px; gap: 8px; align-items: center; margin-bottom: 6px; }
+  .imp-row .n { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+  .imp-row .v { font-family: var(--mono); font-size: 10px; text-align: right; color: var(--dim); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">rade_<span class="x">qnet</span></div>
+  <div class="brand-sub">Model Lab</div>
+  <nav class="nav">
+    <a class="on" href="model_lab.html">Model Lab</a>
+    <a href="console.html">Console</a>
+    <a href="run_report.html">Runs</a>
+    <a href="#">Job sets</a>
+    <a href="#">Registry</a>
+    <a href="#">Docs</a>
+  </nav>
+  <div class="spacer"></div>
+  <span class="tag">v0.6.0</span>
+  <span class="tag">6 models</span>
+  <span class="tag">3 engines</span>
+</div>
+
+<div class="wrap">
+<div class="cols c-lab">
+
+  <!-- ============ LEFT: catalogue ============ -->
+  <div class="panel" style="align-self:start">
+    <div class="panel-h">Catalogue <span class="sub">by function family</span></div>
+    <div class="panel-b tight" style="padding-bottom:10px">
+
+      <div class="cat-group">
+        <div class="gh">Linear</div>
+        <a class="cat-item" href="#">
+          <div class="nm">ridge</div>
+          <div class="mt">tier 1 · sklearn · penalised least squares</div>
+        </a>
+      </div>
+
+      <div class="cat-group">
+        <div class="gh">Trees &amp; ensembles</div>
+        <a class="cat-item" href="#">
+          <div class="nm">random_forest</div>
+          <div class="mt">tier 1 · sklearn · bagged trees</div>
+        </a>
+        <a class="cat-item on" href="#">
+          <div class="nm">xgb_tabular</div>
+          <div class="mt">tier 1 · xgboost · boosted trees</div>
+        </a>
+      </div>
+
+      <div class="cat-group">
+        <div class="gh">Sequence</div>
+        <a class="cat-item" href="#">
+          <div class="nm">lstm_tabular</div>
+          <div class="mt">tier 1 · torch · recurrent</div>
+        </a>
+      </div>
+
+      <div class="cat-group">
+        <div class="gh">Graph</div>
+        <a class="cat-item" href="#">
+          <div class="nm">hybrid_gnn_rnn</div>
+          <div class="mt">tier 4 · torch · graph + recurrence</div>
+        </a>
+      </div>
+
+      <div class="cat-group">
+        <div class="gh">Reinforcement</div>
+        <a class="cat-item soon" href="#">
+          <div class="nm">dqn_execution</div>
+          <div class="mt">phase 7 · not yet built</div>
+        </a>
+        <a class="cat-item soon" href="#">
+          <div class="nm">ppo_hedger</div>
+          <div class="mt">phase 7 · not yet built</div>
+        </a>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============ MIDDLE: the teaching pane ============ -->
+  <div style="display:flex;flex-direction:column;gap:14px">
+
+    <div class="panel">
+      <div class="panel-b">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+          <h2 style="margin:0;font-size:17px">Gradient-boosted decision trees</h2>
+          <span class="pill p-tier">tier 1</span>
+          <span class="pill p-eng">xgboost</span>
+          <span class="spacer"></span>
+          <span class="tag">models/xgb_tabular</span>
+        </div>
+        <p style="margin:8px 0 0;color:var(--muted);max-width:76ch">
+          A boosted tree ensemble builds its prediction one small tree at a time. Each new tree is fitted
+          not to the target but to the <em>error left over</em> by every tree before it, so the ensemble
+          descends the loss surface in function space rather than parameter space. The result is a sum of
+          hundreds of shallow, piecewise-constant functions.
+        </p>
+        <p style="margin:8px 0 0;color:var(--muted);max-width:76ch">
+          Because every split is an axis-aligned threshold on one feature, the model is naturally good at
+          <span class="b" style="color:var(--text)">interactions and sharp regime changes</span> and
+          naturally bad at <span class="b" style="color:var(--text)">smooth extrapolation</span>. It never
+          predicts a value outside the range it saw in training.
+        </p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-h">
+        Behaviour on the active dataset
+        <span class="sub">synthetic · 60 points · y = sin(2&pi;x) + &epsilon;</span>
+        <span class="spacer"></span>
+        <span class="tag">live refit on parameter change</span>
+      </div>
+      <div class="panel-b">
+        <svg viewBox="0 0 620 250" style="width:100%;height:auto">
+          <!-- grid -->
+          <g stroke="#202833" stroke-width="1">
+            <line x1="44" y1="16"  x2="604" y2="16"/>
+            <line x1="44" y1="65"  x2="604" y2="65"/>
+            <line x1="44" y1="115" x2="604" y2="115"/>
+            <line x1="44" y1="164" x2="604" y2="164"/>
+            <line x1="44" y1="214" x2="604" y2="214"/>
+          </g>
+          <g fill="#6a7681" font-size="9" font-family="ui-monospace,Menlo,monospace">
+            <text x="36" y="19"  text-anchor="end">1.4</text>
+            <text x="36" y="68"  text-anchor="end">0.7</text>
+            <text x="36" y="118" text-anchor="end">0.0</text>
+            <text x="36" y="167" text-anchor="end">-0.7</text>
+            <text x="36" y="217" text-anchor="end">-1.4</text>
+            <text x="44"  y="232">0.00</text>
+            <text x="184" y="232">0.25</text>
+            <text x="324" y="232">0.50</text>
+            <text x="464" y="232">0.75</text>
+            <text x="604" y="232" text-anchor="end">1.00</text>
+          </g>
+          <!-- truth -->
+          <path d="M 44.0 115.0 L 48.7 111.7 L 53.3 108.3 L 58.0 105.0 L 62.7 101.8 L 67.3 98.5 L 72.0 95.3 L 76.7 92.2 L 81.3 89.1 L 86.0 86.1 L 90.7 83.2 L 95.3 80.3 L 100.0 77.6 L 104.7 74.9 L 109.3 72.4 L 114.0 70.0 L 118.7 67.7 L 123.3 65.5 L 128.0 63.5 L 132.7 61.6 L 137.3 59.9 L 142.0 58.3 L 146.7 56.9 L 151.3 55.6 L 156.0 54.5 L 160.7 53.5 L 165.3 52.7 L 170.0 52.1 L 174.7 51.7 L 179.3 51.4 L 184.0 51.4 L 188.7 51.4 L 193.3 51.7 L 198.0 52.1 L 202.7 52.7 L 207.3 53.5 L 212.0 54.5 L 216.7 55.6 L 221.3 56.9 L 226.0 58.3 L 230.7 59.9 L 235.3 61.6 L 240.0 63.5 L 244.7 65.5 L 249.3 67.7 L 254.0 70.0 L 258.7 72.4 L 263.3 74.9 L 268.0 77.6 L 272.7 80.3 L 277.3 83.2 L 282.0 86.1 L 286.7 89.1 L 291.3 92.2 L 296.0 95.3 L 300.7 98.5 L 305.3 101.8 L 310.0 105.0 L 314.7 108.3 L 319.3 111.7 L 324.0 115.0 L 328.7 118.3 L 333.3 121.7 L 338.0 125.0 L 342.7 128.2 L 347.3 131.5 L 352.0 134.7 L 356.7 137.8 L 361.3 140.9 L 366.0 143.9 L 370.7 146.8 L 375.3 149.7 L 380.0 152.4 L 384.7 155.1 L 389.3 157.6 L 394.0 160.0 L 398.7 162.3 L 403.3 164.5 L 408.0 166.5 L 412.7 168.4 L 417.3 170.1 L 422.0 171.7 L 426.7 173.1 L 431.3 174.4 L 436.0 175.5 L 440.7 176.5 L 445.3 177.3 L 450.0 177.9 L 454.7 178.3 L 459.3 178.6 L 464.0 178.6 L 468.7 178.6 L 473.3 178.3 L 478.0 177.9 L 482.7 177.3 L 487.3 176.5 L 492.0 175.5 L 496.7 174.4 L 501.3 173.1 L 506.0 171.7 L 510.7 170.1 L 515.3 168.4 L 520.0 166.5 L 524.7 164.5 L 529.3 162.3 L 534.0 160.0 L 538.7 157.6 L 543.3 155.1 L 548.0 152.4 L 552.7 149.7 L 557.3 146.8 L 562.0 143.9 L 566.7 140.9 L 571.3 137.8 L 576.0 134.7 L 580.7 131.5 L 585.3 128.2 L 590.0 125.0 L 594.7 121.7 L 599.3 118.3 L 604.0 115.0" fill="none" stroke="#6a7681" stroke-width="1.4" stroke-dasharray="4 3"/>
+          <!-- model fit -->
+          <path d="M 44.0 97.4 L 84.0 97.4 L 84.0 79.4 L 124.0 79.4 L 124.0 74.7 L 164.0 74.7 L 164.0 39.3 L 204.0 39.3 L 204.0 48.0 L 244.0 48.0 L 244.0 78.8 L 284.0 78.8 L 284.0 105.2 L 324.0 105.2 L 324.0 123.1 L 364.0 123.1 L 364.0 146.6 L 404.0 146.6 L 404.0 172.0 L 444.0 172.0 L 444.0 170.5 L 484.0 170.5 L 484.0 180.3 L 524.0 180.3 L 524.0 155.5 L 564.0 155.5 L 564.0 131.8 L 604.0 131.8" fill="none" stroke="#4da3ff" stroke-width="2.2" stroke-linejoin="miter"/>
+          <!-- observations -->
+          <g fill="#a371f7" fill-opacity=".75"><circle cx="65.0" cy="92.7" r="2.6"/> <circle cx="66.0" cy="106.8" r="2.6"/> <circle cx="70.1" cy="102.1" r="2.6"/> <circle cx="76.5" cy="107.5" r="2.6"/> <circle cx="77.4" cy="103.4" r="2.6"/> <circle cx="79.2" cy="96.9" r="2.6"/> <circle cx="83.1" cy="72.5" r="2.6"/> <circle cx="84.6" cy="111.4" r="2.6"/> <circle cx="94.8" cy="98.2" r="2.6"/> <circle cx="110.0" cy="69.2" r="2.6"/> <circle cx="110.1" cy="54.6" r="2.6"/> <circle cx="113.3" cy="63.4" r="2.6"/> <circle cx="124.8" cy="87.7" r="2.6"/> <circle cx="128.5" cy="93.6" r="2.6"/> <circle cx="129.1" cy="58.8" r="2.6"/> <circle cx="145.2" cy="66.1" r="2.6"/> <circle cx="159.3" cy="67.2" r="2.6"/> <circle cx="169.0" cy="40.5" r="2.6"/> <circle cx="180.7" cy="38.2" r="2.6"/> <circle cx="205.2" cy="51.3" r="2.6"/> <circle cx="206.2" cy="50.4" r="2.6"/> <circle cx="211.9" cy="49.2" r="2.6"/> <circle cx="216.7" cy="36.4" r="2.6"/> <circle cx="219.9" cy="49.0" r="2.6"/> <circle cx="225.3" cy="51.8" r="2.6"/> <circle cx="248.8" cy="60.9" r="2.6"/> <circle cx="252.5" cy="88.1" r="2.6"/> <circle cx="266.1" cy="61.1" r="2.6"/> <circle cx="278.1" cy="72.2" r="2.6"/> <circle cx="281.7" cy="79.6" r="2.6"/> <circle cx="283.5" cy="110.8" r="2.6"/> <circle cx="286.8" cy="96.8" r="2.6"/> <circle cx="297.8" cy="86.4" r="2.6"/> <circle cx="317.8" cy="132.4" r="2.6"/> <circle cx="328.2" cy="120.2" r="2.6"/> <circle cx="338.1" cy="112.8" r="2.6"/> <circle cx="344.1" cy="145.0" r="2.6"/> <circle cx="350.7" cy="114.5" r="2.6"/> <circle cx="364.9" cy="136.6" r="2.6"/> <circle cx="365.7" cy="145.5" r="2.6"/> <circle cx="367.2" cy="140.7" r="2.6"/> <circle cx="369.7" cy="138.4" r="2.6"/> <circle cx="371.9" cy="146.1" r="2.6"/> <circle cx="395.4" cy="146.9" r="2.6"/> <circle cx="401.8" cy="171.7" r="2.6"/> <circle cx="408.5" cy="171.7" r="2.6"/> <circle cx="418.2" cy="157.9" r="2.6"/> <circle cx="425.0" cy="172.3" r="2.6"/> <circle cx="435.4" cy="186.0" r="2.6"/> <circle cx="452.5" cy="166.7" r="2.6"/> <circle cx="468.0" cy="161.0" r="2.6"/> <circle cx="472.2" cy="183.7" r="2.6"/> <circle cx="488.9" cy="192.8" r="2.6"/> <circle cx="501.0" cy="174.8" r="2.6"/> <circle cx="507.0" cy="173.2" r="2.6"/> <circle cx="524.7" cy="168.0" r="2.6"/> <circle cx="534.1" cy="143.1" r="2.6"/> <circle cx="574.7" cy="147.9" r="2.6"/> <circle cx="590.7" cy="109.3" r="2.6"/> <circle cx="592.9" cy="138.2" r="2.6"/></g>
+        </svg>
+        <div class="chart-legend">
+          <span><i style="background:#a371f7"></i>observed</span>
+          <span><i style="background:#6a7681"></i>true generating function</span>
+          <span><i style="background:#4da3ff"></i>xgb_tabular fit</span>
+          <span class="spacer"></span>
+        </div>
+        <div class="note" style="margin-top:12px">
+          Notice the staircase. Every flat segment is a leaf of the ensemble. This is the single most
+          useful intuition about tree models: they partition the input space into boxes and predict a
+          constant inside each box. Increase <span class="mono">max_depth</span> and the boxes get
+          smaller; increase <span class="mono">n_estimators</span> and the steps get finer and smoother.
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-h">Trade-offs</div>
+      <div class="panel-b">
+        <div class="sv">
+          <div>
+            <h4>Reach for it when</h4>
+            <ul>
+              <li>Features are heterogeneous and tabular — mixed scales, mixed units, some categorical.</li>
+              <li>You expect threshold effects: "vol above 18 behaves differently".</li>
+              <li>You have thousands, not millions, of rows.</li>
+              <li>You need a strong baseline in minutes, with almost no preprocessing.</li>
+              <li>You want per-feature attribution that a desk head will accept.</li>
+            </ul>
+          </div>
+          <div>
+            <h4>Avoid it when</h4>
+            <ul>
+              <li>The relationship is genuinely smooth and you must extrapolate beyond the training range.</li>
+              <li>Inputs are sequential and order matters — use <span class="mono">lstm_tabular</span>.</li>
+              <li>Observations are coupled through a known structure — use <span class="mono">hybrid_gnn_rnn</span>.</li>
+              <li>You need calibrated uncertainty rather than a point estimate.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cols c-2">
+      <div class="panel">
+        <div class="panel-h">Declared input contract <span class="sub">models/xgb_tabular/data.py</span></div>
+        <div class="panel-b">
+<div class="code"><span class="c"># REQUIRES is checked against the built bundle before</span>
+<span class="c"># the model is constructed. A mismatch fails the run.</span>
+REQUIRES = <span class="n">InputRequirement</span>(
+    dynamic=(
+        <span class="n">RequiredInput</span>(
+            rank=(<span class="s">2</span>,),
+            description=<span class="s">"rows x features"</span>,
+        ),
+    ),
+    exact=<span class="s">True</span>,
+)</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-h">Minimal run spec <span class="sub">copy into your job set</span></div>
+        <div class="panel-b">
+<div class="code"><span class="k">model</span>:
+  <span class="k">name</span>: <span class="s">xgb_tabular</span>
+  <span class="k">params</span>: {}            <span class="c"># empty: tuning lives below</span>
+<span class="k">training</span>:
+  <span class="k">engine</span>: <span class="s">xgboost</span>
+  <span class="k">n_estimators</span>: <span class="n">400</span>
+  <span class="k">max_depth</span>: <span class="n">6</span>
+  <span class="k">learning_rate</span>: <span class="n">0.05</span>
+  <span class="k">subsample</span>: <span class="n">0.8</span></div>
+          <div style="margin-top:10px;display:flex;gap:8px">
+            <button class="btn">Open in Console</button>
+            <button class="btn ghost">Copy spec</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-h">
+        The same sixty points, four model families
+        <span class="sub">this is the comparison that actually teaches</span>
+      </div>
+      <div class="panel-b">
+        <div class="cols c-4">
+          <div class="mini">
+            <div class="t">ridge</div><div class="s">one global straight line</div>
+            <svg viewBox="0 0 190 76" style="width:100%;height:auto">
+              <g fill="#a371f7" fill-opacity=".5"><circle cx="12.7" cy="31.3" r="1.3"/> <circle cx="13.0" cy="35.5" r="1.3"/> <circle cx="14.3" cy="34.1" r="1.3"/> <circle cx="16.3" cy="35.7" r="1.3"/> <circle cx="16.6" cy="34.5" r="1.3"/> <circle cx="17.2" cy="32.5" r="1.3"/> <circle cx="18.4" cy="25.1" r="1.3"/> <circle cx="18.9" cy="36.9" r="1.3"/> <circle cx="22.1" cy="32.9" r="1.3"/> <circle cx="27.0" cy="24.1" r="1.3"/> <circle cx="27.0" cy="19.7" r="1.3"/> <circle cx="28.0" cy="22.4" r="1.3"/> <circle cx="31.7" cy="29.7" r="1.3"/> <circle cx="32.9" cy="31.5" r="1.3"/> <circle cx="33.1" cy="21.0" r="1.3"/> <circle cx="38.2" cy="23.2" r="1.3"/> <circle cx="42.7" cy="23.5" r="1.3"/> <circle cx="45.7" cy="15.4" r="1.3"/> <circle cx="49.4" cy="14.7" r="1.3"/> <circle cx="57.3" cy="18.7" r="1.3"/> <circle cx="57.6" cy="18.4" r="1.3"/> <circle cx="59.4" cy="18.1" r="1.3"/> <circle cx="60.9" cy="14.2" r="1.3"/> <circle cx="61.9" cy="18.0" r="1.3"/> <circle cx="63.6" cy="18.9" r="1.3"/> <circle cx="71.1" cy="21.6" r="1.3"/> <circle cx="72.3" cy="29.9" r="1.3"/> <circle cx="76.6" cy="21.7" r="1.3"/> <circle cx="80.4" cy="25.0" r="1.3"/> <circle cx="81.6" cy="27.3" r="1.3"/> <circle cx="82.1" cy="36.7" r="1.3"/> <circle cx="83.2" cy="32.5" r="1.3"/> <circle cx="86.7" cy="29.3" r="1.3"/> <circle cx="93.0" cy="43.3" r="1.3"/> <circle cx="96.3" cy="39.6" r="1.3"/> <circle cx="99.5" cy="37.3" r="1.3"/> <circle cx="101.4" cy="47.1" r="1.3"/> <circle cx="103.5" cy="37.8" r="1.3"/> <circle cx="108.0" cy="44.5" r="1.3"/> <circle cx="108.2" cy="47.2" r="1.3"/> <circle cx="108.7" cy="45.8" r="1.3"/> <circle cx="109.5" cy="45.1" r="1.3"/> <circle cx="110.2" cy="47.4" r="1.3"/> <circle cx="117.7" cy="47.7" r="1.3"/> <circle cx="119.7" cy="55.2" r="1.3"/> <circle cx="121.9" cy="55.2" r="1.3"/> <circle cx="124.9" cy="51.0" r="1.3"/> <circle cx="127.1" cy="55.4" r="1.3"/> <circle cx="130.4" cy="59.5" r="1.3"/> <circle cx="135.8" cy="53.7" r="1.3"/> <circle cx="140.8" cy="51.9" r="1.3"/> <circle cx="142.1" cy="58.8" r="1.3"/> <circle cx="147.4" cy="61.6" r="1.3"/> <circle cx="151.3" cy="56.1" r="1.3"/> <circle cx="153.2" cy="55.6" r="1.3"/> <circle cx="158.8" cy="54.1" r="1.3"/> <circle cx="161.8" cy="46.5" r="1.3"/> <circle cx="174.7" cy="48.0" r="1.3"/> <circle cx="179.8" cy="36.3" r="1.3"/> <circle cx="180.5" cy="45.0" r="1.3"/></g>
+              <path d="M 6.0 20.9 L 8.2 21.3 L 10.4 21.8 L 12.7 22.2 L 14.9 22.7 L 17.1 23.1 L 19.4 23.6 L 21.6 24.0 L 23.8 24.4 L 26.0 24.9 L 28.2 25.3 L 30.5 25.8 L 32.7 26.2 L 34.9 26.7 L 37.1 27.1 L 39.4 27.6 L 41.6 28.0 L 43.8 28.4 L 46.1 28.9 L 48.3 29.3 L 50.5 29.8 L 52.7 30.2 L 55.0 30.7 L 57.2 31.1 L 59.4 31.5 L 61.6 32.0 L 63.9 32.4 L 66.1 32.9 L 68.3 33.3 L 70.5 33.8 L 72.8 34.2 L 75.0 34.7 L 77.2 35.1 L 79.4 35.5 L 81.6 36.0 L 83.9 36.4 L 86.1 36.9 L 88.3 37.3 L 90.5 37.8 L 92.8 38.2 L 95.0 38.7 L 97.2 39.1 L 99.5 39.5 L 101.7 40.0 L 103.9 40.4 L 106.1 40.9 L 108.3 41.3 L 110.6 41.8 L 112.8 42.2 L 115.0 42.6 L 117.2 43.1 L 119.5 43.5 L 121.7 44.0 L 123.9 44.4 L 126.2 44.9 L 128.4 45.3 L 130.6 45.8 L 132.8 46.2 L 135.0 46.6 L 137.3 47.1 L 139.5 47.5 L 141.7 48.0 L 144.0 48.4 L 146.2 48.9 L 148.4 49.3 L 150.6 49.8 L 152.8 50.2 L 155.1 50.6 L 157.3 51.1 L 159.5 51.5 L 161.8 52.0 L 164.0 52.4 L 166.2 52.9 L 168.4 53.3 L 170.7 53.7 L 172.9 54.2 L 175.1 54.6 L 177.3 55.1 L 179.5 55.5 L 181.8 56.0 L 184.0 56.4" fill="none" stroke="#4da3ff" stroke-width="1.8"/>
+            </svg>
+            <div class="m">RMSE 0.643 · cannot bend</div>
+          </div>
+          <div class="mini">
+            <div class="t">random_forest</div><div class="s">average of deep independent trees</div>
+            <svg viewBox="0 0 190 76" style="width:100%;height:auto">
+              <g fill="#a371f7" fill-opacity=".5"><circle cx="12.7" cy="31.3" r="1.3"/> <circle cx="13.0" cy="35.5" r="1.3"/> <circle cx="14.3" cy="34.1" r="1.3"/> <circle cx="16.3" cy="35.7" r="1.3"/> <circle cx="16.6" cy="34.5" r="1.3"/> <circle cx="17.2" cy="32.5" r="1.3"/> <circle cx="18.4" cy="25.1" r="1.3"/> <circle cx="18.9" cy="36.9" r="1.3"/> <circle cx="22.1" cy="32.9" r="1.3"/> <circle cx="27.0" cy="24.1" r="1.3"/> <circle cx="27.0" cy="19.7" r="1.3"/> <circle cx="28.0" cy="22.4" r="1.3"/> <circle cx="31.7" cy="29.7" r="1.3"/> <circle cx="32.9" cy="31.5" r="1.3"/> <circle cx="33.1" cy="21.0" r="1.3"/> <circle cx="38.2" cy="23.2" r="1.3"/> <circle cx="42.7" cy="23.5" r="1.3"/> <circle cx="45.7" cy="15.4" r="1.3"/> <circle cx="49.4" cy="14.7" r="1.3"/> <circle cx="57.3" cy="18.7" r="1.3"/> <circle cx="57.6" cy="18.4" r="1.3"/> <circle cx="59.4" cy="18.1" r="1.3"/> <circle cx="60.9" cy="14.2" r="1.3"/> <circle cx="61.9" cy="18.0" r="1.3"/> <circle cx="63.6" cy="18.9" r="1.3"/> <circle cx="71.1" cy="21.6" r="1.3"/> <circle cx="72.3" cy="29.9" r="1.3"/> <circle cx="76.6" cy="21.7" r="1.3"/> <circle cx="80.4" cy="25.0" r="1.3"/> <circle cx="81.6" cy="27.3" r="1.3"/> <circle cx="82.1" cy="36.7" r="1.3"/> <circle cx="83.2" cy="32.5" r="1.3"/> <circle cx="86.7" cy="29.3" r="1.3"/> <circle cx="93.0" cy="43.3" r="1.3"/> <circle cx="96.3" cy="39.6" r="1.3"/> <circle cx="99.5" cy="37.3" r="1.3"/> <circle cx="101.4" cy="47.1" r="1.3"/> <circle cx="103.5" cy="37.8" r="1.3"/> <circle cx="108.0" cy="44.5" r="1.3"/> <circle cx="108.2" cy="47.2" r="1.3"/> <circle cx="108.7" cy="45.8" r="1.3"/> <circle cx="109.5" cy="45.1" r="1.3"/> <circle cx="110.2" cy="47.4" r="1.3"/> <circle cx="117.7" cy="47.7" r="1.3"/> <circle cx="119.7" cy="55.2" r="1.3"/> <circle cx="121.9" cy="55.2" r="1.3"/> <circle cx="124.9" cy="51.0" r="1.3"/> <circle cx="127.1" cy="55.4" r="1.3"/> <circle cx="130.4" cy="59.5" r="1.3"/> <circle cx="135.8" cy="53.7" r="1.3"/> <circle cx="140.8" cy="51.9" r="1.3"/> <circle cx="142.1" cy="58.8" r="1.3"/> <circle cx="147.4" cy="61.6" r="1.3"/> <circle cx="151.3" cy="56.1" r="1.3"/> <circle cx="153.2" cy="55.6" r="1.3"/> <circle cx="158.8" cy="54.1" r="1.3"/> <circle cx="161.8" cy="46.5" r="1.3"/> <circle cx="174.7" cy="48.0" r="1.3"/> <circle cx="179.8" cy="36.3" r="1.3"/> <circle cx="180.5" cy="45.0" r="1.3"/></g>
+              <path d="M 6.0 30.4 L 31.4 30.4 L 31.4 22.7 L 56.9 22.7 L 56.9 22.4 L 82.3 22.4 L 82.3 38.1 L 107.7 38.1 L 107.7 50.4 L 133.1 50.4 L 133.1 56.3 L 158.6 56.3 L 158.6 46.0 L 184.0 46.0" fill="none" stroke="#4da3ff" stroke-width="1.8"/>
+            </svg>
+            <div class="m">RMSE 0.241 · coarse steps</div>
+          </div>
+          <div class="mini">
+            <div class="t">xgb_tabular</div><div class="s">sequential error-correcting trees</div>
+            <svg viewBox="0 0 190 76" style="width:100%;height:auto">
+              <g fill="#a371f7" fill-opacity=".5"><circle cx="12.7" cy="31.3" r="1.3"/> <circle cx="13.0" cy="35.5" r="1.3"/> <circle cx="14.3" cy="34.1" r="1.3"/> <circle cx="16.3" cy="35.7" r="1.3"/> <circle cx="16.6" cy="34.5" r="1.3"/> <circle cx="17.2" cy="32.5" r="1.3"/> <circle cx="18.4" cy="25.1" r="1.3"/> <circle cx="18.9" cy="36.9" r="1.3"/> <circle cx="22.1" cy="32.9" r="1.3"/> <circle cx="27.0" cy="24.1" r="1.3"/> <circle cx="27.0" cy="19.7" r="1.3"/> <circle cx="28.0" cy="22.4" r="1.3"/> <circle cx="31.7" cy="29.7" r="1.3"/> <circle cx="32.9" cy="31.5" r="1.3"/> <circle cx="33.1" cy="21.0" r="1.3"/> <circle cx="38.2" cy="23.2" r="1.3"/> <circle cx="42.7" cy="23.5" r="1.3"/> <circle cx="45.7" cy="15.4" r="1.3"/> <circle cx="49.4" cy="14.7" r="1.3"/> <circle cx="57.3" cy="18.7" r="1.3"/> <circle cx="57.6" cy="18.4" r="1.3"/> <circle cx="59.4" cy="18.1" r="1.3"/> <circle cx="60.9" cy="14.2" r="1.3"/> <circle cx="61.9" cy="18.0" r="1.3"/> <circle cx="63.6" cy="18.9" r="1.3"/> <circle cx="71.1" cy="21.6" r="1.3"/> <circle cx="72.3" cy="29.9" r="1.3"/> <circle cx="76.6" cy="21.7" r="1.3"/> <circle cx="80.4" cy="25.0" r="1.3"/> <circle cx="81.6" cy="27.3" r="1.3"/> <circle cx="82.1" cy="36.7" r="1.3"/> <circle cx="83.2" cy="32.5" r="1.3"/> <circle cx="86.7" cy="29.3" r="1.3"/> <circle cx="93.0" cy="43.3" r="1.3"/> <circle cx="96.3" cy="39.6" r="1.3"/> <circle cx="99.5" cy="37.3" r="1.3"/> <circle cx="101.4" cy="47.1" r="1.3"/> <circle cx="103.5" cy="37.8" r="1.3"/> <circle cx="108.0" cy="44.5" r="1.3"/> <circle cx="108.2" cy="47.2" r="1.3"/> <circle cx="108.7" cy="45.8" r="1.3"/> <circle cx="109.5" cy="45.1" r="1.3"/> <circle cx="110.2" cy="47.4" r="1.3"/> <circle cx="117.7" cy="47.7" r="1.3"/> <circle cx="119.7" cy="55.2" r="1.3"/> <circle cx="121.9" cy="55.2" r="1.3"/> <circle cx="124.9" cy="51.0" r="1.3"/> <circle cx="127.1" cy="55.4" r="1.3"/> <circle cx="130.4" cy="59.5" r="1.3"/> <circle cx="135.8" cy="53.7" r="1.3"/> <circle cx="140.8" cy="51.9" r="1.3"/> <circle cx="142.1" cy="58.8" r="1.3"/> <circle cx="147.4" cy="61.6" r="1.3"/> <circle cx="151.3" cy="56.1" r="1.3"/> <circle cx="153.2" cy="55.6" r="1.3"/> <circle cx="158.8" cy="54.1" r="1.3"/> <circle cx="161.8" cy="46.5" r="1.3"/> <circle cx="174.7" cy="48.0" r="1.3"/> <circle cx="179.8" cy="36.3" r="1.3"/> <circle cx="180.5" cy="45.0" r="1.3"/></g>
+              <path d="M 6.0 34.2 L 17.1 34.2 L 17.1 27.7 L 28.2 27.7 L 28.2 26.3 L 39.4 26.3 L 39.4 17.9 L 50.5 17.9 L 50.5 17.3 L 61.6 17.3 L 61.6 22.1 L 72.8 22.1 L 72.8 28.6 L 83.9 28.6 L 83.9 36.3 L 95.0 36.3 L 95.0 40.5 L 106.1 40.5 L 106.1 46.0 L 117.2 46.0 L 117.2 52.9 L 128.4 52.9 L 128.4 56.6 L 139.5 56.6 L 139.5 57.4 L 150.6 57.4 L 150.6 55.3 L 161.8 55.3 L 161.8 46.5 L 172.9 46.5 L 172.9 43.1 L 184.0 43.1" fill="none" stroke="#3fb950" stroke-width="1.8"/>
+            </svg>
+            <div class="m">RMSE 0.183 · finer steps</div>
+          </div>
+          <div class="mini">
+            <div class="t">lstm_tabular</div><div class="s">smooth differentiable function</div>
+            <svg viewBox="0 0 190 76" style="width:100%;height:auto">
+              <g fill="#a371f7" fill-opacity=".5"><circle cx="12.7" cy="31.3" r="1.3"/> <circle cx="13.0" cy="35.5" r="1.3"/> <circle cx="14.3" cy="34.1" r="1.3"/> <circle cx="16.3" cy="35.7" r="1.3"/> <circle cx="16.6" cy="34.5" r="1.3"/> <circle cx="17.2" cy="32.5" r="1.3"/> <circle cx="18.4" cy="25.1" r="1.3"/> <circle cx="18.9" cy="36.9" r="1.3"/> <circle cx="22.1" cy="32.9" r="1.3"/> <circle cx="27.0" cy="24.1" r="1.3"/> <circle cx="27.0" cy="19.7" r="1.3"/> <circle cx="28.0" cy="22.4" r="1.3"/> <circle cx="31.7" cy="29.7" r="1.3"/> <circle cx="32.9" cy="31.5" r="1.3"/> <circle cx="33.1" cy="21.0" r="1.3"/> <circle cx="38.2" cy="23.2" r="1.3"/> <circle cx="42.7" cy="23.5" r="1.3"/> <circle cx="45.7" cy="15.4" r="1.3"/> <circle cx="49.4" cy="14.7" r="1.3"/> <circle cx="57.3" cy="18.7" r="1.3"/> <circle cx="57.6" cy="18.4" r="1.3"/> <circle cx="59.4" cy="18.1" r="1.3"/> <circle cx="60.9" cy="14.2" r="1.3"/> <circle cx="61.9" cy="18.0" r="1.3"/> <circle cx="63.6" cy="18.9" r="1.3"/> <circle cx="71.1" cy="21.6" r="1.3"/> <circle cx="72.3" cy="29.9" r="1.3"/> <circle cx="76.6" cy="21.7" r="1.3"/> <circle cx="80.4" cy="25.0" r="1.3"/> <circle cx="81.6" cy="27.3" r="1.3"/> <circle cx="82.1" cy="36.7" r="1.3"/> <circle cx="83.2" cy="32.5" r="1.3"/> <circle cx="86.7" cy="29.3" r="1.3"/> <circle cx="93.0" cy="43.3" r="1.3"/> <circle cx="96.3" cy="39.6" r="1.3"/> <circle cx="99.5" cy="37.3" r="1.3"/> <circle cx="101.4" cy="47.1" r="1.3"/> <circle cx="103.5" cy="37.8" r="1.3"/> <circle cx="108.0" cy="44.5" r="1.3"/> <circle cx="108.2" cy="47.2" r="1.3"/> <circle cx="108.7" cy="45.8" r="1.3"/> <circle cx="109.5" cy="45.1" r="1.3"/> <circle cx="110.2" cy="47.4" r="1.3"/> <circle cx="117.7" cy="47.7" r="1.3"/> <circle cx="119.7" cy="55.2" r="1.3"/> <circle cx="121.9" cy="55.2" r="1.3"/> <circle cx="124.9" cy="51.0" r="1.3"/> <circle cx="127.1" cy="55.4" r="1.3"/> <circle cx="130.4" cy="59.5" r="1.3"/> <circle cx="135.8" cy="53.7" r="1.3"/> <circle cx="140.8" cy="51.9" r="1.3"/> <circle cx="142.1" cy="58.8" r="1.3"/> <circle cx="147.4" cy="61.6" r="1.3"/> <circle cx="151.3" cy="56.1" r="1.3"/> <circle cx="153.2" cy="55.6" r="1.3"/> <circle cx="158.8" cy="54.1" r="1.3"/> <circle cx="161.8" cy="46.5" r="1.3"/> <circle cx="174.7" cy="48.0" r="1.3"/> <circle cx="179.8" cy="36.3" r="1.3"/> <circle cx="180.5" cy="45.0" r="1.3"/></g>
+              <path d="M 6.0 38.0 L 8.2 36.6 L 10.4 35.1 L 12.7 33.7 L 14.9 32.3 L 17.1 31.0 L 19.4 29.7 L 21.6 28.4 L 23.8 27.2 L 26.0 26.1 L 28.2 25.0 L 30.5 24.1 L 32.7 23.2 L 34.9 22.4 L 37.1 21.7 L 39.4 21.1 L 41.6 20.6 L 43.8 20.2 L 46.1 19.9 L 48.3 19.7 L 50.5 19.7 L 52.7 19.7 L 55.0 19.9 L 57.2 20.2 L 59.4 20.6 L 61.6 21.1 L 63.9 21.7 L 66.1 22.4 L 68.3 23.2 L 70.5 24.1 L 72.8 25.0 L 75.0 26.1 L 77.2 27.2 L 79.4 28.4 L 81.6 29.7 L 83.9 31.0 L 86.1 32.3 L 88.3 33.7 L 90.5 35.1 L 92.8 36.6 L 95.0 38.0 L 97.2 39.4 L 99.5 40.9 L 101.7 42.3 L 103.9 43.7 L 106.1 45.0 L 108.3 46.3 L 110.6 47.6 L 112.8 48.8 L 115.0 49.9 L 117.2 51.0 L 119.5 51.9 L 121.7 52.8 L 123.9 53.6 L 126.2 54.3 L 128.4 54.9 L 130.6 55.4 L 132.8 55.8 L 135.0 56.1 L 137.3 56.3 L 139.5 56.3 L 141.7 56.3 L 144.0 56.1 L 146.2 55.8 L 148.4 55.4 L 150.6 54.9 L 152.8 54.3 L 155.1 53.6 L 157.3 52.8 L 159.5 51.9 L 161.8 51.0 L 164.0 49.9 L 166.2 48.8 L 168.4 47.6 L 170.7 46.3 L 172.9 45.0 L 175.1 43.7 L 177.3 42.3 L 179.5 40.9 L 181.8 39.4 L 184.0 38.0" fill="none" stroke="#4da3ff" stroke-width="1.8"/>
+            </svg>
+            <div class="m">RMSE 0.176 · smooth, extrapolates</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ============ RIGHT: the playground ============ -->
+  <div style="display:flex;flex-direction:column;gap:14px;align-self:start">
+
+    <div class="panel">
+      <div class="panel-h">Playground</div>
+      <div class="panel-b">
+        <label class="fl">Dataset</label>
+        <select>
+          <option>synthetic · noisy sine (1-D)</option>
+          <option>synthetic · two interacting features</option>
+          <option>fx · G10 carry vs. realised vol</option>
+          <option>rates · USD curve PCA factors</option>
+          <option>upload a CSV&hellip;</option>
+        </select>
+
+        <label class="fl">Train / test split</label>
+        <select><option>70 / 30, time-ordered</option><option>70 / 30, random</option><option>5-fold expanding window</option></select>
+
+        <hr class="sep">
+
+        <div class="slider-row"><label class="fl" style="margin:0">n_estimators</label><span class="val">400</span></div>
+        <input type="range" min="10" max="1500" value="400">
+
+        <div class="slider-row" style="margin-top:12px"><label class="fl" style="margin:0">max_depth</label><span class="val">6</span></div>
+        <input type="range" min="1" max="14" value="6">
+
+        <div class="slider-row" style="margin-top:12px"><label class="fl" style="margin:0">learning_rate</label><span class="val">0.050</span></div>
+        <input type="range" min="1" max="100" value="5">
+
+        <div class="slider-row" style="margin-top:12px"><label class="fl" style="margin:0">subsample</label><span class="val">0.80</span></div>
+        <input type="range" min="10" max="100" value="80">
+
+        <div style="margin-top:16px;display:flex;gap:8px">
+          <button class="btn" style="flex:1;justify-content:center">Refit</button>
+          <button class="btn ghost">Reset</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-h">Fit quality <span class="sub">held-out</span></div>
+      <div class="panel-b">
+        <div class="kv">
+          <span class="k">RMSE (train)</span><span class="v">0.1624</span>
+          <span class="k">RMSE (test)</span><span class="v" style="color:var(--good)">0.1831</span>
+          <span class="k">R&sup2; (test)</span><span class="v">0.9412</span>
+          <span class="k">MAE (test)</span><span class="v">0.1407</span>
+          <span class="k">Fit time</span><span class="v">0.31 s</span>
+          <span class="k">Leaves</span><span class="v">3,812</span>
+        </div>
+        <hr class="sep">
+        <div class="dim small" style="margin-bottom:6px">Generalisation gap</div>
+        <div class="bar"><i class="g" style="width:12%"></i></div>
+        <div class="small dim" style="margin-top:5px">
+          test RMSE is 12.7% above train — healthy. Above ~40% the lab flags overfitting.
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-h">Bias / variance probe</div>
+      <div class="panel-b">
+        <svg viewBox="0 0 290 120" style="width:100%;height:auto">
+          <g stroke="#202833" stroke-width="1">
+            <line x1="30" y1="12" x2="282" y2="12"/><line x1="30" y1="46" x2="282" y2="46"/>
+            <line x1="30" y1="80" x2="282" y2="80"/>
+          </g>
+          <path d="M 30 96 L 66 74 L 102 58 L 138 46 L 174 38 L 210 32 L 246 28 L 282 25"
+                fill="none" stroke="#3fb950" stroke-width="2"/>
+          <path d="M 30 98 L 66 70 L 102 52 L 138 44 L 174 48 L 210 58 L 246 72 L 282 88"
+                fill="none" stroke="#f85149" stroke-width="2"/>
+          <line x1="138" y1="12" x2="138" y2="104" stroke="#4da3ff" stroke-dasharray="3 3"/>
+          <circle cx="138" cy="44" r="3.5" fill="#4da3ff"/>
+          <g fill="#6a7681" font-size="9" font-family="ui-monospace,Menlo,monospace">
+            <text x="24" y="15" text-anchor="end">hi</text>
+            <text x="24" y="104" text-anchor="end">lo</text>
+            <text x="30" y="116">depth 1</text>
+            <text x="282" y="116" text-anchor="end">14</text>
+          </g>
+        </svg>
+        <div class="chart-legend" style="margin-top:2px">
+          <span><i style="background:#3fb950"></i>train fit</span>
+          <span><i style="background:#f85149"></i>test error</span>
+          <span><i style="background:#4da3ff"></i>current</span>
+        </div>
+        <div class="small dim" style="margin-top:8px">
+          Test error turns up after depth 7. You are sitting just left of the turn.
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-h">Feature importance <span class="sub">gain</span></div>
+      <div class="panel-b">
+        <div class="imp-row"><span class="n">x</span><span class="bar"><i style="width:100%"></i></span><span class="v">1.00</span></div>
+        <div class="imp-row"><span class="n">x_lag_1</span><span class="bar"><i style="width:14%"></i></span><span class="v">0.14</span></div>
+        <div class="imp-row"><span class="n">x_sq</span><span class="bar"><i style="width:9%"></i></span><span class="v">0.09</span></div>
+        <div class="imp-row"><span class="n">noise_a</span><span class="bar"><i style="width:3%"></i></span><span class="v">0.03</span></div>
+        <div class="imp-row"><span class="n">noise_b</span><span class="bar"><i style="width:1%"></i></span><span class="v">0.01</span></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+</body>
+</html>

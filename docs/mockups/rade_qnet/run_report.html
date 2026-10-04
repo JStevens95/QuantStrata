@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>rade_qnet — run report — hybrid_gnn_rnn</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .hero {
+    background: linear-gradient(90deg, rgba(77,163,255,.07), transparent 60%);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .hero h1 { margin: 0; font-size: 19px; display: flex; align-items: center; gap: 10px; }
+  .hero .meta { display: flex; gap: 22px; margin-top: 10px; flex-wrap: wrap; }
+  .hero .meta div { font-size: 11px; }
+  .hero .meta .k { color: var(--dim); text-transform: uppercase; letter-spacing: .6px; font-size: 9px; }
+  .hero .meta .v { font-family: var(--mono); }
+
+  .legend { display: flex; gap: 16px; font-size: 10px; color: var(--muted); margin-top: 6px; }
+  .legend i { display: inline-block; width: 12px; height: 2px; vertical-align: middle; margin-right: 5px; }
+
+  .toc { position: sticky; top: 60px; }
+  .toc a { display: block; color: var(--muted); text-decoration: none; padding: 4px 0; font-size: 11px; border-left: 2px solid transparent; padding-left: 10px; }
+  .toc a:hover, .toc a.on { color: var(--text); border-left-color: var(--accent); }
+
+  h3.sec { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--dim); margin: 6px 0 0; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">rade_<span class="x">qnet</span></div>
+  <div class="brand-sub">Run report</div>
+  <nav class="nav">
+    <a href="model_lab.html">Model Lab</a>
+    <a href="console.html">Console</a>
+    <a class="on" href="run_report.html">Runs</a>
+    <a href="#">Job sets</a>
+    <a href="#">Registry</a>
+  </nav>
+  <div class="spacer"></div>
+  <span class="tag">self-contained HTML</span>
+  <button class="btn ghost">Download</button>
+  <button class="btn">Promote to registry</button>
+</div>
+
+<div class="wrap">
+<div class="cols c-side">
+
+  <!-- ============ left rail ============ -->
+  <div>
+    <div class="panel toc">
+      <div class="panel-h">Contents</div>
+      <div class="panel-b" style="padding:8px 10px">
+        <a class="on" href="#">Headline</a>
+        <a href="#">Optimisation</a>
+        <a href="#">Predictive accuracy</a>
+        <a href="#">Per-cluster breakdown</a>
+        <a href="#">Data lineage</a>
+        <a href="#">Contract &amp; conformance</a>
+        <a href="#">Reproduction</a>
+        <a href="#">Artifacts</a>
+        <hr class="sep">
+        <a href="#">Compare with&hellip;</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ body ============ -->
+  <div style="display:flex;flex-direction:column;gap:13px">
+
+    <!-- hero -->
+    <div class="hero">
+      <h1>
+        hybrid_gnn_rnn
+        <span class="pill p-ok">completed</span>
+        <span class="pill p-tier">tier 4</span>
+        <span class="pill p-eng">torch</span>
+      </h1>
+      <div class="meta">
+        <div><div class="k">Run id</div><div class="v">2026-10-03T19:41:08Z/7f3ac1</div></div>
+        <div><div class="k">Job set</div><div class="v">fx_g10_weekly</div></div>
+        <div><div class="k">Clusters</div><div class="v">5 of 5 succeeded</div></div>
+        <div><div class="k">Wall clock</div><div class="v">00:14:22</div></div>
+        <div><div class="k">Device</div><div class="v">mps</div></div>
+        <div><div class="k">Spec digest</div><div class="v">sha256:9c2e&hellip;a41f</div></div>
+        <div><div class="k">Code</div><div class="v">git 6d4b841 (clean)</div></div>
+        <div><div class="k">Seed</div><div class="v">20260103</div></div>
+      </div>
+    </div>
+
+    <!-- headline metrics -->
+    <div class="cols c-4">
+      <div class="tile">
+        <div class="k">Pooled test RMSE</div>
+        <div class="v">0.010487</div>
+        <div class="d up">&minus;8.6% vs. previous run</div>
+      </div>
+      <div class="tile">
+        <div class="k">Pooled test R&sup2;</div>
+        <div class="v">0.6142</div>
+        <div class="d up">+0.031</div>
+      </div>
+      <div class="tile">
+        <div class="k">Directional hit rate</div>
+        <div class="v">58.4%</div>
+        <div class="d up">+1.2pp</div>
+      </div>
+      <div class="tile">
+        <div class="k">vs. ridge baseline</div>
+        <div class="v">&minus;21.3%</div>
+        <div class="d flat">RMSE reduction</div>
+      </div>
+    </div>
+
+    <!-- optimisation -->
+    <h3 class="sec">Optimisation</h3>
+    <div class="cols c-side-r">
+      <div class="panel">
+        <div class="panel-h">Loss by epoch <span class="sub">log scale · pooled over clusters</span>
+          <span class="spacer"></span><span class="tag">early stop at epoch 44</span></div>
+        <div class="panel-b">
+          <svg viewBox="0 0 560 180" style="width:100%;height:auto">
+            <g stroke="#202833" stroke-width="1">
+              <line x1="40" y1="14"  x2="548" y2="14"/>
+              <line x1="40" y1="60"  x2="548" y2="60"/>
+              <line x1="40" y1="106" x2="548" y2="106"/>
+              <line x1="40" y1="152" x2="548" y2="152"/>
+            </g>
+            <g fill="#6a7681" font-size="8" font-family="ui-monospace,Menlo,monospace">
+              <text x="34" y="17" text-anchor="end">4e-1</text>
+              <text x="34" y="63" text-anchor="end">8e-2</text>
+              <text x="34" y="109" text-anchor="end">2e-2</text>
+              <text x="34" y="155" text-anchor="end">4e-3</text>
+              <text x="40" y="170">0</text>
+              <text x="210" y="170">20</text>
+              <text x="379" y="170">40</text>
+              <text x="548" y="170" text-anchor="end">59</text>
+            </g>
+            <rect x="522.2" y="14" width="150" height="138" fill="#f85149" fill-opacity=".05"/>
+            <path d="M 40.0 20.6 L 48.6 20.6 L 57.2 26.0 L 65.8 26.5 L 74.4 31.2 L 83.1 31.5 L 91.7 33.2 L 100.3 37.7 L 108.9 37.2 L 117.5 43.7 L 126.1 45.2 L 134.7 48.4 L 143.3 50.2 L 151.9 51.8 L 160.5 57.8 L 169.2 59.8 L 177.8 62.4 L 186.4 64.0 L 195.0 61.8 L 203.6 66.9 L 212.2 70.7 L 220.8 72.8 L 229.4 74.9 L 238.0 76.7 L 246.6 77.5 L 255.3 81.1 L 263.9 83.0 L 272.5 85.1 L 281.1 86.9 L 289.7 90.3 L 298.3 91.6 L 306.9 92.6 L 315.5 95.8 L 324.1 98.1 L 332.7 100.0 L 341.4 103.3 L 350.0 103.1 L 358.6 104.3 L 367.2 106.1 L 375.8 108.4 L 384.4 108.0 L 393.0 112.4 L 401.6 112.6 L 410.2 113.2 L 418.8 112.7 L 427.5 116.4 L 436.1 117.6 L 444.7 119.0 L 453.3 118.5 L 461.9 120.7 L 470.5 122.6 L 479.1 121.2 L 487.7 125.5 L 496.3 123.8 L 504.9 122.9 L 513.6 125.4 L 522.2 126.2 L 530.8 125.6 L 539.4 125.9 L 548.0 128.0" fill="none" stroke="#3fb950" stroke-width="1.6"/>
+            <path d="M 40.0 18.1 L 48.6 22.6 L 57.2 24.9 L 65.8 26.0 L 74.4 33.0 L 83.1 33.0 L 91.7 35.2 L 100.3 40.1 L 108.9 43.1 L 117.5 47.4 L 126.1 48.1 L 134.7 51.3 L 143.3 52.9 L 151.9 56.5 L 160.5 58.4 L 169.2 62.6 L 177.8 65.0 L 186.4 67.2 L 195.0 70.2 L 203.6 74.9 L 212.2 74.1 L 220.8 76.9 L 229.4 81.6 L 238.0 83.5 L 246.6 85.2 L 255.3 86.5 L 263.9 89.6 L 272.5 90.8 L 281.1 91.5 L 289.7 95.7 L 298.3 95.3 L 306.9 98.4 L 315.5 98.5 L 324.1 100.5 L 332.7 103.3 L 341.4 104.3 L 350.0 102.5 L 358.6 104.4 L 367.2 106.1 L 375.8 106.8 L 384.4 109.4 L 393.0 106.5 L 401.6 108.7 L 410.2 112.8 L 418.8 108.6 L 427.5 110.6 L 436.1 113.7 L 444.7 112.0 L 453.3 111.7 L 461.9 111.0 L 470.5 112.1 L 479.1 114.0 L 487.7 115.2 L 496.3 112.9 L 504.9 115.6 L 513.6 112.9 L 522.2 118.1 L 530.8 110.4 L 539.4 115.5 L 548.0 113.6"   fill="none" stroke="#4da3ff" stroke-width="1.6"/>
+            <line x1="522.2" y1="14" x2="522.2" y2="152" stroke="#d29922" stroke-dasharray="3 3"/>
+            <circle cx="522.2" cy="118.1" r="3.2" fill="#d29922"/>
+            <text x="522.2" y="26" dx="6" fill="#d29922" font-size="9"
+                  font-family="ui-monospace,Menlo,monospace">best @ e56</text>
+          </svg>
+          <div class="legend">
+            <span><i style="background:#3fb950"></i>train</span>
+            <span><i style="background:#4da3ff"></i>validation</span>
+            <span><i style="background:#d29922"></i>checkpoint restored from here</span>
+            <span><i style="background:rgba(248,81,73,.4)"></i>patience window</span>
+          </div>
+          <div class="note warn" style="margin-top:10px">
+            Validation loss bottoms at epoch 44 and drifts up for the following 15 epochs while training
+            loss keeps falling. That divergence is the overfit signature. The saved checkpoint is the
+            epoch-44 state, not the final one.
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-h">Optimiser</div>
+        <div class="panel-b">
+          <div class="kv">
+            <span class="k">Optimiser</span><span class="v">AdamW</span>
+            <span class="k">Base LR</span><span class="v">3.0e-4</span>
+            <span class="k">Schedule</span><span class="v">cosine + 5ep warmup</span>
+            <span class="k">Weight decay</span><span class="v">1.0e-2</span>
+            <span class="k">Grad clip</span><span class="v">1.0</span>
+            <span class="k">Batch size</span><span class="v">64</span>
+            <span class="k">Epochs run</span><span class="v">59 / 120</span>
+            <span class="k">Patience</span><span class="v">15</span>
+            <span class="k">Loss</span><span class="v">HuberQuantile</span>
+          </div>
+          <hr class="sep">
+          <div class="dim small" style="margin-bottom:5px">Gradient norm (clipped share)</div>
+          <div class="bar"><i class="w" style="width:7%"></i></div>
+          <div class="small dim" style="margin-top:4px">7.1% of steps hit the clip — stable.</div>
+          <hr class="sep">
+          <div class="dim small" style="margin-bottom:5px">Throughput</div>
+          <div class="kv">
+            <span class="k">Steps / s</span><span class="v">41.3</span>
+            <span class="k">Peak memory</span><span class="v">2.1 GB</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- accuracy -->
+    <h3 class="sec">Predictive accuracy</h3>
+    <div class="cols c-3">
+      <div class="panel">
+        <div class="panel-h">Predicted vs. actual <span class="sub">test, standardised</span></div>
+        <div class="panel-b">
+          <svg viewBox="0 0 300 250" style="width:100%;height:auto">
+            <g stroke="#202833" stroke-width="1">
+              <line x1="42" y1="12" x2="290" y2="12"/><line x1="42" y1="111" x2="290" y2="111"/>
+              <line x1="42" y1="210" x2="290" y2="210"/>
+              <line x1="42" y1="12" x2="42" y2="210"/><line x1="166" y1="12" x2="166" y2="210"/>
+              <line x1="290" y1="12" x2="290" y2="210"/>
+            </g>
+            <g fill="#a371f7" fill-opacity=".45"><circle cx="274.0" cy="28.3" r="1.9"/> <circle cx="170.9" cy="86.0" r="1.9"/> <circle cx="162.5" cy="87.6" r="1.9"/> <circle cx="136.3" cy="138.0" r="1.9"/> <circle cx="197.3" cy="69.8" r="1.9"/> <circle cx="194.4" cy="87.3" r="1.9"/> <circle cx="86.9" cy="175.2" r="1.9"/> <circle cx="139.5" cy="136.6" r="1.9"/> <circle cx="191.5" cy="98.2" r="1.9"/> <circle cx="200.2" cy="86.4" r="1.9"/> <circle cx="151.6" cy="119.3" r="1.9"/> <circle cx="184.6" cy="86.3" r="1.9"/> <circle cx="145.3" cy="128.5" r="1.9"/> <circle cx="106.8" cy="129.4" r="1.9"/> <circle cx="229.0" cy="70.2" r="1.9"/> <circle cx="145.2" cy="142.4" r="1.9"/> <circle cx="173.4" cy="103.1" r="1.9"/> <circle cx="260.7" cy="42.6" r="1.9"/> <circle cx="132.2" cy="168.1" r="1.9"/> <circle cx="227.2" cy="66.4" r="1.9"/> <circle cx="96.2" cy="156.5" r="1.9"/> <circle cx="96.2" cy="110.7" r="1.9"/> <circle cx="214.6" cy="69.7" r="1.9"/> <circle cx="158.4" cy="145.9" r="1.9"/> <circle cx="160.5" cy="136.3" r="1.9"/> <circle cx="191.9" cy="122.9" r="1.9"/> <circle cx="126.6" cy="121.1" r="1.9"/> <circle cx="237.3" cy="78.4" r="1.9"/> <circle cx="99.4" cy="144.5" r="1.9"/> <circle cx="203.0" cy="99.3" r="1.9"/> <circle cx="135.9" cy="141.3" r="1.9"/> <circle cx="114.4" cy="155.9" r="1.9"/> <circle cx="220.3" cy="64.2" r="1.9"/> <circle cx="255.3" cy="50.9" r="1.9"/> <circle cx="160.1" cy="128.7" r="1.9"/> <circle cx="160.6" cy="132.9" r="1.9"/> <circle cx="88.9" cy="154.3" r="1.9"/> <circle cx="228.5" cy="56.5" r="1.9"/> <circle cx="223.8" cy="67.8" r="1.9"/> <circle cx="134.8" cy="131.2" r="1.9"/> <circle cx="149.8" cy="137.6" r="1.9"/> <circle cx="92.5" cy="182.0" r="1.9"/> <circle cx="165.8" cy="109.1" r="1.9"/> <circle cx="145.4" cy="105.3" r="1.9"/> <circle cx="173.8" cy="97.6" r="1.9"/> <circle cx="218.9" cy="86.1" r="1.9"/> <circle cx="80.5" cy="159.3" r="1.9"/> <circle cx="136.1" cy="113.3" r="1.9"/> <circle cx="180.7" cy="87.0" r="1.9"/> <circle cx="199.1" cy="117.1" r="1.9"/> <circle cx="197.2" cy="98.9" r="1.9"/> <circle cx="133.2" cy="139.6" r="1.9"/> <circle cx="199.3" cy="75.9" r="1.9"/> <circle cx="209.9" cy="103.9" r="1.9"/> <circle cx="140.4" cy="161.5" r="1.9"/> <circle cx="161.6" cy="105.7" r="1.9"/> <circle cx="132.8" cy="130.4" r="1.9"/> <circle cx="176.0" cy="90.1" r="1.9"/> <circle cx="130.4" cy="147.0" r="1.9"/> <circle cx="132.9" cy="109.5" r="1.9"/> <circle cx="213.3" cy="80.2" r="1.9"/> <circle cx="175.8" cy="102.7" r="1.9"/> <circle cx="174.8" cy="107.8" r="1.9"/> <circle cx="151.5" cy="138.4" r="1.9"/> <circle cx="138.1" cy="107.3" r="1.9"/> <circle cx="189.3" cy="94.1" r="1.9"/> <circle cx="156.7" cy="116.5" r="1.9"/> <circle cx="181.3" cy="109.4" r="1.9"/> <circle cx="174.5" cy="101.8" r="1.9"/> <circle cx="133.5" cy="144.2" r="1.9"/> <circle cx="122.6" cy="155.5" r="1.9"/> <circle cx="204.6" cy="117.2" r="1.9"/> <circle cx="154.4" cy="127.4" r="1.9"/> <circle cx="139.1" cy="128.1" r="1.9"/> <circle cx="215.0" cy="76.3" r="1.9"/> <circle cx="159.9" cy="123.7" r="1.9"/> <circle cx="160.4" cy="102.2" r="1.9"/> <circle cx="148.9" cy="138.6" r="1.9"/> <circle cx="111.1" cy="164.0" r="1.9"/> <circle cx="105.7" cy="137.2" r="1.9"/> <circle cx="181.4" cy="103.7" r="1.9"/> <circle cx="229.3" cy="76.6" r="1.9"/> <circle cx="198.7" cy="77.5" r="1.9"/> <circle cx="98.9" cy="178.7" r="1.9"/> <circle cx="125.7" cy="126.1" r="1.9"/> <circle cx="222.3" cy="89.4" r="1.9"/> <circle cx="211.5" cy="85.1" r="1.9"/> <circle cx="148.9" cy="130.4" r="1.9"/> <circle cx="151.9" cy="145.9" r="1.9"/> <circle cx="122.5" cy="158.0" r="1.9"/> <circle cx="187.3" cy="67.4" r="1.9"/> <circle cx="284.6" cy="34.3" r="1.9"/> <circle cx="91.3" cy="167.9" r="1.9"/> <circle cx="125.2" cy="111.5" r="1.9"/> <circle cx="190.8" cy="104.1" r="1.9"/> <circle cx="206.6" cy="75.7" r="1.9"/> <circle cx="95.5" cy="166.8" r="1.9"/> <circle cx="155.6" cy="117.9" r="1.9"/> <circle cx="171.7" cy="111.8" r="1.9"/> <circle cx="174.2" cy="113.5" r="1.9"/> <circle cx="127.1" cy="116.7" r="1.9"/> <circle cx="181.6" cy="94.2" r="1.9"/> <circle cx="96.8" cy="160.8" r="1.9"/> <circle cx="201.6" cy="104.5" r="1.9"/> <circle cx="213.6" cy="83.7" r="1.9"/> <circle cx="183.5" cy="100.8" r="1.9"/> <circle cx="175.5" cy="87.8" r="1.9"/> <circle cx="148.5" cy="101.3" r="1.9"/> <circle cx="132.1" cy="147.2" r="1.9"/> <circle cx="196.9" cy="104.6" r="1.9"/> <circle cx="149.9" cy="109.5" r="1.9"/> <circle cx="218.5" cy="99.5" r="1.9"/> <circle cx="188.0" cy="69.8" r="1.9"/> <circle cx="217.9" cy="78.7" r="1.9"/> <circle cx="139.9" cy="133.0" r="1.9"/> <circle cx="116.0" cy="149.0" r="1.9"/> <circle cx="157.9" cy="118.6" r="1.9"/> <circle cx="217.3" cy="79.0" r="1.9"/> <circle cx="102.7" cy="139.9" r="1.9"/> <circle cx="119.4" cy="149.2" r="1.9"/> <circle cx="160.2" cy="119.8" r="1.9"/> <circle cx="122.5" cy="144.3" r="1.9"/> <circle cx="260.8" cy="54.3" r="1.9"/> <circle cx="160.1" cy="99.5" r="1.9"/> <circle cx="198.3" cy="78.2" r="1.9"/> <circle cx="203.4" cy="112.6" r="1.9"/> <circle cx="128.5" cy="135.0" r="1.9"/> <circle cx="187.7" cy="78.2" r="1.9"/> <circle cx="186.4" cy="100.3" r="1.9"/> <circle cx="167.7" cy="112.8" r="1.9"/> <circle cx="176.7" cy="94.3" r="1.9"/> <circle cx="151.3" cy="132.4" r="1.9"/> <circle cx="128.9" cy="121.3" r="1.9"/> <circle cx="221.6" cy="59.1" r="1.9"/> <circle cx="203.2" cy="73.9" r="1.9"/> <circle cx="165.9" cy="101.9" r="1.9"/> <circle cx="120.3" cy="145.2" r="1.9"/> <circle cx="134.2" cy="122.8" r="1.9"/> <circle cx="140.8" cy="129.8" r="1.9"/> <circle cx="183.4" cy="80.3" r="1.9"/> <circle cx="131.6" cy="147.6" r="1.9"/> <circle cx="201.5" cy="102.0" r="1.9"/> <circle cx="185.6" cy="105.4" r="1.9"/> <circle cx="161.4" cy="139.4" r="1.9"/> <circle cx="197.0" cy="96.7" r="1.9"/> <circle cx="127.0" cy="109.0" r="1.9"/> <circle cx="196.9" cy="41.2" r="1.9"/> <circle cx="183.7" cy="103.7" r="1.9"/> <circle cx="170.7" cy="85.5" r="1.9"/> <circle cx="164.8" cy="105.6" r="1.9"/> <circle cx="188.4" cy="108.2" r="1.9"/> <circle cx="171.6" cy="114.1" r="1.9"/> <circle cx="111.9" cy="136.0" r="1.9"/> <circle cx="194.9" cy="90.1" r="1.9"/> <circle cx="126.6" cy="165.8" r="1.9"/> <circle cx="187.1" cy="97.9" r="1.9"/> <circle cx="92.9" cy="162.0" r="1.9"/> <circle cx="100.0" cy="156.7" r="1.9"/> <circle cx="172.2" cy="101.8" r="1.9"/> <circle cx="175.4" cy="102.2" r="1.9"/> <circle cx="116.5" cy="150.3" r="1.9"/> <circle cx="143.8" cy="129.5" r="1.9"/> <circle cx="177.7" cy="94.4" r="1.9"/> <circle cx="237.0" cy="97.9" r="1.9"/> <circle cx="183.4" cy="101.8" r="1.9"/> <circle cx="264.8" cy="30.2" r="1.9"/> <circle cx="94.3" cy="154.7" r="1.9"/> <circle cx="143.4" cy="112.7" r="1.9"/> <circle cx="120.2" cy="143.9" r="1.9"/> <circle cx="160.3" cy="116.3" r="1.9"/> <circle cx="140.7" cy="153.9" r="1.9"/> <circle cx="186.0" cy="83.4" r="1.9"/> <circle cx="163.0" cy="127.1" r="1.9"/> <circle cx="174.8" cy="97.1" r="1.9"/> <circle cx="158.4" cy="116.4" r="1.9"/> <circle cx="227.1" cy="84.5" r="1.9"/> <circle cx="141.8" cy="154.0" r="1.9"/> <circle cx="135.6" cy="142.1" r="1.9"/> <circle cx="124.3" cy="149.2" r="1.9"/> <circle cx="244.0" cy="60.2" r="1.9"/> <circle cx="161.0" cy="83.9" r="1.9"/> <circle cx="163.4" cy="136.8" r="1.9"/> <circle cx="183.5" cy="112.0" r="1.9"/> <circle cx="237.1" cy="79.4" r="1.9"/> <circle cx="140.8" cy="150.6" r="1.9"/> <circle cx="170.2" cy="122.2" r="1.9"/> <circle cx="163.2" cy="118.2" r="1.9"/> <circle cx="139.4" cy="116.2" r="1.9"/> <circle cx="206.6" cy="82.3" r="1.9"/> <circle cx="126.9" cy="152.7" r="1.9"/> <circle cx="177.7" cy="69.8" r="1.9"/> <circle cx="146.2" cy="135.5" r="1.9"/> <circle cx="135.7" cy="147.0" r="1.9"/> <circle cx="123.8" cy="142.8" r="1.9"/> <circle cx="228.2" cy="68.3" r="1.9"/> <circle cx="143.8" cy="148.6" r="1.9"/> <circle cx="175.3" cy="105.0" r="1.9"/> <circle cx="112.8" cy="162.6" r="1.9"/> <circle cx="164.2" cy="98.2" r="1.9"/> <circle cx="193.2" cy="89.5" r="1.9"/> <circle cx="152.0" cy="116.2" r="1.9"/> <circle cx="165.5" cy="81.2" r="1.9"/> <circle cx="116.9" cy="149.8" r="1.9"/> <circle cx="221.0" cy="76.9" r="1.9"/> <circle cx="227.8" cy="69.1" r="1.9"/> <circle cx="172.3" cy="111.8" r="1.9"/> <circle cx="106.1" cy="165.6" r="1.9"/> <circle cx="262.1" cy="36.0" r="1.9"/> <circle cx="192.3" cy="79.7" r="1.9"/> <circle cx="190.7" cy="79.9" r="1.9"/> <circle cx="154.5" cy="122.0" r="1.9"/> <circle cx="208.7" cy="86.6" r="1.9"/> <circle cx="108.2" cy="153.8" r="1.9"/> <circle cx="142.4" cy="118.7" r="1.9"/> <circle cx="134.7" cy="147.2" r="1.9"/> <circle cx="151.6" cy="99.4" r="1.9"/> <circle cx="163.9" cy="110.2" r="1.9"/> <circle cx="166.4" cy="106.6" r="1.9"/> <circle cx="206.3" cy="64.0" r="1.9"/> <circle cx="94.6" cy="141.1" r="1.9"/> <circle cx="165.9" cy="115.5" r="1.9"/> <circle cx="270.1" cy="41.9" r="1.9"/> <circle cx="250.4" cy="39.6" r="1.9"/> <circle cx="121.3" cy="134.9" r="1.9"/> <circle cx="198.0" cy="90.8" r="1.9"/> <circle cx="65.0" cy="185.1" r="1.9"/> <circle cx="157.7" cy="132.1" r="1.9"/> <circle cx="245.2" cy="60.0" r="1.9"/> <circle cx="148.9" cy="126.9" r="1.9"/> <circle cx="132.0" cy="145.1" r="1.9"/> <circle cx="170.1" cy="103.9" r="1.9"/> <circle cx="144.0" cy="127.4" r="1.9"/> <circle cx="105.7" cy="145.2" r="1.9"/> <circle cx="133.5" cy="130.4" r="1.9"/> <circle cx="126.6" cy="145.2" r="1.9"/> <circle cx="175.3" cy="121.4" r="1.9"/> <circle cx="273.2" cy="37.9" r="1.9"/> <circle cx="162.8" cy="123.3" r="1.9"/> <circle cx="235.2" cy="44.3" r="1.9"/> <circle cx="179.0" cy="121.0" r="1.9"/> <circle cx="144.1" cy="117.5" r="1.9"/> <circle cx="143.8" cy="142.7" r="1.9"/> <circle cx="114.5" cy="157.1" r="1.9"/> <circle cx="166.6" cy="119.6" r="1.9"/> <circle cx="166.8" cy="71.8" r="1.9"/> <circle cx="242.9" cy="72.5" r="1.9"/> <circle cx="180.9" cy="99.6" r="1.9"/> <circle cx="160.0" cy="100.7" r="1.9"/> <circle cx="151.6" cy="125.4" r="1.9"/> <circle cx="149.7" cy="123.6" r="1.9"/> <circle cx="221.8" cy="61.9" r="1.9"/> <circle cx="107.8" cy="157.1" r="1.9"/> <circle cx="131.4" cy="123.5" r="1.9"/> <circle cx="175.8" cy="92.0" r="1.9"/> <circle cx="163.3" cy="139.3" r="1.9"/> <circle cx="185.6" cy="94.4" r="1.9"/> <circle cx="188.0" cy="113.9" r="1.9"/> <circle cx="169.5" cy="118.1" r="1.9"/> <circle cx="136.2" cy="126.6" r="1.9"/> <circle cx="181.3" cy="112.9" r="1.9"/></g>
+            <path d="M 42.0 210.0 L 290.0 12.0" stroke="#6a7681" stroke-width="1.2" stroke-dasharray="4 3" fill="none"/>
+            <path d="M 42.0 196.1 L 290.0 25.9"  stroke="#4da3ff" stroke-width="1.8" fill="none"/>
+            <g fill="#6a7681" font-size="8" font-family="ui-monospace,Menlo,monospace">
+              <text x="36" y="15" text-anchor="end">3</text>
+              <text x="36" y="114" text-anchor="end">0</text>
+              <text x="36" y="213" text-anchor="end">-3</text>
+              <text x="42" y="224">-3</text><text x="166" y="224" text-anchor="middle">0</text>
+              <text x="290" y="224" text-anchor="end">3</text>
+              <text x="166" y="240" text-anchor="middle" font-size="9">actual</text>
+            </g>
+          </svg>
+          <div class="legend">
+            <span><i style="background:#6a7681"></i>y = x</span>
+            <span><i style="background:#4da3ff"></i>fit, slope 0.86</span>
+          </div>
+          <div class="small dim" style="margin-top:7px">
+            Slope below 1 is shrinkage toward the mean — the usual, and mostly benign, consequence of
+            a squared-error objective on a noisy target.
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-h">Residual distribution</div>
+        <div class="panel-b">
+          <svg viewBox="0 0 300 150" style="width:100%;height:auto">
+            <line x1="40" y1="124" x2="290" y2="124" stroke="#2a3440"/>
+            <g fill="#4da3ff" fill-opacity=".55"><rect x="40.0" y="123.2" width="7.2" height="0.8" rx="1"/> <rect x="48.8" y="122.4" width="7.2" height="1.6" rx="1"/> <rect x="57.6" y="122.4" width="7.2" height="1.6" rx="1"/> <rect x="66.4" y="120.4" width="7.2" height="3.6" rx="1"/> <rect x="75.1" y="116.4" width="7.2" height="7.6" rx="1"/> <rect x="83.9" y="112.8" width="7.2" height="11.2" rx="1"/> <rect x="92.7" y="107.6" width="7.2" height="16.4" rx="1"/> <rect x="101.5" y="93.6" width="7.2" height="30.4" rx="1"/> <rect x="110.3" y="82.8" width="7.2" height="41.2" rx="1"/> <rect x="119.1" y="55.2" width="7.2" height="68.8" rx="1"/> <rect x="127.9" y="40.4" width="7.2" height="83.6" rx="1"/> <rect x="136.6" y="24.8" width="7.2" height="99.2" rx="1"/> <rect x="145.4" y="15.2" width="7.2" height="108.8" rx="1"/> <rect x="154.2" y="5.6" width="7.2" height="118.4" rx="1"/> <rect x="163.0" y="0.0" width="7.2" height="124.0" rx="1"/> <rect x="171.8" y="11.2" width="7.2" height="112.8" rx="1"/> <rect x="180.6" y="27.6" width="7.2" height="96.4" rx="1"/> <rect x="189.4" y="38.8" width="7.2" height="85.2" rx="1"/> <rect x="198.1" y="59.2" width="7.2" height="64.8" rx="1"/> <rect x="206.9" y="72.8" width="7.2" height="51.2" rx="1"/> <rect x="215.7" y="97.2" width="7.2" height="26.8" rx="1"/> <rect x="224.5" y="104.0" width="7.2" height="20.0" rx="1"/> <rect x="233.3" y="111.2" width="7.2" height="12.8" rx="1"/> <rect x="242.1" y="116.8" width="7.2" height="7.2" rx="1"/> <rect x="250.9" y="120.8" width="7.2" height="3.2" rx="1"/> <rect x="259.6" y="122.4" width="7.2" height="1.6" rx="1"/> <rect x="268.4" y="123.2" width="7.2" height="0.8" rx="1"/> <rect x="277.2" y="124.0" width="7.2" height="0.0" rx="1"/></g>
+            <path d="M 40.0 123.8 L 42.0 123.7 L 44.1 123.7 L 46.1 123.6 L 48.2 123.5 L 50.2 123.4 L 52.3 123.3 L 54.4 123.1 L 56.4 123.0 L 58.5 122.8 L 60.5 122.5 L 62.5 122.2 L 64.6 121.9 L 66.7 121.5 L 68.7 121.1 L 70.8 120.6 L 72.8 120.0 L 74.8 119.3 L 76.9 118.6 L 78.9 117.7 L 81.0 116.7 L 83.0 115.6 L 85.1 114.4 L 87.2 113.0 L 89.2 111.5 L 91.2 109.8 L 93.3 108.0 L 95.3 106.0 L 97.4 103.8 L 99.5 101.4 L 101.5 98.8 L 103.6 96.1 L 105.6 93.1 L 107.7 89.9 L 109.7 86.6 L 111.8 83.0 L 113.8 79.3 L 115.9 75.4 L 117.9 71.4 L 120.0 67.2 L 122.0 63.0 L 124.0 58.6 L 126.1 54.2 L 128.2 49.7 L 130.2 45.2 L 132.2 40.8 L 134.3 36.4 L 136.3 32.1 L 138.4 27.9 L 140.4 23.9 L 142.5 20.1 L 144.6 16.6 L 146.6 13.3 L 148.6 10.3 L 150.7 7.7 L 152.8 5.4 L 154.8 3.5 L 156.8 2.0 L 158.9 0.9 L 160.9 0.2 L 163.0 0.0 L 165.1 0.2 L 167.1 0.9 L 169.2 2.0 L 171.2 3.5 L 173.2 5.4 L 175.3 7.7 L 177.3 10.3 L 179.4 13.3 L 181.4 16.6 L 183.5 20.1 L 185.6 23.9 L 187.6 27.9 L 189.6 32.1 L 191.7 36.4 L 193.8 40.8 L 195.8 45.2 L 197.9 49.7 L 199.9 54.2 L 201.9 58.6 L 204.0 63.0 L 206.1 67.2 L 208.1 71.4 L 210.2 75.4 L 212.2 79.3 L 214.2 83.0 L 216.3 86.6 L 218.3 89.9 L 220.4 93.1 L 222.5 96.1 L 224.5 98.8 L 226.5 101.4 L 228.6 103.8 L 230.7 106.0 L 232.7 108.0 L 234.8 109.8 L 236.8 111.5 L 238.8 113.0 L 240.9 114.4 L 242.9 115.6 L 245.0 116.7 L 247.1 117.7 L 249.1 118.6 L 251.1 119.3 L 253.2 120.0 L 255.2 120.6 L 257.3 121.1 L 259.4 121.5 L 261.4 121.9 L 263.4 122.2 L 265.5 122.5 L 267.6 122.8 L 269.6 123.0 L 271.6 123.1 L 273.7 123.3 L 275.8 123.4 L 277.8 123.5 L 279.9 123.6 L 281.9 123.7 L 284.0 123.7 L 286.0 123.8" fill="none" stroke="#d29922" stroke-width="1.4"/>
+            <g fill="#6a7681" font-size="8" font-family="ui-monospace,Menlo,monospace">
+              <text x="40" y="136">-1.5</text>
+              <text x="163" y="136" text-anchor="middle">0</text>
+              <text x="286" y="136" text-anchor="end">+1.5</text>
+            </g>
+          </svg>
+          <div class="legend"><span><i style="background:#d29922"></i>fitted normal</span></div>
+          <hr class="sep">
+          <div class="kv">
+            <span class="k">Mean residual</span><span class="v">-0.0031</span>
+            <span class="k">Std</span><span class="v">0.4207</span>
+            <span class="k">Skew</span><span class="v">0.041</span>
+            <span class="k">Excess kurtosis</span><span class="v" style="color:var(--warn)">1.83</span>
+            <span class="k">Ljung-Box p</span><span class="v">0.214</span>
+          </div>
+          <div class="small dim" style="margin-top:8px">
+            Fat tails (kurtosis 1.83) — errors are not Gaussian. Size positions on quantiles, not on
+            the standard deviation.
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-h">Error by predicted decile</div>
+        <div class="panel-b">
+          <svg viewBox="0 0 300 150" style="width:100%;height:auto">
+            <g stroke="#202833" stroke-width="1">
+              <line x1="34" y1="16" x2="290" y2="16"/><line x1="34" y1="62" x2="290" y2="62"/>
+              <line x1="34" y1="108" x2="290" y2="108"/>
+            </g>
+            <g fill="#4da3ff" fill-opacity=".75">
+              <rect x="38"  y="74" width="21" height="50" rx="2"/>
+              <rect x="63"  y="86" width="21" height="38" rx="2"/>
+              <rect x="88"  y="93" width="21" height="31" rx="2"/>
+              <rect x="113" y="97" width="21" height="27" rx="2"/>
+              <rect x="138" y="99" width="21" height="25" rx="2"/>
+              <rect x="163" y="98" width="21" height="26" rx="2"/>
+              <rect x="188" y="94" width="21" height="30" rx="2"/>
+              <rect x="213" y="88" width="21" height="36" rx="2"/>
+              <rect x="238" y="78" width="21" height="46" rx="2"/>
+              <rect x="263" y="60" width="21" height="64" rx="2" fill="#d29922"/>
+            </g>
+            <line x1="34" y1="124" x2="290" y2="124" stroke="#2a3440"/>
+            <g fill="#6a7681" font-size="8" font-family="ui-monospace,Menlo,monospace">
+              <text x="28" y="19" text-anchor="end">.02</text>
+              <text x="28" y="111" text-anchor="end">0</text>
+              <text x="38" y="136">D1</text><text x="274" y="136" text-anchor="end">D10</text>
+              <text x="162" y="148" text-anchor="middle" font-size="9">RMSE within decile</text>
+            </g>
+          </svg>
+          <div class="note" style="margin-top:8px">
+            Error is U-shaped: the model is least accurate exactly where it is most confident.
+            The top decile (amber) carries 1.6&times; the median error. If you trade the extremes,
+            size them down.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- per cluster -->
+    <h3 class="sec">Per-cluster breakdown</h3>
+    <div class="panel">
+      <div class="panel-h">Each cluster trains its own member <span class="sub">shared architecture, independent weights</span>
+        <span class="spacer"></span><span class="tag">sorted by test RMSE</span></div>
+      <div class="panel-b tight">
+        <table>
+          <thead>
+            <tr>
+              <th>Cluster</th><th>Status</th><th class="num">Train rows</th><th class="num">Test rows</th>
+              <th class="num">Best epoch</th><th class="num">Val RMSE</th><th class="num">Test RMSE</th>
+              <th class="num">R&sup2;</th><th class="num">Hit rate</th><th>Cumulative P&amp;L (test)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="mono">FX__G10</td><td><span class="pill p-ok">ok</span></td>
+              <td class="num">18,420</td><td class="num">4,606</td><td class="num">41</td>
+              <td class="num">0.00921</td><td class="num" style="color:var(--good)">0.00894</td>
+              <td class="num">0.681</td><td class="num">60.1%</td>
+              <td><svg viewBox="0 0 72 22" style="width:72px"><path d="M 2.0 19.6 L 4.1 18.0 L 6.1 17.3 L 8.2 19.0 L 10.2 18.8 L 12.3 19.8 L 14.4 18.8 L 16.4 20.0 L 18.5 18.3 L 20.5 17.1 L 22.6 13.7 L 24.7 12.3 L 26.7 10.8 L 28.8 10.7 L 30.8 11.2 L 32.9 8.6 L 35.0 7.9 L 37.0 6.7 L 39.1 5.8 L 41.2 4.2 L 43.2 6.2 L 45.3 8.3 L 47.3 7.1 L 49.4 3.4 L 51.5 5.7 L 53.5 6.2 L 55.6 5.5 L 57.6 5.8 L 59.7 5.8 L 61.8 5.9 L 63.8 4.1 L 65.9 3.7 L 67.9 3.0 L 70.0 4.3" fill="none" stroke="#3fb950" stroke-width="1.3"/></svg></td>
+            </tr>
+            <tr>
+              <td class="mono">RATES__Rates-USD</td><td><span class="pill p-ok">ok</span></td>
+              <td class="num">17,988</td><td class="num">4,497</td><td class="num">44</td>
+              <td class="num">0.00997</td><td class="num">0.00981</td>
+              <td class="num">0.642</td><td class="num">59.3%</td>
+              <td><svg viewBox="0 0 72 22" style="width:72px"><path d="M 2.0 18.6 L 4.1 18.2 L 6.1 18.1 L 8.2 20.0 L 10.2 19.3 L 12.3 18.1 L 14.4 18.2 L 16.4 18.0 L 18.5 19.8 L 20.5 17.1 L 22.6 16.0 L 24.7 16.0 L 26.7 14.4 L 28.8 13.3 L 30.8 12.6 L 32.9 12.3 L 35.0 11.6 L 37.0 10.3 L 39.1 8.5 L 41.2 6.5 L 43.2 5.3 L 45.3 3.3 L 47.3 3.0 L 49.4 4.9 L 51.5 6.6 L 53.5 4.6 L 55.6 6.6 L 57.6 7.3 L 59.7 6.7 L 61.8 4.7 L 63.8 7.3 L 65.9 8.6 L 67.9 9.3 L 70.0 9.8" fill="none" stroke="#3fb950" stroke-width="1.3"/></svg></td>
+            </tr>
+            <tr>
+              <td class="mono">RATES__Rates-EUR</td><td><span class="pill p-ok">ok</span></td>
+              <td class="num">17,104</td><td class="num">4,276</td><td class="num">38</td>
+              <td class="num">0.01058</td><td class="num">0.01042</td>
+              <td class="num">0.608</td><td class="num">57.8%</td>
+              <td><svg viewBox="0 0 72 22" style="width:72px"><path d="M 2.0 19.9 L 4.1 20.0 L 6.1 17.5 L 8.2 17.8 L 10.2 19.1 L 12.3 18.6 L 14.4 18.2 L 16.4 17.3 L 18.5 17.4 L 20.5 15.7 L 22.6 14.9 L 24.7 12.0 L 26.7 11.2 L 28.8 10.7 L 30.8 9.0 L 32.9 7.9 L 35.0 8.5 L 37.0 7.4 L 39.1 7.8 L 41.2 6.3 L 43.2 6.7 L 45.3 6.1 L 47.3 6.7 L 49.4 6.1 L 51.5 4.4 L 53.5 3.0 L 55.6 3.4 L 57.6 4.6 L 59.7 3.6 L 61.8 4.1 L 63.8 4.6 L 65.9 3.7 L 67.9 4.7 L 70.0 3.6" fill="none" stroke="#3fb950" stroke-width="1.3"/></svg></td>
+            </tr>
+            <tr>
+              <td class="mono">RATES__Rates-JPY</td><td><span class="pill p-warn">thin</span></td>
+              <td class="num">6,230</td><td class="num">1,558</td><td class="num">52</td>
+              <td class="num">0.01190</td><td class="num">0.01163</td>
+              <td class="num">0.551</td><td class="num">55.9%</td>
+              <td><svg viewBox="0 0 72 22" style="width:72px"><path d="M 2.0 17.6 L 4.1 18.1 L 6.1 18.1 L 8.2 19.0 L 10.2 20.0 L 12.3 17.7 L 14.4 17.4 L 16.4 17.5 L 18.5 15.6 L 20.5 12.6 L 22.6 10.7 L 24.7 9.0 L 26.7 9.9 L 28.8 7.7 L 30.8 6.2 L 32.9 7.6 L 35.0 8.5 L 37.0 7.4 L 39.1 8.8 L 41.2 10.1 L 43.2 11.4 L 45.3 10.3 L 47.3 11.2 L 49.4 11.3 L 51.5 10.3 L 53.5 8.3 L 55.6 6.4 L 57.6 5.0 L 59.7 3.9 L 61.8 6.4 L 63.8 6.3 L 65.9 4.5 L 67.9 3.0 L 70.0 3.5" fill="none" stroke="#d29922" stroke-width="1.3"/></svg></td>
+            </tr>
+            <tr>
+              <td class="mono">RATES__Rates-GBP</td><td><span class="pill p-warn">review</span></td>
+              <td class="num">16,742</td><td class="num">4,186</td><td class="num">19</td>
+              <td class="num">0.01214</td><td class="num" style="color:var(--warn)">0.01371</td>
+              <td class="num">0.468</td><td class="num">53.1%</td>
+              <td><svg viewBox="0 0 72 22" style="width:72px"><path d="M 2.0 14.4 L 4.1 10.5 L 6.1 7.9 L 8.2 3.0 L 10.2 6.0 L 12.3 8.5 L 14.4 12.3 L 16.4 15.7 L 18.5 11.5 L 20.5 10.5 L 22.6 14.0 L 24.7 17.2 L 26.7 13.1 L 28.8 17.4 L 30.8 19.5 L 32.9 17.9 L 35.0 13.4 L 37.0 8.7 L 39.1 10.8 L 41.2 15.7 L 43.2 20.0 L 45.3 18.6 L 47.3 18.1 L 49.4 13.8 L 51.5 10.9 L 53.5 7.0 L 55.6 11.0 L 57.6 15.2 L 59.7 15.3 L 61.8 13.9 L 63.8 16.9 L 65.9 12.3 L 67.9 18.6 L 70.0 19.2" fill="none" stroke="#f85149" stroke-width="1.3"/></svg></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="note warn">
+      <span class="b">GBP is the one to look at.</span> It stopped at epoch 19 while its peers ran to the
+      low forties, and its test RMSE is 13% worse than its own validation RMSE — the only cluster where
+      the two disagree materially. That pattern usually means the test window contains a regime the
+      training window did not. Check the September gilt move before promoting this member.
+    </div>
+
+    <!-- lineage + contract -->
+    <h3 class="sec">Data lineage and contract</h3>
+    <div class="cols c-2">
+      <div class="panel">
+        <div class="panel-h">Where the numbers came from</div>
+        <div class="panel-b">
+          <div class="kv">
+            <span class="k">Source</span><span class="v">parquet_portfolio</span>
+            <span class="k">Root</span><span class="v">data/fx_g10/2026-09-30</span>
+            <span class="k">Content digest</span><span class="v">sha256:4b1d&hellip;77ce</span>
+            <span class="k">Rows ingested</span><span class="v">94,672</span>
+            <span class="k">Rows after filters</span><span class="v">91,120</span>
+            <span class="k">Dropped: NaN target</span><span class="v">2,884</span>
+            <span class="k">Dropped: short window</span><span class="v">668</span>
+            <span class="k">Train window</span><span class="v">2019-01-02 &rarr; 2025-03-31</span>
+            <span class="k">Val window</span><span class="v">2025-04-01 &rarr; 2025-12-31</span>
+            <span class="k">Test window</span><span class="v">2026-01-02 &rarr; 2026-09-30</span>
+            <span class="k">Standardiser</span><span class="v">fitted on train only</span>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-h">Conformance <span class="sub">checked before the model was built</span></div>
+        <div class="panel-b">
+          <div class="check"><span class="ic ok">&#10003;</span><span>Declared contract satisfied — 1 dynamic, 5 static inputs, exact match</span></div>
+          <div class="check"><span class="ic ok">&#10003;</span><span><span class="mono">pnl_history</span> rank 3, float32</span></div>
+          <div class="check"><span class="ic ok">&#10003;</span><span><span class="mono">adjacency_indices</span> shape (*, 2), int64</span></div>
+          <div class="check"><span class="ic ok">&#10003;</span><span><span class="mono">adjacency_shape</span> shape (2,), int64</span></div>
+          <div class="check"><span class="ic ok">&#10003;</span><span>No target leakage: standardiser fitted on train split only</span></div>
+          <div class="check"><span class="ic ok">&#10003;</span><span>Splits are time-ordered and disjoint</span></div>
+          <div class="check"><span class="ic ok">&#10003;</span><span>Working tree clean at launch</span></div>
+          <div class="check"><span class="ic ok">&#10003;</span><span>Seeded: torch, numpy, python all pinned to 20260103</span></div>
+          <div class="check"><span class="ic no">&#10007;</span><span class="muted">Determinism flag off — cuDNN/MPS kernels may reorder reductions</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- reproduction -->
+    <h3 class="sec">Reproduction</h3>
+    <div class="cols c-2">
+      <div class="panel">
+        <div class="panel-h">Resolved spec <span class="sub">defaults merged with per-job overrides</span></div>
+        <div class="panel-b">
+<div class="code"><span class="k">model</span>:
+  <span class="k">name</span>: <span class="s">hybrid_gnn_rnn</span>
+  <span class="k">params</span>:
+    <span class="k">hidden_size</span>: <span class="n">128</span>
+    <span class="k">gnn_layers</span>: <span class="n">2</span>
+    <span class="k">rnn_layers</span>: <span class="n">2</span>
+    <span class="k">dropout</span>: <span class="n">0.15</span>
+<span class="k">training</span>:
+  <span class="k">engine</span>: <span class="s">torch</span>
+  <span class="k">epochs</span>: <span class="n">120</span>
+  <span class="k">batch_size</span>: <span class="n">64</span>
+  <span class="k">learning_rate</span>: <span class="n">3.0e-4</span>
+  <span class="k">early_stopping_patience</span>: <span class="n">15</span></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-h">Re-run exactly this <span class="sub">byte-identical spec</span></div>
+        <div class="panel-b">
+<div class="code"><span class="c"># the manifest pins the spec digest and the data digest,</span>
+<span class="c"># so this reproduces the run or fails loudly.</span>
+rade-qnet train \
+  --job-set runs/2026-10-03T19-41-08Z_7f3ac1/jobset.json \
+  --resume-spec
+
+<span class="c"># or from Python</span>
+<span class="k">from</span> rade_qnet.orchestration <span class="k">import</span> run_job_set
+run_job_set(<span class="s">"runs/.../jobset.json"</span>)</div>
+          <hr class="sep">
+          <div class="dim small" style="margin-bottom:6px">Artifacts written</div>
+          <div class="kv">
+            <span class="k">checkpoints/*.pt</span><span class="v">5 files · 41 MB</span>
+            <span class="k">predictions.parquet</span><span class="v">19,123 rows</span>
+            <span class="k">metrics.json</span><span class="v">8 KB</span>
+            <span class="k">report.html</span><span class="v">this file · 612 KB</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+</body>
+</html>

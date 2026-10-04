@@ -1,0 +1,42 @@
+# Runtime and development dependencies for the rade_qnet framework.
+#
+# Deliberately short.  The whole point of the layered design is that `core`
+# depends on almost nothing, so a user who only wants to read a spec or open a
+# bundle does not have to install a training stack.  Engine dependencies are
+# listed separately, so a CPU-only inference host never installs CUDA:
+#
+#   requirements_rade_qnet_torch.txt   the Torch engine  [Phase 2]
+#
+# XGBoost and scikit-learn arrive the same way in Phase 6.
+#
+# Install with:
+#   .venv/bin/python -m pip install -r requirements_rade_qnet.txt
+#
+# Everything outside `engines/torch` works with this file alone.  Running the
+# full test suite does need the Torch engine, since the suite covers it.
+
+# --- Runtime -----------------------------------------------------------------
+
+# Specification and contract validation.  The two-level error policy in
+# `core.spec.base` depends on v2 validator semantics, so v1 will not work.
+pydantic>=2.6,<3
+
+# Reading YAML run specifications.  `yaml` is on the `core` third-party
+# allowlist for exactly this reason and no other.
+PyYAML>=6.0
+
+# Array payloads, metrics and seeding.
+numpy>=1.26
+
+# Figure factories in `analysis.visuals`.  Required by `analysis`, not by
+# `core`: a host that only reads bundles does not need a plotting library.
+matplotlib>=3.8
+
+# --- Development -------------------------------------------------------------
+
+# Linting and formatting.  Configured by `src/rade_qnet/ruff.toml`, which
+# `tests/rade_qnet/ruff.toml` extends, so both trees are held to one standard.
+ruff>=0.6
+
+# The test suite.
+pytest>=8.0
