@@ -53,6 +53,7 @@ from .orchestration.pipelines.infer import InferPipeline
 from .orchestration.pipelines.reinforce import ReinforcePipeline
 from .orchestration.pipelines.train import TrainPipeline
 from .orchestration.pipelines.tune import TunePipeline
+from .orchestration.serving import Predictor
 from .orchestration.stages.resolve import pipeline_for
 from .orchestration.stages.scoring import EVALUATED_SPLITS
 from .storage.bundle import BundleError, load_manifest
@@ -72,7 +73,16 @@ if TYPE_CHECKING:
     from .orchestration.jobs.groups import DataGroup
     from .orchestration.jobs.manifest import JobSetManifest
 
-__all__ = ["evaluate", "infer", "registry", "train", "train_groups", "train_jobs", "tune"]
+__all__ = [
+    "evaluate",
+    "infer",
+    "load",
+    "registry",
+    "train",
+    "train_groups",
+    "train_jobs",
+    "tune",
+]
 
 _LOGGER = get_logger(__name__)
 
@@ -451,6 +461,65 @@ def registry(root: Path | str | None = None) -> RunRegistry:
         api.infer(runs.get(best.model_name, alias="production").directory, source=...)
     """
     return RunRegistry(_directory(root) or _DEFAULT_ROOT)
+
+
+def load(
+    bundle: Path | str,
+    *,
+    output_root: Path | str | None = None,
+    verify: bool = True,
+) -> Predictor:
+    """
+    Open a saved model and hold it, for a caller that will use it repeatedly.
+
+    The difference from :func:`infer` is what happens on the *second* call.
+    ``infer`` reads the bundle, verifies it against its manifest, rebuilds
+    the architecture and loads the weights, every time. For scheduled batch
+    scoring that is the guarantee rather than the waste -- the artefact on
+    disk is provably the artefact that produced the numbers. For a service
+    answering requests it is unusable, so this holds that work open.
+
+    What stays cached is everything that depends on the bundle alone. The
+    prepared model is cached too, but only for a model with no static
+    inputs, because a graph adjacency or an entity-attribute table can
+    change between requests and a handle prepared against a stale one would
+    answer confidently from the wrong neighbourhood. Most models have none.
+
+    A handle is a snapshot and is not thread-safe: one per worker. Promoting
+    a new run to an alias does not move an open handle onto it, because
+    swapping the model under a running service with no event in the log to
+    explain the change in numbers is worse than requiring a restart.
+
+    Parameters
+    ----------
+    bundle
+        The bundle directory.
+    output_root
+        Where predictions write. Defaults to the bundle's parent.
+    verify
+        Whether to re-hash the bundle's files against its manifest. Done
+        once here rather than per prediction, which is the point.
+
+    Returns
+    -------
+    Predictor
+        Call :meth:`~rade_qnet.orchestration.serving.Predictor.predict` on
+        it as often as you like. Every prediction carries the same
+        provenance a one-shot :func:`infer` produces.
+
+    Examples
+    --------
+    ::
+
+        runs = api.registry("artifacts/eod")
+        best = runs.get("hybrid_gnn_rnn", alias="production")
+        predictor = api.load(best.directory)
+        for batch in incoming:
+            predictions = predictor.predict(source=batch)
+    """
+    directory = Path(bundle)
+    context = _bundle_context(directory, action="infer", output_root=output_root)
+    return Predictor(directory, context=context, verify=verify)
 
 
 def _directory(value: Path | str | None) -> Path | None:

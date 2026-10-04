@@ -125,6 +125,8 @@ class InferPipeline(Pipeline[Predictions]):
         split: str = DEFAULT_SPLIT,
         entities: Sequence[str] | None = None,
         verify: bool = True,
+        preloaded: LoadedBundle | None = None,
+        prepared: ModelHandle | None = None,
     ) -> None:
         """
         Store what to predict with and over what.
@@ -143,6 +145,17 @@ class InferPipeline(Pipeline[Predictions]):
             Identifiers to predict for, or ``None`` for all of them.
         verify
             Whether to verify the bundle against its manifest.
+        preloaded
+            A bundle already opened by a caller that intends to predict
+            more than once, skipping the disk read, the manifest
+            verification and the definition lookup. ``None`` on the
+            ordinary one-shot path, which reads the bundle itself.
+        prepared
+            A model already rebuilt and placed on its device, for the same
+            reason. Supplying this is sound only when the static inputs
+            would be identical, which is the caller's responsibility --
+            see :class:`~rade_qnet.orchestration.serving.Predictor`, the
+            only thing in the framework that passes it.
         """
         super().__init__(context)
         self.directory = directory
@@ -150,6 +163,8 @@ class InferPipeline(Pipeline[Predictions]):
         self.split = split
         self.entities = tuple(entities) if entities is not None else None
         self.verify = verify
+        self.preloaded = preloaded
+        self.prepared = prepared
         self.loaded: LoadedBundle | None = None
         self.handle: ModelHandle | None = None
 
@@ -183,7 +198,7 @@ class InferPipeline(Pipeline[Predictions]):
         LoadedBundle
             The spec, definition, fitted state, lineage and signature.
         """
-        loaded = load_bundle(self.directory, verify=self.verify)
+        loaded = self.preloaded or load_bundle(self.directory, verify=self.verify)
         self.loaded = loaded
         return loaded
 
@@ -235,6 +250,9 @@ class InferPipeline(Pipeline[Predictions]):
         ModelHandle
             The restored model.
         """
+        if self.prepared is not None:
+            self.handle = self.prepared
+            return self.prepared
         engine = self._engine(loaded)
         # Re-checked on the reload path, not just at training time. The
         # signature here came off disk, and the model code around it has
