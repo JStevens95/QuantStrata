@@ -5,9 +5,9 @@
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 35 | 1297 | `6bc47bdcc1b578ae` |
-| 2 | `drift.py` | 401 | 14435 | `a6c640555cfab43e` |
-| 3 | `quality.py` | 291 | 9823 | `0378d66d5bfb2ed7` |
-| 4 | `regression.py` | 342 | 11129 | `2e7f22aa6facf8dd` |
+| 2 | `drift.py` | 401 | 14437 | `aba29d7c39dcf912` |
+| 3 | `quality.py` | 291 | 9825 | `24c242fef6bec8fe` |
+| 4 | `regression.py` | 342 | 11131 | `8d183bb0c63180c1` |
 
 ---
 
@@ -57,7 +57,7 @@ __all__: tuple[str, ...] = ()
 
 ## 2. `src/rade_qnet/analysis/metrics/drift.py`
 
-14435 bytes · SHA-256 `a6c640555cfab43e`
+14437 bytes · SHA-256 `aba29d7c39dcf912`
 
 ```python
 """
@@ -103,7 +103,7 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
-from ...core.runtime.errors import ContractError
+from ...core.lifecycle.errors import ContractError
 
 __all__ = [
     "DRIFT_THRESHOLDS",
@@ -467,7 +467,7 @@ def _finite_pair(
 
 ## 3. `src/rade_qnet/analysis/metrics/quality.py`
 
-9823 bytes · SHA-256 `0378d66d5bfb2ed7`
+9825 bytes · SHA-256 `24c242fef6bec8fe`
 
 ```python
 """
@@ -504,7 +504,7 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
-from ...core.runtime.errors import ContractError
+from ...core.lifecycle.errors import ContractError
 
 __all__ = [
     "completeness",
@@ -767,7 +767,7 @@ def quality_warnings(metrics: dict[str, float]) -> tuple[str, ...]:
 
 ## 4. `src/rade_qnet/analysis/metrics/regression.py`
 
-11129 bytes · SHA-256 `2e7f22aa6facf8dd`
+11131 bytes · SHA-256 `8d183bb0c63180c1`
 
 ```python
 """
@@ -799,7 +799,7 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
-from ...core.runtime.errors import ContractError
+from ...core.lifecycle.errors import ContractError
 
 __all__ = [
     "baseline_metrics",

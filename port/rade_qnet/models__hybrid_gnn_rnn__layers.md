@@ -5,11 +5,11 @@
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 44 | 1544 | `f2731bbc54fbfd3c` |
-| 2 | `attention.py` | 319 | 12170 | `6fb45ef8e7810e21` |
-| 3 | `fusion.py` | 296 | 12083 | `2f03b1c804ddac1c` |
-| 4 | `gnn.py` | 452 | 16532 | `c7254b8adf42554e` |
-| 5 | `projection.py` | 292 | 11352 | `6a55cc47c7c76109` |
-| 6 | `rnn.py` | 143 | 5548 | `858a3e85fbd754ca` |
+| 2 | `attention.py` | 319 | 12172 | `8965de3a68e489f0` |
+| 3 | `fusion.py` | 296 | 12085 | `f48de1d670a94a44` |
+| 4 | `gnn.py` | 452 | 16534 | `7b1e2fec9b208fe6` |
+| 5 | `projection.py` | 292 | 11354 | `40485abc1ee3cd42` |
+| 6 | `rnn.py` | 143 | 5550 | `f69273be0c78e06d` |
 
 ---
 
@@ -68,7 +68,7 @@ __all__ = [
 
 ## 2. `src/rade_qnet/models/hybrid_gnn_rnn/layers/attention.py`
 
-12170 bytes · SHA-256 `6fb45ef8e7810e21`
+12172 bytes · SHA-256 `8965de3a68e489f0`
 
 ```python
 """
@@ -116,7 +116,7 @@ from __future__ import annotations
 import torch
 from torch import Tensor, nn
 
-from ....core.runtime.errors import ContractError
+from ....core.lifecycle.errors import ContractError
 from ..spec import HybridModelSpec
 from .gnn import LAYER_NORM_EPS, activation_function
 
@@ -396,7 +396,7 @@ class TargetAttentionLayer(nn.Module):
 
 ## 3. `src/rade_qnet/models/hybrid_gnn_rnn/layers/fusion.py`
 
-12083 bytes · SHA-256 `2f03b1c804ddac1c`
+12085 bytes · SHA-256 `f48de1d670a94a44`
 
 ```python
 """
@@ -462,7 +462,7 @@ import math
 import torch
 from torch import Tensor, nn
 
-from ....core.runtime.errors import ContractError
+from ....core.lifecycle.errors import ContractError
 from ..spec import HybridModelSpec
 from .gnn import LAYER_NORM_EPS
 
@@ -701,7 +701,7 @@ class FusionLayer(nn.Module):
 
 ## 4. `src/rade_qnet/models/hybrid_gnn_rnn/layers/gnn.py`
 
-16532 bytes · SHA-256 `c7254b8adf42554e`
+16534 bytes · SHA-256 `7b1e2fec9b208fe6`
 
 ```python
 """
@@ -767,7 +767,7 @@ from collections.abc import Callable
 import torch
 from torch import Tensor, nn
 
-from ....core.runtime.errors import ContractError
+from ....core.lifecycle.errors import ContractError
 from ..spec import ActivationName, HybridModelSpec
 
 __all__ = ["GnnBlock", "GraphSage", "MixedGraphSage", "activation_function"]
@@ -1162,7 +1162,7 @@ class GnnBlock(nn.Module):
 
 ## 5. `src/rade_qnet/models/hybrid_gnn_rnn/layers/projection.py`
 
-11352 bytes · SHA-256 `6a55cc47c7c76109`
+11354 bytes · SHA-256 `40485abc1ee3cd42`
 
 ```python
 """
@@ -1221,7 +1221,7 @@ import math
 import torch
 from torch import Tensor, nn
 
-from ....core.runtime.errors import ContractError
+from ....core.lifecycle.errors import ContractError
 from ..spec import HybridModelSpec
 from .gnn import activation_function
 
@@ -1463,7 +1463,7 @@ class ProjectionLayer(nn.Module):
 
 ## 6. `src/rade_qnet/models/hybrid_gnn_rnn/layers/rnn.py`
 
-5548 bytes · SHA-256 `858a3e85fbd754ca`
+5550 bytes · SHA-256 `f69273be0c78e06d`
 
 ```python
 """
@@ -1506,7 +1506,7 @@ from __future__ import annotations
 import torch
 from torch import Tensor, nn
 
-from ....core.runtime.errors import ContractError
+from ....core.lifecycle.errors import ContractError
 from ..spec import HybridModelSpec
 
 __all__ = ["RnnBlock"]

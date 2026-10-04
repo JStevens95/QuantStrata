@@ -5,9 +5,9 @@
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 54 | 2553 | `2ee06142a0e2a995` |
-| 2 | `eval.py` | 260 | 9720 | `67a230246fd9e7fd` |
+| 2 | `eval.py` | 260 | 9716 | `ec3525c753752a11` |
 | 3 | `train.py` | 79 | 3264 | `5e713339832a8ff7` |
-| 4 | `tune.py` | 218 | 9383 | `ed3556248dba4e94` |
+| 4 | `tune.py` | 218 | 9384 | `c6982aae644e43c9` |
 
 ---
 
@@ -76,7 +76,7 @@ __all__ = ["HybridEvalPipeline", "HybridTrainPipeline", "HybridTunePipeline"]
 
 ## 2. `src/rade_qnet/models/hybrid_gnn_rnn/pipelines/eval.py`
 
-9720 bytes · SHA-256 `67a230246fd9e7fd`
+9716 bytes · SHA-256 `ec3525c753752a11`
 
 ```python
 """
@@ -131,13 +131,13 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ....orchestration.pipelines.evaluate import EvaluatePipeline
-from ....orchestration.pipelines.scoring import collect_targets, scoring_source
+from ....orchestration.stages.scoring import collect_targets, scoring_source
 
 if TYPE_CHECKING:
     from ....core.contract.data import DataBundle
     from ....core.contract.result import EvalResult, EvaluationResult
-    from ....core.runtime.handles import ModelHandle
-    from ....orchestration.pipelines.reload import LoadedBundle
+    from ....core.lifecycle.handles import ModelHandle
+    from ....orchestration.stages.reload import LoadedBundle
 
 __all__ = ["HybridEvalPipeline", "breakdown_notes", "per_target_errors"]
 
@@ -433,7 +433,7 @@ class HybridTrainPipeline(TrainPipeline):
 
 ## 4. `src/rade_qnet/models/hybrid_gnn_rnn/pipelines/tune.py`
 
-9383 bytes · SHA-256 `ed3556248dba4e94`
+9384 bytes · SHA-256 `c6982aae644e43c9`
 
 ```python
 """
@@ -450,7 +450,7 @@ Two of this model's layers reshape a width into heads::
     attention: width -> (attention_heads, width // attention_heads)
 
 Neither reshape is meaningful unless the width divides exactly, so both
-blocks raise :class:`~rade_qnet.core.runtime.errors.ContractError` at
+blocks raise :class:`~rade_qnet.core.lifecycle.errors.ContractError` at
 construction when it does not. That is the right behaviour -- the
 alternative is dropping ``width % heads`` features per head silently -- but
 it makes a joint search over ``units`` and ``*_heads`` wasteful in a way the
@@ -498,9 +498,9 @@ from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
 
-from ....core.runtime.errors import ContractError, SpecError
-from ....orchestration.pipelines.search import expand
+from ....core.lifecycle.errors import ContractError, SpecError
 from ....orchestration.pipelines.tune import TunePipeline
+from ....orchestration.stages.search import expand
 from ..spec import HybridModelSpec
 
 if TYPE_CHECKING:

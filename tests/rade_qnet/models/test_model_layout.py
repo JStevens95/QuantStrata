@@ -52,7 +52,26 @@ if TYPE_CHECKING:
 #: The five files every model package has, at every tier. Absent any one of
 #: them the package is incomplete even if it imports and runs, because the
 #: next reader cannot rely on the convention to find anything.
-REQUIRED_FILES = frozenset({"__init__.py", "spec.py", "model.py", "register.py", "data.py"})
+#: Present in every model package, whatever it learns. ``spec.py`` says what
+#: can be configured and ``register.py`` says how it plugs in -- two questions
+#: that have the same answer for a ridge regression and for a hedging agent.
+UNIVERSAL_FILES = frozenset({"__init__.py", "spec.py", "register.py"})
+
+#: The pair that names the paradigm. A supervised model learns from inputs
+#: with known targets, so it has ``model.py`` and ``data.py``. An agent learns
+#: by acting, so it has ``policy.py`` and ``environment.py``.
+#:
+#: Two shapes rather than one is a deliberate cost. Keeping the filenames
+#: identical across every package would have been tidier, and would have meant
+#: a file called ``data.py`` holding an environment -- a name that lies, in
+#: the one directory a new joiner is told to copy. A reader can tell what a
+#: package learns from ``ls``, which is worth more than the symmetry.
+SUPERVISED_FILES = frozenset({"model.py", "data.py"})
+POLICY_FILES = frozenset({"policy.py", "environment.py"})
+
+#: Retained for the error messages below, which name what a supervised
+#: package must contain -- still the overwhelmingly common case.
+REQUIRED_FILES = UNIVERSAL_FILES | SUPERVISED_FILES
 
 #: Files a model package may additionally contain, and nothing else. Each
 #: name means a specific thing; see ``rade_qnet.models.__init__``. The point of
@@ -235,16 +254,33 @@ class TestTheRequiredFilesExist:
         """
         Every model has all five, including the smallest.
 
-        The ceremony is the price of there being one procedure rather than
-        a judgement call -- see ``rade_qnet.models.__init__`` for the full
-        argument.
+        Three of them are the same whatever the package learns; the other two
+        name the paradigm. The ceremony is the price of there being one
+        procedure rather than a judgement call -- see
+        ``rade_qnet.models.__init__`` for the full argument.
+
+        Parameters
+        ----------
+        package
+            One model package directory.
         """
         present = {path.name for path in package.glob("*.py")}
-        missing = sorted(REQUIRED_FILES - present)
+        missing = sorted(UNIVERSAL_FILES - present)
         assert not missing, (
-            f"{package.name} is missing {missing}. Copy the template from "
-            f"src/rade_qnet/models/ridge/ -- every model has these five files "
-            f"at every tier"
+            f"{package.name} is missing {missing}. Every model package has "
+            f"these, whatever it learns"
+        )
+        paradigm = [sorted(kind) for kind in (SUPERVISED_FILES, POLICY_FILES) if kind <= present]
+        assert paradigm, (
+            f"{package.name} has neither {sorted(SUPERVISED_FILES)} nor "
+            f"{sorted(POLICY_FILES)}. A model package declares what it learns by "
+            f"which pair it carries: a supervised model has model.py and data.py, "
+            f"an agent has policy.py and environment.py. Copy the template from "
+            f"src/rade_qnet/models/ridge/"
+        )
+        assert len(paradigm) == 1, (
+            f"{package.name} carries both paradigms' files. A package learns one "
+            f"way; two models are two packages"
         )
 
     @pytest.mark.parametrize("package", model_packages(), ids=lambda p: p.name)
@@ -296,7 +332,7 @@ class TestTheRequiredFilesExist:
         commit, so the decision is made once for the library rather than
         privately inside one model.
         """
-        allowed = REQUIRED_FILES | OPTIONAL_FILES
+        allowed = UNIVERSAL_FILES | SUPERVISED_FILES | POLICY_FILES | OPTIONAL_FILES
         strays = sorted(path.name for path in package.glob("*.py") if path.name not in allowed)
         assert not strays, (
             f"{package.name} contains {strays}, which the model layout does "

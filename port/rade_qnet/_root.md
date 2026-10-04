@@ -5,7 +5,7 @@
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 85 | 3952 | `f0aa795153b0a74e` |
-| 2 | `api.py` | 733 | 25433 | `65fad72bf2dd336c` |
+| 2 | `api.py` | 733 | 25450 | `561f825b25dd9412` |
 | 3 | `ruff.toml` | 111 | 5119 | `f84c1e95253049a7` |
 
 ---
@@ -106,7 +106,7 @@ __all__: tuple[str, ...] = ("__version__",)
 
 ## 2. `src/rade_qnet/api.py`
 
-25433 bytes · SHA-256 `65fad72bf2dd336c`
+25450 bytes · SHA-256 `561f825b25dd9412`
 
 ```python
 """
@@ -140,12 +140,12 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .core.capability.definition import PolicyDefinition, PredictorDefinition
-from .core.runtime.components import get_model
-from .core.runtime.context import RunContext
-from .core.runtime.errors import ComponentError, SpecError
-from .core.runtime.hashing import abbreviate_digest, digest_spec
-from .core.runtime.logging import get_logger
+from .core.authoring.definition import PolicyDefinition, PredictorDefinition
+from .core.lifecycle.components import get_model
+from .core.lifecycle.context import RunContext
+from .core.lifecycle.errors import ComponentError, SpecError
+from .core.provenance.hashing import abbreviate_digest, digest_spec
+from .core.provenance.logging import get_logger
 from .core.spec.data import SourceSpec
 from .core.spec.jobs import JobSetSpec, load_job_set_spec, parse_job_set_spec
 from .core.spec.run import (
@@ -162,13 +162,13 @@ from .orchestration.jobs.set import JobSetRunner
 from .orchestration.pipelines.evaluate import EvaluatePipeline
 from .orchestration.pipelines.infer import InferPipeline
 from .orchestration.pipelines.reinforce import ReinforcePipeline
-from .orchestration.pipelines.resolve import pipeline_for
-from .orchestration.pipelines.scoring import EVALUATED_SPLITS
 from .orchestration.pipelines.train import TrainPipeline
 from .orchestration.pipelines.tune import TunePipeline
+from .orchestration.stages.resolve import pipeline_for
+from .orchestration.stages.scoring import EVALUATED_SPLITS
 from .storage.bundle import BundleError, load_manifest
-from .storage.catalog import JsonlCatalog
-from .storage.registry import RunRegistry
+from .storage.runs.catalog import JsonlCatalog
+from .storage.runs.registry import RunRegistry
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -350,7 +350,7 @@ def infer(
     entities
         Identifiers to predict for, or ``None`` for whatever the source
         holds. Naming entities the model never saw requires it to declare
-        :class:`~rade_qnet.core.capability.protocols.Inductive`; otherwise
+        :class:`~rade_qnet.core.authoring.capabilities.Inductive`; otherwise
         the request is refused rather than answered with a default
         embedding.
     output_root

@@ -5,7 +5,7 @@
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 72 | 3471 | `d6ff5a7febff9ffa` |
-| 2 | `engine.py` | 737 | 26155 | `453ebc9e6ebf2cf4` |
+| 2 | `engine.py` | 737 | 26144 | `4e410e412fdc4a82` |
 
 ---
 
@@ -92,7 +92,7 @@ __all__ = ["ENGINE_NAME", "BoosterModel", "XGBoostEngine"]
 
 ## 2. `src/rade_qnet/engines/xgboost/engine.py`
 
-26155 bytes · SHA-256 `453ebc9e6ebf2cf4`
+26144 bytes · SHA-256 `4e410e412fdc4a82`
 
 ```python
 """
@@ -165,12 +165,12 @@ import numpy as np
 import xgboost as xgb
 
 from ...core.contract.result import EpochRecord, FitOutcome
-from ...core.runtime.components import engine as register_engine
-from ...core.runtime.errors import EngineError
-from ...core.runtime.logging import get_logger
+from ...core.lifecycle.components import engine as register_engine
+from ...core.lifecycle.errors import EngineError
+from ...core.provenance.logging import get_logger
 from ...core.spec.training import XGBoostTrainingSpec
 from ..base import EngineCapabilities, ModelHandle
-from ..sklearn.adapters import drain, reject_static
+from ..loaders import drain, reject_static
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -658,7 +658,7 @@ def _matrix(split: object) -> xgb.DMatrix:
     Parameters
     ----------
     split
-        A :class:`~rade_qnet.engines.sklearn.adapters.DrainedSplit`.
+        A :class:`~rade_qnet.engines.loaders.DrainedSplit`.
 
     Returns
     -------

@@ -5,12 +5,12 @@
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 58 | 2574 | `03e5e8f82e62f796` |
-| 2 | `base.py` | 65 | 2674 | `81ce5965d3e537f2` |
-| 3 | `bundle.py` | 311 | 10031 | `f89d48966cd37a1d` |
-| 4 | `data.py` | 376 | 13517 | `7683689102e6d630` |
-| 5 | `requirement.py` | 442 | 16835 | `b0fd78b19bc479cd` |
-| 6 | `result.py` | 641 | 21578 | `42cbfb1d3debd019` |
-| 7 | `signature.py` | 386 | 12855 | `fcb7ccefc6bb9043` |
+| 2 | `base.py` | 65 | 2676 | `a1b63e99a6b56f4e` |
+| 3 | `bundle.py` | 311 | 10030 | `c81d47d6593c6bfb` |
+| 4 | `data.py` | 376 | 13521 | `73648a6e604ea98b` |
+| 5 | `requirement.py` | 442 | 16837 | `4dbd820c64ef1ce7` |
+| 6 | `result.py` | 641 | 21580 | `2d2f2ea95b63cfb9` |
+| 7 | `signature.py` | 386 | 12857 | `64516ecd4c330424` |
 | 8 | `source.py` | 176 | 6275 | `0f58535c7104056f` |
 | 9 | `state.py` | 204 | 6774 | `c9795030254a3196` |
 
@@ -85,7 +85,7 @@ __all__: tuple[str, ...] = ()
 
 ## 2. `src/rade_qnet/core/contract/base.py`
 
-2674 bytes · SHA-256 `81ce5965d3e537f2`
+2676 bytes · SHA-256 `a1b63e99a6b56f4e`
 
 ```python
 """
@@ -113,7 +113,7 @@ The two shapes report failures differently, and the ``Raises`` sections in
 this package reflect that rather than papering over it.
 
 A **dataclass** validates in ``__post_init__`` and its exception propagates
-unchanged, so it raises :class:`~rade_qnet.core.runtime.errors.ContractError`
+unchanged, so it raises :class:`~rade_qnet.core.lifecycle.errors.ContractError`
 (or ``SpecError`` for :class:`~rade_qnet.core.contract.data.SplitIndices`, where
 the fault is a split specification rather than a payload) exactly as
 documented.
@@ -159,7 +159,7 @@ class ContractModel(BaseModel):
 
 ## 3. `src/rade_qnet/core/contract/bundle.py`
 
-10031 bytes · SHA-256 `f89d48966cd37a1d`
+10030 bytes · SHA-256 `c81d47d6593c6bfb`
 
 ```python
 """
@@ -187,7 +187,7 @@ from pathlib import Path
 
 from pydantic import Field, model_validator
 
-from ..runtime.errors import BundleError, SpecError
+from ..lifecycle.errors import BundleError, SpecError
 from ..spec.run import ReinforcementRunSpec, SupervisedRunSpec
 from .base import ContractModel
 from .data import DataLineage
@@ -398,7 +398,7 @@ class ModelBundle:
         thing the field exists for.
 
         Readers that only make sense for one paradigm check which they have
-        and refuse the other by name; see ``orchestration.pipelines.reload``.
+        and refuse the other by name; see ``orchestration.stages.reload``.
     spec
         The run specification that produced this bundle.
     lineage
@@ -479,7 +479,7 @@ class SavedBundle:
 
 ## 4. `src/rade_qnet/core/contract/data.py`
 
-13517 bytes · SHA-256 `7683689102e6d630`
+13521 bytes · SHA-256 `73648a6e604ea98b`
 
 ```python
 """
@@ -521,7 +521,7 @@ import numpy as np
 from numpy.typing import NDArray
 from pydantic import Field
 
-from ..runtime.errors import ContractError, SpecError
+from ..lifecycle.errors import ContractError, SpecError
 from .base import ContractModel
 from .signature import InputSignature
 from .state import FittedState
@@ -778,7 +778,7 @@ class DataBundle[PayloadT]:
         inference needs it and nothing else can supply it. Asking a model to
         predict for an instrument absent from training is a request that
         must be refused unless the model declares
-        :class:`~rade_qnet.core.capability.protocols.Inductive`, and deciding
+        :class:`~rade_qnet.core.authoring.capabilities.Inductive`, and deciding
         whether an instrument was absent means knowing which were present.
         Without this field the only alternatives are to dig the list out of
         whichever fitted sub-state happens to hold it, or to not check --
@@ -864,7 +864,7 @@ class DataBundle[PayloadT]:
 
 ## 5. `src/rade_qnet/core/contract/requirement.py`
 
-16835 bytes · SHA-256 `b0fd78b19bc479cd`
+16837 bytes · SHA-256 `4dbd820c64ef1ce7`
 
 ```python
 """
@@ -939,7 +939,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import field_validator, model_validator
 
-from ..runtime.errors import ContractError, SpecError
+from ..lifecycle.errors import ContractError, SpecError
 from .base import ContractModel
 from .signature import TensorSpec
 
@@ -1315,7 +1315,7 @@ class InputRequirement(ContractModel):
 
 ## 6. `src/rade_qnet/core/contract/result.py`
 
-21578 bytes · SHA-256 `42cbfb1d3debd019`
+21580 bytes · SHA-256 `2d2f2ea95b63cfb9`
 
 ```python
 """
@@ -1343,7 +1343,7 @@ import numpy as np
 from numpy.typing import NDArray
 from pydantic import Field, model_validator
 
-from ..runtime.errors import ContractError, SpecError
+from ..lifecycle.errors import ContractError, SpecError
 from .base import ContractModel
 
 __all__ = [
@@ -1965,7 +1965,7 @@ class Predictions:
 
 ## 7. `src/rade_qnet/core/contract/signature.py`
 
-12855 bytes · SHA-256 `fcb7ccefc6bb9043`
+12857 bytes · SHA-256 `64516ecd4c330424`
 
 ```python
 """
@@ -2002,7 +2002,7 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from ..runtime.errors import ContractError, SpecError
+from ..lifecycle.errors import ContractError, SpecError
 from .base import ContractModel
 
 __all__ = ["InputSignature", "PolicySignature", "SpaceSpec", "TensorSpec"]

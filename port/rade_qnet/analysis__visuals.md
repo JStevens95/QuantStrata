@@ -4,21 +4,21 @@
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
-| 1 | `__init__.py` | 56 | 2442 | `3f467edddb1956a3` |
-| 2 | `data.py` | 412 | 13659 | `e760737083820f0f` |
-| 3 | `evaluation.py` | 352 | 12471 | `e2b5e6e1d13d1d12` |
-| 4 | `export.py` | 95 | 3022 | `1fadb124361a60af` |
-| 5 | `jobset.py` | 351 | 12065 | `56267c058caa227e` |
-| 6 | `primitives.py` | 342 | 11266 | `ee99c29d23ab2900` |
+| 1 | `__init__.py` | 56 | 2436 | `c99bfeb943fc679d` |
+| 2 | `data.py` | 412 | 13658 | `f707b3b1534e74a7` |
+| 3 | `evaluation.py` | 352 | 12470 | `e527baf067f10b00` |
+| 4 | `export.py` | 95 | 3024 | `99b281603eeebcac` |
+| 5 | `figures.py` | 342 | 11268 | `63e4127807280361` |
+| 6 | `jobset.py` | 351 | 12064 | `436a49c80ae60a51` |
 | 7 | `style.py` | 105 | 3635 | `f6b3228dede4416b` |
-| 8 | `training.py` | 379 | 12144 | `6449731d6368dfe8` |
-| 9 | `tuning.py` | 480 | 16759 | `b0d6b5a02cec0ab7` |
+| 8 | `training.py` | 379 | 12152 | `55ea82a6c0e8096a` |
+| 9 | `tuning.py` | 480 | 16758 | `98bdfe633894c955` |
 
 ---
 
 ## 1. `src/rade_qnet/analysis/visuals/__init__.py`
 
-2442 bytes · SHA-256 `3f467edddb1956a3`
+2436 bytes · SHA-256 `c99bfeb943fc679d`
 
 ```python
 """
@@ -38,7 +38,7 @@ Modules
     applies them without mutating global state for the rest of the process.
     Also the reason this package never imports ``pyplot``.
     [Phase 1, delivered]
-``primitives.py``
+``figures.py``
     Shared building blocks -- training curve, prediction scatter with a parity
     line, residual histogram, metric comparison against a baseline -- that the
     higher-level modules compose.  [Phase 1, delivered]
@@ -58,7 +58,7 @@ Modules
 ``training.py``
     Learning-rate trace, gradient-norm trace, per-epoch timing, and the
     stacked three-panel diagnostic that relates them.  The loss curve itself
-    lives in ``primitives.py``, since every engine produces one.
+    lives in ``figures.py``, since every engine produces one.
     [Phase 2, delivered]
 
 Planned modules
@@ -83,7 +83,7 @@ __all__: tuple[str, ...] = ()
 
 ## 2. `src/rade_qnet/analysis/visuals/data.py`
 
-13659 bytes · SHA-256 `e760737083820f0f`
+13658 bytes · SHA-256 `f707b3b1534e74a7`
 
 ```python
 """
@@ -109,8 +109,8 @@ import numpy as np
 from matplotlib.figure import Figure
 from numpy.typing import NDArray
 
-from ...core.runtime.errors import ContractError
-from .primitives import DEFAULT_FIGSIZE
+from ...core.lifecycle.errors import ContractError
+from .figures import DEFAULT_FIGSIZE
 from .style import figure_style
 
 __all__ = [
@@ -504,7 +504,7 @@ def _column_labels(names: Sequence[str] | None, *, n_columns: int) -> list[str]:
 
 ## 3. `src/rade_qnet/analysis/visuals/evaluation.py`
 
-12471 bytes · SHA-256 `e2b5e6e1d13d1d12`
+12470 bytes · SHA-256 `e527baf067f10b00`
 
 ```python
 """
@@ -547,8 +547,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 from matplotlib.figure import Figure
 
-from ...core.runtime.errors import ContractError
-from .primitives import DEFAULT_FIGSIZE
+from ...core.lifecycle.errors import ContractError
+from .figures import DEFAULT_FIGSIZE
 from .style import PALETTE, figure_style
 
 if TYPE_CHECKING:
@@ -865,7 +865,7 @@ def _aligned(
 
 ## 4. `src/rade_qnet/analysis/visuals/export.py`
 
-3022 bytes · SHA-256 `1fadb124361a60af`
+3024 bytes · SHA-256 `99b281603eeebcac`
 
 ```python
 """
@@ -875,7 +875,7 @@ The only module in ``visuals`` that touches the filesystem.
 
 Keeping writing here, and out of the figure factories, is what lets the same
 factory serve a report, a notebook and a test. See
-:mod:`rade_qnet.analysis.visuals.primitives` for the other half of that rule.
+:mod:`rade_qnet.analysis.visuals.figures` for the other half of that rule.
 
 Why this module closes figures
 ------------------------------
@@ -893,8 +893,8 @@ from pathlib import Path
 
 from matplotlib.figure import Figure
 
-from ...core.runtime.errors import SpecError
-from ...core.runtime.logging import get_logger
+from ...core.lifecycle.errors import SpecError
+from ...core.provenance.logging import get_logger
 
 __all__ = ["SUPPORTED_FORMATS", "save_figure"]
 
@@ -967,369 +967,9 @@ def save_figure(
 
 ---
 
-## 5. `src/rade_qnet/analysis/visuals/jobset.py`
+## 5. `src/rade_qnet/analysis/visuals/figures.py`
 
-12065 bytes · SHA-256 `56267c058caa227e`
-
-```python
-"""
-Cross-job comparison: reading forty runs at once.
-
-A single run's figures answer "is this model any good". A job set's answer a
-different question: *which of these runs should I look at, and is the set as
-a whole healthy?* Forty loss curves do not answer that -- nobody reads forty
-loss curves -- so the figures here collapse a set into one view each.
-
-What each figure is for
------------------------
-**Ranking** is the one anybody opens first: which clusters replicate well and
-which do not. Drawn as a horizontal bar chart because cluster names are long
-and a rotated x-axis label is unreadable at forty entries.
-
-**Dispersion** answers whether the spread across jobs is the interesting
-finding. A set whose scores cluster tightly is telling you the configuration
-generalises; one that is bimodal is telling you there are two kinds of
-cluster in the book, which is a modelling decision rather than a tuning one.
-
-**Status** is for the sets that did not all succeed. A single failure is read
-from the manifest; a pattern of failures is read here.
-
-**Wall time** is the operational view: whether the set is dominated by a few
-slow jobs, which decides whether more workers would help or whether the long
-pole needs attention instead.
-
-Plain data in, figure out
--------------------------
-Every function takes mappings of plain numbers rather than a manifest.
-``analysis`` may only import ``core``, so it cannot see
-:class:`~rade_qnet.orchestration.jobs.manifest.JobSetManifest` -- and that
-constraint turns out to be the right interface anyway. A figure that takes
-``{job: value}`` can be driven from a manifest, a notebook, a database query
-or a test, and the one that mattered most while writing these was the test.
-"""
-
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
-import numpy as np
-from matplotlib.figure import Figure
-
-from ...core.runtime.errors import ContractError
-from .primitives import DEFAULT_FIGSIZE
-from .style import PALETTE, figure_style
-
-if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
-
-__all__ = [
-    "job_status_figure",
-    "metric_dispersion_figure",
-    "metric_ranking_figure",
-    "wall_time_figure",
-]
-
-#: Height per bar in a ranking figure. A set can have forty jobs, so the
-#: figure grows with the data rather than compressing it: a fixed height
-#: would overlap the labels at exactly the size where the figure stops
-#: being readable and starts being decorative.
-_BAR_HEIGHT_INCHES = 0.28
-
-#: Floor and ceiling on a ranking figure's height, so a two-job set is not a
-#: sliver and a four-hundred-job set does not produce an unopenable file.
-_MIN_HEIGHT_INCHES = 2.5
-_MAX_HEIGHT_INCHES = 20.0
-
-#: Colours for the two outcomes. Red for failure, and the house grey-blue for
-#: success: a status chart should make the failures the thing the eye finds.
-_SUCCESS_COLOUR = PALETTE[0]
-_FAILURE_COLOUR = PALETTE[1]
-
-
-def metric_ranking_figure(
-    values: Mapping[str, float],
-    *,
-    metric_name: str = "metric",
-    ascending: bool = False,
-    highlight: Sequence[str] = (),
-) -> Figure:
-    """
-    Rank jobs by one metric, worst to best down the axis.
-
-    Horizontal bars, because cluster identifiers are long. A vertical chart
-    at forty entries needs rotated labels, and rotated labels at that count
-    are not read -- which defeats the purpose of the figure that gets opened
-    first.
-
-    Parameters
-    ----------
-    values
-        Job identifier to metric value. Jobs without the metric should be
-        omitted by the caller rather than passed as zero: a zero plots, and
-        is indistinguishable from a genuinely zero score.
-    metric_name
-        Used for the axis label.
-    ascending
-        Whether lower is better. Controls the sort direction only; no
-        attempt is made to guess from the metric's name, because ``loss``
-        and ``r2`` are both common and a wrong guess silently inverts the
-        reader's conclusion.
-    highlight
-        Jobs to draw in the comparison colour -- a baseline cluster, or the
-        ones a reader is investigating.
-
-    Returns
-    -------
-    matplotlib.figure.Figure
-        The figure.
-
-    Raises
-    ------
-    ContractError
-        If no values are supplied. An empty ranking is a blank image that
-        looks like a rendering bug, and the real cause -- no job produced
-        this metric -- is worth saying.
-    """
-    _require(values, what=f"rank jobs by {metric_name!r}")
-
-    # Sorted so the best entry is at the *top* of the drawn figure. Matplotlib
-    # draws the first bar at the bottom, so "best last" in the list puts it
-    # first on the page, which is where a reader looks.
-    ordered = sorted(values.items(), key=lambda item: item[1], reverse=ascending)
-    names = [name for name, _ in ordered]
-    scores = [score for _, score in ordered]
-    highlighted = set(highlight)
-
-    with figure_style():
-        figure = Figure(figsize=(DEFAULT_FIGSIZE[0], _height_for(len(names))))
-        axes = figure.subplots()
-        axes.barh(
-            names,
-            scores,
-            color=[_FAILURE_COLOUR if name in highlighted else _SUCCESS_COLOUR for name in names],
-        )
-        # A reference at zero is meaningful for every metric that can be
-        # negative, and harmless for the ones that cannot: r-squared below
-        # zero means "worse than predicting the mean", which is the single
-        # most useful threshold on the chart.
-        axes.axvline(0.0, color=PALETTE[-1], linewidth=0.8)
-        axes.set_xlabel(metric_name)
-        axes.set_ylabel("job")
-        axes.set_title(f"{metric_name} by job ({len(names)} job(s))")
-        figure.tight_layout()
-    return figure
-
-
-def metric_dispersion_figure(
-    values: Mapping[str, float],
-    *,
-    metric_name: str = "metric",
-    bins: int = 20,
-) -> Figure:
-    """
-    Show how one metric is distributed across a set.
-
-    The question this answers is whether the spread *is* the finding. A
-    tight cluster of scores says the configuration generalises across the
-    book; a bimodal one says there are two kinds of cluster in it, which is
-    a modelling decision rather than something more tuning will fix.
-
-    Parameters
-    ----------
-    values
-        Job identifier to metric value.
-    metric_name
-        Used for the axis label.
-    bins
-        Histogram bin count. Reduced automatically for small sets, where the
-        default would draw mostly empty bins and imply a structure that is
-        not there.
-
-    Returns
-    -------
-    matplotlib.figure.Figure
-        The figure.
-
-    Raises
-    ------
-    ContractError
-        If no values are supplied.
-    """
-    _require(values, what=f"show the dispersion of {metric_name!r}")
-
-    scores = np.asarray(list(values.values()), dtype=np.float64)
-    # A histogram with more bins than points is noise drawn as structure.
-    effective_bins = max(1, min(bins, len(scores)))
-
-    with figure_style():
-        figure = Figure(figsize=DEFAULT_FIGSIZE)
-        axes = figure.subplots()
-        axes.hist(scores, bins=effective_bins, color=_SUCCESS_COLOUR, edgecolor="white")
-
-        # The median rather than the mean, because a single catastrophic
-        # cluster drags a mean somewhere no job actually is -- and a set
-        # with one such cluster is exactly when this figure gets opened.
-        median = float(np.median(scores))
-        axes.axvline(
-            median,
-            color=_FAILURE_COLOUR,
-            linestyle="--",
-            linewidth=1.2,
-            label=f"median {median:.4g}",
-        )
-        axes.set_xlabel(metric_name)
-        axes.set_ylabel("jobs")
-        axes.set_title(f"{metric_name} across {len(scores)} job(s)")
-        axes.legend()
-        figure.tight_layout()
-    return figure
-
-
-def job_status_figure(statuses: Mapping[str, str]) -> Figure:
-    """
-    Summarise which jobs succeeded and which did not.
-
-    A single failure is read from the manifest. This is for the pattern: a
-    set where a third of the jobs failed is one investigation, not thirteen.
-
-    Parameters
-    ----------
-    statuses
-        Job identifier to status. Anything other than ``"succeeded"`` is
-        drawn as a failure, so a status vocabulary that grows later does not
-        silently start rendering new states as successes.
-
-    Returns
-    -------
-    matplotlib.figure.Figure
-        The figure.
-
-    Raises
-    ------
-    ContractError
-        If no statuses are supplied.
-    """
-    _require(statuses, what="summarise job status")
-
-    succeeded = sum(1 for status in statuses.values() if status == "succeeded")
-    failed = len(statuses) - succeeded
-
-    with figure_style():
-        figure = Figure(figsize=DEFAULT_FIGSIZE)
-        axes = figure.subplots()
-        axes.bar(
-            ["succeeded", "failed"],
-            [succeeded, failed],
-            color=[_SUCCESS_COLOUR, _FAILURE_COLOUR],
-        )
-        # Labelled with the counts, because the whole content of this figure
-        # is two numbers and making the reader estimate them off an axis
-        # would be a strange thing to do with a chart this simple.
-        for index, count in enumerate((succeeded, failed)):
-            axes.text(index, count, str(count), ha="center", va="bottom")
-        axes.set_ylabel("jobs")
-        axes.set_title(f"{succeeded} of {len(statuses)} job(s) succeeded")
-        figure.tight_layout()
-    return figure
-
-
-def wall_time_figure(seconds: Mapping[str, float], *, top: int = 20) -> Figure:
-    """
-    Show where a set's time went.
-
-    The operational question: is the set dominated by a few slow jobs? If it
-    is, adding workers will not help much and the long pole is what to look
-    at. If the times are even, the set is parallelising as well as it can
-    and more workers is the answer.
-
-    Parameters
-    ----------
-    seconds
-        Job identifier to wall time.
-    top
-        How many of the slowest jobs to draw. A four-hundred-job set's time
-        profile is carried entirely by its head, and drawing the tail makes
-        the head unreadable.
-
-    Returns
-    -------
-    matplotlib.figure.Figure
-        The figure.
-
-    Raises
-    ------
-    ContractError
-        If no durations are supplied.
-    """
-    _require(seconds, what="show wall time")
-
-    slowest = sorted(seconds.items(), key=lambda item: item[1])[-top:]
-    names = [name for name, _ in slowest]
-    durations = [duration for _, duration in slowest]
-    total = sum(seconds.values())
-
-    with figure_style():
-        figure = Figure(figsize=(DEFAULT_FIGSIZE[0], _height_for(len(names))))
-        axes = figure.subplots()
-        axes.barh(names, durations, color=_SUCCESS_COLOUR)
-        axes.set_xlabel("wall time (s)")
-        axes.set_ylabel("job")
-        shown = f"slowest {len(names)} of {len(seconds)}" if len(names) < len(seconds) else "by job"
-        axes.set_title(f"wall time {shown} — {total:.1f}s total")
-        figure.tight_layout()
-    return figure
-
-
-def _height_for(n_bars: int) -> float:
-    """
-    Choose a figure height that fits a bar chart's labels.
-
-    Parameters
-    ----------
-    n_bars
-        How many bars there are.
-
-    Returns
-    -------
-    float
-        Height in inches, clamped at both ends.
-    """
-    return float(np.clip(n_bars * _BAR_HEIGHT_INCHES + 1.0, _MIN_HEIGHT_INCHES, _MAX_HEIGHT_INCHES))
-
-
-def _require(values: Mapping[str, object], *, what: str) -> None:
-    """
-    Refuse to draw an empty figure.
-
-    An empty chart is a blank image, which reads as a rendering fault. The
-    real cause -- no job produced this metric, usually because every job
-    failed -- is worth saying out loud.
-
-    Parameters
-    ----------
-    values
-        The mapping to check.
-    what
-        What the caller was trying to draw, for the message.
-
-    Raises
-    ------
-    ContractError
-        If the mapping is empty.
-    """
-    if not values:
-        raise ContractError(
-            f"cannot {what}: no jobs were supplied. A job set whose jobs all "
-            f"failed has no metrics to compare, which the manifest reports "
-            f"and a figure cannot"
-        )
-```
-
----
-
-## 6. `src/rade_qnet/analysis/visuals/primitives.py`
-
-11266 bytes · SHA-256 `ee99c29d23ab2900`
+11268 bytes · SHA-256 `63e4127807280361`
 
 ```python
 """
@@ -1359,7 +999,7 @@ import numpy as np
 from matplotlib.figure import Figure
 from numpy.typing import NDArray
 
-from ...core.runtime.errors import ContractError
+from ...core.lifecycle.errors import ContractError
 from .style import figure_style
 
 __all__ = [
@@ -1678,6 +1318,366 @@ def _as_float_array(values: Sequence[float | None]) -> NDArray[np.float64]:
 
 ---
 
+## 6. `src/rade_qnet/analysis/visuals/jobset.py`
+
+12064 bytes · SHA-256 `436a49c80ae60a51`
+
+```python
+"""
+Cross-job comparison: reading forty runs at once.
+
+A single run's figures answer "is this model any good". A job set's answer a
+different question: *which of these runs should I look at, and is the set as
+a whole healthy?* Forty loss curves do not answer that -- nobody reads forty
+loss curves -- so the figures here collapse a set into one view each.
+
+What each figure is for
+-----------------------
+**Ranking** is the one anybody opens first: which clusters replicate well and
+which do not. Drawn as a horizontal bar chart because cluster names are long
+and a rotated x-axis label is unreadable at forty entries.
+
+**Dispersion** answers whether the spread across jobs is the interesting
+finding. A set whose scores cluster tightly is telling you the configuration
+generalises; one that is bimodal is telling you there are two kinds of
+cluster in the book, which is a modelling decision rather than a tuning one.
+
+**Status** is for the sets that did not all succeed. A single failure is read
+from the manifest; a pattern of failures is read here.
+
+**Wall time** is the operational view: whether the set is dominated by a few
+slow jobs, which decides whether more workers would help or whether the long
+pole needs attention instead.
+
+Plain data in, figure out
+-------------------------
+Every function takes mappings of plain numbers rather than a manifest.
+``analysis`` may only import ``core``, so it cannot see
+:class:`~rade_qnet.orchestration.jobs.manifest.JobSetManifest` -- and that
+constraint turns out to be the right interface anyway. A figure that takes
+``{job: value}`` can be driven from a manifest, a notebook, a database query
+or a test, and the one that mattered most while writing these was the test.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import numpy as np
+from matplotlib.figure import Figure
+
+from ...core.lifecycle.errors import ContractError
+from .figures import DEFAULT_FIGSIZE
+from .style import PALETTE, figure_style
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
+__all__ = [
+    "job_status_figure",
+    "metric_dispersion_figure",
+    "metric_ranking_figure",
+    "wall_time_figure",
+]
+
+#: Height per bar in a ranking figure. A set can have forty jobs, so the
+#: figure grows with the data rather than compressing it: a fixed height
+#: would overlap the labels at exactly the size where the figure stops
+#: being readable and starts being decorative.
+_BAR_HEIGHT_INCHES = 0.28
+
+#: Floor and ceiling on a ranking figure's height, so a two-job set is not a
+#: sliver and a four-hundred-job set does not produce an unopenable file.
+_MIN_HEIGHT_INCHES = 2.5
+_MAX_HEIGHT_INCHES = 20.0
+
+#: Colours for the two outcomes. Red for failure, and the house grey-blue for
+#: success: a status chart should make the failures the thing the eye finds.
+_SUCCESS_COLOUR = PALETTE[0]
+_FAILURE_COLOUR = PALETTE[1]
+
+
+def metric_ranking_figure(
+    values: Mapping[str, float],
+    *,
+    metric_name: str = "metric",
+    ascending: bool = False,
+    highlight: Sequence[str] = (),
+) -> Figure:
+    """
+    Rank jobs by one metric, worst to best down the axis.
+
+    Horizontal bars, because cluster identifiers are long. A vertical chart
+    at forty entries needs rotated labels, and rotated labels at that count
+    are not read -- which defeats the purpose of the figure that gets opened
+    first.
+
+    Parameters
+    ----------
+    values
+        Job identifier to metric value. Jobs without the metric should be
+        omitted by the caller rather than passed as zero: a zero plots, and
+        is indistinguishable from a genuinely zero score.
+    metric_name
+        Used for the axis label.
+    ascending
+        Whether lower is better. Controls the sort direction only; no
+        attempt is made to guess from the metric's name, because ``loss``
+        and ``r2`` are both common and a wrong guess silently inverts the
+        reader's conclusion.
+    highlight
+        Jobs to draw in the comparison colour -- a baseline cluster, or the
+        ones a reader is investigating.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The figure.
+
+    Raises
+    ------
+    ContractError
+        If no values are supplied. An empty ranking is a blank image that
+        looks like a rendering bug, and the real cause -- no job produced
+        this metric -- is worth saying.
+    """
+    _require(values, what=f"rank jobs by {metric_name!r}")
+
+    # Sorted so the best entry is at the *top* of the drawn figure. Matplotlib
+    # draws the first bar at the bottom, so "best last" in the list puts it
+    # first on the page, which is where a reader looks.
+    ordered = sorted(values.items(), key=lambda item: item[1], reverse=ascending)
+    names = [name for name, _ in ordered]
+    scores = [score for _, score in ordered]
+    highlighted = set(highlight)
+
+    with figure_style():
+        figure = Figure(figsize=(DEFAULT_FIGSIZE[0], _height_for(len(names))))
+        axes = figure.subplots()
+        axes.barh(
+            names,
+            scores,
+            color=[_FAILURE_COLOUR if name in highlighted else _SUCCESS_COLOUR for name in names],
+        )
+        # A reference at zero is meaningful for every metric that can be
+        # negative, and harmless for the ones that cannot: r-squared below
+        # zero means "worse than predicting the mean", which is the single
+        # most useful threshold on the chart.
+        axes.axvline(0.0, color=PALETTE[-1], linewidth=0.8)
+        axes.set_xlabel(metric_name)
+        axes.set_ylabel("job")
+        axes.set_title(f"{metric_name} by job ({len(names)} job(s))")
+        figure.tight_layout()
+    return figure
+
+
+def metric_dispersion_figure(
+    values: Mapping[str, float],
+    *,
+    metric_name: str = "metric",
+    bins: int = 20,
+) -> Figure:
+    """
+    Show how one metric is distributed across a set.
+
+    The question this answers is whether the spread *is* the finding. A
+    tight cluster of scores says the configuration generalises across the
+    book; a bimodal one says there are two kinds of cluster in it, which is
+    a modelling decision rather than something more tuning will fix.
+
+    Parameters
+    ----------
+    values
+        Job identifier to metric value.
+    metric_name
+        Used for the axis label.
+    bins
+        Histogram bin count. Reduced automatically for small sets, where the
+        default would draw mostly empty bins and imply a structure that is
+        not there.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The figure.
+
+    Raises
+    ------
+    ContractError
+        If no values are supplied.
+    """
+    _require(values, what=f"show the dispersion of {metric_name!r}")
+
+    scores = np.asarray(list(values.values()), dtype=np.float64)
+    # A histogram with more bins than points is noise drawn as structure.
+    effective_bins = max(1, min(bins, len(scores)))
+
+    with figure_style():
+        figure = Figure(figsize=DEFAULT_FIGSIZE)
+        axes = figure.subplots()
+        axes.hist(scores, bins=effective_bins, color=_SUCCESS_COLOUR, edgecolor="white")
+
+        # The median rather than the mean, because a single catastrophic
+        # cluster drags a mean somewhere no job actually is -- and a set
+        # with one such cluster is exactly when this figure gets opened.
+        median = float(np.median(scores))
+        axes.axvline(
+            median,
+            color=_FAILURE_COLOUR,
+            linestyle="--",
+            linewidth=1.2,
+            label=f"median {median:.4g}",
+        )
+        axes.set_xlabel(metric_name)
+        axes.set_ylabel("jobs")
+        axes.set_title(f"{metric_name} across {len(scores)} job(s)")
+        axes.legend()
+        figure.tight_layout()
+    return figure
+
+
+def job_status_figure(statuses: Mapping[str, str]) -> Figure:
+    """
+    Summarise which jobs succeeded and which did not.
+
+    A single failure is read from the manifest. This is for the pattern: a
+    set where a third of the jobs failed is one investigation, not thirteen.
+
+    Parameters
+    ----------
+    statuses
+        Job identifier to status. Anything other than ``"succeeded"`` is
+        drawn as a failure, so a status vocabulary that grows later does not
+        silently start rendering new states as successes.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The figure.
+
+    Raises
+    ------
+    ContractError
+        If no statuses are supplied.
+    """
+    _require(statuses, what="summarise job status")
+
+    succeeded = sum(1 for status in statuses.values() if status == "succeeded")
+    failed = len(statuses) - succeeded
+
+    with figure_style():
+        figure = Figure(figsize=DEFAULT_FIGSIZE)
+        axes = figure.subplots()
+        axes.bar(
+            ["succeeded", "failed"],
+            [succeeded, failed],
+            color=[_SUCCESS_COLOUR, _FAILURE_COLOUR],
+        )
+        # Labelled with the counts, because the whole content of this figure
+        # is two numbers and making the reader estimate them off an axis
+        # would be a strange thing to do with a chart this simple.
+        for index, count in enumerate((succeeded, failed)):
+            axes.text(index, count, str(count), ha="center", va="bottom")
+        axes.set_ylabel("jobs")
+        axes.set_title(f"{succeeded} of {len(statuses)} job(s) succeeded")
+        figure.tight_layout()
+    return figure
+
+
+def wall_time_figure(seconds: Mapping[str, float], *, top: int = 20) -> Figure:
+    """
+    Show where a set's time went.
+
+    The operational question: is the set dominated by a few slow jobs? If it
+    is, adding workers will not help much and the long pole is what to look
+    at. If the times are even, the set is parallelising as well as it can
+    and more workers is the answer.
+
+    Parameters
+    ----------
+    seconds
+        Job identifier to wall time.
+    top
+        How many of the slowest jobs to draw. A four-hundred-job set's time
+        profile is carried entirely by its head, and drawing the tail makes
+        the head unreadable.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The figure.
+
+    Raises
+    ------
+    ContractError
+        If no durations are supplied.
+    """
+    _require(seconds, what="show wall time")
+
+    slowest = sorted(seconds.items(), key=lambda item: item[1])[-top:]
+    names = [name for name, _ in slowest]
+    durations = [duration for _, duration in slowest]
+    total = sum(seconds.values())
+
+    with figure_style():
+        figure = Figure(figsize=(DEFAULT_FIGSIZE[0], _height_for(len(names))))
+        axes = figure.subplots()
+        axes.barh(names, durations, color=_SUCCESS_COLOUR)
+        axes.set_xlabel("wall time (s)")
+        axes.set_ylabel("job")
+        shown = f"slowest {len(names)} of {len(seconds)}" if len(names) < len(seconds) else "by job"
+        axes.set_title(f"wall time {shown} — {total:.1f}s total")
+        figure.tight_layout()
+    return figure
+
+
+def _height_for(n_bars: int) -> float:
+    """
+    Choose a figure height that fits a bar chart's labels.
+
+    Parameters
+    ----------
+    n_bars
+        How many bars there are.
+
+    Returns
+    -------
+    float
+        Height in inches, clamped at both ends.
+    """
+    return float(np.clip(n_bars * _BAR_HEIGHT_INCHES + 1.0, _MIN_HEIGHT_INCHES, _MAX_HEIGHT_INCHES))
+
+
+def _require(values: Mapping[str, object], *, what: str) -> None:
+    """
+    Refuse to draw an empty figure.
+
+    An empty chart is a blank image, which reads as a rendering fault. The
+    real cause -- no job produced this metric, usually because every job
+    failed -- is worth saying out loud.
+
+    Parameters
+    ----------
+    values
+        The mapping to check.
+    what
+        What the caller was trying to draw, for the message.
+
+    Raises
+    ------
+    ContractError
+        If the mapping is empty.
+    """
+    if not values:
+        raise ContractError(
+            f"cannot {what}: no jobs were supplied. A job set whose jobs all "
+            f"failed has no metrics to compare, which the manifest reports "
+            f"and a figure cannot"
+        )
+```
+
+---
+
 ## 7. `src/rade_qnet/analysis/visuals/style.py`
 
 3635 bytes · SHA-256 `f6b3228dede4416b`
@@ -1794,7 +1794,7 @@ def figure_style(overrides: Mapping[str, object] | None = None) -> Iterator[None
 
 ## 8. `src/rade_qnet/analysis/visuals/training.py`
 
-12144 bytes · SHA-256 `6449731d6368dfe8`
+12152 bytes · SHA-256 `55ea82a6c0e8096a`
 
 ```python
 """
@@ -1817,7 +1817,7 @@ once and never recovered -- and its loss curve simply goes flat, which is
 indistinguishable from convergence.
 
 Both are one glance apart in a figure that costs nothing to produce, which is
-why :class:`~rade_qnet.engines.torch.callbacks.GradientNorms` records the norm
+why :class:`~rade_qnet.engines.torch.training.callbacks.GradientNorms` records the norm
 by default rather than on request.
 """
 
@@ -1830,8 +1830,8 @@ from matplotlib.figure import Figure
 from numpy.typing import NDArray
 
 from ...core.contract.result import FitOutcome
-from ...core.runtime.errors import ContractError
-from .primitives import DEFAULT_FIGSIZE
+from ...core.lifecycle.errors import ContractError
+from .figures import DEFAULT_FIGSIZE
 from .style import figure_style
 
 __all__ = [
@@ -2182,7 +2182,7 @@ def _losses(outcome: FitOutcome, name: str) -> NDArray[np.float64]:
 
 ## 9. `src/rade_qnet/analysis/visuals/tuning.py`
 
-16759 bytes · SHA-256 `b0d6b5a02cec0ab7`
+16758 bytes · SHA-256 `98bdfe633894c955`
 
 ```python
 """
@@ -2223,8 +2223,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 from matplotlib.figure import Figure
 
-from ...core.runtime.errors import ContractError
-from .primitives import DEFAULT_FIGSIZE
+from ...core.lifecycle.errors import ContractError
+from .figures import DEFAULT_FIGSIZE
 from .style import PALETTE, figure_style
 
 if TYPE_CHECKING:

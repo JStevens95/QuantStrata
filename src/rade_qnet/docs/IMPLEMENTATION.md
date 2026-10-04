@@ -121,7 +121,7 @@ designed around a use case nobody was yet running.
 ```mermaid
 flowchart TD
     S["<b>S · Scaffold</b><br/>tree · docs · lint · tests"]
-    P1["<b>1 · Core</b><br/>spec · contract · capability · runtime<br/>storage · analysis bases · testkit"]
+    P1["<b>1 · Core</b><br/>spec · contract · authoring<br/>lifecycle · provenance<br/>storage · analysis bases · testkit"]
     P2["<b>2 · Torch engine</b><br/>engine · loops · dataset source<br/>TrainPipeline — <i>first model trains</i>"]
     P3["<b>0+3 · Baseline and flagship</b><br/>golden fixture · parity harness ·<br/>hybrid_gnn_rnn, single member<br/><i>parity levels 1–4</i>"]
     P4["<b>4 · Job sets</b><br/>jobs · executors · group sets<br/><i>parity level 5</i>"]

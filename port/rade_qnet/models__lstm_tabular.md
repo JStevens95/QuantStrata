@@ -5,9 +5,9 @@
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 47 | 2125 | `8ed63db8039871d8` |
-| 2 | `data.py` | 69 | 2412 | `338b3f7edf0d2b0e` |
-| 3 | `model.py` | 204 | 6754 | `cac89769b93bf1b1` |
-| 4 | `register.py` | 88 | 2742 | `6c27ef7ca1b2f4c6` |
+| 2 | `data.py` | 69 | 2413 | `78bb98d6c885d8aa` |
+| 3 | `model.py` | 204 | 6756 | `2db3a3716d364c54` |
+| 4 | `register.py` | 88 | 2744 | `1e29ed34e6a56eb1` |
 | 5 | `spec.py` | 29 | 720 | `684004c8b0263ebe` |
 
 ---
@@ -70,7 +70,7 @@ __all__ = ["LstmTabular", "LstmTabularModel", "LstmTabularSpec"]
 
 ## 2. `src/rade_qnet/models/lstm_tabular/data.py`
 
-2412 bytes · SHA-256 `338b3f7edf0d2b0e`
+2413 bytes · SHA-256 `78bb98d6c885d8aa`
 
 ```python
 """
@@ -85,7 +85,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ...core.contract.requirement import InputRequirement, RequiredInput
-from ...sources.dataset.module import TabularDataModule
+from ...sources.dataset.tabular import TabularDataModule
 
 if TYPE_CHECKING:
     from ...core.spec.run import SupervisedRunSpec
@@ -148,7 +148,7 @@ def data_module(spec: SupervisedRunSpec) -> TabularDataModule:
 
 ## 3. `src/rade_qnet/models/lstm_tabular/model.py`
 
-6754 bytes · SHA-256 `cac89769b93bf1b1`
+6756 bytes · SHA-256 `2db3a3716d364c54`
 
 ```python
 """
@@ -168,7 +168,7 @@ from typing import TYPE_CHECKING
 
 from torch import Tensor, nn
 
-from ...core.runtime.errors import ContractError
+from ...core.lifecycle.errors import ContractError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -361,7 +361,7 @@ def _feature_width(signature: InputSignature) -> int:
 
 ## 4. `src/rade_qnet/models/lstm_tabular/register.py`
 
-2742 bytes · SHA-256 `6c27ef7ca1b2f4c6`
+2744 bytes · SHA-256 `1e29ed34e6a56eb1`
 
 ```python
 """
@@ -377,8 +377,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...core.capability.supervised import SupervisedModel
-from ...core.runtime.components import model
+from ...core.authoring.supervised import SupervisedModel
+from ...core.lifecycle.components import model
 
 # Imported for its registration side effect: this is what puts the Torch
 # engine in the registry, so the `engine="torch"` declaration below resolves
@@ -392,7 +392,7 @@ from .spec import LstmTabularSpec
 if TYPE_CHECKING:
     from ...core.contract.signature import InputSignature
     from ...core.spec.run import SupervisedRunSpec
-    from ...sources.dataset.module import TabularDataModule
+    from ...sources.dataset.tabular import TabularDataModule
     from .model import LstmTabular
 
 __all__ = ["LstmTabularModel"]

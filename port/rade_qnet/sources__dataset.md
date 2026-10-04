@@ -1,20 +1,22 @@
 # `src/rade_qnet/sources/dataset`
 
-5 file(s). Create the directory, then create each file below with the exact contents of its block.
+7 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
-| 1 | `__init__.py` | 43 | 1765 | `2c7ff96aeafa2241` |
-| 2 | `io.py` | 803 | 28351 | `9ae0d7768a5d9898` |
-| 3 | `module.py` | 946 | 32379 | `1734abceb05cab41` |
-| 4 | `rebuild.py` | 250 | 9218 | `4b2cf2882be64f4a` |
-| 5 | `splits.py` | 553 | 21255 | `dd04e7a448a725a6` |
+| 1 | `__init__.py` | 59 | 2621 | `bf7f3fb0f0814d67` |
+| 2 | `cache.py` | 355 | 13232 | `a0eab4ed54f687d8` |
+| 3 | `module.py` | 630 | 22367 | `1336d3633e002262` |
+| 4 | `rebuild.py` | 250 | 9229 | `aa447d0e624c00f6` |
+| 5 | `splits.py` | 553 | 21260 | `bcb1ada5e215aa5b` |
+| 6 | `tables.py` | 473 | 16069 | `4aecedb17e4a109a` |
+| 7 | `tabular.py` | 373 | 12287 | `329f5b278aac36a3` |
 
 ---
 
 ## 1. `src/rade_qnet/sources/dataset/__init__.py`
 
-1765 bytes · SHA-256 `2c7ff96aeafa2241`
+2621 bytes · SHA-256 `bf7f3fb0f0814d67`
 
 ```python
 """
@@ -40,17 +42,33 @@ Modules
 ``module.py``
     ``DataModule`` -- the base a model's data build subclasses.  Declares the
     stages (load, fit state, transform, split, signature, package) that the
-    train pipeline drives.  [Phase 2]
+    train pipeline drives.  The *contract*, with no implementation of it.
+    [Phase 2]
+``tabular.py``
+    ``TabularDataModule`` -- one implementation of that contract, and the one
+    most models use unchanged: read a file, scale, reduce, split, package.
+    Separate from ``module.py`` so the abstraction can be read without the
+    file handling, and the file handling changed without touching the
+    abstraction.  [Phase 2]
+``tables.py``
+    Reading raw tabular data from disk, and ``fingerprint_source``, which
+    decides what counts as "the input".  [Phase 2]
+``cache.py``
+    The content-addressed cache for expensive builds, and
+    ``PreparedDataset`` -- the cacheable intermediate that sits between the
+    expensive work and the engine-specific packaging.  Keyed on the source
+    fingerprint from ``tables.py``, among other things; the two modules were
+    one until that coupling was made an import rather than an adjacency.
+    [Phase 2]
 ``splits.py``
     Split strategies: ``chronological``, ``purged_kfold``, ``grouped`` and
     ``explicit``.  Sequence-aware, so a window may not straddle a split
     boundary.  [Phase 2]
+``rebuild.py``
+    Reconstructing a dataset from a bundle's recorded lineage, which is what
+    lets evaluation and inference run without the original build.  [Phase 5]
 ``transforms/``
     Fitted transforms with explicit inverses.  [Phase 2]
-``io.py``
-    Readers and the content-addressed cache for expensive builds.  Also
-    defines ``PreparedDataset``, the cacheable intermediate that sits between
-    the expensive work and the engine-specific packaging.  [Phase 2]
 
 Planned modules
 ---------------
@@ -64,39 +82,20 @@ __all__: tuple[str, ...] = ()
 
 ---
 
-## 2. `src/rade_qnet/sources/dataset/io.py`
+## 2. `src/rade_qnet/sources/dataset/cache.py`
 
-28351 bytes · SHA-256 `9ae0d7768a5d9898`
+13232 bytes · SHA-256 `a0eab4ed54f687d8`
 
 ```python
 """
-Reading raw tabular data, and caching the expensive result of preparing it.
-
-Two responsibilities that belong together because they are the two ends of the
-same decision: what counts as "the input" is exactly what the cache key must
-cover.
-
-Why CSV is parsed here instead of by pandas
--------------------------------------------
-``rade_qnet`` does not depend on pandas. That is a deliberate cost: parsing CSV
-with the standard library is more code than one ``read_csv`` call.
-
-The reason is the framework's stated promise that a host which only reads a
-bundle need not install a training stack -- and pandas is a large dependency to
-impose on every consumer for the benefit of the one source kind that reads
-files. A deployment that already has pandas loses nothing, because
-:func:`read_table` dispatches Parquet through it when a Parquet path is
-supplied, and says precisely what to install when it is absent.
-
-The alternative -- depending on pandas and using it everywhere -- was rejected
-rather than overlooked. It would be less code here and a heavier install for
-everyone.
+Caching the expensive result of preparing a dataset.
 
 What the cache key covers, and why
 ----------------------------------
 :class:`DatasetCache` is content-addressed on three things: the digest of the
-source specification, the fingerprint of the raw input, and the framework
-version. Any of them changing invalidates the entry.
+source specification, the fingerprint of the raw input -- from
+:func:`~rade_qnet.sources.dataset.tables.fingerprint_source` -- and the
+framework version. Any of them changing invalidates the entry.
 
 The framework version is in the key for a reason that is easy to leave out.
 A cached build is the *output of this code*, not just of the spec and the
@@ -115,43 +114,29 @@ point.
 
 from __future__ import annotations
 
-import csv
 import json
 from dataclasses import dataclass, field
-from importlib.util import find_spec
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 from ...core.contract.data import DataLineage, SplitIndices
 from ...core.contract.signature import InputSignature
-from ...core.runtime.errors import BundleError, ContractError, SpecError
-from ...core.runtime.hashing import abbreviate_digest, digest_file, digest_payload
-from ...core.runtime.logging import get_logger
+from ...core.lifecycle.errors import BundleError, ContractError
+from ...core.provenance.hashing import abbreviate_digest, digest_payload
+from ...core.provenance.logging import get_logger
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Mapping
     from pathlib import Path
 
     from numpy.typing import NDArray
 
     from ...core.contract.state import FittedState
 
-__all__ = [
-    "DatasetCache",
-    "PreparedDataset",
-    "TableData",
-    "fingerprint_source",
-    "read_table",
-]
+__all__ = ["DatasetCache", "PreparedDataset"]
 
 _LOGGER = get_logger(__name__)
-
-#: File suffixes handled natively, by the standard library CSV reader.
-_DELIMITED_SUFFIXES: Mapping[str, str] = {".csv": ",", ".tsv": "\t", ".txt": ","}
-
-#: File suffixes handled through pandas, when it is installed.
-_PARQUET_SUFFIXES = frozenset({".parquet", ".pq"})
 
 #: Filenames inside a cache entry. Part of the on-disk format.
 _ARRAYS_FILENAME = "arrays.npz"
@@ -165,421 +150,6 @@ _STATIC_FILENAME = "static.npz"
 #: Length of the cache subdirectory name. Long enough that a collision across
 #: every build a person will ever inspect is not a practical concern.
 _KEY_LENGTH = 16
-
-
-@dataclass(frozen=True, slots=True)
-class TableData:
-    """
-    One tabular file, read into arrays and still in its original units.
-
-    Deliberately not a data frame. Everything downstream of here wants a float
-    matrix, a target vector and a handful of string columns, and naming those
-    four things in a type means a transform cannot quietly depend on a column
-    that was never declared.
-
-    Parameters
-    ----------
-    features
-        Samples by features, in ``feature_names`` order.
-    target
-        One value per sample.
-    feature_names
-        Column names in column order. Carried rather than reconstructed,
-        because a feature importance table reported by index is nearly
-        useless to the person reading it.
-    attributes
-        Non-numeric columns kept aside, by name: an entity identifier, a group
-        key for a grouped split. Strings rather than codes, because encoding
-        them is a fitted transform's job and doing it during reading would put
-        the fit in the wrong place.
-
-    Raises
-    ------
-    ContractError
-        If the row counts disagree. Checked here rather than left to the first
-        transform, because a feature matrix misaligned with its target trains
-        without complaint and learns a permutation.
-    """
-
-    features: NDArray[np.float64]
-    target: NDArray[np.float64]
-    feature_names: tuple[str, ...]
-    attributes: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        """Validate that every column has one entry per sample."""
-        n_rows = self.features.shape[0]
-        if self.target.shape[0] != n_rows:
-            raise ContractError(
-                f"features have {n_rows} row(s) but target has "
-                f"{self.target.shape[0]}; they must correspond one to one"
-            )
-        if len(self.feature_names) != self.features.shape[1]:
-            raise ContractError(
-                f"feature_names has {len(self.feature_names)} entry(ies) but "
-                f"features has {self.features.shape[1]} column(s)"
-            )
-        for name, values in self.attributes.items():
-            if len(values) != n_rows:
-                raise ContractError(
-                    f"attribute column {name!r} has {len(values)} value(s) but "
-                    f"there are {n_rows} row(s)"
-                )
-
-    @property
-    def n_rows(self) -> int:
-        """Number of samples."""
-        return int(self.features.shape[0])
-
-    @property
-    def n_features(self) -> int:
-        """Number of feature columns."""
-        return int(self.features.shape[1])
-
-    def attribute(self, name: str) -> tuple[str, ...]:
-        """
-        Return one attribute column.
-
-        Parameters
-        ----------
-        name
-            Column name.
-
-        Returns
-        -------
-        tuple of str
-            One value per row.
-
-        Raises
-        ------
-        ContractError
-            If the column was not read. The message lists what was read,
-            because the usual cause is a grouped split naming a ``group_key``
-            that the reader was never told to keep.
-        """
-        try:
-            return self.attributes[name]
-        except KeyError:
-            raise ContractError(
-                f"attribute column {name!r} was not read; columns kept aside are "
-                f"{sorted(self.attributes)}. Name it in attribute_columns when "
-                f"reading if a split or transform needs it"
-            ) from None
-
-
-def read_table(
-    path: Path,
-    *,
-    target_column: str = "target",
-    feature_columns: Sequence[str] | None = None,
-    attribute_columns: Sequence[str] = (),
-) -> TableData:
-    """
-    Read a tabular file into a :class:`TableData`.
-
-    Parameters
-    ----------
-    path
-        File to read. The suffix selects the reader.
-    target_column
-        Column holding the target.
-    feature_columns
-        Columns to use as features, in the order given. ``None`` means every
-        remaining numeric column, sorted by name -- sorted rather than
-        file order, so two files with the same columns in a different order
-        produce the same matrix and therefore the same cache key.
-    attribute_columns
-        Columns to keep aside as strings.
-
-    Returns
-    -------
-    TableData
-        The parsed table.
-
-    Raises
-    ------
-    SpecError
-        If the suffix is not supported, or a named column is absent.
-    BundleError
-        If the file does not exist.
-    """
-    if not path.is_file():
-        raise BundleError(f"no such file: {path}")
-
-    suffix = path.suffix.lower()
-    if suffix in _DELIMITED_SUFFIXES:
-        columns = _read_delimited(path, delimiter=_DELIMITED_SUFFIXES[suffix])
-    elif suffix in _PARQUET_SUFFIXES:
-        columns = _read_parquet(path)
-    else:
-        supported = sorted({*_DELIMITED_SUFFIXES, *_PARQUET_SUFFIXES})
-        raise SpecError(
-            f"cannot read {path.name}: suffix {suffix!r} is not supported (supported: {supported})"
-        )
-
-    return _assemble(
-        columns,
-        source=path.name,
-        target_column=target_column,
-        feature_columns=feature_columns,
-        attribute_columns=attribute_columns,
-    )
-
-
-def _read_delimited(path: Path, *, delimiter: str) -> dict[str, list[str]]:
-    """
-    Read a delimited text file into a column-per-key mapping of raw strings.
-
-    Values are left as strings so that one place -- :func:`_assemble` --
-    decides what is numeric and what is an attribute. Converting during the
-    read would mean deciding before the caller's column choices are known.
-
-    Parameters
-    ----------
-    path
-        File to read.
-    delimiter
-        Field separator.
-
-    Returns
-    -------
-    dict
-        Column name to raw values.
-
-    Raises
-    ------
-    SpecError
-        If the file has no header row, or a row's field count disagrees with
-        the header. A short row usually means an unquoted delimiter inside a
-        value, and silently padding it would shift every subsequent column.
-    """
-    with path.open(newline="", encoding="utf-8") as handle:
-        reader = csv.reader(handle, delimiter=delimiter)
-        try:
-            header = next(reader)
-        except StopIteration:
-            raise SpecError(f"{path.name} is empty; expected a header row") from None
-
-        columns: dict[str, list[str]] = {name.strip(): [] for name in header}
-        if len(columns) != len(header):
-            duplicated = sorted({name for name in header if header.count(name) > 1})
-            raise SpecError(
-                f"{path.name} has duplicate column name(s) {duplicated}; "
-                f"column names must be unique"
-            )
-
-        names = list(columns)
-        for line_number, row in enumerate(reader, start=2):
-            if not row:
-                continue  # A trailing blank line is not an error.
-            if len(row) != len(names):
-                raise SpecError(
-                    f"{path.name} line {line_number} has {len(row)} field(s) but "
-                    f"the header declares {len(names)}; check for an unquoted "
-                    f"{delimiter!r} inside a value"
-                )
-            for name, value in zip(names, row, strict=True):
-                columns[name].append(value.strip())
-
-    return columns
-
-
-def _read_parquet(path: Path) -> dict[str, list[str]]:
-    """
-    Read a Parquet file through pandas, if pandas is installed.
-
-    Parameters
-    ----------
-    path
-        File to read.
-
-    Returns
-    -------
-    dict
-        Column name to values as strings, matching the delimited reader so
-        that :func:`_assemble` has one input shape to handle.
-
-    Raises
-    ------
-    SpecError
-        If pandas is not installed, naming what to install. An import error
-        from six frames down would not tell the reader that the fix is a pip
-        install and that CSV would work without one.
-    """
-    if find_spec("pandas") is None:
-        raise SpecError(
-            f"reading {path.name} needs pandas, which rade_qnet does not require "
-            f"(see the note in sources.dataset.io). Install it with "
-            f"'pip install pandas pyarrow', or supply the data as CSV"
-        )
-
-    import pandas  # noqa: PLC0415  Imported lazily: see the check above.
-
-    frame = pandas.read_parquet(path)
-    return {str(name): [str(value) for value in frame[name]] for name in frame.columns}
-
-
-def _assemble(
-    columns: Mapping[str, Sequence[str]],
-    *,
-    source: str,
-    target_column: str,
-    feature_columns: Sequence[str] | None,
-    attribute_columns: Sequence[str],
-) -> TableData:
-    """
-    Turn raw string columns into a :class:`TableData`.
-
-    Parameters
-    ----------
-    columns
-        Column name to raw values.
-    source
-        Filename, for error messages.
-    target_column
-        Column holding the target.
-    feature_columns
-        Chosen feature columns, or ``None`` to infer.
-    attribute_columns
-        Columns to keep aside as strings.
-
-    Returns
-    -------
-    TableData
-        The assembled table.
-
-    Raises
-    ------
-    SpecError
-        If a named column is absent, if a chosen feature column is not
-        numeric, or if no feature column remains.
-    """
-    available = sorted(columns)
-    _require_columns([target_column, *attribute_columns], available=available, source=source)
-
-    if feature_columns is None:
-        # Inferred: everything that is neither the target nor an attribute and
-        # that parses as numbers.  Sorted for a stable cache key.
-        candidates = sorted(set(columns) - {target_column, *attribute_columns})
-        chosen = tuple(name for name in candidates if _parse_floats(columns[name]) is not None)
-        if not chosen:
-            raise SpecError(
-                f"{source}: no numeric feature column found among {candidates}; "
-                f"name the feature columns explicitly if they need conversion first"
-            )
-        _LOGGER.debug("inferred %d feature column(s) from %s: %s", len(chosen), source, chosen)
-    else:
-        _require_columns(feature_columns, available=available, source=source)
-        chosen = tuple(feature_columns)
-
-    feature_arrays = []
-    for name in chosen:
-        values = _parse_floats(columns[name])
-        if values is None:
-            raise SpecError(
-                f"{source}: feature column {name!r} is not numeric; drop it, or "
-                f"keep it aside as an attribute column and encode it"
-            )
-        feature_arrays.append(values)
-
-    target = _parse_floats(columns[target_column])
-    if target is None:
-        raise SpecError(f"{source}: target column {target_column!r} is not numeric")
-
-    # `column_stack` on an empty list raises; the no-column case is already
-    # refused above, so reaching here guarantees at least one column.
-    return TableData(
-        features=np.column_stack(feature_arrays),
-        target=target,
-        feature_names=chosen,
-        attributes={name: tuple(columns[name]) for name in attribute_columns},
-    )
-
-
-def _require_columns(requested: Sequence[str], *, available: Sequence[str], source: str) -> None:
-    """
-    Raise if any requested column is absent.
-
-    Parameters
-    ----------
-    requested
-        Column names the caller asked for.
-    available
-        Column names present in the file.
-    source
-        Filename, for the error message.
-
-    Raises
-    ------
-    SpecError
-        Naming the absent columns and listing what is present, because the
-        usual cause is a typo or a renamed upstream column and the fix is
-        obvious once the real names are visible.
-    """
-    missing = sorted(set(requested) - set(available))
-    if missing:
-        raise SpecError(
-            f"{source}: column(s) {missing} are not present; the file has {list(available)}"
-        )
-
-
-def _parse_floats(values: Sequence[str]) -> NDArray[np.float64] | None:
-    """
-    Parse a column as floats, or return ``None`` if it is not numeric.
-
-    An empty field becomes ``nan`` rather than failing, because a missing
-    value is a data condition the quality report is designed to surface,
-    whereas a non-numeric *column* is a configuration mistake.
-
-    Parameters
-    ----------
-    values
-        Raw strings.
-
-    Returns
-    -------
-    numpy.ndarray or None
-        The parsed column, or ``None`` if any non-empty value is not a number.
-    """
-    parsed = np.empty(len(values), dtype=np.float64)
-    for index, raw in enumerate(values):
-        if raw == "":
-            parsed[index] = np.nan
-            continue
-        try:
-            parsed[index] = float(raw)
-        except ValueError:
-            return None
-    return parsed
-
-
-def fingerprint_source(path: Path | None, *, extra: Mapping[str, object] | None = None) -> str:
-    """
-    Return a digest identifying the raw input of a build.
-
-    Hashes file *contents* rather than a path and modification time. A path is
-    not the data -- two runs on two machines resolve the same path to different
-    files -- and a modification time changes when nothing did, so a cache keyed
-    on it misses after a checkout.
-
-    Parameters
-    ----------
-    path
-        The input file, or ``None`` for a build with no single file input --
-        a model data module assembling several sources, which supplies
-        ``extra`` instead.
-    extra
-        Additional material to fold in: query parameters, a list of upstream
-        digests, a universe definition.
-
-    Returns
-    -------
-    str
-        Lowercase hexadecimal digest.
-    """
-    material: dict[str, object] = {"extra": dict(extra or {})}
-    material["file"] = digest_file(path) if path is not None else None
-    return digest_payload(material)
 
 
 @dataclass(frozen=True, slots=True)
@@ -878,7 +448,7 @@ class DatasetCache:
 
 ## 3. `src/rade_qnet/sources/dataset/module.py`
 
-32379 bytes · SHA-256 `1734abceb05cab41`
+22367 bytes · SHA-256 `1336d3633e002262`
 
 ```python
 """
@@ -918,6 +488,17 @@ and not use this base at all, rather than reorder stages underneath code that
 assumes the order. The four customisation tiers in ``ARCHITECTURE.md`` exist
 so that "I need a different order" has an answer that is not "subtly break the
 contract".
+
+Why the standard build is not here
+-----------------------------------
+``TabularDataModule`` -- the build that reads a file, scales, reduces, splits
+and packages, and which most models use unchanged -- lives in
+:mod:`~rade_qnet.sources.dataset.tabular`. The two were one module and the
+separation is worth the import: this file is the *contract* a data build
+satisfies, and the next one is *one implementation of it*. A reader asking
+"what must my data build provide?" should not have to scroll past three
+hundred lines of CSV handling to find out, and a reader changing how scaling
+is applied should not be editing the file that defines the abstraction.
 """
 
 from __future__ import annotations
@@ -931,17 +512,15 @@ import numpy as np
 
 from ... import __version__
 from ...core.contract.data import DataLineage
-from ...core.contract.signature import InputSignature, TensorSpec
-from ...core.runtime.errors import SpecError
-from ...core.runtime.hashing import digest_spec
-from ...core.runtime.logging import get_logger
+from ...core.contract.signature import InputSignature
+from ...core.provenance.hashing import digest_spec
+from ...core.provenance.logging import get_logger
 from ..batching.dataset import DatasetSource, sources_for
-from .io import DatasetCache, PreparedDataset, TableData, fingerprint_source, read_table
+from .cache import DatasetCache, PreparedDataset
 from .rebuild import RebuiltDataset, rebuild_dataset
 from .splits import split_scenarios
+from .tables import fingerprint_source
 from .transforms.composite import DatasetState
-from .transforms.reduction import ReductionState
-from .transforms.scaling import ScalingState
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -950,16 +529,17 @@ if TYPE_CHECKING:
 
     from ...core.contract.data import SplitIndices
     from ...core.contract.state import FittedState
-    from ...core.spec.data import SourceSpec, TabularSourceSpec
+    from ...core.spec.data import SourceSpec
 
-__all__ = ["DataModule", "TabularDataModule"]
+__all__ = ["DataModule"]
 
 _LOGGER = get_logger(__name__)
 
-#: Dtype the engines receive. Declared once so the signature and the arrays
-#: cannot disagree -- a signature saying ``float32`` over a ``float64`` array
+#: Dtype the engines receive. Public because the standard build in
+#: ``tabular.py`` declares it too, and declared once so the signature and
+#: the arrays cannot disagree -- a signature saying ``float32`` over a ``float64`` array
 #: fails inside a forward pass, a long way from the cause.
-_ELEMENT_DTYPE = "float32"
+ELEMENT_DTYPE = "float32"
 
 #: Name the standard tabular signature gives its single dynamic input.
 FEATURE_INPUT_NAME = "features"
@@ -1501,339 +1081,13 @@ class DataModule[RawT](ABC):
             )
         enabled = spec.cache.enabled and directory is not None
         return DatasetCache(directory or _DISABLED_CACHE_DIRECTORY, enabled=enabled)
-
-
-class TabularDataModule(DataModule[TableData]):
-    """
-    The standard data build: read a file, scale, reduce, split, package.
-
-    Supplies every stage, so a straightforward model needs no data code at
-    all -- which is what makes the short model definition in
-    ``ARCHITECTURE.md`` §1 possible, and what Phase 6's baselines rely on to
-    keep the framework honest.
-    """
-
-    def load(self, spec: SourceSpec) -> TableData:
-        """
-        Read the tabular file named by the specification.
-
-        Parameters
-        ----------
-        spec
-            A :class:`~rade_qnet.core.spec.data.TabularSourceSpec`.
-
-        Returns
-        -------
-        TableData
-            The parsed table.
-
-        Raises
-        ------
-        SpecError
-            If the spec is not a tabular source, or names no path. The path is
-            optional on the spec so that it is constructible with defaults for
-            testing; this is the stage that notices, and it can name itself in
-            the message.
-        """
-        tabular = self._tabular(spec)
-        if tabular.path is None:
-            raise SpecError(
-                "a tabular source needs 'path' to be set; the specification was "
-                "constructed with defaults and has no file to read"
-            )
-        return read_table(
-            tabular.path,
-            target_column=tabular.target_column,
-            feature_columns=tabular.feature_columns,
-            attribute_columns=self._attribute_columns(tabular),
-        )
-
-    def n_scenarios(self, raw: TableData) -> int:
-        """
-        Return the number of rows read.
-
-        Parameters
-        ----------
-        raw
-            The parsed table.
-
-        Returns
-        -------
-        int
-            Row count.
-        """
-        return raw.n_rows
-
-    def group_labels(self, raw: TableData, spec: SourceSpec) -> NDArray[np.int64] | None:
-        """
-        Return integer group labels when a grouped split asks for them.
-
-        Parameters
-        ----------
-        raw
-            The parsed table.
-        spec
-            The source specification.
-
-        Returns
-        -------
-        numpy.ndarray or None
-            One label per row for a grouped split, otherwise ``None``.
-        """
-        if spec.split.kind != "grouped":
-            return None
-        values = raw.attribute(spec.split.group_key)
-        # Sorted so the label a group receives depends on the set of groups and
-        # not on which row happened to be read first.
-        codes = {name: code for code, name in enumerate(sorted(set(values)))}
-        return np.array([codes[value] for value in values], dtype=np.int64)
-
-    def fit_state(
-        self, raw: TableData, spec: SourceSpec, *, train_indices: NDArray[np.int64]
-    ) -> DatasetState:
-        """
-        Fit scaling and reduction on training rows.
-
-        Both receive the full matrix *and* the training indices, rather than a
-        pre-sliced matrix. That signature is what makes the leakage rule
-        unavoidable: there is no way to pass held-out rows in as though they
-        were training rows.
-
-        Parameters
-        ----------
-        raw
-            The parsed table.
-        spec
-            The source specification.
-        train_indices
-            Scenario indices that may be observed.
-
-        Returns
-        -------
-        DatasetState
-            The composed state, with scaling owning the target inverse.
-        """
-        transforms = spec.transforms
-        scaling = (
-            ScalingState.fit(
-                raw.features, raw.target, spec=transforms.scaling, train_indices=train_indices
-            )
-            if transforms.scaling.method != "none"
-            else None
-        )
-
-        # Reduction is fitted on scaled features, because both of its methods
-        # compare columns against each other and an unscaled comparison is
-        # dominated by whichever column happens to have the largest units.
-        scaled = scaling.transform_features(raw.features) if scaling else raw.features
-        reduction = (
-            ReductionState.fit(
-                scaled, raw.target, spec=transforms.reduction, train_indices=train_indices
-            )
-            if transforms.reduction.method != "none"
-            else None
-        )
-        return DatasetState.of(scaling=scaling, reduction=reduction)
-
-    def transform(
-        self, raw: TableData, state: FittedState
-    ) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
-        """
-        Apply scaling then reduction to every row.
-
-        Parameters
-        ----------
-        raw
-            The parsed table.
-        state
-            The state from :meth:`fit_state`.
-
-        Returns
-        -------
-        tuple
-            Transformed features and target.
-
-        Raises
-        ------
-        SpecError
-            If the state is not the composed state this module fits, which
-            would mean a subclass overrode one stage and not the other.
-        """
-        composed = self._composed(state)
-        features, target = raw.features, raw.target
-        if composed.has_part("scaling"):
-            scaling = composed.part("scaling")
-            features = scaling.transform_features(features)
-            target = scaling.transform_targets(target)
-        if composed.has_part("reduction"):
-            features = composed.part("reduction").transform_features(features)
-        return features, target
-
-    def signature(
-        self,
-        spec: SourceSpec,
-        *,
-        features: NDArray[np.floating],
-        state: FittedState,
-    ) -> InputSignature:
-        """
-        Declare one dynamic feature input and a scalar target.
-
-        The batch dimension is wildcarded and the feature dimension concrete,
-        which is what lets the engine synthesise a dummy batch of any size to
-        materialise a lazily shaped model.
-
-        Parameters
-        ----------
-        spec
-            The source specification, carrying the sequence length.
-        features
-            The transformed feature matrix.
-        state
-            Unused here: the feature count is read from the transformed
-            matrix, which reduction has already narrowed, so the state would
-            only restate what the matrix already shows. Accepted because the
-            hook is shared with modules whose static inputs are fitted.
-
-        Returns
-        -------
-        InputSignature
-            The declared interface.
-        """
-        del state
-        n_features = int(features.shape[1])
-        length = spec.transforms.sequence.length
-        # A length of one means a non-sequential model, and a window axis of
-        # size one would make every such model carry a pointless dimension.
-        shape: tuple[int | None, ...] = (
-            (None, n_features) if length == 1 else (None, length, n_features)
-        )
-        return InputSignature(
-            dynamic={
-                FEATURE_INPUT_NAME: TensorSpec(
-                    shape=shape,
-                    dtype=_ELEMENT_DTYPE,
-                    description=f"{n_features} feature(s)"
-                    + ("" if length == 1 else f" over a {length}-scenario window"),
-                )
-            },
-            target=TensorSpec(shape=(None,), dtype=_ELEMENT_DTYPE),
-        )
-
-    def feature_names(self, raw: TableData, state: FittedState) -> tuple[str, ...] | None:
-        """
-        Return column names, narrowed to whatever survived reduction.
-
-        Parameters
-        ----------
-        raw
-            The parsed table.
-        state
-            The fitted state.
-
-        Returns
-        -------
-        tuple of str or None
-            Column names in column order. ``None`` after a projection, where
-            a column is a combination of inputs and no original name
-            describes it.
-        """
-        composed = self._composed(state)
-        if not composed.has_part("reduction"):
-            return raw.feature_names
-
-        reduction = composed.part("reduction")
-        if reduction.method == "basis_selection":
-            return tuple(raw.feature_names[index] for index in reduction.selected)
-        # A principal component is a mixture of every input column, so naming
-        # it after one of them would be worse than admitting there is no name.
-        return None
-
-    @staticmethod
-    def _tabular(spec: SourceSpec) -> TabularSourceSpec:
-        """
-        Narrow a source spec to a tabular one.
-
-        Parameters
-        ----------
-        spec
-            The source specification.
-
-        Returns
-        -------
-        TabularSourceSpec
-            The same spec, narrowed.
-
-        Raises
-        ------
-        SpecError
-            If the spec names a different source kind.
-        """
-        if spec.kind != "tabular":
-            raise SpecError(
-                f"TabularDataModule requires a tabular source, received "
-                f"kind={spec.kind!r}; a model source needs its own data module"
-            )
-        return spec
-
-    @staticmethod
-    def _composed(state: FittedState) -> DatasetState:
-        """
-        Narrow a fitted state to the composed state this module fits.
-
-        Parameters
-        ----------
-        state
-            The fitted state.
-
-        Returns
-        -------
-        DatasetState
-            The same state, narrowed.
-
-        Raises
-        ------
-        SpecError
-            If it is some other state, which means ``fit_state`` was
-            overridden without overriding the stages that read its result.
-        """
-        if not isinstance(state, DatasetState):
-            raise SpecError(
-                f"expected a DatasetState from fit_state, received "
-                f"{type(state).__name__}; override transform and feature_names "
-                f"too if fit_state produces a different state"
-            )
-        return state
-
-    @staticmethod
-    def _attribute_columns(spec: TabularSourceSpec) -> tuple[str, ...]:
-        """
-        Return the non-feature columns this build needs kept aside.
-
-        Derived from the split strategy rather than configured separately, so
-        a grouped split cannot be requested against a file whose group column
-        was never read.
-
-        Parameters
-        ----------
-        spec
-            The tabular source specification.
-
-        Returns
-        -------
-        tuple of str
-            Column names to keep as strings.
-        """
-        if spec.split.kind == "grouped":
-            return (spec.split.group_key,)
-        return ()
 ```
 
 ---
 
 ## 4. `src/rade_qnet/sources/dataset/rebuild.py`
 
-9218 bytes · SHA-256 `4b2cf2882be64f4a`
+9229 bytes · SHA-256 `aa447d0e624c00f6`
 
 ```python
 """
@@ -1894,10 +1148,10 @@ import numpy as np
 
 from ... import __version__
 from ...core.contract.data import DataLineage, SplitIndices
-from ...core.runtime.errors import ContractError
-from ...core.runtime.hashing import digest_spec
-from ...core.runtime.logging import get_logger
-from .io import PreparedDataset
+from ...core.lifecycle.errors import ContractError
+from ...core.provenance.hashing import digest_spec
+from ...core.provenance.logging import get_logger
+from .cache import PreparedDataset
 
 if TYPE_CHECKING:
     from ...core.contract.state import FittedState
@@ -2092,7 +1346,7 @@ def _splits_from(lineage: DataLineage, *, n_rows: int) -> SplitIndices:
 
 ## 5. `src/rade_qnet/sources/dataset/splits.py`
 
-21255 bytes · SHA-256 `dd04e7a448a725a6`
+21260 bytes · SHA-256 `bcb1ada5e215aa5b`
 
 ```python
 """
@@ -2144,8 +1398,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ...core.contract.data import SplitIndices
-from ...core.runtime.errors import SpecError
-from ...core.runtime.logging import get_logger
+from ...core.lifecycle.errors import SpecError
+from ...core.provenance.logging import get_logger
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -2648,5 +1902,869 @@ def split_explicitly(spec: ExplicitSplitSpec, *, n_scenarios: int) -> SplitIndic
         validation=np.array(sorted(spec.validation), dtype=np.int64),
         test=np.array(sorted(spec.test), dtype=np.int64),
     )
+```
+
+---
+
+## 6. `src/rade_qnet/sources/dataset/tables.py`
+
+16069 bytes · SHA-256 `4aecedb17e4a109a`
+
+```python
+"""
+Reading raw tabular data from disk, and saying what was read.
+
+Why CSV is parsed here instead of by pandas
+-------------------------------------------
+``rade_qnet`` does not depend on pandas. That is a deliberate cost: parsing CSV
+with the standard library is more code than one ``read_csv`` call.
+
+The reason is the framework's stated promise that a host which only reads a
+bundle need not install a training stack -- and pandas is a large dependency to
+impose on every consumer for the benefit of the one source kind that reads
+files. A deployment that already has pandas loses nothing, because
+:func:`read_table` dispatches Parquet through it when a Parquet path is
+supplied, and says precisely what to install when it is absent.
+
+The alternative -- depending on pandas and using it everywhere -- was rejected
+rather than overlooked. It would be less code here and a heavier install for
+everyone.
+
+Why the fingerprint lives here
+-------------------------------
+:func:`fingerprint_source` is what :mod:`~rade_qnet.sources.dataset.cache`
+keys its entries on, so the two modules are coupled -- and the coupling is
+deliberately an import rather than an adjacency. What counts as "the input" is
+a question about reading, answered once, here; the cache is one of its
+callers. While both halves shared a module that relationship was true and
+invisible, which is the kind of thing that survives a refactor by accident
+rather than on purpose.
+"""
+
+from __future__ import annotations
+
+import csv
+from dataclasses import dataclass, field
+from importlib.util import find_spec
+from typing import TYPE_CHECKING
+
+import numpy as np
+
+from ...core.lifecycle.errors import BundleError, ContractError, SpecError
+from ...core.provenance.hashing import digest_file, digest_payload
+from ...core.provenance.logging import get_logger
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+    from pathlib import Path
+
+    from numpy.typing import NDArray
+
+__all__ = ["TableData", "fingerprint_source", "read_table"]
+
+_LOGGER = get_logger(__name__)
+
+#: File suffixes handled natively, by the standard library CSV reader.
+_DELIMITED_SUFFIXES: Mapping[str, str] = {".csv": ",", ".tsv": "\t", ".txt": ","}
+
+#: File suffixes handled through pandas, when it is installed.
+_PARQUET_SUFFIXES = frozenset({".parquet", ".pq"})
+
+
+@dataclass(frozen=True, slots=True)
+class TableData:
+    """
+    One tabular file, read into arrays and still in its original units.
+
+    Deliberately not a data frame. Everything downstream of here wants a float
+    matrix, a target vector and a handful of string columns, and naming those
+    four things in a type means a transform cannot quietly depend on a column
+    that was never declared.
+
+    Parameters
+    ----------
+    features
+        Samples by features, in ``feature_names`` order.
+    target
+        One value per sample.
+    feature_names
+        Column names in column order. Carried rather than reconstructed,
+        because a feature importance table reported by index is nearly
+        useless to the person reading it.
+    attributes
+        Non-numeric columns kept aside, by name: an entity identifier, a group
+        key for a grouped split. Strings rather than codes, because encoding
+        them is a fitted transform's job and doing it during reading would put
+        the fit in the wrong place.
+
+    Raises
+    ------
+    ContractError
+        If the row counts disagree. Checked here rather than left to the first
+        transform, because a feature matrix misaligned with its target trains
+        without complaint and learns a permutation.
+    """
+
+    features: NDArray[np.float64]
+    target: NDArray[np.float64]
+    feature_names: tuple[str, ...]
+    attributes: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Validate that every column has one entry per sample."""
+        n_rows = self.features.shape[0]
+        if self.target.shape[0] != n_rows:
+            raise ContractError(
+                f"features have {n_rows} row(s) but target has "
+                f"{self.target.shape[0]}; they must correspond one to one"
+            )
+        if len(self.feature_names) != self.features.shape[1]:
+            raise ContractError(
+                f"feature_names has {len(self.feature_names)} entry(ies) but "
+                f"features has {self.features.shape[1]} column(s)"
+            )
+        for name, values in self.attributes.items():
+            if len(values) != n_rows:
+                raise ContractError(
+                    f"attribute column {name!r} has {len(values)} value(s) but "
+                    f"there are {n_rows} row(s)"
+                )
+
+    @property
+    def n_rows(self) -> int:
+        """Number of samples."""
+        return int(self.features.shape[0])
+
+    @property
+    def n_features(self) -> int:
+        """Number of feature columns."""
+        return int(self.features.shape[1])
+
+    def attribute(self, name: str) -> tuple[str, ...]:
+        """
+        Return one attribute column.
+
+        Parameters
+        ----------
+        name
+            Column name.
+
+        Returns
+        -------
+        tuple of str
+            One value per row.
+
+        Raises
+        ------
+        ContractError
+            If the column was not read. The message lists what was read,
+            because the usual cause is a grouped split naming a ``group_key``
+            that the reader was never told to keep.
+        """
+        try:
+            return self.attributes[name]
+        except KeyError:
+            raise ContractError(
+                f"attribute column {name!r} was not read; columns kept aside are "
+                f"{sorted(self.attributes)}. Name it in attribute_columns when "
+                f"reading if a split or transform needs it"
+            ) from None
+
+
+def read_table(
+    path: Path,
+    *,
+    target_column: str = "target",
+    feature_columns: Sequence[str] | None = None,
+    attribute_columns: Sequence[str] = (),
+) -> TableData:
+    """
+    Read a tabular file into a :class:`TableData`.
+
+    Parameters
+    ----------
+    path
+        File to read. The suffix selects the reader.
+    target_column
+        Column holding the target.
+    feature_columns
+        Columns to use as features, in the order given. ``None`` means every
+        remaining numeric column, sorted by name -- sorted rather than
+        file order, so two files with the same columns in a different order
+        produce the same matrix and therefore the same cache key.
+    attribute_columns
+        Columns to keep aside as strings.
+
+    Returns
+    -------
+    TableData
+        The parsed table.
+
+    Raises
+    ------
+    SpecError
+        If the suffix is not supported, or a named column is absent.
+    BundleError
+        If the file does not exist.
+    """
+    if not path.is_file():
+        raise BundleError(f"no such file: {path}")
+
+    suffix = path.suffix.lower()
+    if suffix in _DELIMITED_SUFFIXES:
+        columns = _read_delimited(path, delimiter=_DELIMITED_SUFFIXES[suffix])
+    elif suffix in _PARQUET_SUFFIXES:
+        columns = _read_parquet(path)
+    else:
+        supported = sorted({*_DELIMITED_SUFFIXES, *_PARQUET_SUFFIXES})
+        raise SpecError(
+            f"cannot read {path.name}: suffix {suffix!r} is not supported (supported: {supported})"
+        )
+
+    return _assemble(
+        columns,
+        source=path.name,
+        target_column=target_column,
+        feature_columns=feature_columns,
+        attribute_columns=attribute_columns,
+    )
+
+
+def _read_delimited(path: Path, *, delimiter: str) -> dict[str, list[str]]:
+    """
+    Read a delimited text file into a column-per-key mapping of raw strings.
+
+    Values are left as strings so that one place -- :func:`_assemble` --
+    decides what is numeric and what is an attribute. Converting during the
+    read would mean deciding before the caller's column choices are known.
+
+    Parameters
+    ----------
+    path
+        File to read.
+    delimiter
+        Field separator.
+
+    Returns
+    -------
+    dict
+        Column name to raw values.
+
+    Raises
+    ------
+    SpecError
+        If the file has no header row, or a row's field count disagrees with
+        the header. A short row usually means an unquoted delimiter inside a
+        value, and silently padding it would shift every subsequent column.
+    """
+    with path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.reader(handle, delimiter=delimiter)
+        try:
+            header = next(reader)
+        except StopIteration:
+            raise SpecError(f"{path.name} is empty; expected a header row") from None
+
+        columns: dict[str, list[str]] = {name.strip(): [] for name in header}
+        if len(columns) != len(header):
+            duplicated = sorted({name for name in header if header.count(name) > 1})
+            raise SpecError(
+                f"{path.name} has duplicate column name(s) {duplicated}; "
+                f"column names must be unique"
+            )
+
+        names = list(columns)
+        for line_number, row in enumerate(reader, start=2):
+            if not row:
+                continue  # A trailing blank line is not an error.
+            if len(row) != len(names):
+                raise SpecError(
+                    f"{path.name} line {line_number} has {len(row)} field(s) but "
+                    f"the header declares {len(names)}; check for an unquoted "
+                    f"{delimiter!r} inside a value"
+                )
+            for name, value in zip(names, row, strict=True):
+                columns[name].append(value.strip())
+
+    return columns
+
+
+def _read_parquet(path: Path) -> dict[str, list[str]]:
+    """
+    Read a Parquet file through pandas, if pandas is installed.
+
+    Parameters
+    ----------
+    path
+        File to read.
+
+    Returns
+    -------
+    dict
+        Column name to values as strings, matching the delimited reader so
+        that :func:`_assemble` has one input shape to handle.
+
+    Raises
+    ------
+    SpecError
+        If pandas is not installed, naming what to install. An import error
+        from six frames down would not tell the reader that the fix is a pip
+        install and that CSV would work without one.
+    """
+    if find_spec("pandas") is None:
+        raise SpecError(
+            f"reading {path.name} needs pandas, which rade_qnet does not require "
+            f"(see the note in sources.dataset.tables). Install it with "
+            f"'pip install pandas pyarrow', or supply the data as CSV"
+        )
+
+    import pandas  # noqa: PLC0415  Imported lazily: see the check above.
+
+    frame = pandas.read_parquet(path)
+    return {str(name): [str(value) for value in frame[name]] for name in frame.columns}
+
+
+def _assemble(
+    columns: Mapping[str, Sequence[str]],
+    *,
+    source: str,
+    target_column: str,
+    feature_columns: Sequence[str] | None,
+    attribute_columns: Sequence[str],
+) -> TableData:
+    """
+    Turn raw string columns into a :class:`TableData`.
+
+    Parameters
+    ----------
+    columns
+        Column name to raw values.
+    source
+        Filename, for error messages.
+    target_column
+        Column holding the target.
+    feature_columns
+        Chosen feature columns, or ``None`` to infer.
+    attribute_columns
+        Columns to keep aside as strings.
+
+    Returns
+    -------
+    TableData
+        The assembled table.
+
+    Raises
+    ------
+    SpecError
+        If a named column is absent, if a chosen feature column is not
+        numeric, or if no feature column remains.
+    """
+    available = sorted(columns)
+    _require_columns([target_column, *attribute_columns], available=available, source=source)
+
+    if feature_columns is None:
+        # Inferred: everything that is neither the target nor an attribute and
+        # that parses as numbers.  Sorted for a stable cache key.
+        candidates = sorted(set(columns) - {target_column, *attribute_columns})
+        chosen = tuple(name for name in candidates if _parse_floats(columns[name]) is not None)
+        if not chosen:
+            raise SpecError(
+                f"{source}: no numeric feature column found among {candidates}; "
+                f"name the feature columns explicitly if they need conversion first"
+            )
+        _LOGGER.debug("inferred %d feature column(s) from %s: %s", len(chosen), source, chosen)
+    else:
+        _require_columns(feature_columns, available=available, source=source)
+        chosen = tuple(feature_columns)
+
+    feature_arrays = []
+    for name in chosen:
+        values = _parse_floats(columns[name])
+        if values is None:
+            raise SpecError(
+                f"{source}: feature column {name!r} is not numeric; drop it, or "
+                f"keep it aside as an attribute column and encode it"
+            )
+        feature_arrays.append(values)
+
+    target = _parse_floats(columns[target_column])
+    if target is None:
+        raise SpecError(f"{source}: target column {target_column!r} is not numeric")
+
+    # `column_stack` on an empty list raises; the no-column case is already
+    # refused above, so reaching here guarantees at least one column.
+    return TableData(
+        features=np.column_stack(feature_arrays),
+        target=target,
+        feature_names=chosen,
+        attributes={name: tuple(columns[name]) for name in attribute_columns},
+    )
+
+
+def _require_columns(requested: Sequence[str], *, available: Sequence[str], source: str) -> None:
+    """
+    Raise if any requested column is absent.
+
+    Parameters
+    ----------
+    requested
+        Column names the caller asked for.
+    available
+        Column names present in the file.
+    source
+        Filename, for the error message.
+
+    Raises
+    ------
+    SpecError
+        Naming the absent columns and listing what is present, because the
+        usual cause is a typo or a renamed upstream column and the fix is
+        obvious once the real names are visible.
+    """
+    missing = sorted(set(requested) - set(available))
+    if missing:
+        raise SpecError(
+            f"{source}: column(s) {missing} are not present; the file has {list(available)}"
+        )
+
+
+def _parse_floats(values: Sequence[str]) -> NDArray[np.float64] | None:
+    """
+    Parse a column as floats, or return ``None`` if it is not numeric.
+
+    An empty field becomes ``nan`` rather than failing, because a missing
+    value is a data condition the quality report is designed to surface,
+    whereas a non-numeric *column* is a configuration mistake.
+
+    Parameters
+    ----------
+    values
+        Raw strings.
+
+    Returns
+    -------
+    numpy.ndarray or None
+        The parsed column, or ``None`` if any non-empty value is not a number.
+    """
+    parsed = np.empty(len(values), dtype=np.float64)
+    for index, raw in enumerate(values):
+        if raw == "":
+            parsed[index] = np.nan
+            continue
+        try:
+            parsed[index] = float(raw)
+        except ValueError:
+            return None
+    return parsed
+
+
+def fingerprint_source(path: Path | None, *, extra: Mapping[str, object] | None = None) -> str:
+    """
+    Return a digest identifying the raw input of a build.
+
+    Hashes file *contents* rather than a path and modification time. A path is
+    not the data -- two runs on two machines resolve the same path to different
+    files -- and a modification time changes when nothing did, so a cache keyed
+    on it misses after a checkout.
+
+    Parameters
+    ----------
+    path
+        The input file, or ``None`` for a build with no single file input --
+        a model data module assembling several sources, which supplies
+        ``extra`` instead.
+    extra
+        Additional material to fold in: query parameters, a list of upstream
+        digests, a universe definition.
+
+    Returns
+    -------
+    str
+        Lowercase hexadecimal digest.
+    """
+    material: dict[str, object] = {"extra": dict(extra or {})}
+    material["file"] = digest_file(path) if path is not None else None
+    return digest_payload(material)
+```
+
+---
+
+## 7. `src/rade_qnet/sources/dataset/tabular.py`
+
+12287 bytes · SHA-256 `329f5b278aac36a3`
+
+```python
+"""
+The standard data build: read a file, scale, reduce, split, package.
+
+Most models need no data code at all, and this module is why. It supplies
+every stage :class:`~rade_qnet.sources.dataset.module.DataModule` declares,
+so a model's ``data.py`` can be three lines that hand back one of these --
+which is what makes the short model definition in ``ARCHITECTURE.md`` section
+1 possible, and what Phase 6's baselines rely on to keep the framework
+honest.
+
+The split from ``module.py``
+-----------------------------
+That module defines what a data build *must* do; this one is a single
+implementation of it. They were one file, and separating them means the
+abstraction can be read without the CSV handling, and the CSV handling can be
+changed without touching the abstraction. The name is honest about its scope:
+it reads tables. A build whose raw input is a graph or a stream writes its own
+subclass and shares nothing here but the base.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import numpy as np
+
+from ...core.contract.signature import InputSignature, TensorSpec
+from ...core.lifecycle.errors import SpecError
+from ...core.provenance.logging import get_logger
+from .module import ELEMENT_DTYPE, FEATURE_INPUT_NAME, DataModule
+from .tables import TableData, read_table
+from .transforms.composite import DatasetState
+from .transforms.reduction import ReductionState
+from .transforms.scaling import ScalingState
+
+if TYPE_CHECKING:
+    from numpy.typing import NDArray
+
+    from ...core.contract.state import FittedState
+    from ...core.spec.data import SourceSpec, TabularSourceSpec
+
+__all__ = ["DataModule", "TabularDataModule"]
+
+_LOGGER = get_logger(__name__)
+
+
+__all__ = ["TabularDataModule"]
+
+
+class TabularDataModule(DataModule[TableData]):
+    """
+    The standard data build: read a file, scale, reduce, split, package.
+
+    Supplies every stage, so a straightforward model needs no data code at
+    all -- which is what makes the short model definition in
+    ``ARCHITECTURE.md`` §1 possible, and what Phase 6's baselines rely on to
+    keep the framework honest.
+    """
+
+    def load(self, spec: SourceSpec) -> TableData:
+        """
+        Read the tabular file named by the specification.
+
+        Parameters
+        ----------
+        spec
+            A :class:`~rade_qnet.core.spec.data.TabularSourceSpec`.
+
+        Returns
+        -------
+        TableData
+            The parsed table.
+
+        Raises
+        ------
+        SpecError
+            If the spec is not a tabular source, or names no path. The path is
+            optional on the spec so that it is constructible with defaults for
+            testing; this is the stage that notices, and it can name itself in
+            the message.
+        """
+        tabular = self._tabular(spec)
+        if tabular.path is None:
+            raise SpecError(
+                "a tabular source needs 'path' to be set; the specification was "
+                "constructed with defaults and has no file to read"
+            )
+        return read_table(
+            tabular.path,
+            target_column=tabular.target_column,
+            feature_columns=tabular.feature_columns,
+            attribute_columns=self._attribute_columns(tabular),
+        )
+
+    def n_scenarios(self, raw: TableData) -> int:
+        """
+        Return the number of rows read.
+
+        Parameters
+        ----------
+        raw
+            The parsed table.
+
+        Returns
+        -------
+        int
+            Row count.
+        """
+        return raw.n_rows
+
+    def group_labels(self, raw: TableData, spec: SourceSpec) -> NDArray[np.int64] | None:
+        """
+        Return integer group labels when a grouped split asks for them.
+
+        Parameters
+        ----------
+        raw
+            The parsed table.
+        spec
+            The source specification.
+
+        Returns
+        -------
+        numpy.ndarray or None
+            One label per row for a grouped split, otherwise ``None``.
+        """
+        if spec.split.kind != "grouped":
+            return None
+        values = raw.attribute(spec.split.group_key)
+        # Sorted so the label a group receives depends on the set of groups and
+        # not on which row happened to be read first.
+        codes = {name: code for code, name in enumerate(sorted(set(values)))}
+        return np.array([codes[value] for value in values], dtype=np.int64)
+
+    def fit_state(
+        self, raw: TableData, spec: SourceSpec, *, train_indices: NDArray[np.int64]
+    ) -> DatasetState:
+        """
+        Fit scaling and reduction on training rows.
+
+        Both receive the full matrix *and* the training indices, rather than a
+        pre-sliced matrix. That signature is what makes the leakage rule
+        unavoidable: there is no way to pass held-out rows in as though they
+        were training rows.
+
+        Parameters
+        ----------
+        raw
+            The parsed table.
+        spec
+            The source specification.
+        train_indices
+            Scenario indices that may be observed.
+
+        Returns
+        -------
+        DatasetState
+            The composed state, with scaling owning the target inverse.
+        """
+        transforms = spec.transforms
+        scaling = (
+            ScalingState.fit(
+                raw.features, raw.target, spec=transforms.scaling, train_indices=train_indices
+            )
+            if transforms.scaling.method != "none"
+            else None
+        )
+
+        # Reduction is fitted on scaled features, because both of its methods
+        # compare columns against each other and an unscaled comparison is
+        # dominated by whichever column happens to have the largest units.
+        scaled = scaling.transform_features(raw.features) if scaling else raw.features
+        reduction = (
+            ReductionState.fit(
+                scaled, raw.target, spec=transforms.reduction, train_indices=train_indices
+            )
+            if transforms.reduction.method != "none"
+            else None
+        )
+        return DatasetState.of(scaling=scaling, reduction=reduction)
+
+    def transform(
+        self, raw: TableData, state: FittedState
+    ) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
+        """
+        Apply scaling then reduction to every row.
+
+        Parameters
+        ----------
+        raw
+            The parsed table.
+        state
+            The state from :meth:`fit_state`.
+
+        Returns
+        -------
+        tuple
+            Transformed features and target.
+
+        Raises
+        ------
+        SpecError
+            If the state is not the composed state this module fits, which
+            would mean a subclass overrode one stage and not the other.
+        """
+        composed = self._composed(state)
+        features, target = raw.features, raw.target
+        if composed.has_part("scaling"):
+            scaling = composed.part("scaling")
+            features = scaling.transform_features(features)
+            target = scaling.transform_targets(target)
+        if composed.has_part("reduction"):
+            features = composed.part("reduction").transform_features(features)
+        return features, target
+
+    def signature(
+        self,
+        spec: SourceSpec,
+        *,
+        features: NDArray[np.floating],
+        state: FittedState,
+    ) -> InputSignature:
+        """
+        Declare one dynamic feature input and a scalar target.
+
+        The batch dimension is wildcarded and the feature dimension concrete,
+        which is what lets the engine synthesise a dummy batch of any size to
+        materialise a lazily shaped model.
+
+        Parameters
+        ----------
+        spec
+            The source specification, carrying the sequence length.
+        features
+            The transformed feature matrix.
+        state
+            Unused here: the feature count is read from the transformed
+            matrix, which reduction has already narrowed, so the state would
+            only restate what the matrix already shows. Accepted because the
+            hook is shared with modules whose static inputs are fitted.
+
+        Returns
+        -------
+        InputSignature
+            The declared interface.
+        """
+        del state
+        n_features = int(features.shape[1])
+        length = spec.transforms.sequence.length
+        # A length of one means a non-sequential model, and a window axis of
+        # size one would make every such model carry a pointless dimension.
+        shape: tuple[int | None, ...] = (
+            (None, n_features) if length == 1 else (None, length, n_features)
+        )
+        return InputSignature(
+            dynamic={
+                FEATURE_INPUT_NAME: TensorSpec(
+                    shape=shape,
+                    dtype=ELEMENT_DTYPE,
+                    description=f"{n_features} feature(s)"
+                    + ("" if length == 1 else f" over a {length}-scenario window"),
+                )
+            },
+            target=TensorSpec(shape=(None,), dtype=ELEMENT_DTYPE),
+        )
+
+    def feature_names(self, raw: TableData, state: FittedState) -> tuple[str, ...] | None:
+        """
+        Return column names, narrowed to whatever survived reduction.
+
+        Parameters
+        ----------
+        raw
+            The parsed table.
+        state
+            The fitted state.
+
+        Returns
+        -------
+        tuple of str or None
+            Column names in column order. ``None`` after a projection, where
+            a column is a combination of inputs and no original name
+            describes it.
+        """
+        composed = self._composed(state)
+        if not composed.has_part("reduction"):
+            return raw.feature_names
+
+        reduction = composed.part("reduction")
+        if reduction.method == "basis_selection":
+            return tuple(raw.feature_names[index] for index in reduction.selected)
+        # A principal component is a mixture of every input column, so naming
+        # it after one of them would be worse than admitting there is no name.
+        return None
+
+    @staticmethod
+    def _tabular(spec: SourceSpec) -> TabularSourceSpec:
+        """
+        Narrow a source spec to a tabular one.
+
+        Parameters
+        ----------
+        spec
+            The source specification.
+
+        Returns
+        -------
+        TabularSourceSpec
+            The same spec, narrowed.
+
+        Raises
+        ------
+        SpecError
+            If the spec names a different source kind.
+        """
+        if spec.kind != "tabular":
+            raise SpecError(
+                f"TabularDataModule requires a tabular source, received "
+                f"kind={spec.kind!r}; a model source needs its own data module"
+            )
+        return spec
+
+    @staticmethod
+    def _composed(state: FittedState) -> DatasetState:
+        """
+        Narrow a fitted state to the composed state this module fits.
+
+        Parameters
+        ----------
+        state
+            The fitted state.
+
+        Returns
+        -------
+        DatasetState
+            The same state, narrowed.
+
+        Raises
+        ------
+        SpecError
+            If it is some other state, which means ``fit_state`` was
+            overridden without overriding the stages that read its result.
+        """
+        if not isinstance(state, DatasetState):
+            raise SpecError(
+                f"expected a DatasetState from fit_state, received "
+                f"{type(state).__name__}; override transform and feature_names "
+                f"too if fit_state produces a different state"
+            )
+        return state
+
+    @staticmethod
+    def _attribute_columns(spec: TabularSourceSpec) -> tuple[str, ...]:
+        """
+        Return the non-feature columns this build needs kept aside.
+
+        Derived from the split strategy rather than configured separately, so
+        a grouped split cannot be requested against a file whose group column
+        was never read.
+
+        Parameters
+        ----------
+        spec
+            The tabular source specification.
+
+        Returns
+        -------
+        tuple of str
+            Column names to keep as strings.
+        """
+        if spec.split.kind == "grouped":
+            return (spec.split.group_key,)
+        return ()
 ```
 

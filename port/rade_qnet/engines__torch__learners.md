@@ -5,8 +5,8 @@
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 46 | 1871 | `78173434fb32ab47` |
-| 2 | `random.py` | 274 | 12048 | `1a6ab4305a81e46d` |
-| 3 | `supervised.py` | 292 | 10234 | `e7e65afbc96a2027` |
+| 2 | `random.py` | 274 | 12066 | `ef1f1aa9f834ed2b` |
+| 3 | `supervised.py` | 292 | 10246 | `7cccaac0f285b296` |
 
 ---
 
@@ -67,14 +67,14 @@ __all__: tuple[str, ...] = ()
 
 ## 2. `src/rade_qnet/engines/torch/learners/random.py`
 
-12048 bytes · SHA-256 `1a6ab4305a81e46d`
+12066 bytes · SHA-256 `ef1f1aa9f834ed2b`
 
 ```python
 """
 The learner that learns nothing, on purpose.
 
 :class:`RandomLearner` satisfies
-:class:`~rade_qnet.engines.torch.loops.PolicyLearner` completely and updates
+:class:`~rade_qnet.engines.torch.training.loops.PolicyLearner` completely and updates
 no parameter. It exists so that every seam in the interactive path has a real
 consumer before any algorithm is written: a policy is built from a signature,
 an environment is constructed, actions are drawn from the policy, an episode
@@ -118,10 +118,10 @@ from typing import TYPE_CHECKING
 import torch
 
 from ....core.contract.data import TARGET_KEY
-from ....core.runtime.components import learner as register_learner
-from ....core.runtime.errors import EngineError
-from ....core.runtime.logging import get_logger
-from ...torch.loops import LOSS_KEY
+from ....core.lifecycle.components import learner as register_learner
+from ....core.lifecycle.errors import EngineError
+from ....core.provenance.logging import get_logger
+from ..training.loops import LOSS_KEY
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -350,7 +350,7 @@ class RandomLearner:
 
 ## 3. `src/rade_qnet/engines/torch/learners/supervised.py`
 
-10234 bytes · SHA-256 `e7e65afbc96a2027`
+10246 bytes · SHA-256 `7cccaac0f285b296`
 
 ```python
 """
@@ -388,16 +388,16 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from ....core.runtime.components import learner as register_learner
-from ....core.runtime.errors import EngineError
-from ....core.runtime.logging import get_logger
+from ....core.lifecycle.components import learner as register_learner
+from ....core.lifecycle.errors import EngineError
+from ....core.provenance.logging import get_logger
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from ...torch.callbacks import GradientNorms
-    from ...torch.hardware import ResolvedHardware
-    from ...torch.losses import LossFunction
+    from ..hardware.devices import ResolvedHardware
+    from ..training.callbacks import GradientNorms
+    from ..training.losses import LossFunction
 
 __all__ = ["SupervisedLearner", "align_with_target"]
 

@@ -5,9 +5,9 @@
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 22 | 647 | `8a5273793dc9fa45` |
-| 2 | `data.py` | 75 | 2785 | `f7ff36bf6ec13828` |
+| 2 | `data.py` | 75 | 2787 | `cf2983dc854e17c0` |
 | 3 | `model.py` | 72 | 2857 | `c7cf7a7b0632cefd` |
-| 4 | `register.py` | 84 | 2506 | `902f0cd66d6c1738` |
+| 4 | `register.py` | 84 | 2508 | `292e398c993f0db6` |
 | 5 | `spec.py` | 55 | 2332 | `446633bfa7a1d14b` |
 
 ---
@@ -45,7 +45,7 @@ __all__ = ["XgbTabularModel", "XgbTabularSpec"]
 
 ## 2. `src/rade_qnet/models/xgb_tabular/data.py`
 
-2785 bytes · SHA-256 `f7ff36bf6ec13828`
+2787 bytes · SHA-256 `cf2983dc854e17c0`
 
 ```python
 """
@@ -69,7 +69,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ...core.contract.requirement import InputRequirement
-from ...sources.dataset.module import TabularDataModule
+from ...sources.dataset.tabular import TabularDataModule
 
 if TYPE_CHECKING:
     from ...core.spec.run import SupervisedRunSpec
@@ -101,7 +101,7 @@ def data_module(spec: SupervisedRunSpec) -> TabularDataModule:
     Return the data module that builds this model's dataset.
 
     The framework's own, unmodified: a boosted-tree model reads a table, and
-    a table is what :class:`~rade_qnet.sources.dataset.module.TabularDataModule`
+    a table is what :class:`~rade_qnet.sources.dataset.tabular.TabularDataModule`
     already knows how to load, split, scale, window and batch.
 
     A real deployment usually replaces this. The moment the data lives in
@@ -210,7 +210,7 @@ def build(settings: XgbTabularSpec) -> BoosterModel:
 
 ## 4. `src/rade_qnet/models/xgb_tabular/register.py`
 
-2506 bytes · SHA-256 `902f0cd66d6c1738`
+2508 bytes · SHA-256 `292e398c993f0db6`
 
 ```python
 """
@@ -227,8 +227,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...core.capability.supervised import SupervisedModel
-from ...core.runtime.components import model
+from ...core.authoring.supervised import SupervisedModel
+from ...core.lifecycle.components import model
 from .data import REQUIRES, data_module
 from .model import build
 from .spec import XgbTabularSpec
@@ -237,7 +237,7 @@ if TYPE_CHECKING:
     from ...core.contract.signature import InputSignature
     from ...core.spec.run import SupervisedRunSpec
     from ...engines.xgboost import BoosterModel
-    from ...sources.dataset.module import TabularDataModule
+    from ...sources.dataset.tabular import TabularDataModule
 
 __all__ = ["XgbTabularModel"]
 

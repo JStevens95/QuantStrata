@@ -4,18 +4,18 @@
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
-| 1 | `__init__.py` | 67 | 2561 | `4c51e1a4f4256585` |
-| 2 | `base.py` | 354 | 11327 | `06675d4d776bb767` |
-| 3 | `gpus.py` | 166 | 6856 | `355ebcbfadec27d6` |
-| 4 | `local.py` | 68 | 1911 | `875720e4a6d53480` |
-| 5 | `policy.py` | 334 | 10831 | `144dd00b30eed227` |
-| 6 | `processes.py` | 358 | 14297 | `8ad395c7655c5e83` |
+| 1 | `__init__.py` | 67 | 2567 | `e51e01a50744d04c` |
+| 2 | `base.py` | 354 | 11330 | `4368fcdf46c5da38` |
+| 3 | `gpus.py` | 166 | 6859 | `518ba800f9e96a02` |
+| 4 | `local.py` | 68 | 1914 | `68231f2a0dd188a5` |
+| 5 | `placement.py` | 346 | 11438 | `108efe6b640a3a0d` |
+| 6 | `processes.py` | 358 | 14300 | `3b073ef3c554bdce` |
 
 ---
 
 ## 1. `src/rade_qnet/orchestration/compute/__init__.py`
 
-2561 bytes · SHA-256 `4c51e1a4f4256585`
+2567 bytes · SHA-256 `e51e01a50744d04c`
 
 ```python
 """
@@ -46,7 +46,7 @@ Modules
     One worker per visible device, each pinned by device-visibility
     environment variable before the training library is imported -- the only
     point at which such pinning reliably takes effect.
-``policy.py``
+``placement.py``
     Chooses an executor and worker count from the hardware actually present
     and the size of the job set, so placement need not be hand-tuned, and
     records why it chose what it did.
@@ -65,7 +65,7 @@ from __future__ import annotations
 from .base import Executor, ResultSummary, WorkFailure, WorkItem, WorkResult, execute_item
 from .gpus import GpuExecutor, visible_device_ids
 from .local import LocalExecutor
-from .policy import Placement, choose_placement, describe_machine
+from .placement import Placement, choose_placement, describe_machine
 from .processes import THREAD_VARIABLES, ProcessExecutor, configure_worker
 
 __all__ = [
@@ -91,7 +91,7 @@ __all__ = [
 
 ## 2. `src/rade_qnet/orchestration/compute/base.py`
 
-11327 bytes · SHA-256 `06675d4d776bb767`
+11330 bytes · SHA-256 `4368fcdf46c5da38`
 
 ```python
 """
@@ -139,7 +139,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
-from ...core.runtime.logging import get_logger
+from ...core.provenance.logging import get_logger
 
 __all__ = [
     "Executor",
@@ -454,7 +454,7 @@ class ResultSummary:
 
 ## 3. `src/rade_qnet/orchestration/compute/gpus.py`
 
-6856 bytes · SHA-256 `355ebcbfadec27d6`
+6859 bytes · SHA-256 `518ba800f9e96a02`
 
 ```python
 """
@@ -498,7 +498,7 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Literal
 
-from ...core.runtime.logging import get_logger
+from ...core.provenance.logging import get_logger
 from .processes import CUDA_VISIBILITY_VARIABLE, ProcessExecutor
 
 if TYPE_CHECKING:
@@ -629,7 +629,7 @@ class GpuExecutor(ProcessExecutor):
 
 ## 4. `src/rade_qnet/orchestration/compute/local.py`
 
-1911 bytes · SHA-256 `875720e4a6d53480`
+1914 bytes · SHA-256 `68231f2a0dd188a5`
 
 ```python
 """
@@ -651,7 +651,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...core.runtime.logging import get_logger
+from ...core.provenance.logging import get_logger
 from .base import WorkResult, execute_item
 
 if TYPE_CHECKING:
@@ -704,9 +704,9 @@ class LocalExecutor:
 
 ---
 
-## 5. `src/rade_qnet/orchestration/compute/policy.py`
+## 5. `src/rade_qnet/orchestration/compute/placement.py`
 
-10831 bytes · SHA-256 `144dd00b30eed227`
+11438 bytes · SHA-256 `108efe6b640a3a0d`
 
 ```python
 """
@@ -734,6 +734,18 @@ Instead the per-job figure is an input --
 machine's total is read only where the platform offers it for free. A user
 who knows their job's footprint gets the cap; one who does not is no worse
 off than with no policy at all.
+
+On the name
+-----------
+This module was ``policy.py`` until the reinforcement-learning work gave the
+framework a second, entirely unrelated meaning of that word -- a policy is
+now also the thing an agent learns, in
+:mod:`rade_qnet.core.authoring.policy`. Two files of the same name holding
+unrelated concepts is a trap for anyone navigating by filename, and this is
+the one that already had a better word available: the spec block is
+``placement``, the returned type is :class:`Placement`, and the function has
+always been ``choose_placement``. The file was the only thing still called
+the other thing.
 """
 
 from __future__ import annotations
@@ -742,7 +754,7 @@ import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from ...core.runtime.logging import get_logger
+from ...core.provenance.logging import get_logger
 from .gpus import GpuExecutor, visible_device_ids
 from .local import LocalExecutor
 from .processes import ProcessExecutor
@@ -1049,7 +1061,7 @@ def _reason(spec: PlacementSpec, *, name: ExecutorName, workers: int | None, n_j
 
 ## 6. `src/rade_qnet/orchestration/compute/processes.py`
 
-14297 bytes · SHA-256 `8ad395c7655c5e83`
+14300 bytes · SHA-256 `3b073ef3c554bdce`
 
 ```python
 """
@@ -1099,7 +1111,7 @@ from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from typing import TYPE_CHECKING, Literal
 
-from ...core.runtime.logging import get_logger
+from ...core.provenance.logging import get_logger
 from .base import WorkFailure, WorkResult, execute_item
 
 if TYPE_CHECKING:

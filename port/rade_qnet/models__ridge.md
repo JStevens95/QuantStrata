@@ -5,9 +5,9 @@
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 40 | 1382 | `8e878ba14afd847c` |
-| 2 | `data.py` | 70 | 2472 | `45111227031bd139` |
+| 2 | `data.py` | 70 | 2474 | `04a97203d1724ccf` |
 | 3 | `model.py` | 53 | 1769 | `86653e260ade081f` |
-| 4 | `register.py` | 106 | 3612 | `1cacbb9686650b6a` |
+| 4 | `register.py` | 106 | 3614 | `5ec21b14fc34eabe` |
 | 5 | `spec.py` | 44 | 1532 | `968365b42f941d08` |
 
 ---
@@ -63,7 +63,7 @@ __all__ = ["RidgeModel", "RidgeSpec"]
 
 ## 2. `src/rade_qnet/models/ridge/data.py`
 
-2472 bytes · SHA-256 `45111227031bd139`
+2474 bytes · SHA-256 `04a97203d1724ccf`
 
 ```python
 """
@@ -87,7 +87,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ...core.contract.requirement import InputRequirement
-from ...sources.dataset.module import TabularDataModule
+from ...sources.dataset.tabular import TabularDataModule
 
 if TYPE_CHECKING:
     from ...core.spec.run import SupervisedRunSpec
@@ -114,7 +114,7 @@ def data_module(spec: SupervisedRunSpec) -> TabularDataModule:
     Return the data module that builds this model's dataset.
 
     The framework's own, unmodified: a ridge regression reads a table, and
-    a table is what :class:`~rade_qnet.sources.dataset.module.TabularDataModule`
+    a table is what :class:`~rade_qnet.sources.dataset.tabular.TabularDataModule`
     already knows how to load, split, scale, window and batch.
 
     A real deployment usually replaces this. The moment the data lives in
@@ -204,7 +204,7 @@ def build(settings: RidgeSpec) -> Ridge:
 
 ## 4. `src/rade_qnet/models/ridge/register.py`
 
-3612 bytes · SHA-256 `1cacbb9686650b6a`
+3614 bytes · SHA-256 `5ec21b14fc34eabe`
 
 ```python
 """
@@ -228,8 +228,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...core.capability.supervised import SupervisedModel
-from ...core.runtime.components import model
+from ...core.authoring.supervised import SupervisedModel
+from ...core.lifecycle.components import model
 
 # Imported for its registration side effect: this is what puts the
 # scikit-learn engine in the registry. The decorator below declares
@@ -247,7 +247,7 @@ if TYPE_CHECKING:
 
     from ...core.contract.signature import InputSignature
     from ...core.spec.run import SupervisedRunSpec
-    from ...sources.dataset.module import TabularDataModule
+    from ...sources.dataset.tabular import TabularDataModule
 
 __all__ = ["RidgeModel"]
 

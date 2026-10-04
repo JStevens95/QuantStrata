@@ -7,14 +7,27 @@ Every model is a **package** directly under this one. There are no loose
 modules here and no category sub-folders: ``rade_qnet.models.<name>`` is a
 model, always, and that is the whole addressing rule.
 
-Every model package contains the same five files, whatever its size::
+Every model package contains the same five files, whatever its size.  Three
+are the same whatever it learns; the other two name the paradigm::
 
     models/<name>/
         __init__.py     the charter: what this model is, and its tier
         spec.py         what can be configured
-        model.py        what is computed
-        data.py         what data is required, and where it comes from
         register.py     how it plugs in
+
+        model.py        what is computed            } a supervised model
+        data.py         where the data comes from   }
+
+        policy.py       what is computed            } an agent
+        environment.py  what it acts in             }
+
+Two shapes rather than one is a deliberate cost.  Identical filenames across
+every package would be tidier, and would mean a file called ``data.py``
+holding an environment -- a name that lies, in the one directory a new joiner
+is told to copy.  A reader can tell what a package learns from ``ls``, and
+that is worth more than the symmetry.  ``spec.py`` and ``register.py`` stay
+constant because "what can be configured" and "how does it plug in" have the
+same answer for a ridge regression and for a hedging agent.
 
 Files are then *added* as the model needs them, never renamed and never
 rearranged::

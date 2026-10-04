@@ -527,7 +527,7 @@ Four keys are legal: `train`, `eval`, `infer`, `tune`. An override must be a
 subclass of the pipeline it replaces. All three conditions are enforced:
 
 ```python
-# orchestration/pipelines/resolve.py
+# orchestration/stages/resolve.py
 LIFECYCLES = frozenset({"train", "eval", "infer", "tune"})
 
 def pipeline_for(definition, lifecycle, default): ...

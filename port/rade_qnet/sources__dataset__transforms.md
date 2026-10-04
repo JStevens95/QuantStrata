@@ -5,11 +5,11 @@
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 33 | 1514 | `6d3de29fb11b2a0c` |
-| 2 | `composite.py` | 331 | 11551 | `85ad501d4119cef3` |
-| 3 | `encoding.py` | 368 | 13216 | `5eaafa54164192bf` |
-| 4 | `reduction.py` | 492 | 18016 | `baeefd1eca6f0d24` |
-| 5 | `scaling.py` | 446 | 15930 | `8fc3a8a94b8876db` |
-| 6 | `sequence.py` | 251 | 9182 | `2244f719b1b09f14` |
+| 2 | `composite.py` | 331 | 11553 | `f47510e9282e3cc7` |
+| 3 | `encoding.py` | 368 | 13222 | `904b518e82471413` |
+| 4 | `reduction.py` | 492 | 18021 | `b938b45b7953e380` |
+| 5 | `scaling.py` | 446 | 15935 | `a1932b200ec1be9d` |
+| 6 | `sequence.py` | 251 | 9184 | `f6955b509b3329f8` |
 
 ---
 
@@ -57,7 +57,7 @@ __all__: tuple[str, ...] = ()
 
 ## 2. `src/rade_qnet/sources/dataset/transforms/composite.py`
 
-11551 bytes · SHA-256 `85ad501d4119cef3`
+11553 bytes · SHA-256 `f47510e9282e3cc7`
 
 ```python
 """
@@ -105,7 +105,7 @@ from typing import TYPE_CHECKING, ClassVar, Self
 import numpy as np
 
 from ....core.contract.state import FittedState
-from ....core.runtime.errors import BundleError, ContractError
+from ....core.lifecycle.errors import BundleError, ContractError
 from .encoding import EncodingState
 from .reduction import ReductionState
 from .scaling import ScalingState
@@ -397,7 +397,7 @@ class DatasetState(CompositeState):
 
 ## 3. `src/rade_qnet/sources/dataset/transforms/encoding.py`
 
-13216 bytes · SHA-256 `5eaafa54164192bf`
+13222 bytes · SHA-256 `904b518e82471413`
 
 ```python
 """
@@ -429,7 +429,7 @@ Unseen entities are refused, not guessed
 An entity absent at fit time has no code. Mapping it to a shared "unknown"
 bucket would let a transductive model return a confident prediction for an
 instrument it knows nothing about, which is the quiet failure the
-:class:`~rade_qnet.core.capability.protocols.Inductive` capability exists to
+:class:`~rade_qnet.core.authoring.capabilities.Inductive` capability exists to
 make visible. :meth:`EncodingState.encode` raises instead, and a model that
 genuinely generalises to unseen entities declares that capability and uses
 entity *features* rather than an identity code.
@@ -443,7 +443,7 @@ from typing import TYPE_CHECKING, Self
 import numpy as np
 
 from ....core.contract.state import FittedState
-from ....core.runtime.errors import BundleError, CapabilityError, ContractError
+from ....core.lifecycle.errors import BundleError, CapabilityError, ContractError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -586,7 +586,7 @@ class EncodingState(FittedState):
         ------
         CapabilityError
             If any identifier was not present at fit time. A
-            :class:`~rade_qnet.core.runtime.errors.CapabilityError` rather than a
+            :class:`~rade_qnet.core.lifecycle.errors.CapabilityError` rather than a
             contract error because the situation is meaningful: the caller
             asked a transductive encoder about an entity it cannot represent,
             which is precisely what the ``Inductive`` capability declares
@@ -774,7 +774,7 @@ class EncodingState(FittedState):
 
 ## 4. `src/rade_qnet/sources/dataset/transforms/reduction.py`
 
-18016 bytes · SHA-256 `baeefd1eca6f0d24`
+18021 bytes · SHA-256 `b938b45b7953e380`
 
 ```python
 """
@@ -815,8 +815,8 @@ from typing import TYPE_CHECKING, Self
 import numpy as np
 
 from ....core.contract.state import FittedState
-from ....core.runtime.errors import BundleError, ContractError
-from ....core.runtime.logging import get_logger
+from ....core.lifecycle.errors import BundleError, ContractError
+from ....core.provenance.logging import get_logger
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -1275,7 +1275,7 @@ def _arrays_equal(
 
 ## 5. `src/rade_qnet/sources/dataset/transforms/scaling.py`
 
-15930 bytes · SHA-256 `8fc3a8a94b8876db`
+15935 bytes · SHA-256 `a1932b200ec1be9d`
 
 ```python
 """
@@ -1316,8 +1316,8 @@ from typing import TYPE_CHECKING, Self
 import numpy as np
 
 from ....core.contract.state import FittedState
-from ....core.runtime.errors import BundleError, ContractError
-from ....core.runtime.logging import get_logger
+from ....core.lifecycle.errors import BundleError, ContractError
+from ....core.provenance.logging import get_logger
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -1730,7 +1730,7 @@ def _replace_degenerate(scale: NDArray[np.floating]) -> tuple[NDArray[np.float64
 
 ## 6. `src/rade_qnet/sources/dataset/transforms/sequence.py`
 
-9182 bytes · SHA-256 `2244f719b1b09f14`
+9184 bytes · SHA-256 `f6955b509b3329f8`
 
 ```python
 """
@@ -1773,7 +1773,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ....core.runtime.errors import ContractError
+from ....core.lifecycle.errors import ContractError
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray

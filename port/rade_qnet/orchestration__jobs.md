@@ -5,11 +5,11 @@
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 64 | 2610 | `38c0c4fe2f3800a8` |
-| 2 | `fanout.py` | 165 | 6078 | `53090f7ef26e54f6` |
-| 3 | `groups.py` | 441 | 13842 | `e51d04f043e63356` |
-| 4 | `manifest.py` | 407 | 12734 | `0a5173658b335f6b` |
-| 5 | `set.py` | 336 | 11660 | `8aa5850984437273` |
-| 6 | `unit.py` | 301 | 11485 | `dbcca9ec2df2b2c8` |
+| 2 | `fanout.py` | 165 | 6081 | `9455837cb8ba0832` |
+| 3 | `groups.py` | 441 | 13850 | `40c05ee56911e539` |
+| 4 | `manifest.py` | 407 | 12737 | `80e4c231e0368046` |
+| 5 | `set.py` | 336 | 11673 | `6482b8dd9fd29aa8` |
+| 6 | `unit.py` | 301 | 11502 | `4b4447c3711fbf4c` |
 
 ---
 
@@ -88,7 +88,7 @@ __all__ = [
 
 ## 2. `src/rade_qnet/orchestration/jobs/fanout.py`
 
-6078 bytes · SHA-256 `53090f7ef26e54f6`
+6081 bytes · SHA-256 `9455837cb8ba0832`
 
 ```python
 """
@@ -122,7 +122,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from ...core.runtime.logging import get_logger
+from ...core.provenance.logging import get_logger
 from ...core.spec.jobs import JobSetSpec, parse_job_set_spec
 from ...core.spec.merge import deep_merge
 
@@ -262,7 +262,7 @@ def job_set_for_groups(
 
 ## 3. `src/rade_qnet/orchestration/jobs/groups.py`
 
-13842 bytes · SHA-256 `e51d04f043e63356`
+13850 bytes · SHA-256 `40c05ee56911e539`
 
 ```python
 """
@@ -318,9 +318,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ...core.runtime.errors import SpecError
-from ...core.runtime.hashing import digest_payload
-from ...core.runtime.logging import get_logger
+from ...core.lifecycle.errors import SpecError
+from ...core.provenance.hashing import digest_payload
+from ...core.provenance.logging import get_logger
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Sequence
@@ -712,7 +712,7 @@ def _stat(path: Path) -> dict[str, int]:
 
 ## 4. `src/rade_qnet/orchestration/jobs/manifest.py`
 
-12734 bytes · SHA-256 `0a5173658b335f6b`
+12737 bytes · SHA-256 `80e4c231e0368046`
 
 ```python
 """
@@ -755,7 +755,7 @@ from typing import TYPE_CHECKING, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from ... import __version__
-from ...core.runtime.logging import get_logger
+from ...core.provenance.logging import get_logger
 
 if TYPE_CHECKING:
     from ..compute.base import WorkResult
@@ -1128,7 +1128,7 @@ def _relative(path: Path | None, root: Path) -> str | None:
 
 ## 5. `src/rade_qnet/orchestration/jobs/set.py`
 
-11660 bytes · SHA-256 `8aa5850984437273`
+11673 bytes · SHA-256 `6482b8dd9fd29aa8`
 
 ```python
 """
@@ -1169,12 +1169,12 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
-from ...core.runtime.components import ENGINES, MODELS, registration_modules
-from ...core.runtime.context import RunContext
-from ...core.runtime.hashing import abbreviate_digest, digest_spec
-from ...core.runtime.logging import get_logger
+from ...core.lifecycle.components import ENGINES, MODELS, registration_modules
+from ...core.lifecycle.context import RunContext
+from ...core.provenance.hashing import abbreviate_digest, digest_spec
+from ...core.provenance.logging import get_logger
 from ..compute.base import WorkItem
-from ..compute.policy import Placement, choose_placement
+from ..compute.placement import Placement, choose_placement
 from .manifest import JobRecord, JobSetManifest
 from .unit import JobPayload, run_job
 
@@ -1473,7 +1473,7 @@ class JobSetRunner:
 
 ## 6. `src/rade_qnet/orchestration/jobs/unit.py`
 
-11485 bytes · SHA-256 `dbcca9ec2df2b2c8`
+11502 bytes · SHA-256 `4b4447c3711fbf4c`
 
 ```python
 """
@@ -1487,7 +1487,7 @@ back.
 What crosses the boundary, and what does not
 ---------------------------------------------
 :class:`JobPayload` carries the **ingredients** of a
-:class:`~rade_qnet.core.runtime.context.RunContext`, not a context.
+:class:`~rade_qnet.core.lifecycle.context.RunContext`, not a context.
 
 A context holds hooks, a catalog and a tracker. Hooks are arbitrary user
 objects -- a progress bar bound to a terminal, a client holding a socket, a
@@ -1520,18 +1520,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ...core.runtime.components import get_model, import_registrations
-from ...core.runtime.context import RunContext
-from ...core.runtime.errors import SpecError
-from ...core.runtime.logging import get_logger
-from ...storage.catalog import JsonlCatalog
-from ..pipelines.resolve import pipeline_for
+from ...core.lifecycle.components import get_model, import_registrations
+from ...core.lifecycle.context import RunContext
+from ...core.lifecycle.errors import SpecError
+from ...core.provenance.logging import get_logger
+from ...storage.runs.catalog import JsonlCatalog
 from ..pipelines.train import TrainPipeline
+from ..stages.resolve import pipeline_for
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from ...core.capability.definition import PredictorDefinition
+    from ...core.authoring.definition import PredictorDefinition
     from ...core.spec.run import SupervisedRunSpec
 
 __all__ = ["JobOutcome", "JobPayload", "run_job"]
@@ -1567,7 +1567,7 @@ class JobPayload:
         job identifier inside :meth:`RunContext.for_job`.
     catalog_root
         Where bundles are recorded, or ``None`` to skip recording. A path
-        rather than a :class:`~rade_qnet.storage.catalog.Catalog`, because the
+        rather than a :class:`~rade_qnet.storage.runs.catalog.Catalog`, because the
         catalog holds a lock file handle and a handle is meaningless in
         another process. Each worker opens its own against the same path,
         which is exactly what the single-writer design is built for.

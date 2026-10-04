@@ -4,14 +4,14 @@
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
-| 1 | `__init__.py` | 62 | 2660 | `8f8efee07fa1f4fa` |
-| 2 | `protocol.py` | 187 | 6817 | `c6a527da39da2b1a` |
+| 1 | `__init__.py` | 69 | 3122 | `8d8eb3deaf1ea40f` |
+| 2 | `protocol.py` | 187 | 6816 | `b6c88ab23fb9cf73` |
 
 ---
 
 ## 1. `src/rade_qnet/sources/environment/__init__.py`
 
-2660 bytes · SHA-256 `8f8efee07fa1f4fa`
+3122 bytes · SHA-256 `8d8eb3deaf1ea40f`
 
 ```python
 """
@@ -69,8 +69,15 @@ Planned modules
 ``recording.py``
     Episode capture to disk, producing the transition tables that an offline
     source reads back.
-``adapters/``
-    Bridges to third-party environment interfaces.
+``gymnasium.py``
+    A bridge from the Gymnasium interface, mapping its spaces onto framework
+    spaces and normalising its step-return convention.
+
+    This was an ``adapters/`` sub-package holding nothing but a charter, and
+    it was deleted for the same reason ``DifferentiableEnvironment`` is not
+    yet declared: a package with no modules is a promise with no reader, and
+    it costs a directory level on every import for a file that does not
+    exist.  One bridge is one module.  A second one can make it a package.
 """
 
 from .protocol import Environment, StepOutcome
@@ -82,13 +89,13 @@ __all__ = ["Environment", "StepOutcome"]
 
 ## 2. `src/rade_qnet/sources/environment/protocol.py`
 
-6817 bytes · SHA-256 `c6a527da39da2b1a`
+6816 bytes · SHA-256 `b6c88ab23fb9cf73`
 
 ```python
 """
 What an environment is: reset it, step it, and ask what it accepts.
 
-:class:`~rade_qnet.core.capability.definition.PolicyDefinition.build_environment`
+:class:`~rade_qnet.core.authoring.definition.PolicyDefinition.build_environment`
 has promised since Phase 1 that it returns "an environment satisfying one of
 the environment protocols in ``rade_qnet.sources.environment``". Until this
 module there were no such protocols -- the promise named something that did

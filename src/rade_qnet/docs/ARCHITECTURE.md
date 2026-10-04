@@ -112,12 +112,12 @@ the packages below it and never from the packages above.
 ```mermaid
 flowchart TD
     MODELS["<b>models</b><br/>the model library, and the only home of business vocabulary<br/><i>hybrid_gnn_rnn · ridge · xgb_tabular · lstm_tabular</i>"]
-    ORCH["<b>orchestration</b><br/>pipelines · jobs · compute"]
+    ORCH["<b>orchestration</b><br/>pipelines · stages · jobs · compute"]
     ENGINES["<b>engines</b><br/>torch · xgboost · sklearn"]
     SOURCES["<b>sources</b><br/>dataset · environment · batching"]
-    STORAGE["<b>storage</b><br/>bundle · catalog · registry · tracker"]
+    STORAGE["<b>storage</b><br/>bundle · manifest · runs"]
     ANALYSIS["<b>analysis</b><br/>metrics · visuals · reports"]
-    CORE["<b>core</b><br/>spec · contract · capability · runtime"]
+    CORE["<b>core</b><br/>spec · contract · authoring<br/>lifecycle · provenance"]
     TESTKIT["<b>testkit</b><br/>conformance · parity · fixtures"]
 
     MODELS --> ORCH
@@ -185,13 +185,22 @@ flowchart LR
         direction TB
         SPEC["<b>spec</b><br/>what a run <i>is</i><br/>declarative · hashable · serialisable"]
         CONTRACT["<b>contract</b><br/>what stages <i>pass</i><br/>typed payloads"]
-        CAPABILITY["<b>capability</b><br/>what a model <i>offers</i><br/>required base + opt-in protocols"]
-        RUNTIME["<b>runtime</b><br/>how a run <i>executes</i><br/>context · steps · hooks · registry"]
+        AUTHORING["<b>authoring</b><br/>what a model <i>offers</i><br/>required base + opt-in capabilities"]
+        LIFECYCLE["<b>lifecycle</b><br/>how a run <i>executes</i><br/>registry · pipeline · context · hooks · errors"]
+        PROVENANCE["<b>provenance</b><br/>what a run can <i>prove</i><br/>seeding · hashing · logging"]
     end
     SPEC -->|validated into| CONTRACT
-    CAPABILITY -->|consumed by| RUNTIME
-    CONTRACT -->|flows through| RUNTIME
+    AUTHORING -->|consumed by| LIFECYCLE
+    CONTRACT -->|flows through| LIFECYCLE
+    LIFECYCLE -->|records through| PROVENANCE
 ```
+
+Five sub-packages, and the two that look alike are the ones to be clear
+about. `spec` is what a YAML file may say; `contract` is what the code
+promises between stages. `authoring` is the only one a model author has to
+read. `lifecycle` and `provenance` were one package called `runtime`, and
+they split on *who opens the file*: someone extending the framework reads
+the first, someone who has to answer for a result reads the second.
 
 ### 4.1 Specs — what a run is
 

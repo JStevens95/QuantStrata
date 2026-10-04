@@ -5,11 +5,11 @@
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 61 | 2487 | `67191a456d8c17a9` |
-| 2 | `base.py` | 189 | 6357 | `25d759f42d87b0a2` |
-| 3 | `baselines.py` | 323 | 11108 | `fb7a6c6ed77475da` |
-| 4 | `curves.py` | 202 | 6918 | `9db36b4306e4f1d9` |
+| 2 | `base.py` | 189 | 6366 | `700a581a6ca0be3b` |
+| 3 | `baselines.py` | 323 | 11108 | `1557a6382e2340f6` |
+| 4 | `curves.py` | 202 | 6918 | `dc286333a6cdc775` |
 | 5 | `quality.py` | 317 | 10915 | `233491a91e32745d` |
-| 6 | `summary.py` | 329 | 10659 | `225ff04319798e23` |
+| 6 | `summary.py` | 329 | 10659 | `7632b593c2015988` |
 
 ---
 
@@ -85,7 +85,7 @@ __all__ = [
 
 ## 2. `src/rade_qnet/analysis/reports/base.py`
 
-6357 bytes · SHA-256 `25d759f42d87b0a2`
+6366 bytes · SHA-256 `700a581a6ca0be3b`
 
 ```python
 """
@@ -121,12 +121,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ...core.runtime.components import report
-from ...core.runtime.logging import get_logger
+from ...core.lifecycle.components import report
+from ...core.provenance.logging import get_logger
 
 if TYPE_CHECKING:
     from ...core.contract.bundle import ModelBundle
-    from ...core.runtime.context import RunContext
+    from ...core.lifecycle.context import RunContext
 
 __all__ = ["Report", "ReportOutcome", "report"]
 
@@ -198,7 +198,7 @@ class Report(ABC):
     Base class for report writers.
 
     Subclasses implement :meth:`render` and are registered with
-    :func:`~rade_qnet.core.runtime.components.report`. The pipeline calls
+    :func:`~rade_qnet.core.lifecycle.components.report`. The pipeline calls
     :meth:`render_safely`, never :meth:`render` directly.
 
     Attributes
@@ -283,7 +283,7 @@ class Report(ABC):
 
 ## 3. `src/rade_qnet/analysis/reports/baselines.py`
 
-11108 bytes · SHA-256 `fb7a6c6ed77475da`
+11108 bytes · SHA-256 `1557a6382e2340f6`
 
 ```python
 """
@@ -320,9 +320,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...core.runtime.logging import get_logger
+from ...core.provenance.logging import get_logger
 from ..visuals.export import save_figure
-from ..visuals.primitives import metric_comparison_figure
+from ..visuals.figures import metric_comparison_figure
 from .base import Report, ReportContext, report
 
 if TYPE_CHECKING:
@@ -615,7 +615,7 @@ class BaselinesReport(Report):
 
 ## 4. `src/rade_qnet/analysis/reports/curves.py`
 
-6918 bytes · SHA-256 `9db36b4306e4f1d9`
+6918 bytes · SHA-256 `dc286333a6cdc775`
 
 ```python
 """
@@ -637,9 +637,9 @@ from __future__ import annotations
 import csv
 from typing import TYPE_CHECKING
 
-from ...core.runtime.logging import get_logger
+from ...core.provenance.logging import get_logger
 from ..visuals.export import save_figure
-from ..visuals.primitives import training_curve_figure
+from ..visuals.figures import training_curve_figure
 from ..visuals.training import (
     epoch_timing_figure,
     gradient_norm_figure,
@@ -1152,7 +1152,7 @@ def _format_metric(name: str, value: float) -> str:
 
 ## 6. `src/rade_qnet/analysis/reports/summary.py`
 
-10659 bytes · SHA-256 `225ff04319798e23`
+10659 bytes · SHA-256 `7632b593c2015988`
 
 ```python
 """
@@ -1175,9 +1175,9 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from ...core.runtime.logging import get_logger
+from ...core.provenance.logging import get_logger
 from ..visuals.export import save_figure
-from ..visuals.primitives import metric_comparison_figure, training_curve_figure
+from ..visuals.figures import metric_comparison_figure, training_curve_figure
 from .base import Report, ReportContext, report
 
 __all__ = ["SummaryReport"]

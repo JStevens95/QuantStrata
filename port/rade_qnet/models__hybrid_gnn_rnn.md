@@ -5,13 +5,13 @@
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 66 | 2656 | `d99cf28ec67f4ec0` |
-| 2 | `data.py` | 686 | 25492 | `4a15225894ac6a82` |
-| 3 | `model.py` | 360 | 13187 | `e16abf150582ac66` |
-| 4 | `register.py` | 143 | 5609 | `66fbc28dae99d634` |
-| 5 | `reports.py` | 340 | 11956 | `11d6f5c7bbcf3f41` |
+| 2 | `data.py` | 686 | 25497 | `73f29f102ea6daaa` |
+| 3 | `model.py` | 360 | 13189 | `7d269cda90d695c5` |
+| 4 | `register.py` | 143 | 5610 | `589cfb05e6a8b23e` |
+| 5 | `reports.py` | 340 | 11958 | `5308b7d914f3b947` |
 | 6 | `spec.py` | 393 | 17434 | `a177505b14867755` |
-| 7 | `state.py` | 466 | 16885 | `2e5ee264c98828d9` |
-| 8 | `visuals.py` | 261 | 8715 | `3ed7119fc00abd58` |
+| 7 | `state.py` | 466 | 16887 | `3cfb158385bbfb3f` |
+| 8 | `visuals.py` | 261 | 8717 | `c033d0fcfc405089` |
 
 ---
 
@@ -92,7 +92,7 @@ __all__ = ["HybridGnnRnnModel"]
 
 ## 2. `src/rade_qnet/models/hybrid_gnn_rnn/data.py`
 
-25492 bytes · SHA-256 `4a15225894ac6a82`
+25497 bytes · SHA-256 `73f29f102ea6daaa`
 
 ```python
 """
@@ -169,8 +169,8 @@ from numpy.typing import NDArray
 
 from ...core.contract.requirement import InputRequirement, RequiredInput
 from ...core.contract.signature import InputSignature, TensorSpec
-from ...core.runtime.errors import ContractError
-from ...core.runtime.logging import get_logger
+from ...core.lifecycle.errors import ContractError
+from ...core.provenance.logging import get_logger
 from ...core.spec.data import SourceSpec
 from ...sources.dataset.module import DataModule
 from .features.basis import select_basis
@@ -787,7 +787,7 @@ def _merge_attributes(
 
 ## 3. `src/rade_qnet/models/hybrid_gnn_rnn/model.py`
 
-13187 bytes · SHA-256 `e16abf150582ac66`
+13189 bytes · SHA-256 `7d269cda90d695c5`
 
 ```python
 """
@@ -858,7 +858,7 @@ from typing import TYPE_CHECKING
 import torch
 from torch import Tensor, nn
 
-from ...core.runtime.errors import ContractError
+from ...core.lifecycle.errors import ContractError
 from .layers.attention import TargetAttentionLayer
 from .layers.fusion import FusionLayer
 from .layers.gnn import LAYER_NORM_EPS, GnnBlock
@@ -1156,7 +1156,7 @@ def _width(signature: InputSignature, name: str, *, axis: int, static: bool) -> 
 
 ## 4. `src/rade_qnet/models/hybrid_gnn_rnn/register.py`
 
-5609 bytes · SHA-256 `66fbc28dae99d634`
+5610 bytes · SHA-256 `589cfb05e6a8b23e`
 
 ```python
 """
@@ -1183,8 +1183,8 @@ from __future__ import annotations
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
-from ...core.capability.supervised import SupervisedModel
-from ...core.runtime.components import model
+from ...core.authoring.supervised import SupervisedModel
+from ...core.lifecycle.components import model
 
 # Imported for its import side effect: this is what puts the Torch engine
 # and its supervised learner in the registry. The decorator below declares
@@ -1308,7 +1308,7 @@ class HybridGnnRnnModel(SupervisedModel):
 
 ## 5. `src/rade_qnet/models/hybrid_gnn_rnn/reports.py`
 
-11956 bytes · SHA-256 `11d6f5c7bbcf3f41`
+11958 bytes · SHA-256 `5308b7d914f3b947`
 
 ```python
 """
@@ -1360,7 +1360,7 @@ import numpy as np
 
 from ...analysis.reports.base import Report
 from ...analysis.visuals.export import save_figure
-from ...core.runtime.components import report
+from ...core.lifecycle.components import report
 from .state import HybridState
 from .visuals import (
     edge_weight_figure,
@@ -2059,7 +2059,7 @@ _MISSING = object()
 
 ## 7. `src/rade_qnet/models/hybrid_gnn_rnn/state.py`
 
-16885 bytes · SHA-256 `2e5ee264c98828d9`
+16887 bytes · SHA-256 `3cfb158385bbfb3f`
 
 ```python
 """
@@ -2124,7 +2124,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ...core.contract.state import FittedState
-from ...core.runtime.errors import BundleError
+from ...core.lifecycle.errors import BundleError
 from .features.encoder import EntityEncoderState
 from .features.graph import SparseGraphState
 
@@ -2534,7 +2534,7 @@ class HybridState(FittedState):
 
 ## 8. `src/rade_qnet/models/hybrid_gnn_rnn/visuals.py`
 
-8715 bytes · SHA-256 `3ed7119fc00abd58`
+8717 bytes · SHA-256 `c033d0fcfc405089`
 
 ```python
 """
@@ -2577,7 +2577,7 @@ import numpy as np
 from matplotlib.figure import Figure
 
 from ...analysis.visuals.style import figure_style
-from ...core.runtime.errors import ContractError
+from ...core.lifecycle.errors import ContractError
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray

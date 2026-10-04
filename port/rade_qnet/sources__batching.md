@@ -5,8 +5,8 @@
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 42 | 1770 | `705aee492f36f269` |
-| 2 | `dataset.py` | 426 | 15276 | `40393e1e40fc3e40` |
-| 3 | `rollout.py` | 494 | 17907 | `6f3c7a2ceb1ae1a8` |
+| 2 | `dataset.py` | 426 | 15290 | `e9bf1a479fecbcb8` |
+| 3 | `rollout.py` | 494 | 17912 | `a23e2fda7fa4f1bb` |
 
 ---
 
@@ -63,14 +63,14 @@ __all__: tuple[str, ...] = ()
 
 ## 2. `src/rade_qnet/sources/batching/dataset.py`
 
-15276 bytes · SHA-256 `40393e1e40fc3e40`
+15290 bytes · SHA-256 `e9bf1a479fecbcb8`
 
 ```python
 """
 ``DatasetSource`` -- one split of a prepared dataset, as a ``BatchSource``.
 
 The adapter that makes supervised learning a special case of the framework's
-single training loop. It takes a :class:`~..dataset.io.PreparedDataset`, a
+single training loop. It takes a :class:`~..dataset.cache.PreparedDataset`, a
 split name and a :class:`~rade_qnet.core.spec.data.LoaderSpec`, and presents them
 as the same protocol a live environment presents.
 
@@ -113,9 +113,9 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ...core.contract.data import SPLIT_NAMES, TARGET_KEY
-from ...core.runtime.errors import ContractError
-from ...core.runtime.logging import get_logger
-from ...core.runtime.seeding import derive_seed
+from ...core.lifecycle.errors import ContractError
+from ...core.provenance.logging import get_logger
+from ...core.provenance.seeding import derive_seed
 from ..dataset.transforms.sequence import extract_windows, usable_labels
 
 if TYPE_CHECKING:
@@ -126,7 +126,7 @@ if TYPE_CHECKING:
     from ...core.contract.data import Batch, TensorLike
     from ...core.contract.signature import InputSignature
     from ...core.spec.data import LoaderSpec, SequenceSpec
-    from ..dataset.io import PreparedDataset
+    from ..dataset.cache import PreparedDataset
 
 __all__ = ["TARGET_KEY", "DatasetSource", "sources_for"]
 
@@ -498,7 +498,7 @@ def sources_for(
 
 ## 3. `src/rade_qnet/sources/batching/rollout.py`
 
-17907 bytes · SHA-256 `6f3c7a2ceb1ae1a8`
+17912 bytes · SHA-256 `a23e2fda7fa4f1bb`
 
 ```python
 """
@@ -555,8 +555,8 @@ import numpy as np
 
 from ...core.contract.data import TARGET_KEY
 from ...core.contract.signature import InputSignature, PolicySignature, TensorSpec
-from ...core.runtime.errors import ContractError
-from ...core.runtime.logging import get_logger
+from ...core.lifecycle.errors import ContractError
+from ...core.provenance.logging import get_logger
 from ..environment.protocol import Environment
 
 if TYPE_CHECKING:

@@ -5,9 +5,9 @@
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 42 | 2099 | `be147ade92895e66` |
-| 2 | `conformance.py` | 1183 | 40426 | `0523b7740d3d7d62` |
-| 3 | `fixtures.py` | 1494 | 47504 | `144395b1b0724dde` |
-| 4 | `parity.py` | 1009 | 36687 | `ed3df40d131fa2e1` |
+| 2 | `conformance.py` | 1189 | 40460 | `f34d858b31058be2` |
+| 3 | `fixtures.py` | 1494 | 47524 | `a10dd886a237dbfa` |
+| 4 | `parity.py` | 1009 | 36692 | `366dcea95f2cd3ac` |
 
 ---
 
@@ -64,7 +64,7 @@ __all__: tuple[str, ...] = ()
 
 ## 2. `src/rade_qnet/testkit/conformance.py`
 
-40426 bytes · SHA-256 `0523b7740d3d7d62`
+40460 bytes · SHA-256 `f34d858b31058be2`
 
 ```python
 """
@@ -86,7 +86,7 @@ numbers, and is wrong. A few examples of what is checked and what it catches:
 - A :class:`~rade_qnet.core.contract.state.FittedState` whose inverse is not an
   inverse reports metrics in the wrong units, so every number is
   incomparable with every other run.
-- A :class:`~rade_qnet.core.capability.protocols.Routable` member that
+- A :class:`~rade_qnet.core.authoring.capabilities.Routable` member that
   over-declares its coverage attributes predictions to instruments it never
   trained on.
 
@@ -113,13 +113,19 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
-from ..core.capability.protocols import CustomStep, Inductive, Precomputable, Routable, StaticInputs
+from ..core.authoring.capabilities import (
+    CustomStep,
+    Inductive,
+    Precomputable,
+    Routable,
+    StaticInputs,
+)
 from ..core.contract.data import TARGET_KEY, Batch, DataBundle
 from ..core.contract.result import FitOutcome
 from ..core.contract.signature import InputSignature
 from ..core.contract.source import BatchSource
 from ..core.contract.state import FittedState
-from ..core.runtime.logging import get_logger
+from ..core.provenance.logging import get_logger
 from ..core.spec.hardware import HardwareSpec
 from ..engines.base import Engine, EngineCapabilities, ModelHandle
 
@@ -554,7 +560,7 @@ def check_model_capabilities(
         The model object, or its definition.
     assigned_targets
         The targets a job assigned, if the model is
-        :class:`~rade_qnet.core.capability.protocols.Routable`. Needed to check
+        :class:`~rade_qnet.core.authoring.capabilities.Routable`. Needed to check
         that declared coverage is a subset of what was assigned.
     subject
         Name for the messages.
@@ -1256,7 +1262,7 @@ def _mean_squared_error(predictions: NDArray[np.floating], targets: NDArray[np.f
 
 ## 3. `src/rade_qnet/testkit/fixtures.py`
 
-47504 bytes · SHA-256 `144395b1b0724dde`
+47524 bytes · SHA-256 `a10dd886a237dbfa`
 
 ```python
 """
@@ -1306,14 +1312,14 @@ from ..core.contract.result import EpochRecord, EvalResult, FitOutcome, Training
 from ..core.contract.signature import InputSignature, SpaceSpec, TensorSpec
 from ..core.contract.source import BatchSource
 from ..core.contract.state import FittedState
-from ..core.runtime.components import ENGINES, LEARNERS, MODELS, REPORTS
-from ..core.runtime.context import RunContext
-from ..core.runtime.errors import EngineError
-from ..core.runtime.hooks import PipelineHook
+from ..core.lifecycle.components import ENGINES, LEARNERS, MODELS, REPORTS
+from ..core.lifecycle.context import RunContext
+from ..core.lifecycle.errors import EngineError
+from ..core.lifecycle.hooks import PipelineHook
 from ..core.spec.run import RunSpec, parse_run_spec
 from ..engines.base import EngineCapabilities, ModelHandle
 from ..sources.environment import StepOutcome
-from ..storage.catalog import InMemoryCatalog
+from ..storage.runs.catalog import InMemoryCatalog
 
 __all__ = [
     "PLACEHOLDER_DIGEST",
@@ -1387,7 +1393,7 @@ def isolated_registries(*, empty: bool = False) -> Iterator[None]:
 
     Examples
     --------
-    >>> from rade_qnet.core.runtime.components import MODELS
+    >>> from rade_qnet.core.lifecycle.components import MODELS
     >>> with isolated_registries():
     ...     MODELS.register("temporary", object)
     >>> "temporary" in MODELS
@@ -2010,7 +2016,7 @@ def make_run_context(
         Base seed.
     catalog
         Catalog to attach. Defaults to a fresh
-        :class:`~rade_qnet.storage.catalog.InMemoryCatalog`; pass one explicitly
+        :class:`~rade_qnet.storage.runs.catalog.InMemoryCatalog`; pass one explicitly
         when the test needs to inspect what was registered.
     job_id
         Job identifier, for a context standing in for a job-set member.
@@ -2759,7 +2765,7 @@ class SyntheticEnvironment:
 
 ## 4. `src/rade_qnet/testkit/parity.py`
 
-36687 bytes · SHA-256 `ed3df40d131fa2e1`
+36692 bytes · SHA-256 `366dcea95f2cd3ac`
 
 ```python
 """
@@ -2825,8 +2831,8 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from ..core.runtime.errors import ContractError
-from ..core.runtime.logging import get_logger
+from ..core.lifecycle.errors import ContractError
+from ..core.provenance.logging import get_logger
 
 __all__ = [
     "ADJACENCY_VALUE_ATOL",

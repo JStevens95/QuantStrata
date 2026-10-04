@@ -1,85 +1,82 @@
-# `src/rade_qnet/core/runtime`
+# `src/rade_qnet/core/lifecycle`
 
-9 file(s). Create the directory, then create each file below with the exact contents of its block.
+7 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
-| 1 | `__init__.py` | 62 | 3025 | `041af9b78a9927f4` |
-| 2 | `components.py` | 548 | 15865 | `d4892d7b478201e0` |
-| 3 | `context.py` | 403 | 14024 | `79547c2c0a1e60a0` |
+| 1 | `__init__.py` | 61 | 3145 | `104b6ad947ef13b3` |
+| 2 | `components.py` | 337 | 9071 | `5c564d38da6f6864` |
+| 3 | `context.py` | 403 | 14062 | `4626d883ff35448d` |
 | 4 | `errors.py` | 153 | 5378 | `f13eb08c3452f71f` |
-| 5 | `hashing.py` | 231 | 6505 | `f6d9f4a484edae26` |
-| 6 | `hooks.py` | 165 | 5574 | `a12ae9f374abea76` |
-| 7 | `logging.py` | 262 | 9009 | `f107778d8a86e24c` |
-| 8 | `pipeline.py` | 267 | 9822 | `49e5a0d89f731b58` |
-| 9 | `seeding.py` | 240 | 7820 | `bf9dcd660de9c2cb` |
+| 5 | `hooks.py` | 165 | 5578 | `b9db3f32f535c7ad` |
+| 6 | `pipeline.py` | 267 | 9834 | `9e58f9499eb4a1e1` |
+| 7 | `registry.py` | 241 | 7872 | `131cf36657c86a5d` |
 
 ---
 
-## 1. `src/rade_qnet/core/runtime/__init__.py`
+## 1. `src/rade_qnet/core/lifecycle/__init__.py`
 
-3025 bytes · SHA-256 `041af9b78a9927f4`
+3145 bytes · SHA-256 `104b6ad947ef13b3`
 
 ```python
 """
-The machinery that executes a pipeline.
+How a run is assembled, and how somebody changes it without forking it.
 
-Where ``spec`` and ``contract`` describe *what* a run is, ``runtime`` provides
-the apparatus that makes a run happen and makes it observable: a context object
-threaded through every stage, an instrumented step runner, lifecycle hooks,
-component lookup by name, deterministic seeding and the framework's error
-hierarchy.
+Five modules, and they are the whole extension model.  A specification names
+a model as a string; something has to turn that string into a class.  A
+pipeline is a sequence of stages; something has to define what a stage is and
+what it may reach.  A user wants to watch a run without subclassing it;
+something has to give them a place to stand.
 
-This package is deliberately small and dependency-free.  It is imported by
-every pipeline, every engine and every report writer, so anything heavy placed
-here would be paid for by every process the framework starts.
+This package is what a contributor reads when the question is *how do I plug
+something in*.  Its sibling :mod:`rade_qnet.core.provenance` is what somebody
+reads when the question is *can you prove this number*.  Those are different
+people on different days, which is why the eight modules that used to share a
+``runtime`` package are now two packages of five and three.
+
+The four customisation tiers, and where each one lives
+-------------------------------------------------------
+A model should use the lowest tier that works, and the tiers only stay
+distinct because the mechanisms are distinct:
+
+1. **Spec only.**  Write no code.  ``components.py`` resolves the names.
+2. **Observe.**  Attach a hook or enable a report.  ``hooks.py``.
+3. **Override one stage.**  Subclass a pipeline, replace one method.
+   ``pipeline.py`` is what makes a stage small enough to be worth replacing.
+4. **Override ``run()``.**  Reserved for genuinely different sequences.
+
+Conflating 2 and 3 is the failure this split prevents.  Without hooks, a user
+who wants to log something subclasses a pipeline and overrides a stage to add
+a print statement -- an override whose only purpose is observation, which then
+silently stops matching the base implementation it copied.
 
 Modules
 -------
-``errors.py``
-    ``RadeQNetError`` and its specialisations: ``SpecError``, ``StageError``,
-    ``ContractError``, ``BundleError``, ``CapabilityError``, ``ComponentError``.
-    [Phase 1, delivered]
-``hashing.py``
-    Stable hashes for a spec, a payload, an array set and a file, used for
-    cache keys and bundle provenance.  SHA-256 over canonical JSON, never
-    Python's ``hash()``, which is salted per process.  [Phase 1, delivered]
-``logging.py``
-    Structured logging with contextual identifiers (run, job, stage) carried on
-    ``contextvars`` so a worker's output is attributable without threading a
-    logger through every call.  Configuration is explicit and never happens at
-    import.  [Phase 1, delivered]
-``seeding.py``
-    ``seed_everything(seed, determinism)`` where determinism is ``off``,
-    ``warn`` or ``strict``.  Unlike a blanket deterministic flag, this is
-    explicit about the performance and kernel-support trade-off being made.
-    Engines register their own seeding callbacks, because ``core`` may not
-    import a training library.  [Phase 1, delivered]
+``registry.py``
+    ``Registry[T]`` and ``RegistryEntry`` -- the generic container, which
+    knows how to hold named classes and refuse a duplicate and nothing about
+    what a model is.
 ``components.py``
-    The name registry: ``@model``, ``@engine``, ``@learner``, ``@report`` and
-    the lookups that resolve a string in a spec to a class.  Resolution by name
-    (rather than by importable dotted path) keeps specs stable across
-    refactors.  [Phase 1, delivered]
-``hooks.py``
-    ``PipelineHook`` -- the run, stage, epoch, metric and artifact observation
-    points.  A hook may observe but never alter, and a failing hook never fails
-    a run.  [Phase 1, delivered]
-``context.py``
-    ``RunContext`` -- run identifier, working directory, resolved seed, bound
-    logging identifiers, hook fan-out and handles to the catalog and tracker.
-    One object passed down instead of a dozen keyword arguments.  Also declares
-    the ``Catalog`` and ``Tracker`` protocols that ``storage`` implements, since
-    the dependency may not run the other way.  [Phase 1, delivered]
+    The four concrete registries (models, engines, learners, reports), the
+    decorators that populate them, and the getters that read them.  Also
+    ``registration_modules`` and ``import_registrations``, which are how a
+    worker process replays the imports that made a name resolvable -- the
+    defect that made a job set work from one entry point and fail from
+    another.
 ``pipeline.py``
-    The ``Pipeline`` base and its ``step()`` runner.  Every stage goes through
-    ``step()``, which times it, emits start and end events, and wraps failures
-    in a ``StageError`` naming the stage.  [Phase 1, delivered]
-
-Planned modules
----------------
-``cache.py``
-    The step cache, so tuning and evaluation can reuse an expensive data build
-    across trials keyed by spec digest.  [Phase 5]
+    The template-method base every pipeline derives from.
+``context.py``
+    ``RunContext``: the ambient state every stage can reach -- where to
+    write, which run, which seed, who is observing.  Threading those through
+    every signature would make each stage's parameters mostly plumbing;
+    module globals would make two concurrent runs in one process impossible.
+``errors.py``
+    The error hierarchy.  Every framework error carries the one thing a bare
+    ``ValueError`` cannot: whose fault it is.  A ``SpecError`` means the user
+    can fix it by editing their configuration; a ``ContractError`` means the
+    framework or a model broke an internal promise.  It sits here rather than
+    in ``provenance`` because an error is raised *by a stage*, and because
+    every module in the framework imports it.
 """
 
 __all__: tuple[str, ...] = ()
@@ -87,13 +84,13 @@ __all__: tuple[str, ...] = ()
 
 ---
 
-## 2. `src/rade_qnet/core/runtime/components.py`
+## 2. `src/rade_qnet/core/lifecycle/components.py`
 
-15865 bytes · SHA-256 `d4892d7b478201e0`
+9071 bytes · SHA-256 `5c564d38da6f6864`
 
 ```python
 """
-The component registry: resolving a name in a specification to a class.
+The four component registries: resolving a name in a specification to a class.
 
 A specification says ``model: hybrid_gnn_rnn``, not
 ``model: rade_qnet.models.hybrid_gnn_rnn.register.HybridGnnRnnModel``. The
@@ -120,20 +117,17 @@ exist so a test, or a scoped plugin load, can contain its registrations.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field
+from collections.abc import Callable, Iterable
 from importlib import import_module
-from typing import TypeVar
 
 from .errors import ComponentError
+from .registry import ClassT, Registry
 
 __all__ = [
     "ENGINES",
     "LEARNERS",
     "MODELS",
     "REPORTS",
-    "Registry",
-    "RegistryEntry",
     "engine",
     "get_engine",
     "get_learner",
@@ -147,214 +141,6 @@ __all__ = [
 ]
 
 #: Bound for the decorators below, which accept and return the same class.
-ClassT = TypeVar("ClassT", bound=type)
-
-
-@dataclass(frozen=True, slots=True)
-class RegistryEntry[ComponentT]:
-    """
-    One registered component and the metadata registered alongside it.
-
-    Parameters
-    ----------
-    name
-        The name a specification uses.
-    component
-        The registered object, usually a class.
-    metadata
-        Free-form annotations, such as which engine a model requires. Kept
-        beside the component rather than on it so that a registry can be
-        queried without importing or instantiating anything.
-    defining_module
-        The dotted module whose import registered this component.
-
-        Recorded so that a worker process can rebuild the registry its
-        parent had. A spawned worker starts with a bare interpreter, and the
-        only components it knows about are the ones its own imports brought
-        in -- which, for a module whose entire purpose is a registration
-        side effect, is none of them. It appears to work when the user's
-        entry point happens to import the model, because spawn re-imports
-        the main module; it then stops working the moment the entry point
-        changes, which is a failure that depends on who is calling rather
-        than on what is configured.
-
-        Recorded rather than derived from a naming convention, so that a
-        model living in a user's own package works exactly as a built-in
-        one does.
-    """
-
-    name: str
-    component: ComponentT
-    metadata: Mapping[str, object] = field(default_factory=dict)
-    defining_module: str | None = None
-
-
-class Registry[ComponentT]:
-    """
-    A name-to-component mapping for one kind of component.
-
-    Parameters
-    ----------
-    kind
-        What the registry holds, used in error messages. Naming the kind is
-        what turns "unknown name 'ridge'" into "no model named 'ridge'".
-    """
-
-    def __init__(self, kind: str) -> None:
-        self._kind = kind
-        self._entries: dict[str, RegistryEntry[ComponentT]] = {}
-
-    @property
-    def kind(self) -> str:
-        """What this registry holds."""
-        return self._kind
-
-    def register(
-        self,
-        name: str,
-        component: ComponentT,
-        *,
-        metadata: Mapping[str, object] | None = None,
-    ) -> None:
-        """
-        Add a component under a name.
-
-        Parameters
-        ----------
-        name
-            The name a specification will use. Must be non-empty.
-        component
-            The object to register.
-        metadata
-            Optional annotations stored alongside the component.
-
-        Raises
-        ------
-        ComponentError
-            If the name is empty, or already registered. A duplicate is an
-            error rather than a replacement because the alternative is a
-            last-import-wins race: which model a name refers to would depend
-            on import order, and a specification would silently train a
-            different model than the one its author meant.
-        """
-        if not name:
-            raise ComponentError(f"a {self._kind} name must be a non-empty string")
-        if name in self._entries:
-            existing = self._entries[name].component
-            raise ComponentError(
-                f"a {self._kind} named {name!r} is already registered "
-                f"({existing!r}); names must be unique"
-            )
-        self._entries[name] = RegistryEntry(
-            name=name,
-            component=component,
-            metadata=metadata or {},
-            # The component's own module, not this one's. A decorator runs
-            # inside the module being imported, so `__module__` on the
-            # decorated class is exactly the module whose import caused the
-            # registration -- which is the thing a worker needs to import.
-            defining_module=getattr(component, "__module__", None),
-        )
-
-    def get(self, name: str) -> ComponentT:
-        """
-        Resolve a name to its component.
-
-        Parameters
-        ----------
-        name
-            The registered name.
-
-        Returns
-        -------
-        ComponentT
-            The registered component.
-
-        Raises
-        ------
-        ComponentError
-            If the name is not registered. The message lists what *is*
-            registered, because the usual cause is a typo or a model package
-            that was never imported, and both are obvious from the list.
-        """
-        try:
-            return self._entries[name].component
-        except KeyError:
-            available = ", ".join(self.names()) or "<none registered>"
-            raise ComponentError(
-                f"no {self._kind} named {name!r}; available: {available}"
-            ) from None
-
-    def entry(self, name: str) -> RegistryEntry[ComponentT]:
-        """
-        Resolve a name to its full entry, including metadata.
-
-        Parameters
-        ----------
-        name
-            The registered name.
-
-        Returns
-        -------
-        RegistryEntry
-            The entry.
-
-        Raises
-        ------
-        ComponentError
-            If the name is not registered.
-        """
-        self.get(name)
-        return self._entries[name]
-
-    def names(self) -> tuple[str, ...]:
-        """
-        Return every registered name, sorted.
-
-        Returns
-        -------
-        tuple of str
-            Sorted names, so error messages and listings are deterministic.
-        """
-        return tuple(sorted(self._entries))
-
-    def snapshot(self) -> dict[str, RegistryEntry[ComponentT]]:
-        """
-        Return a shallow copy of the registry's contents.
-
-        Intended for scoped registration: take a snapshot, register, then
-        restore. A test that registers a throwaway model must not leak it into
-        every test that follows.
-
-        Returns
-        -------
-        dict
-            A copy of the internal mapping.
-        """
-        return dict(self._entries)
-
-    def restore(self, snapshot: Mapping[str, RegistryEntry[ComponentT]]) -> None:
-        """
-        Replace the registry's contents with a snapshot.
-
-        Parameters
-        ----------
-        snapshot
-            A mapping previously returned by :meth:`snapshot`.
-        """
-        self._entries = dict(snapshot)
-
-    def __contains__(self, name: object) -> bool:
-        """Return whether a name is registered."""
-        return name in self._entries
-
-    def __len__(self) -> int:
-        """Return the number of registered components."""
-        return len(self._entries)
-
-    def __repr__(self) -> str:
-        """Return a representation naming the kind and the registered names."""
-        return f"Registry(kind={self._kind!r}, names={list(self.names())!r})"
 
 
 #: Models, keyed by the name a specification's ``model`` field uses.
@@ -644,9 +430,9 @@ def get_report(name: str) -> type:
 
 ---
 
-## 3. `src/rade_qnet/core/runtime/context.py`
+## 3. `src/rade_qnet/core/lifecycle/context.py`
 
-14024 bytes · SHA-256 `79547c2c0a1e60a0`
+14062 bytes · SHA-256 `4626d883ff35448d`
 
 ```python
 """
@@ -681,9 +467,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
+from ..provenance.logging import bound_context, get_logger
+from ..provenance.seeding import derive_seed
 from .hooks import PipelineHook
-from .logging import bound_context, get_logger
-from .seeding import derive_seed
 
 if TYPE_CHECKING:
     from logging import Logger
@@ -700,7 +486,7 @@ class Catalog(Protocol):
     """
     The registry of what has been trained, and where it was put.
 
-    Implemented by ``rade_qnet.storage.catalog``; declared here for the reason
+    Implemented by ``rade_qnet.storage.runs.catalog``; declared here for the reason
     given in the module docstring.
 
     The implementation is single-writer by construction. Version assignment
@@ -710,14 +496,14 @@ class Catalog(Protocol):
 
     Only the three methods a *pipeline* calls are declared here. The query
     side -- ``entries`` and ``records``, which
-    :class:`~rade_qnet.storage.registry.RunRegistry` reads -- is deliberately
+    :class:`~rade_qnet.storage.runs.registry.RunRegistry` reads -- is deliberately
     absent, for the reason given at
-    :class:`~rade_qnet.core.capability.supervised.RebuildableDataModule`: an
+    :class:`~rade_qnet.core.authoring.supervised.RebuildableDataModule`: an
     ``isinstance`` check against a runtime-checkable protocol only tests that
     the methods exist, so widening this one would make every three-method
     stub in the suite stop satisfying it, failing training runs over methods
     the training path never calls. The registry constructs a concrete
-    :class:`~rade_qnet.storage.catalog.JsonlCatalog` instead of accepting any
+    :class:`~rade_qnet.storage.runs.catalog.JsonlCatalog` instead of accepting any
     ``Catalog``, which is what makes that safe.
     """
 
@@ -1056,7 +842,7 @@ class RunContext:
 
 ---
 
-## 4. `src/rade_qnet/core/runtime/errors.py`
+## 4. `src/rade_qnet/core/lifecycle/errors.py`
 
 5378 bytes · SHA-256 `f13eb08c3452f71f`
 
@@ -1218,249 +1004,9 @@ class StageError(RadeQNetError):
 
 ---
 
-## 5. `src/rade_qnet/core/runtime/hashing.py`
+## 5. `src/rade_qnet/core/lifecycle/hooks.py`
 
-6505 bytes · SHA-256 `f6d9f4a484edae26`
-
-```python
-"""
-Stable content hashes for specifications, arrays and files.
-
-These digests are used as cache keys and as bundle provenance, which imposes a
-requirement stronger than it first appears: **the digest of equal inputs must
-be equal in a different process, on a different day, on a different machine.**
-
-Python's built-in ``hash()`` satisfies none of that. String hashing is salted
-per interpreter, so ``hash("a")`` differs between two processes of the same
-program. A cache keyed on it misses every time, and a hyper-parameter search
-silently rebuilds its dataset once per trial instead of once in total. Every
-digest here is therefore a SHA-256 over a canonical byte encoding.
-"""
-
-from __future__ import annotations
-
-import hashlib
-import json
-from collections.abc import Mapping
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
-
-import numpy as np
-
-if TYPE_CHECKING:  # pragma: no cover - typing only
-    from pydantic import BaseModel
-
-__all__ = [
-    "abbreviate_digest",
-    "canonical_json",
-    "digest_arrays",
-    "digest_file",
-    "digest_payload",
-    "digest_spec",
-]
-
-#: Read size for file hashing. Large enough that the loop is not syscall-bound,
-#: small enough that a multi-gigabyte checkpoint is not held in memory.
-_FILE_CHUNK_BYTES = 1 << 20
-
-
-def _json_default(value: object) -> Any:  # noqa: ANN401 - json hook signature
-    """
-    Encode values ``json`` cannot serialise on its own.
-
-    Only types that genuinely appear in specifications and lineage are
-    handled. Anything else raises, which is deliberate: silently encoding an
-    unknown object via ``repr`` would produce a digest that changes when an
-    unrelated ``__repr__`` changes.
-
-    Parameters
-    ----------
-    value
-        The object ``json.dumps`` could not encode.
-
-    Returns
-    -------
-    Any
-        A JSON-encodable replacement.
-
-    Raises
-    ------
-    TypeError
-        If the value has no canonical encoding.
-    """
-    if isinstance(value, Path):
-        # Posix form so a digest computed on Windows matches one from Linux.
-        return value.as_posix()
-    if isinstance(value, (set, frozenset)):
-        # Sets have no order, so one must be imposed or the digest is unstable.
-        return sorted(str(item) for item in value)
-    if isinstance(value, np.generic):
-        return value.item()
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    raise TypeError(f"no canonical JSON encoding for type {type(value).__name__!r}")
-
-
-def canonical_json(payload: object) -> str:
-    """
-    Render a payload as JSON in a form that depends only on its content.
-
-    Keys are sorted and separators are fixed, so two mappings that differ only
-    in insertion order produce identical text -- and therefore identical
-    digests.
-
-    Parameters
-    ----------
-    payload
-        Any JSON-encodable structure, plus the extra types handled by the
-        module's encoder hook.
-
-    Returns
-    -------
-    str
-        Canonical JSON text.
-
-    Raises
-    ------
-    TypeError
-        If the payload contains a value with no canonical encoding.
-    """
-    return json.dumps(
-        payload,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=True,
-        default=_json_default,
-    )
-
-
-def digest_payload(payload: object) -> str:
-    """
-    Return the SHA-256 digest of a payload's canonical JSON form.
-
-    Parameters
-    ----------
-    payload
-        Any structure acceptable to :func:`canonical_json`.
-
-    Returns
-    -------
-    str
-        Lowercase hexadecimal digest, 64 characters.
-    """
-    return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
-
-
-def digest_spec(spec: BaseModel) -> str:
-    """
-    Return the digest of a specification.
-
-    The spec is dumped in JSON mode first, so that ``Path``, ``Enum`` and
-    similar fields are reduced to their serialised form. This matters because
-    the digest must match the one computed from the same spec after it has
-    been written to disk and read back -- that round trip is what a step cache
-    relies on.
-
-    Parameters
-    ----------
-    spec
-        Any pydantic model.
-
-    Returns
-    -------
-    str
-        Lowercase hexadecimal digest.
-    """
-    return digest_payload(spec.model_dump(mode="json"))
-
-
-def digest_file(path: Path, *, chunk_bytes: int = _FILE_CHUNK_BYTES) -> str:
-    """
-    Return the SHA-256 digest of a file's contents.
-
-    Read in chunks so that hashing a large checkpoint does not require holding
-    it in memory.
-
-    Parameters
-    ----------
-    path
-        File to hash.
-    chunk_bytes
-        Read size in bytes.
-
-    Returns
-    -------
-    str
-        Lowercase hexadecimal digest.
-
-    Raises
-    ------
-    OSError
-        If the file cannot be read.
-    """
-    hasher = hashlib.sha256()
-    with path.open("rb") as handle:
-        while chunk := handle.read(chunk_bytes):
-            hasher.update(chunk)
-    return hasher.hexdigest()
-
-
-def digest_arrays(arrays: Mapping[str, np.ndarray]) -> str:
-    """
-    Return a digest over a named collection of arrays.
-
-    Shape and dtype are folded into the digest alongside the bytes, so two
-    arrays holding the same values in different shapes or precisions hash
-    differently. Without that, a ``float32`` and ``float64`` view of the same
-    data would be treated as interchangeable by a cache, and they are not.
-
-    Parameters
-    ----------
-    arrays
-        Mapping of name to array. Names are hashed in sorted order, so the
-        mapping's iteration order is irrelevant.
-
-    Returns
-    -------
-    str
-        Lowercase hexadecimal digest.
-    """
-    hasher = hashlib.sha256()
-    for name in sorted(arrays):
-        array = np.ascontiguousarray(arrays[name])
-        hasher.update(name.encode("utf-8"))
-        hasher.update(str(array.shape).encode("utf-8"))
-        hasher.update(str(array.dtype).encode("utf-8"))
-        hasher.update(array.tobytes())
-    return hasher.hexdigest()
-
-
-def abbreviate_digest(digest: str, *, length: int = 12) -> str:
-    """
-    Shorten a digest for use in a directory name or log line.
-
-    Parameters
-    ----------
-    digest
-        A full hexadecimal digest.
-    length
-        Number of leading characters to keep. Twelve hexadecimal characters is
-        48 bits, which makes an accidental collision across the number of runs
-        a person will ever inspect by hand effectively impossible.
-
-    Returns
-    -------
-    str
-        The leading ``length`` characters.
-    """
-    return digest[:length]
-```
-
----
-
-## 6. `src/rade_qnet/core/runtime/hooks.py`
-
-5574 bytes · SHA-256 `a12ae9f374abea76`
+5578 bytes · SHA-256 `b9db3f32f535c7ad`
 
 ```python
 """
@@ -1485,7 +1031,7 @@ destroy four hours of training. Hook exceptions are caught, logged at warning
 level with the hook and stage named, and execution continues. The one
 exception is :meth:`PipelineHook.on_run_start`, where a hook that cannot
 initialise should say so before any compute is spent -- see
-:class:`~rade_qnet.core.runtime.pipeline.Pipeline` for where that line is drawn.
+:class:`~rade_qnet.core.lifecycle.pipeline.Pipeline` for where that line is drawn.
 """
 
 from __future__ import annotations
@@ -1582,7 +1128,7 @@ class PipelineHook:
             Stage name.
         error
             The exception, before it is wrapped in a
-            :class:`~rade_qnet.core.runtime.errors.StageError`.
+            :class:`~rade_qnet.core.lifecycle.errors.StageError`.
         """
 
     def on_epoch_end(self, epoch: int, metrics: Mapping[str, float]) -> None:
@@ -1632,280 +1178,9 @@ class PipelineHook:
 
 ---
 
-## 7. `src/rade_qnet/core/runtime/logging.py`
+## 6. `src/rade_qnet/core/lifecycle/pipeline.py`
 
-9009 bytes · SHA-256 `f107778d8a86e24c`
-
-```python
-"""
-Structured logging with contextual run identifiers.
-
-A forty-job run produces forty interleaved streams of log output. Without
-identifiers attached to every record, that output is unreadable, and the usual
-remedy -- threading a pre-configured logger through every function -- puts an
-infrastructure parameter into the signature of code that has nothing to do
-with logging.
-
-Instead the identifiers live in :class:`~contextvars.ContextVar` slots. Any
-module can call :func:`get_logger` and its records are automatically stamped
-with the current run, job and stage.
-
-Crossing a process boundary
----------------------------
-Context variables do not survive ``fork`` or ``spawn``. A worker must re-bind
-them, which is what :func:`context_payload` and :func:`apply_context_payload`
-are for: the parent serialises the context into the job payload, and the
-worker applies it before doing any work.
-"""
-
-from __future__ import annotations
-
-import logging
-import sys
-from collections.abc import Iterator, Mapping
-from contextlib import contextmanager
-from contextvars import ContextVar
-from typing import IO, Final
-
-__all__ = [
-    "ContextFilter",
-    "apply_context_payload",
-    "bound_context",
-    "configure_logging",
-    "context_payload",
-    "current_context",
-    "get_logger",
-]
-
-#: Identifier of the current run. ``None`` outside a run.
-RUN_ID: ContextVar[str | None] = ContextVar("rade_qnet_run_id", default=None)
-
-#: Identifier of the current job within a job set. ``None`` for a single run.
-JOB_ID: ContextVar[str | None] = ContextVar("rade_qnet_job_id", default=None)
-
-#: Name of the pipeline stage currently executing. ``None`` between stages.
-STAGE: ContextVar[str | None] = ContextVar("rade_qnet_stage", default=None)
-
-_CONTEXT_VARIABLES: Final = {"run_id": RUN_ID, "job_id": JOB_ID, "stage": STAGE}
-
-#: Root logger name. Every framework logger is a descendant, so a user can
-#: raise or lower the framework's verbosity with a single call without
-#: touching their own loggers.
-ROOT_LOGGER_NAME: Final = "rade_qnet"
-
-_LOG_FORMAT: Final = "%(asctime)s %(levelname)-7s [%(rade_qnet_context)s] %(name)s: %(message)s"
-_TIME_FORMAT: Final = "%Y-%m-%d %H:%M:%S"
-
-
-class ContextFilter(logging.Filter):
-    """
-    Attach the current run, job and stage identifiers to every record.
-
-    Implemented as a filter rather than an adapter so that records emitted by
-    code which knows nothing about this module -- including a third-party
-    library logging under the framework's logger tree -- are stamped too.
-    """
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        """
-        Add a ``rade_qnet_context`` attribute to the record.
-
-        Parameters
-        ----------
-        record
-            The record being emitted. Mutated in place.
-
-        Returns
-        -------
-        bool
-            Always ``True``: this filter annotates, it never discards.
-        """
-        identifiers = current_context()
-        # A compact single field rather than three, so the format string stays
-        # readable and a line with no context does not carry empty brackets.
-        record.rade_qnet_context = (
-            " ".join(f"{key}={value}" for key, value in identifiers.items()) or "-"
-        )
-        return True
-
-
-def get_logger(name: str) -> logging.Logger:
-    """
-    Return the framework logger for a module.
-
-    Parameters
-    ----------
-    name
-        Usually ``__name__``. A leading ``rade_qnet`` is not duplicated, and any
-        other name is placed under the framework's logger tree so that
-        configuring one logger configures all of them.
-
-    Returns
-    -------
-    logging.Logger
-        A logger beneath :data:`ROOT_LOGGER_NAME`.
-    """
-    if name == ROOT_LOGGER_NAME or name.startswith(f"{ROOT_LOGGER_NAME}."):
-        return logging.getLogger(name)
-    # Strip the repository's import prefix so `src.rade_qnet.core.spec.run` and
-    # `rade_qnet.core.spec.run` produce the same logger name. The package is
-    # importable under both paths, and a log stream should not reveal which.
-    trimmed = name.removeprefix("src.")
-    if trimmed.startswith(f"{ROOT_LOGGER_NAME}."):
-        return logging.getLogger(trimmed)
-    return logging.getLogger(f"{ROOT_LOGGER_NAME}.{trimmed}")
-
-
-def configure_logging(
-    *,
-    level: int = logging.INFO,
-    stream: IO[str] | None = None,
-    force: bool = False,
-) -> logging.Logger:
-    """
-    Install a handler on the framework's root logger.
-
-    Called explicitly, never at import. Importing ``rade_qnet`` must not change
-    how an application's logging behaves -- a library that configures logging
-    on import is a library that silently redirects somebody else's output.
-
-    Parameters
-    ----------
-    level
-        Threshold for the framework's logger.
-    stream
-        Destination. Defaults to standard error, so log output does not
-        contaminate a program's results on standard output.
-    force
-        Replace any handler this function previously installed. Without it the
-        call is idempotent, so repeated calls cannot produce duplicated lines.
-
-    Returns
-    -------
-    logging.Logger
-        The configured framework root logger.
-    """
-    logger = logging.getLogger(ROOT_LOGGER_NAME)
-    logger.setLevel(level)
-    # Do not propagate to the root logger: an application that has configured
-    # its own root handler would otherwise see every framework line twice.
-    logger.propagate = False
-
-    existing = [handler for handler in logger.handlers if getattr(handler, "_rade_qnet", False)]
-    if existing and not force:
-        return logger
-    for handler in existing:
-        logger.removeHandler(handler)
-
-    handler = logging.StreamHandler(stream if stream is not None else sys.stderr)
-    handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_TIME_FORMAT))
-    handler.addFilter(ContextFilter())
-    # Marked so a later call can recognise its own handler and leave any
-    # handler the application added alone.
-    handler._rade_qnet = True  # type: ignore[attr-defined]
-    logger.addHandler(handler)
-    return logger
-
-
-def current_context() -> dict[str, str]:
-    """
-    Return the identifiers currently bound, omitting those that are unset.
-
-    Returns
-    -------
-    dict of str to str
-        Mapping with any of ``run_id``, ``job_id`` and ``stage`` that are set.
-    """
-    return {
-        name: value
-        for name, variable in _CONTEXT_VARIABLES.items()
-        if (value := variable.get()) is not None
-    }
-
-
-@contextmanager
-def bound_context(
-    *,
-    run_id: str | None = None,
-    job_id: str | None = None,
-    stage: str | None = None,
-) -> Iterator[None]:
-    """
-    Bind identifiers for the duration of a block.
-
-    Only the arguments given are changed; the rest keep their current values.
-    That is what lets a stage bind ``stage`` without needing to know, or
-    repeat, the run it belongs to.
-
-    Every variable is restored on exit, including when the block raises, so a
-    failed stage cannot leave its name attached to subsequent log lines.
-
-    Parameters
-    ----------
-    run_id, job_id, stage
-        Values to bind. ``None`` leaves the existing value in place.
-
-    Yields
-    ------
-    None
-    """
-    updates = {"run_id": run_id, "job_id": job_id, "stage": stage}
-    tokens = [
-        _CONTEXT_VARIABLES[name].set(value) for name, value in updates.items() if value is not None
-    ]
-    try:
-        yield
-    finally:
-        # Reset in reverse order so nested bindings unwind correctly.
-        for token in reversed(tokens):
-            token.var.reset(token)
-
-
-def context_payload() -> dict[str, str]:
-    """
-    Serialise the current context for transport to a worker process.
-
-    Returns
-    -------
-    dict of str to str
-        A plain, picklable mapping suitable for inclusion in a job payload.
-    """
-    return current_context()
-
-
-def apply_context_payload(payload: Mapping[str, str]) -> None:
-    """
-    Re-bind identifiers in a worker process.
-
-    Unlike :func:`bound_context` this does not restore anything, because a
-    worker's context should last for the whole of its task.
-
-    This **replaces** the context rather than merging into it: an identifier
-    absent from the payload is cleared. That matters because a process pool
-    reuses its workers. If applying a payload merged, a worker that handled
-    job ``EURUSD`` and then a run with no job identifier would keep logging
-    ``EURUSD`` -- misattributing work to a job that had already finished,
-    which is precisely the failure this mechanism exists to prevent.
-
-    Unknown keys are ignored rather than raising: a newer parent sending an
-    identifier an older worker does not recognise should degrade to slightly
-    less informative logs, not to a crash.
-
-    Parameters
-    ----------
-    payload
-        A mapping produced by :func:`context_payload`. Pass an empty mapping
-        to clear the context entirely.
-    """
-    for name, variable in _CONTEXT_VARIABLES.items():
-        variable.set(payload.get(name))
-```
-
----
-
-## 8. `src/rade_qnet/core/runtime/pipeline.py`
-
-9822 bytes · SHA-256 `49e5a0d89f731b58`
+9834 bytes · SHA-256 `9e58f9499eb4a1e1`
 
 ```python
 """
@@ -1944,8 +1219,8 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING
 
+from ..provenance.logging import get_logger
 from .errors import StageError
-from .logging import get_logger
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -2179,250 +1454,251 @@ class Pipeline[ResultT](ABC):
 
 ---
 
-## 9. `src/rade_qnet/core/runtime/seeding.py`
+## 7. `src/rade_qnet/core/lifecycle/registry.py`
 
-7820 bytes · SHA-256 `bf9dcd660de9c2cb`
+7872 bytes · SHA-256 `131cf36657c86a5d`
 
 ```python
 """
-Deterministic seeding, and derived seeds for job sets.
+The generic container a component registry is made of.
 
-Two problems are solved here, and the second is easy to overlook until a
-parallel run produces different numbers from a sequential one.
+One class, deliberately: :class:`Registry` knows how to hold named classes,
+refuse a duplicate and report what it has, and it knows nothing about what a
+model or an engine is. The four concrete registries, and the decorators that
+populate them, are next door in
+:mod:`~rade_qnet.core.lifecycle.components`.
 
-**Seeding what is installed, from a package that imports nothing.**
-``core`` may not import a training library, yet seeding PyTorch is exactly the
-kind of thing this module should do. The resolution is a registry: an engine
-registers a seeding callback when it is imported, and :func:`seed_everything`
-invokes whatever has registered. ``core`` therefore seeds the libraries that
-happen to be present without ever naming them.
+Why the split
+-------------
+The two halves change for different reasons and are read by different people.
+This file changes when the *mechanism* changes -- how a collision is reported,
+whether lookup is case-sensitive -- and it is read roughly never. The other
+changes when the framework gains a new *kind* of pluggable thing, and it is
+the file a contributor opens to find out what ``@model`` actually does.
 
-**Per-job seeds that do not depend on execution order.**
-Forty jobs cannot share one seed, and they must not draw seeds from a counter
-or from the process identifier -- either makes the result depend on scheduling.
-:func:`derive_seed` hashes the run seed together with a stable label, so job
-``EURUSD`` gets the same seed whether it runs first, last, or in a worker on
-another machine.
-
-Determinism
------------
-``determinism`` is an explicit three-way choice rather than a boolean, because
-full determinism costs real performance and some operations have no
-deterministic implementation at all:
-
-``off``
-    Fastest. Seeds are set, but non-deterministic kernels are permitted.
-``warn``
-    Request deterministic kernels; where none exists, warn and continue.
-``strict``
-    Require deterministic kernels; a missing one is an error.
-
-This replaces a blanket ``use_deterministic_algorithms(True)`` buried in a
-swallowed ``try``/``except``, where neither the cost nor the failure was
-visible to anyone.
+Keeping them together meant five hundred lines in which the interesting part
+was the last third.
 """
 
 from __future__ import annotations
 
-import hashlib
-import random
-from typing import Literal, Protocol
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, TypeVar
 
-import numpy as np
+from .errors import ComponentError
 
-from .errors import SpecError
-from .logging import get_logger
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
-__all__ = [
-    "Determinism",
-    "Seeder",
-    "derive_seed",
-    "register_seeder",
-    "registered_seeders",
-    "seed_everything",
-    "unregister_seeder",
-]
+__all__ = ["ClassT", "Registry", "RegistryEntry"]
 
-#: How hard to work for bit-for-bit reproducibility.
-Determinism = Literal["off", "warn", "strict"]
-
-#: Upper bound for a derived seed. Chosen because the numerical libraries this
-#: framework wraps accept a 32-bit unsigned seed.
-_SEED_MODULUS = 2**32
-
-_LOGGER = get_logger(__name__)
+ClassT = TypeVar("ClassT", bound=type)
 
 
-class Seeder(Protocol):
+@dataclass(frozen=True, slots=True)
+class RegistryEntry[ComponentT]:
     """
-    A callback that seeds one library.
+    One registered component and the metadata registered alongside it.
 
-    Registered by whichever package owns the library, so ``core`` never
-    imports it. An engine registers at module import; a user could register
-    one for a library the framework has never heard of.
+    Parameters
+    ----------
+    name
+        The name a specification uses.
+    component
+        The registered object, usually a class.
+    metadata
+        Free-form annotations, such as which engine a model requires. Kept
+        beside the component rather than on it so that a registry can be
+        queried without importing or instantiating anything.
+    defining_module
+        The dotted module whose import registered this component.
+
+        Recorded so that a worker process can rebuild the registry its
+        parent had. A spawned worker starts with a bare interpreter, and the
+        only components it knows about are the ones its own imports brought
+        in -- which, for a module whose entire purpose is a registration
+        side effect, is none of them. It appears to work when the user's
+        entry point happens to import the model, because spawn re-imports
+        the main module; it then stops working the moment the entry point
+        changes, which is a failure that depends on who is calling rather
+        than on what is configured.
+
+        Recorded rather than derived from a naming convention, so that a
+        model living in a user's own package works exactly as a built-in
+        one does.
     """
 
-    def __call__(self, seed: int, determinism: Determinism) -> None:
+    name: str
+    component: ComponentT
+    metadata: Mapping[str, object] = field(default_factory=dict)
+    defining_module: str | None = None
+
+
+class Registry[ComponentT]:
+    """
+    A name-to-component mapping for one kind of component.
+
+    Parameters
+    ----------
+    kind
+        What the registry holds, used in error messages. Naming the kind is
+        what turns "unknown name 'ridge'" into "no model named 'ridge'".
+    """
+
+    def __init__(self, kind: str) -> None:
+        self._kind = kind
+        self._entries: dict[str, RegistryEntry[ComponentT]] = {}
+
+    @property
+    def kind(self) -> str:
+        """What this registry holds."""
+        return self._kind
+
+    def register(
+        self,
+        name: str,
+        component: ComponentT,
+        *,
+        metadata: Mapping[str, object] | None = None,
+    ) -> None:
         """
-        Seed the library and apply the requested determinism level.
+        Add a component under a name.
 
         Parameters
         ----------
-        seed
-            A non-negative integer below ``2 ** 32``.
-        determinism
-            The requested level. An implementation that cannot honour
-            ``strict`` must raise rather than degrade silently.
+        name
+            The name a specification will use. Must be non-empty.
+        component
+            The object to register.
+        metadata
+            Optional annotations stored alongside the component.
+
+        Raises
+        ------
+        ComponentError
+            If the name is empty, or already registered. A duplicate is an
+            error rather than a replacement because the alternative is a
+            last-import-wins race: which model a name refers to would depend
+            on import order, and a specification would silently train a
+            different model than the one its author meant.
         """
-
-
-# Process-global and deliberately so: there is one set of installed libraries
-# per process. Registration is keyed by name and replacing an entry is
-# explicit, so this cannot be mutated into meaning something different.
-_SEEDERS: dict[str, Seeder] = {}
-
-
-def register_seeder(name: str, seeder: Seeder, *, replace: bool = False) -> None:
-    """
-    Register a callback to be invoked by :func:`seed_everything`.
-
-    Parameters
-    ----------
-    name
-        Library name, used for logging and for replacement.
-    seeder
-        The callback.
-    replace
-        Permit overwriting an existing registration. Required explicitly so
-        that two packages accidentally claiming one name is an error rather
-        than a silent last-one-wins.
-
-    Raises
-    ------
-    SpecError
-        If ``name`` is already registered and ``replace`` is false.
-    """
-    if name in _SEEDERS and not replace:
-        raise SpecError(
-            f"a seeder named {name!r} is already registered; "
-            f"pass replace=True to override it deliberately"
-        )
-    _SEEDERS[name] = seeder
-
-
-def unregister_seeder(name: str) -> None:
-    """
-    Remove a registered seeder, if present.
-
-    Parameters
-    ----------
-    name
-        Library name. Absent names are ignored, so teardown is idempotent.
-    """
-    _SEEDERS.pop(name, None)
-
-
-def registered_seeders() -> tuple[str, ...]:
-    """
-    Return the names of registered seeders, sorted.
-
-    Returns
-    -------
-    tuple of str
-        Registered library names.
-    """
-    return tuple(sorted(_SEEDERS))
-
-
-def seed_everything(seed: int, *, determinism: Determinism = "off") -> int:
-    """
-    Seed the standard library, NumPy and every registered library.
-
-    Parameters
-    ----------
-    seed
-        Base seed. Must be a non-negative integer below ``2 ** 32``.
-    determinism
-        Passed through to each registered seeder.
-
-    Returns
-    -------
-    int
-        The seed that was applied, so a caller can record it in a run's
-        lineage without recomputing it.
-
-    Raises
-    ------
-    SpecError
-        If the seed is out of range, or if a seeder fails under ``strict``.
-    """
-    if not 0 <= seed < _SEED_MODULUS:
-        raise SpecError(f"seed must satisfy 0 <= seed < {_SEED_MODULUS}, received {seed}")
-
-    random.seed(seed)
-    # The legacy global NumPy generator is seeded in addition to any explicit
-    # Generator a caller holds, because third-party code frequently uses
-    # `np.random.*` directly and would otherwise be left unseeded.
-    np.random.seed(seed)  # noqa: NPY002
-
-    for name, seeder in sorted(_SEEDERS.items()):
-        try:
-            seeder(seed, determinism)
-        except Exception as exc:
-            if determinism == "strict":
-                # Under `strict` the user asked for reproducibility and must
-                # be told it was not achieved, rather than receiving results
-                # that quietly are not reproducible.
-                raise SpecError(
-                    f"seeder {name!r} failed under determinism='strict': {exc}"
-                ) from exc
-            _LOGGER.warning(
-                "seeder %r failed; results from that library will not be reproducible",
-                name,
-                exc_info=True,
+        if not name:
+            raise ComponentError(f"a {self._kind} name must be a non-empty string")
+        if name in self._entries:
+            existing = self._entries[name].component
+            raise ComponentError(
+                f"a {self._kind} named {name!r} is already registered "
+                f"({existing!r}); names must be unique"
             )
-    return seed
+        self._entries[name] = RegistryEntry(
+            name=name,
+            component=component,
+            metadata=metadata or {},
+            # The component's own module, not this one's. A decorator runs
+            # inside the module being imported, so `__module__` on the
+            # decorated class is exactly the module whose import caused the
+            # registration -- which is the thing a worker needs to import.
+            defining_module=getattr(component, "__module__", None),
+        )
 
+    def get(self, name: str) -> ComponentT:
+        """
+        Resolve a name to its component.
 
-def derive_seed(base_seed: int, *labels: str) -> int:
-    """
-    Derive a stable child seed from a base seed and one or more labels.
+        Parameters
+        ----------
+        name
+            The registered name.
 
-    The derivation is a hash, not a counter, which gives three properties a
-    counter cannot. It is independent of execution order, so a job set is
-    reproducible regardless of scheduling. It is identical across processes and
-    machines, because it never touches ``hash()``. And it is stable under
-    insertion, so adding a forty-first job leaves the other forty unchanged --
-    without which every job would be retrained on a different seed whenever the
-    portfolio grew.
+        Returns
+        -------
+        ComponentT
+            The registered component.
 
-    Parameters
-    ----------
-    base_seed
-        The run's seed.
-    *labels
-        Stable identifiers, such as a job id or a trial number. Order
-        matters: ``derive_seed(0, "a", "b")`` differs from
-        ``derive_seed(0, "b", "a")``.
+        Raises
+        ------
+        ComponentError
+            If the name is not registered. The message lists what *is*
+            registered, because the usual cause is a typo or a model package
+            that was never imported, and both are obvious from the list.
+        """
+        try:
+            return self._entries[name].component
+        except KeyError:
+            available = ", ".join(self.names()) or "<none registered>"
+            raise ComponentError(
+                f"no {self._kind} named {name!r}; available: {available}"
+            ) from None
 
-    Returns
-    -------
-    int
-        A seed in ``[0, 2 ** 32)``.
+    def entry(self, name: str) -> RegistryEntry[ComponentT]:
+        """
+        Resolve a name to its full entry, including metadata.
 
-    Raises
-    ------
-    SpecError
-        If no label is given. A derived seed with no label would just be a
-        reformatting of the base seed, which is never what the caller wants.
-    """
-    if not labels:
-        raise SpecError("derive_seed requires at least one label")
+        Parameters
+        ----------
+        name
+            The registered name.
 
-    # NUL is used as the separator because it cannot occur in the identifiers
-    # this is called with, so ("a", "bc") and ("ab", "c") cannot collide.
-    material = "\0".join((str(base_seed), *labels)).encode("utf-8")
-    digest = hashlib.sha256(material).digest()
-    return int.from_bytes(digest[:8], byteorder="big") % _SEED_MODULUS
+        Returns
+        -------
+        RegistryEntry
+            The entry.
+
+        Raises
+        ------
+        ComponentError
+            If the name is not registered.
+        """
+        self.get(name)
+        return self._entries[name]
+
+    def names(self) -> tuple[str, ...]:
+        """
+        Return every registered name, sorted.
+
+        Returns
+        -------
+        tuple of str
+            Sorted names, so error messages and listings are deterministic.
+        """
+        return tuple(sorted(self._entries))
+
+    def snapshot(self) -> dict[str, RegistryEntry[ComponentT]]:
+        """
+        Return a shallow copy of the registry's contents.
+
+        Intended for scoped registration: take a snapshot, register, then
+        restore. A test that registers a throwaway model must not leak it into
+        every test that follows.
+
+        Returns
+        -------
+        dict
+            A copy of the internal mapping.
+        """
+        return dict(self._entries)
+
+    def restore(self, snapshot: Mapping[str, RegistryEntry[ComponentT]]) -> None:
+        """
+        Replace the registry's contents with a snapshot.
+
+        Parameters
+        ----------
+        snapshot
+            A mapping previously returned by :meth:`snapshot`.
+        """
+        self._entries = dict(snapshot)
+
+    def __contains__(self, name: object) -> bool:
+        """Return whether a name is registered."""
+        return name in self._entries
+
+    def __len__(self) -> int:
+        """Return the number of registered components."""
+        return len(self._entries)
+
+    def __repr__(self) -> str:
+        """Return a representation naming the kind and the registered names."""
+        return f"Registry(kind={self._kind!r}, names={list(self.names())!r})"
 ```
 

@@ -5,15 +5,15 @@
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 53 | 2597 | `8d034c0a484bd379` |
-| 2 | `base.py` | 76 | 3189 | `0a27b41675af387a` |
-| 3 | `data.py` | 460 | 15051 | `460a756d41e5f3a6` |
-| 4 | `hardware.py` | 111 | 4569 | `82afd37e1cf52534` |
-| 5 | `jobs.py` | 583 | 22143 | `9c2d0251603666ce` |
+| 2 | `base.py` | 76 | 3191 | `0b868e88f5dd798a` |
+| 3 | `data.py` | 460 | 15053 | `7ed9e6228f3c4454` |
+| 4 | `hardware.py` | 111 | 4577 | `4386834de64e33d2` |
+| 5 | `jobs.py` | 583 | 22150 | `d4cb787f098fb7e0` |
 | 6 | `merge.py` | 182 | 7103 | `89eeb600e0a48ae8` |
-| 7 | `reports.py` | 76 | 2488 | `090156f7b9a0c8a7` |
-| 8 | `run.py` | 383 | 12864 | `1b82a04a916ca8f0` |
-| 9 | `training.py` | 343 | 12529 | `da18514db9d1da2b` |
-| 10 | `tune.py` | 520 | 17451 | `80cff9f039f91d2f` |
+| 7 | `reports.py` | 76 | 2490 | `c34d4853629d6b2d` |
+| 8 | `run.py` | 383 | 12866 | `dd12485b60f37568` |
+| 9 | `training.py` | 343 | 12531 | `d652ff166c195ee9` |
+| 10 | `tune.py` | 520 | 17453 | `c8be6dcfed974aa9` |
 
 ---
 
@@ -81,7 +81,7 @@ __all__: tuple[str, ...] = ()
 
 ## 2. `src/rade_qnet/core/spec/base.py`
 
-3189 bytes · SHA-256 `0a27b41675af387a`
+3191 bytes · SHA-256 `0b868e88f5dd798a`
 
 ```python
 """
@@ -111,7 +111,7 @@ send across a process boundary.
 
 How validation failures surface
 -------------------------------
-Validators in this package raise :class:`~rade_qnet.core.runtime.errors.SpecError`.
+Validators in this package raise :class:`~rade_qnet.core.lifecycle.errors.SpecError`.
 Pydantic *collects* that rather than letting it propagate, because
 ``SpecError`` subclasses ``ValueError`` -- which is the entire reason for that
 dual inheritance. The practical consequence is a deliberate two-level policy:
@@ -166,7 +166,7 @@ class Spec(BaseModel):
 
 ## 3. `src/rade_qnet/core/spec/data.py`
 
-15051 bytes · SHA-256 `460a756d41e5f3a6`
+15053 bytes · SHA-256 `7ed9e6228f3c4454`
 
 ```python
 """
@@ -197,7 +197,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
-from ..runtime.errors import SpecError
+from ..lifecycle.errors import SpecError
 from .base import Spec
 
 __all__ = [
@@ -635,7 +635,7 @@ SourceSpec = Annotated[TabularSourceSpec | ModelSourceSpec, Field(discriminator=
 
 ## 4. `src/rade_qnet/core/spec/hardware.py`
 
-4569 bytes · SHA-256 `82afd37e1cf52534`
+4577 bytes · SHA-256 `4386834de64e33d2`
 
 ```python
 """
@@ -659,8 +659,8 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from ..runtime.errors import SpecError
-from ..runtime.seeding import Determinism
+from ..lifecycle.errors import SpecError
+from ..provenance.seeding import Determinism
 from .base import Spec
 
 __all__ = ["HardwareSpec"]
@@ -694,7 +694,7 @@ class HardwareSpec(Spec):
         Distribution strategy for a single job across several devices.
     determinism
         How hard to work for bit-for-bit reproducibility. See
-        :mod:`rade_qnet.core.runtime.seeding` for what each level costs.
+        :mod:`rade_qnet.core.provenance.seeding` for what each level costs.
     threads_per_worker
         Intra-op thread budget. ``None`` leaves the library's default, which
         is correct for a single job and wrong under a process pool -- there
@@ -755,7 +755,7 @@ class HardwareSpec(Spec):
 
 ## 5. `src/rade_qnet/core/spec/jobs.py`
 
-22143 bytes · SHA-256 `9c2d0251603666ce`
+22150 bytes · SHA-256 `d4cb787f098fb7e0`
 
 ```python
 """
@@ -819,7 +819,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import Field, model_validator
 
-from ..runtime.errors import SpecError
+from ..lifecycle.errors import SpecError
 from .base import Spec
 from .merge import deep_merge
 from .run import RunSpec, parse_run_spec
@@ -835,7 +835,7 @@ __all__ = [
 ]
 
 #: Where jobs run. ``auto`` defers to
-#: :func:`rade_qnet.orchestration.compute.policy.choose_placement`.
+#: :func:`rade_qnet.orchestration.compute.placement.choose_placement`.
 ExecutorName = Literal["auto", "local", "processes", "gpus"]
 
 #: Worker start methods that exist only on POSIX platforms.
@@ -883,7 +883,7 @@ class JobSpec(Spec):
         output directory, its catalog entries and its row in the manifest, and
         -- importantly -- it is what the job's seed is derived from, so
         changing it changes the model. See
-        :meth:`rade_qnet.core.runtime.context.RunContext.for_job`.
+        :meth:`rade_qnet.core.lifecycle.context.RunContext.for_job`.
     overrides
         A fragment of a run specification, merged over the set's defaults.
         Unvalidated here and validated on merge; see this module's docstring.
@@ -1538,7 +1538,7 @@ def _copied(value: Any) -> Any:  # noqa: ANN401 -- merges arbitrary YAML payload
 
 ## 7. `src/rade_qnet/core/spec/reports.py`
 
-2488 bytes · SHA-256 `090156f7b9a0c8a7`
+2490 bytes · SHA-256 `c34d4853629d6b2d`
 
 ```python
 """
@@ -1560,7 +1560,7 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from ..runtime.errors import SpecError
+from ..lifecycle.errors import SpecError
 from .base import Spec
 
 __all__ = ["ReportsSpec"]
@@ -1623,7 +1623,7 @@ class ReportsSpec(Spec):
 
 ## 8. `src/rade_qnet/core/spec/run.py`
 
-12864 bytes · SHA-256 `1b82a04a916ca8f0`
+12866 bytes · SHA-256 `dd12485b60f37568`
 
 ```python
 """
@@ -1650,7 +1650,7 @@ from typing import Annotated, Any, Literal
 import yaml
 from pydantic import Field, TypeAdapter, ValidationError, model_validator
 
-from ..runtime.errors import SpecError
+from ..lifecycle.errors import SpecError
 from .base import Spec
 from .data import ModelSourceSpec, SourceSpec
 from .hardware import HardwareSpec
@@ -2015,7 +2015,7 @@ def dump_run_spec(spec: RunSpec, path: Path | str) -> Path:
 
 ## 9. `src/rade_qnet/core/spec/training.py`
 
-12529 bytes · SHA-256 `da18514db9d1da2b`
+12531 bytes · SHA-256 `d652ff166c195ee9`
 
 ```python
 """
@@ -2050,7 +2050,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
-from ..runtime.errors import SpecError
+from ..lifecycle.errors import SpecError
 from .base import Spec
 
 __all__ = [
@@ -2367,7 +2367,7 @@ class RlTrainingSpec(Spec):
 
 ## 10. `src/rade_qnet/core/spec/tune.py`
 
-17451 bytes · SHA-256 `80cff9f039f91d2f`
+17453 bytes · SHA-256 `c8be6dcfed974aa9`
 
 ```python
 """
@@ -2417,7 +2417,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import Field, model_validator
 
-from ..runtime.errors import SpecError
+from ..lifecycle.errors import SpecError
 from .base import Spec
 from .merge import deep_merge
 from .run import RunSpec, parse_run_spec
