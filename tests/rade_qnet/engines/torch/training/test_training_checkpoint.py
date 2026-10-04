@@ -30,7 +30,7 @@ from torch import nn
 
 from src.rade_qnet.core.runtime.errors import EngineError
 from src.rade_qnet.engines.base import ModelHandle
-from src.rade_qnet.engines.torch.checkpoint import (
+from src.rade_qnet.engines.torch.training.checkpoint import (
     load_weights,
     restore_state_dict,
     save_weights,

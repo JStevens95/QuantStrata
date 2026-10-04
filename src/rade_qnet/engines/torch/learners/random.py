@@ -2,7 +2,7 @@
 The learner that learns nothing, on purpose.
 
 :class:`RandomLearner` satisfies
-:class:`~rade_qnet.engines.torch.loops.PolicyLearner` completely and updates
+:class:`~rade_qnet.engines.torch.training.loops.PolicyLearner` completely and updates
 no parameter. It exists so that every seam in the interactive path has a real
 consumer before any algorithm is written: a policy is built from a signature,
 an environment is constructed, actions are drawn from the policy, an episode
@@ -49,7 +49,7 @@ from ....core.contract.data import TARGET_KEY
 from ....core.runtime.components import learner as register_learner
 from ....core.runtime.errors import EngineError
 from ....core.runtime.logging import get_logger
-from ...torch.loops import LOSS_KEY
+from ..training.loops import LOSS_KEY
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

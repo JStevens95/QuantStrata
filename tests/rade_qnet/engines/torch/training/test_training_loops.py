@@ -38,12 +38,12 @@ from src.rade_qnet.core.contract.data import TARGET_KEY
 from src.rade_qnet.core.contract.signature import SpaceSpec
 from src.rade_qnet.core.runtime.errors import EngineError
 from src.rade_qnet.core.spec.training import CheckpointSpec, EarlyStoppingSpec
-from src.rade_qnet.engines.torch.callbacks import (
+from src.rade_qnet.engines.torch.training.callbacks import (
     BestCheckpoint,
     EarlyStopping,
     GradientNorms,
 )
-from src.rade_qnet.engines.torch.loops import fit_epochs, fit_steps
+from src.rade_qnet.engines.torch.training.loops import fit_epochs, fit_steps
 from src.rade_qnet.sources.batching.rollout import RolloutSource
 from src.rade_qnet.sources.environment import StepOutcome
 from src.rade_qnet.testkit.fixtures import SyntheticTensorSource

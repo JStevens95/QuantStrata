@@ -43,15 +43,15 @@ from typing import TYPE_CHECKING, Literal, Protocol
 
 import torch
 
-from ...core.runtime.errors import EngineError
-from ...core.runtime.logging import get_logger
+from ....core.runtime.errors import EngineError
+from ....core.runtime.logging import get_logger
 from .checkpoint import restore_state_dict, snapshot_state_dict
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
 
-    from ...core.spec.training import CheckpointSpec, EarlyStoppingSpec, SchedulerSpec
+    from ....core.spec.training import CheckpointSpec, EarlyStoppingSpec, SchedulerSpec
 
 __all__ = [
     "BestCheckpoint",

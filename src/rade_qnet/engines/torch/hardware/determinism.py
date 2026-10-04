@@ -37,8 +37,8 @@ import os
 
 import torch
 
-from ...core.runtime.logging import get_logger
-from ...core.runtime.seeding import Determinism, register_seeder
+from ....core.runtime.logging import get_logger
+from ....core.runtime.seeding import Determinism, register_seeder
 
 __all__ = ["SEEDER_NAME", "seed_torch"]
 

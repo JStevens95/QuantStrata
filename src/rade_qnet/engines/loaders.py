@@ -39,15 +39,15 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ...core.contract.data import TARGET_KEY
-from ...core.runtime.errors import EngineError
+from ..core.contract.data import TARGET_KEY
+from ..core.runtime.errors import EngineError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from numpy.typing import NDArray
 
-    from ...core.contract.source import BatchSource
+    from ..core.contract.source import BatchSource
 
 __all__ = ["DrainedSplit", "drain", "flatten", "reject_static"]
 

@@ -13,61 +13,54 @@ then three learners sharing one loop, rather than three training scripts.
 Modules
 -------
 ``engine.py``
-    The ``Engine`` implementation: build, materialise, fit, checkpoint,
-    predict.  [Phase 2]
-``loops.py``
-    The two drivers and the two learner protocols they drive.  ``fit_epochs``
-    makes passes over a finite dataset, driving a ``Learner``; ``fit_steps``
-    runs a budget of environment steps against an unbounded source, driving a
-    ``PolicyLearner``.  The source's ``steps_per_epoch`` selects which, and
-    each refuses the other's source by name.
-    [Phase 2 / Phase 7]
-``learners/``
-    Update rules, one per algorithm.
-``callbacks.py``
-    Early stopping, checkpointing, learning-rate scheduling, gradient-norm
-    tracking.  [Phase 2]
-``losses.py``
-    The loss registry, including the asymmetric and quantile objectives.  A
-    loss is engine code because the *learner* consumes it; a loss only one
-    model needs is registered from that model's package instead.  [Phase 2]
-``hardware.py``
-    Device selection, autocast and precision policy, and ``torch.compile``
-    application -- resolved from ``HardwareSpec``.  [Phase 2]
-``distributed.py``
-    Distributed data-parallel setup and teardown.  Wrapping happens *after*
-    lazy parameters are materialised, which is the ordering the previous
-    implementation got wrong.  [Phase 2]
+    The ``Engine`` implementation, and the only file here that satisfies it:
+    build, materialise, fit, checkpoint, predict.  [Phase 2]
 ``materialise.py``
     Runs one dummy forward pass from the input signature so lazy modules
     acquire concrete shapes before any optimiser, checkpoint or distributed
     wrapper touches them.  [Phase 2]
-``checkpoint.py``
-    Checkpoints as ``state_dict`` payloads rather than pickled modules, so a
-    saved model survives a refactor and can be loaded without executing
-    arbitrary code.  [Phase 2]
 ``loaders.py``
     Conversion of a ``BatchSource``'s NumPy batches into device-resident
     tensors.  Static inputs are kept out of per-sample collation and uploaded
     to the device once.  No ``DataLoader`` is constructed: a ``BatchSource``
     already yields whole batches, so prefetching across processes would mean
     pickling the source for no gain on in-memory arrays.  [Phase 2]
-
-Planned modules
----------------
-``risk.py``
-    Differentiable risk measures (mean-variance, conditional value at risk,
-    entropic) used as objectives by the pathwise learner.  [Phase 7]
 ``predictor.py``
     Batched inference, including the precompute path for models that can cache
     an encoding of their static inputs.  [Phase 5]
+
+Sub-packages
+------------
+``training/``
+    How a fit is executed: the two drivers, the callbacks that watch them, the
+    losses they optimise and the checkpoints they write.
+``learners/``
+    What one update means -- one module per algorithm.
+``hardware/``
+    Where the computation runs, and whether it runs the same way twice:
+    device resolution, distributed training, and PyTorch seeding.
+
+The four modules above are the four verbs an engine performs -- build, feed,
+fit, predict -- and the three sub-packages are the parts of *fit* that are
+large enough to have their own vocabulary.  That shape is the engine template:
+``engine.py`` is required and every other name is drawn from this list, which
+``tests/rade_qnet/engines/test_engine_layout.py`` enforces.  The progression
+across the three engines is itself informative -- xgboost is one file because
+it fits in a single call and owns no loop, sklearn adds nothing but shares the
+hoisted ``engines/loaders.py``, and only PyTorch needs all of it.
+
+Planned modules
+---------------
+``training/risk.py``
+    Differentiable risk measures (mean-variance, conditional value at risk,
+    entropic) used as objectives by the pathwise learner.  [Phase 7]
 
 Importing this package registers its components
 -----------------------------------------------
 Importing ``rade_qnet.engines.torch`` registers :class:`TorchEngine` under the
 name ``"torch"`` and :class:`SupervisedLearner` under ``"supervised"``, which
 is what lets a specification name them as strings.  It also registers
-:func:`~rade_qnet.engines.torch.seeding.seed_torch`, without which
+:func:`~rade_qnet.engines.torch.hardware.determinism.seed_torch`, without which
 ``seed_everything`` would leave Torch unseeded -- so two runs of one
 configuration would differ in every weight initialisation while both reported
 the same seed.
@@ -82,11 +75,11 @@ does not use it.
 """
 
 from .engine import TorchEngine
-from .learners.random import RandomLearner
-from .learners.supervised import SupervisedLearner
 
 # Importing the name is what registers the seeder, since registration happens
 # at that module's import.
-from .seeding import seed_torch
+from .hardware.determinism import seed_torch
+from .learners.random import RandomLearner
+from .learners.supervised import SupervisedLearner
 
 __all__ = ["RandomLearner", "SupervisedLearner", "TorchEngine", "seed_torch"]

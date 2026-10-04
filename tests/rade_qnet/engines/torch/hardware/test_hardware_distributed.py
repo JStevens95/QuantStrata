@@ -29,7 +29,7 @@ from torch import nn
 
 from src.rade_qnet.core.runtime.errors import EngineError
 from src.rade_qnet.core.spec.hardware import HardwareSpec
-from src.rade_qnet.engines.torch.distributed import (
+from src.rade_qnet.engines.torch.hardware.distributed import (
     distribute,
     is_distributed_run,
     local_rank,

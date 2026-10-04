@@ -41,23 +41,23 @@ from ...core.spec.training import (
     TorchTrainingSpec,
 )
 from ..base import EngineCapabilities, ModelHandle
-from .callbacks import BestCheckpoint, EarlyStopping, GradientNorms, LearningRateSchedule
-from .checkpoint import load_weights, save_weights
-from .distributed import distribute, shutdown_distributed, undistribute
-from .hardware import (
+from .hardware.devices import (
     ResolvedHardware,
     available_accelerators,
     compile_if_requested,
     resolve_hardware,
 )
+from .hardware.distributed import distribute, shutdown_distributed, undistribute
 from .learners.supervised import SupervisedLearner
 from .loaders import to_tensor
-from .loops import fit_epochs, fit_steps
-from .losses import build_loss
 from .materialise import count_parameters
 from .materialise import materialise as materialise_model
 from .materialise import materialise_policy as materialise_policy_model
 from .predictor import predict_batches
+from .training.callbacks import BestCheckpoint, EarlyStopping, GradientNorms, LearningRateSchedule
+from .training.checkpoint import load_weights, save_weights
+from .training.loops import fit_epochs, fit_steps
+from .training.losses import build_loss
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -70,8 +70,8 @@ if TYPE_CHECKING:
     from ...core.contract.signature import InputSignature, PolicySignature
     from ...core.contract.source import BatchSource
     from ...core.spec.hardware import HardwareSpec
-    from .callbacks import Callback
-    from .loops import PolicyLearner
+    from .training.callbacks import Callback
+    from .training.loops import PolicyLearner
 
 __all__ = ["TorchEngine"]
 

@@ -33,8 +33,8 @@ from typing import TYPE_CHECKING, Protocol
 
 import torch
 
-from ...core.runtime.errors import EngineError
-from ...core.runtime.logging import get_logger
+from ....core.runtime.errors import EngineError
+from ....core.runtime.logging import get_logger
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

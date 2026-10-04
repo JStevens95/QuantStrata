@@ -30,7 +30,7 @@ from src.rade_qnet.core.runtime.seeding import (
     seed_everything,
     unregister_seeder,
 )
-from src.rade_qnet.engines.torch.seeding import SEEDER_NAME, seed_torch
+from src.rade_qnet.engines.torch.hardware.determinism import SEEDER_NAME, seed_torch
 
 
 @pytest.fixture(autouse=True)

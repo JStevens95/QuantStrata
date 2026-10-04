@@ -32,13 +32,13 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from ...core.runtime.errors import EngineError
-from ...core.runtime.logging import get_logger
+from ....core.runtime.errors import EngineError
+from ....core.runtime.logging import get_logger
 
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager
 
-    from ...core.spec.hardware import HardwareSpec
+    from ....core.spec.hardware import HardwareSpec
 
 __all__ = [
     "ResolvedHardware",

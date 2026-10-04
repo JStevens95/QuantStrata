@@ -70,7 +70,7 @@ this phase is in that position.
 | `sources.environment.protocol` | `Environment`, `StepOutcome` | Delivered |
 | `core.capability.policy` | `PolicyModel`, the third paradigm base | Delivered |
 | `sources.batching.rollout` | `RolloutSource` — unbounded on-policy experience | Delivered |
-| `engines.torch.loops.fit_steps` | The step-driven driver and `PolicyLearner` | Delivered |
+| `engines.torch.training.loops.fit_steps` | The step-driven driver and `PolicyLearner` | Delivered |
 | `engines.torch.learners.random` | `RandomLearner` — the no-update control | Delivered |
 | `engines.base.InteractiveEngine` | The opt-in engine capability | Delivered |
 | `orchestration.pipelines.reinforce` | `ReinforcePipeline` | Delivered |
@@ -115,7 +115,7 @@ models rather than a framework layer.
 This section originally read *"No new pipelines, and no new loop"*, and ended
 by saying that if the phase needed either, that was the finding rather than a
 licence to fork. The scaffold needed part of it. Recorded here, and again in
-[`engines/torch/loops.py`](../../engines/torch/loops.py):
+[`engines/torch/training/loops.py`](../../engines/torch/training/loops.py):
 
 **The second driver was never the surprise.** `core.contract.source` has
 specified since Phase 1 that a source reporting `steps_per_epoch=None` "is

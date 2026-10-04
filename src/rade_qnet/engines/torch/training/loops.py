@@ -66,17 +66,17 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import torch
 
-from ...core.contract.result import EpochRecord, FitOutcome
-from ...core.runtime.errors import EngineError
-from ...core.runtime.logging import get_logger
+from ....core.contract.result import EpochRecord, FitOutcome
+from ....core.runtime.errors import EngineError
+from ....core.runtime.logging import get_logger
+from ..loaders import TARGET_KEY, StaticInputs, to_device_batches, to_tensor
 from .callbacks import EpochContext
-from .loaders import TARGET_KEY, StaticInputs, to_device_batches, to_tensor
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from ...core.contract.signature import InputSignature
-    from ...core.contract.source import BatchSource
+    from ....core.contract.signature import InputSignature
+    from ....core.contract.source import BatchSource
     from .callbacks import BestCheckpoint, Callback, GradientNorms
 
 __all__ = ["ExperienceSummary", "Learner", "PolicyLearner", "fit_epochs", "fit_steps"]

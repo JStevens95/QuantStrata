@@ -30,17 +30,40 @@ its synthetic engines register under the name ``sklearn``, reusing a
 discriminator that already exists, so none of them exercises a genuinely new
 engine name.  ``test_extensibility.py`` covers the refusal explicitly.
 
+One vocabulary, however large the engine
+-----------------------------------------
+Every engine package draws its filenames from one closed set, enforced by
+``tests/rade_qnet/engines/test_engine_layout.py`` exactly as the model layout
+test governs ``models``.  ``engine.py`` is required; ``materialise.py``,
+``loaders.py`` and ``predictor.py`` are the other three verbs; ``training/``,
+``learners/`` and ``hardware/`` are the parts of *fit* large enough to need
+their own package.  Nothing else is permitted a name.
+
+The set is optional down to a single file on purpose, so that the shape of a
+package reports what its library owns.  A reader can tell from ``ls`` that a
+boosted fit has no loop to configure and no device to choose.
+
 Sub-packages
 ------------
 ``torch``
-    PyTorch.  The richest engine: gradient-based loops, learners for both
-    supervised and reinforcement learning, mixed precision, distributed
-    training and lazy-parameter materialisation.
+    PyTorch.  The richest engine, and the only one that needs all three
+    sub-packages: gradient-based drivers, learners for both supervised and
+    reinforcement learning, mixed precision, distributed training and
+    lazy-parameter materialisation.
 ``xgboost``
-    Gradient-boosted trees.  Fits in one call, so it implements the engine
-    interface with a no-op training loop.
+    Gradient-boosted trees.  One module, because the fit is one call.
 ``sklearn``
-    scikit-learn estimators, for baselines and sanity checks.
+    scikit-learn estimators, for baselines and sanity checks.  One module,
+    for the same reason.
+
+Modules
+-------
+``loaders.py``
+    Draining a ``BatchSource`` into the single matrix a one-shot fit needs.
+    Pure NumPy, and shared.  It lived in ``sklearn`` until the xgboost engine
+    imported it from there, which made installing one backend depend on the
+    presence of another; the layout test now refuses a cross-engine import
+    outright.
 
 Modules
 -------

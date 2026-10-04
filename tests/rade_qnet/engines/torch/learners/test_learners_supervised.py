@@ -25,13 +25,13 @@ from torch import nn
 
 from src.rade_qnet.core.runtime.errors import EngineError
 from src.rade_qnet.core.spec.hardware import HardwareSpec
-from src.rade_qnet.engines.torch.callbacks import GradientNorms
-from src.rade_qnet.engines.torch.hardware import resolve_hardware
+from src.rade_qnet.engines.torch.hardware.devices import resolve_hardware
 from src.rade_qnet.engines.torch.learners.supervised import (
     SupervisedLearner,
     align_with_target,
 )
-from src.rade_qnet.engines.torch.losses import build_loss
+from src.rade_qnet.engines.torch.training.callbacks import GradientNorms
+from src.rade_qnet.engines.torch.training.losses import build_loss
 
 CPU_HARDWARE = resolve_hardware(HardwareSpec(device="cpu"))
 

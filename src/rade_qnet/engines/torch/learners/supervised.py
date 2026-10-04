@@ -40,9 +40,9 @@ from ....core.runtime.logging import get_logger
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from ...torch.callbacks import GradientNorms
-    from ...torch.hardware import ResolvedHardware
-    from ...torch.losses import LossFunction
+    from ..hardware.devices import ResolvedHardware
+    from ..training.callbacks import GradientNorms
+    from ..training.losses import LossFunction
 
 __all__ = ["SupervisedLearner", "align_with_target"]
 

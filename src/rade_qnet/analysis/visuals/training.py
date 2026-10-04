@@ -18,7 +18,7 @@ once and never recovered -- and its loss curve simply goes flat, which is
 indistinguishable from convergence.
 
 Both are one glance apart in a figure that costs nothing to produce, which is
-why :class:`~rade_qnet.engines.torch.callbacks.GradientNorms` records the norm
+why :class:`~rade_qnet.engines.torch.training.callbacks.GradientNorms` records the norm
 by default rather than on request.
 """
 

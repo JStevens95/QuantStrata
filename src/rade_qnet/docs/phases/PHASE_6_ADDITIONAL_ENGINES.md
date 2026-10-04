@@ -66,7 +66,7 @@ lost before the phase began: see §8.1.
 | Module | Delivers |
 | --- | --- |
 | `engines.sklearn.engine` | Any `fit`/`predict` estimator, `joblib` persistence, one-shot capabilities |
-| `engines.sklearn.adapters` | Draining a `BatchSource` into a feature matrix, once, in one place |
+| `engines.loaders` | Draining a `BatchSource` into a feature matrix, once, in one place |
 | `engines.xgboost.engine` | `DMatrix` materialisation, native early stopping, JSON persistence |
 | `models.ridge` | Ridge regression on flattened features |
 | `models.xgb_tabular` | Gradient-boosted trees on tabular features |
@@ -119,7 +119,7 @@ left as declarations nothing reads. Phase 5 §8.6 is the argument for deleting
 them: a declaration with no reader is worse than its absence, because it reads
 as a supported path.
 
-The draining itself lives in `engines.sklearn.adapters` and is imported by the
+The draining itself lives in `engines.loaders` and is imported by the
 XGBoost engine, so there is one implementation of "turn a source into a
 matrix" rather than two that can disagree about row order.
 

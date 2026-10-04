@@ -65,7 +65,7 @@ from ...core.runtime.errors import EngineError
 from ...core.runtime.logging import get_logger
 from ...core.spec.training import SklearnTrainingSpec
 from ..base import EngineCapabilities, ModelHandle
-from .adapters import drain, reject_static
+from ..loaders import drain, reject_static
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

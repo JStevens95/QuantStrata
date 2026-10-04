@@ -73,7 +73,7 @@ from ...core.runtime.errors import EngineError
 from ...core.runtime.logging import get_logger
 from ...core.spec.training import XGBoostTrainingSpec
 from ..base import EngineCapabilities, ModelHandle
-from ..sklearn.adapters import drain, reject_static
+from ..loaders import drain, reject_static
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -561,7 +561,7 @@ def _matrix(split: object) -> xgb.DMatrix:
     Parameters
     ----------
     split
-        A :class:`~rade_qnet.engines.sklearn.adapters.DrainedSplit`.
+        A :class:`~rade_qnet.engines.loaders.DrainedSplit`.
 
     Returns
     -------

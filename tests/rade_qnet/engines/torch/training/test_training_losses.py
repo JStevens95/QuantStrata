@@ -25,7 +25,7 @@ import pytest
 import torch
 
 from src.rade_qnet.core.runtime.errors import EngineError
-from src.rade_qnet.engines.torch.losses import (
+from src.rade_qnet.engines.torch.training.losses import (
     asymmetric_loss,
     build_loss,
     quantile_loss,

@@ -45,7 +45,7 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
 
     from ...core.contract.source import BatchSource
-    from .hardware import ResolvedHardware
+    from .hardware.devices import ResolvedHardware
 
 __all__ = ["predict_batches"]
 

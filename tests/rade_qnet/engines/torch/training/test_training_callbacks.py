@@ -30,7 +30,7 @@ from src.rade_qnet.core.spec.training import (
     EarlyStoppingSpec,
     SchedulerSpec,
 )
-from src.rade_qnet.engines.torch.callbacks import (
+from src.rade_qnet.engines.torch.training.callbacks import (
     BestCheckpoint,
     EarlyStopping,
     EpochContext,

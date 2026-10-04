@@ -41,12 +41,12 @@ from typing import TYPE_CHECKING
 import torch
 import torch.distributed as distributed_backend
 
-from ...core.runtime.errors import EngineError
-from ...core.runtime.logging import get_logger
-from .materialise import has_lazy_parameters
+from ....core.runtime.errors import EngineError
+from ....core.runtime.logging import get_logger
+from ..materialise import has_lazy_parameters
 
 if TYPE_CHECKING:
-    from ...core.spec.hardware import HardwareSpec
+    from ....core.spec.hardware import HardwareSpec
 
 __all__ = [
     "distribute",
