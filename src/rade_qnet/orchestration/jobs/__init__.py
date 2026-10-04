@@ -3,8 +3,8 @@ One model, many jobs.
 
 A job set is deliberately simple: a list of jobs, each one a full independent
 training run of the same model, differing in its data slice and -- optionally
--- in its architecture complexity.  A liquid cluster with abundant history can
-be given a wider, deeper configuration than a sparse one, from the same
+-- in its architecture complexity.  A data group with abundant history can be
+given a wider, deeper configuration than a sparse one, from the same
 specification file.
 
 What a job set is *not* is a special kind of model.  There is no ensemble
@@ -27,15 +27,23 @@ Modules
     with per-job overrides, dispatches through an executor, and aggregates the
     results.  Partial failure is first-class -- one failed job does not
     discard the others.
+``groups.py``
+    ``read_group_set(root)``: which data groups exist on disk, read from a
+    declared ``groups.json`` manifest, with a cheap snapshot fingerprint for
+    provenance.  Knows nothing about what a group *means*.
+``fanout.py``
+    ``job_set_for_groups``: turns a group set into a ``JobSetSpec``, one job
+    per group, with a per-group override hook and the snapshot fingerprint
+    carried as a tag onto every bundle.
 
-A layering note
----------------
-``orchestration`` may not import ``domains`` or ``models``, so nothing here
-can ask a domain to partition a portfolio into jobs.  It does not need to:
-that expansion happens before the runner sees anything and arrives as a
-``JobSetSpec``, and the model is resolved by name through the registry.  The
-constraint is what turned portfolio expansion into a separate, independently
-testable function rather than a branch inside the runner.
+Why expansion is separate from the runner
+-----------------------------------------
+The runner runs jobs and nothing else.  Expanding a group set into jobs
+happens before the runner sees anything and arrives as an ordinary
+``JobSetSpec``, so a hand-written set and an expanded one are
+indistinguishable to it -- which is what keeps the runner a job runner
+rather than a group runner.  The model is resolved by name through the
+registry, because ``orchestration`` may not import ``models``.
 """
 
 from __future__ import annotations

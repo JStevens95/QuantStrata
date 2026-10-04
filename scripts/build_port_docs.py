@@ -61,6 +61,16 @@ SKIP_DIRECTORIES = frozenset({"__pycache__", ".ruff_cache", "docs"})
 #: Non-Python files that are exported anyway, mapped to their fence language.
 EXTRA_FILES = {"ruff.toml": "toml"}
 
+#: Files from the repository root that travel too, mapped to their fence
+#: language. ``pyproject.toml`` is what makes the far side's tree installable
+#: with ``pip install -e .``; without it the package only imports under the
+#: ``src.`` prefix, from the repository root.
+ROOT_FILES = {"pyproject.toml": "toml"}
+
+#: The document holding :data:`ROOT_FILES`, listed first in the index because
+#: it describes the tree every other document fills in.
+ROOT_DOCUMENT = "_repository.md"
+
 #: The fence used for every code block. Three backticks give GitHub a copy
 #: button and syntax highlighting. Safe only while no exported file contains a
 #: fence of its own, which :func:`collect` asserts rather than assumes.
@@ -133,6 +143,65 @@ def exported_directories() -> list[Path]:
     return sorted(found)
 
 
+def collect_root_files() -> list[tuple[Path, bytes, str]]:
+    """
+    Return the repository-root files to export, in :data:`ROOT_FILES` order.
+
+    Separate from :func:`collect` because the repository root holds plenty
+    that must not travel -- other packages' scripts among them -- so only the
+    named files are taken, never everything with a matching suffix.
+
+    Returns
+    -------
+    list of tuple
+        ``(path, contents, fence_language)`` for each file that exists.
+    """
+    files: list[tuple[Path, bytes, str]] = []
+    for name, language in ROOT_FILES.items():
+        path = ROOT / name
+        if path.is_file():
+            files.append((path, _checked_bytes(path), language))
+    return files
+
+
+def _checked_bytes(path: Path) -> bytes:
+    """
+    Read a file, refusing one that a fenced block cannot carry exactly.
+
+    Parameters
+    ----------
+    path
+        The file.
+
+    Returns
+    -------
+    bytes
+        Its contents.
+
+    Raises
+    ------
+    SystemExit
+        If the file contains a code fence, which would close its own block
+        early, or lacks a final newline, which a fenced block always adds.
+    """
+    data = path.read_bytes()
+    if FENCE.encode() in data:
+        raise SystemExit(
+            f"{relative(path)} contains a {FENCE!r} fence, which would "
+            f"close its own code block. Switch FENCE to a longer run of "
+            f"backticks before exporting."
+        )
+    if data and not data.endswith(b"\n"):
+        # A fenced block always restores a final newline, so a file
+        # without one cannot round-trip. Refusing is better than
+        # exporting something that differs by a byte nobody will see.
+        raise SystemExit(
+            f"{relative(path)} does not end with a newline and so cannot "
+            f"be represented exactly in a fenced block. Add one."
+        )
+    return data
+
+
 def collect(directory: Path) -> list[tuple[Path, bytes, str]]:
     """
     Return the files to export from one directory.
@@ -165,22 +234,7 @@ def collect(directory: Path) -> list[tuple[Path, bytes, str]]:
         language = "python" if path.suffix == ".py" else EXTRA_FILES.get(path.name)
         if language is None:
             continue
-        data = path.read_bytes()
-        if FENCE.encode() in data:
-            raise SystemExit(
-                f"{relative(path)} contains a {FENCE!r} fence, which would "
-                f"close its own code block. Switch FENCE to a longer run of "
-                f"backticks before exporting."
-            )
-        if data and not data.endswith(b"\n"):
-            # A fenced block always restores a final newline, so a file
-            # without one cannot round-trip. Refusing is better than
-            # exporting something that differs by a byte nobody will see.
-            raise SystemExit(
-                f"{relative(path)} does not end with a newline and so cannot "
-                f"be represented exactly in a fenced block. Add one."
-            )
-        files.append((path, data, language))
+        files.append((path, _checked_bytes(path), language))
     return sorted(files, key=lambda item: (item[0].name != "__init__.py", item[0].name))
 
 
@@ -202,6 +256,8 @@ def document_name(directory: Path) -> str:
     str
         The document filename.
     """
+    if directory == ROOT:
+        return ROOT_DOCUMENT
     parts = directory.relative_to(SOURCE).parts
     return ("__".join(parts) if parts else "_root") + ".md"
 
@@ -328,7 +384,9 @@ def render_index(documents: list[tuple[Path, list[tuple[Path, bytes, str]]]]) ->
         (
             "`src/rade_qnet/docs/` is already markdown, so it crosses the "
             "proxy unchanged — fetch those files directly rather than "
-            "through this set. The test suite, fixtures and examples are "
+            "through this set. `pyproject.toml` is included, as the first "
+            "document, so the rebuilt tree installs with "
+            "`pip install -e .`. The test suite, fixtures and examples are "
             "excluded by scope; the golden parity fixtures under "
             "`tests/fixtures/rade_qnet/` are binary `.npy` files and "
             "cannot travel as text at all."
@@ -496,11 +554,20 @@ def main() -> int:
     )
     arguments = parser.parse_args()
 
-    documents = [(d, collect(d)) for d in exported_directories()]
+    documents = [(ROOT, collect_root_files())]
+    documents += [(d, collect(d)) for d in exported_directories()]
     documents = [(d, files) for d, files in documents if files]
 
     if not arguments.verify:
         OUTPUT.mkdir(parents=True, exist_ok=True)
+        # A directory deleted from the source must disappear from the port
+        # too; otherwise the far side faithfully rebuilds a package that no
+        # longer exists, and nothing reports it.
+        expected = {document_name(directory) for directory, _ in documents} | {"INDEX.md"}
+        for stale in sorted(OUTPUT.glob("*.md")):
+            if stale.name not in expected:
+                print(f"removing stale document {stale.name}")
+                stale.unlink()
         for directory, files in documents:
             (OUTPUT / document_name(directory)).write_text(
                 render_document(directory, files)

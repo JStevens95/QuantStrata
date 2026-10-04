@@ -66,7 +66,7 @@ flowchart TD
         RQ["reports/quality.py"]
     end
     subgraph CAP["core.capability"]
-        SI["simple.py<br/><i>TabularModel</i>"]
+        SI["supervised.py<br/><i>SupervisedModel (was simple.py / TabularModel)</i>"]
     end
 
     DM --> BD
@@ -143,7 +143,7 @@ an unchanged loop.
 The Phase 1 skeleton's `fit` now works. Full sequence in
 [`ARCHITECTURE.md` §5](../ARCHITECTURE.md#5-stage-contracts-and-the-train-pipeline).
 
-### 2.4 `TabularModel`
+### 2.4 `SupervisedModel`
 
 A convenience base supplying a standard data module and split, so a
 straightforward model needs no data code at all. This is what makes the
@@ -392,7 +392,7 @@ table is the record, so a reader of the plan is never misled by it.
 | Deviation | Reason |
 | --- | --- |
 | §2.1 stage order corrected: `split` runs before `fit_state` | As written, the scaler would have been fitted over the whole history including the test period. The leak is invisible in the output -- metrics come out slightly too good in a way indistinguishable from a slightly better model. |
-| §2.4 corrected: `TabularModel.data_module` is an abstract hook | It cannot default to the built-in tabular module, because `core` has an empty dependency set and cannot import `sources`. A default would invert the one-way dependency stack the architecture rests on. The cost is one line per subclass. |
+| §2.4 corrected: `SupervisedModel.data_module` is an abstract hook | It cannot default to the built-in tabular module, because `core` has an empty dependency set and cannot import `sources`. A default would invert the one-way dependency stack the architecture rests on. The cost is one line per subclass. |
 | The chronological split's boundary gap is taken from the earlier split's tail | Taking it from the later split's head would discard the most recent scenarios of the training period, which are the most informative ones for a forecast. |
 | `TorchEngine.fit` accepts `on_epoch_end` but does not forward it | The epoch loop already drives the callbacks it was given. A second notification path would let a hook and a callback observe the same epoch in an undefined order. Wired properly when hooks gain a reason to need it. |
 
@@ -486,7 +486,8 @@ Three flagship needs are *not* satisfied yet, and should not be:
 
 - **`domains.pnl` readers.** Phase 3 §2.2 routes `load` through them. They do
   not exist; Phase 3 builds them, with a direct reader until then. Nothing in
-  Phase 2 is blocked.
+  Phase 2 is blocked. (Superseded: the `domains` layer was later removed;
+  see Phase 4 §8.9.)
 - **Parity harness.** Phase 3's levels 1 to 3 compare against `rade_ml_pt`
   and need the Phase 0 captures. Phase 2 deliberately does not pre-empt them.
 - **`elementary_indices` omitted from the signature.** Phase 3 §2.3 records

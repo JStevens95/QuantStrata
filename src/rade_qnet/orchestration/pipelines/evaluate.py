@@ -190,9 +190,7 @@ class EvaluatePipeline(Pipeline[EvaluationResult]):
         if self.source is not None:
             spec = spec.model_copy(update={"source": self.source})
 
-        return loaded.definition.rebuild_data(
-            spec, state=loaded.state, lineage=loaded.lineage
-        )
+        return loaded.definition.rebuild_data(spec, state=loaded.state, lineage=loaded.lineage)
 
     def restore(self, loaded: LoadedBundle, data: DataBundle[object]) -> ModelHandle:
         """

@@ -406,3 +406,77 @@ class TestInMemoryCatalog:
         """
         catalog.record(_manifest())
         assert not (tmp_path / CATALOG_FILENAME).exists()
+
+    def test_entries_filter_as_the_file_backed_catalog_does(self, catalog):
+        """
+        The same keyword filters, and the same ordering.
+
+        This catalog once took no filters at all, so a test written against
+        it could not exercise the query a production caller makes.
+        """
+        catalog.record(_manifest(version=2, tags=("nightly",)))
+        catalog.record(_manifest(version=1, tags=("nightly",)))
+        catalog.record(_manifest(version=1, model_name="other"))
+        assert [m.version for m in catalog.entries(model_name="demo", tag="nightly")] == [1, 2]
+
+    def test_a_location_is_kept_as_given(self, tmp_path, catalog):
+        """Nothing to make portable: the catalog never leaves the process."""
+        catalog.record(_manifest(), location=tmp_path / "bundle")
+        assert catalog.records()[0].location == tmp_path / "bundle"
+
+
+class TestLocations:
+    """Each entry records where its bundle is, portably."""
+
+    def test_a_location_beneath_the_catalog_reads_back_absolute(self, catalog):
+        """The reader gets a usable path, wherever it is running from."""
+        bundle = catalog.root / "bundles" / "demo" / "v1"
+        catalog.record(_manifest(), location=bundle)
+        assert catalog.records()[0].location == bundle.resolve()
+
+    def test_a_location_beneath_the_catalog_is_stored_relative(self, catalog):
+        """
+        Relative, so the store can be copied and still resolve.
+
+        To another machine, or from macOS to Windows.
+        """
+        catalog.record(_manifest(), location=catalog.root / "bundles" / "demo" / "v1")
+        stored = json.loads(catalog.path.read_text().strip())
+        assert stored["location"] == "bundles/demo/v1"
+
+    def test_a_moved_store_still_resolves(self, tmp_path):
+        """The property the relative form exists for."""
+        original = JsonlCatalog(tmp_path / "before")
+        original.record(_manifest(), location=original.root / "bundles" / "v1")
+        moved = tmp_path / "after"
+        original.root.rename(moved)
+        assert JsonlCatalog(moved).records()[0].location == moved / "bundles" / "v1"
+
+    def test_a_location_outside_the_catalog_is_stored_absolute(self, tmp_path):
+        """There is no relative path to store, so the full one is kept."""
+        catalog = JsonlCatalog(tmp_path / "catalog")
+        elsewhere = tmp_path / "bundles" / "v1"
+        catalog.record(_manifest(), location=elsewhere)
+        assert catalog.records()[0].location == elsewhere.resolve()
+
+    def test_an_entry_without_a_location_reads_back_as_none(self, catalog):
+        """Including every entry written before locations were recorded."""
+        catalog.path.write_text(_manifest().model_dump_json() + "\n", encoding="utf-8")
+        assert catalog.records()[0].location is None
+
+    def test_the_location_does_not_leak_into_the_manifest(self, catalog):
+        """
+        The manifest and the location are read back separately.
+
+        The manifest is a strict contract; the location is a fact about the
+        store.
+        """
+        catalog.record(_manifest(), location=catalog.root / "v1")
+        assert catalog.entries()[0] == catalog.records()[0].manifest
+        assert "location" not in catalog.entries()[0].model_dump()
+
+    def test_records_take_the_same_filters_as_entries(self, catalog):
+        """One query vocabulary, whichever view is asked for."""
+        catalog.record(_manifest(version=1, tags=("sweep",)), location=catalog.root / "v1")
+        catalog.record(_manifest(version=2), location=catalog.root / "v2")
+        assert [entry.manifest.version for entry in catalog.records(tag="sweep")] == [1]

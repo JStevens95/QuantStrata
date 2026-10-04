@@ -17,20 +17,18 @@ parallel runs provably equivalent: there is no branch here to get wrong.
 **Aggregate last.** Results come back in input order, are turned into
 manifest rows, and the manifest is written atomically at the end.
 
-Why the runner cannot ask a domain for its jobs
------------------------------------------------
-``orchestration`` may not import ``domains`` or ``models``. So this runner
-cannot ask ``domains.pnl`` to partition a portfolio, and cannot import the
-flagship.
-
-It does not need to. Expanding a portfolio into jobs happens *before* the
-runner sees anything -- by the user, by ``domains.pnl.clusters``, or by
+Why the runner does not expand anything itself
+----------------------------------------------
+Expanding a group set into jobs happens *before* the runner sees anything --
+by the user writing a file, by
+:func:`~rade_qnet.orchestration.jobs.fanout.job_set_for_groups`, or by
 ``rade_qnet.api`` -- and arrives as a ``JobSetSpec``. The model is resolved
-through the registry by name, exactly as ``TrainPipeline`` does it.
+through the registry by name, exactly as ``TrainPipeline`` does it, because
+``orchestration`` may not import ``models``.
 
-This is the layering doing its job rather than obstructing it: the
-constraint forced portfolio expansion to be a separate, independently
-testable function instead of a branch inside the runner.
+Keeping the two apart is what makes expansion a separate, independently
+testable function instead of a branch inside the runner, and keeps the
+runner ignorant of where its jobs came from.
 """
 
 from __future__ import annotations
@@ -82,9 +80,12 @@ class JobSetRunner:
         Where jobs run. ``None`` asks the placement policy, which is the
         normal path and the one ``placement.executor: auto`` means.
     catalog_root
-        Where bundles are recorded, or ``None`` to skip recording. Defaults
-        to the set's output directory, so a set's bundles are indexed
-        together.
+        Where bundles are recorded. Defaults to the set's ``output_root`` --
+        the same place a single run records -- so every run under one root
+        shares one catalog, and a registry over it can compare a sweep's
+        variants or this week's retrains with last week's. Defaulting to the
+        set's own directory, as this once did, gave every variant of a set
+        its own catalog, and no query could see across them.
     metadata
         Free-form annotations carried into every job's run context.
     """
@@ -104,7 +105,7 @@ class JobSetRunner:
         self.executor = executor
         self.metadata = dict(metadata or {})
         self.output_directory = spec.output_root / self.run_id
-        self.catalog_root = catalog_root if catalog_root is not None else self.output_directory
+        self.catalog_root = catalog_root if catalog_root is not None else spec.output_root
 
     def run(self) -> JobSetManifest:
         """

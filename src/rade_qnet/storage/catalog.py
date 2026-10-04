@@ -31,35 +31,49 @@ beyond the lock itself.
 with a warning. One torn write (from a process killed mid-append) costs one
 entry, not the whole index.
 
-Two caveats worth stating plainly
----------------------------------
-``flock`` is advisory and is unreliable on some network filesystems -- notably
-NFS without a lock daemon. On a shared filesystem, point the catalog at local
-storage, or substitute an implementation backed by a database.
-
-``fcntl`` is POSIX-only, so this module does not import on Windows. Both
-limitations are contained by the
+One caveat worth stating plainly
+--------------------------------
+A file lock is advisory and is unreliable on some network filesystems --
+notably NFS without a lock daemon. On a shared filesystem, point the catalog
+at local storage, or substitute an implementation backed by a database. That
+limitation is contained by the
 :class:`~rade_qnet.core.runtime.context.Catalog` protocol: an alternative
 implementation -- including :class:`InMemoryCatalog` below -- substitutes with
 no change anywhere else, which is the reason that protocol is declared in
 ``core`` rather than this class being used directly.
+
+Where each bundle lives
+-----------------------
+An entry records the bundle's directory alongside its manifest. A reader
+selecting a run -- by tag, by alias, by best metric, through
+:mod:`rade_qnet.storage.registry` -- needs to open it, and cannot derive the
+directory: a single run and a job set lay bundles out differently, and the
+catalog may sit somewhere else entirely. The location is stored relative to
+the catalog when the bundle is beneath it, so a model store copied to another
+machine, or from macOS to Windows, still resolves; an entry written before
+locations were recorded reads back with none.
+
+The lock itself lives in :mod:`rade_qnet.storage.locking`, which is what keeps
+this module importable on Windows: ``fcntl`` is POSIX-only, and importing it
+here once made the whole library -- including :mod:`rade_qnet.api`, which
+constructs a catalog -- fail to import rather than merely lose a feature.
 """
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import IO
 
 from ..core.contract.bundle import Manifest
-from ..core.runtime.errors import BundleError
 from ..core.runtime.logging import get_logger
+from .locking import exclusive_lock
 
-__all__ = ["InMemoryCatalog", "JsonlCatalog"]
+__all__ = ["CatalogEntry", "InMemoryCatalog", "JsonlCatalog"]
 
 _LOGGER = get_logger(__name__)
 
@@ -69,6 +83,85 @@ CATALOG_FILENAME = "catalog.jsonl"
 #: The lock file guarding version assignment and appends. Separate from the
 #: catalog itself so locking never depends on the catalog existing.
 LOCK_FILENAME = "catalog.lock"
+
+#: The key an entry's bundle directory is stored under, beside the manifest's
+#: own fields. Stripped before the manifest is validated, because a manifest
+#: is a strict contract and a location is a fact about the store, not the
+#: bundle -- the same bundle copied elsewhere is the same bundle.
+LOCATION_KEY = "location"
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogEntry:
+    """
+    One recorded bundle: what it is, and where it is.
+
+    Parameters
+    ----------
+    manifest
+        The bundle's manifest, exactly as written.
+    location
+        The bundle's directory, or ``None`` when the entry was recorded
+        without one -- including every entry written before locations were
+        recorded.
+    """
+
+    manifest: Manifest
+    location: Path | None = None
+
+
+def _sort_key(entry: CatalogEntry) -> tuple[str, str, int]:
+    """
+    Order entries by model, then job, then version.
+
+    Parameters
+    ----------
+    entry
+        A catalog entry.
+
+    Returns
+    -------
+    tuple
+        The sort key. A single run's ``None`` job sorts before any named job.
+    """
+    manifest = entry.manifest
+    return (manifest.model_name, manifest.job_id or "", manifest.version)
+
+
+def _filtered(
+    entries: Iterable[CatalogEntry],
+    *,
+    model_name: str | None,
+    job_id: str | None,
+    tag: str | None,
+) -> tuple[CatalogEntry, ...]:
+    """
+    Apply the shared filters, so both catalogs answer a query identically.
+
+    Parameters
+    ----------
+    entries
+        Every entry.
+    model_name
+        Restrict to one model, or ``None`` for all.
+    job_id
+        Restrict to one job, or ``None`` for all.
+    tag
+        Restrict to entries whose manifest carries this tag, or ``None``.
+
+    Returns
+    -------
+    tuple of CatalogEntry
+        Matching entries, ordered by model, job and version.
+    """
+    matching = [
+        entry
+        for entry in entries
+        if (model_name is None or entry.manifest.model_name == model_name)
+        and (job_id is None or entry.manifest.job_id == job_id)
+        and (tag is None or tag in entry.manifest.tags)
+    ]
+    return tuple(sorted(matching, key=_sort_key))
 
 
 class JsonlCatalog:
@@ -107,6 +200,10 @@ class JsonlCatalog:
         """
         Hold an exclusive lock on the catalog for the duration of a block.
 
+        Blocking, by design: a job set's workers should queue for a few
+        milliseconds, not fail. The critical section does no I/O beyond one
+        append, so the wait is bounded in practice.
+
         Yields
         ------
         IO
@@ -118,21 +215,8 @@ class JsonlCatalog:
         BundleError
             If the lock cannot be acquired.
         """
-        try:
-            handle = self.lock_path.open("a+", encoding="utf-8")
-        except OSError as error:
-            raise BundleError(
-                f"could not open the catalog lock at {self.lock_path}: {error}"
-            ) from error
-        try:
-            # Blocking: a job set's workers should queue for a few
-            # milliseconds, not fail. The critical section does no I/O beyond
-            # one append, so the wait is bounded in practice.
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        with exclusive_lock(self.lock_path) as handle:
             yield handle
-        finally:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-            handle.close()
 
     def next_version(self, model_name: str, *, job_id: str | None = None) -> int:
         """
@@ -181,7 +265,7 @@ class JsonlCatalog:
         _LOGGER.debug("reserved version %d for %s/%s", version, model_name, job_id or "-")
         return version
 
-    def record(self, manifest: Manifest) -> None:
+    def record(self, manifest: Manifest, *, location: Path | None = None) -> None:
         """
         Record a written bundle by appending its manifest.
 
@@ -191,9 +275,15 @@ class JsonlCatalog:
             The manifest of a bundle already on disk. Recording a bundle that
             has not been written would leave the catalog pointing at nothing,
             which breaks every reader -- so this is always called last.
+        location
+            The bundle's directory. Stored relative to the catalog when it
+            is beneath it, so the store can be moved as a whole.
         """
+        payload = json.loads(manifest.model_dump_json())
+        if location is not None:
+            payload[LOCATION_KEY] = self._portable(Path(location))
         with self._locked():
-            self._append(json.loads(manifest.model_dump_json()))
+            self._append(payload)
         _LOGGER.info("recorded %s in the catalog", manifest.identifier)
 
     def latest(self, model_name: str, *, job_id: str | None = None) -> Manifest | None:
@@ -221,6 +311,32 @@ class JsonlCatalog:
             return None
         return max(matching, key=lambda manifest: manifest.version)
 
+    def records(
+        self,
+        *,
+        model_name: str | None = None,
+        job_id: str | None = None,
+        tag: str | None = None,
+    ) -> Sequence[CatalogEntry]:
+        """
+        Return recorded entries -- manifest and location -- optionally filtered.
+
+        Parameters
+        ----------
+        model_name
+            Restrict to one model.
+        job_id
+            Restrict to one job.
+        tag
+            Restrict to manifests carrying a tag.
+
+        Returns
+        -------
+        Sequence of CatalogEntry
+            Matching entries, ordered by model, job and version.
+        """
+        return _filtered(self._read_entries(), model_name=model_name, job_id=job_id, tag=tag)
+
     def entries(
         self,
         *,
@@ -245,14 +361,51 @@ class JsonlCatalog:
         Sequence of Manifest
             Matching manifests, ordered by model, job and version.
         """
-        manifests = self._read_all()
-        if model_name is not None:
-            manifests = [m for m in manifests if m.model_name == model_name]
-        if job_id is not None:
-            manifests = [m for m in manifests if m.job_id == job_id]
-        if tag is not None:
-            manifests = [m for m in manifests if tag in m.tags]
-        return tuple(sorted(manifests, key=lambda m: (m.model_name, m.job_id or "", m.version)))
+        records = self.records(model_name=model_name, job_id=job_id, tag=tag)
+        return tuple(entry.manifest for entry in records)
+
+    def _portable(self, location: Path) -> str:
+        """
+        Return a location in the form it is stored: relative where possible.
+
+        Parameters
+        ----------
+        location
+            The bundle directory.
+
+        Returns
+        -------
+        str
+            The path relative to the catalog root when the bundle is beneath
+            it, otherwise absolute -- in POSIX form either way, which every
+            platform's ``Path`` reads back correctly.
+        """
+        absolute = location.resolve()
+        try:
+            return absolute.relative_to(self.root.resolve()).as_posix()
+        except ValueError:
+            # Outside the store -- or, on Windows, on another drive, where no
+            # relative path exists at all.
+            return absolute.as_posix()
+
+    def _resolved(self, stored: object) -> Path | None:
+        """
+        Turn a stored location back into a usable path.
+
+        Parameters
+        ----------
+        stored
+            The value read from the catalog line, or ``None``.
+
+        Returns
+        -------
+        Path or None
+            An absolute path, or ``None`` if the entry has no location.
+        """
+        if not isinstance(stored, str) or not stored:
+            return None
+        path = Path(stored)
+        return path if path.is_absolute() else self.root / path
 
     def _append(self, payload: dict[str, object]) -> None:
         """
@@ -278,13 +431,24 @@ class JsonlCatalog:
         Returns
         -------
         list of Manifest
-            Every valid entry. A line that cannot be parsed is logged and
-            skipped rather than raised: one torn write should cost one entry,
-            not the entire index.
+            Every valid entry's manifest.
+        """
+        return [entry.manifest for entry in self._read_entries()]
+
+    def _read_entries(self) -> list[CatalogEntry]:
+        """
+        Read every recorded entry, skipping reservations and bad lines.
+
+        Returns
+        -------
+        list of CatalogEntry
+            Every valid entry, in the order recorded. A line that cannot be
+            parsed is logged and skipped rather than raised: one torn write
+            should cost one entry, not the entire index.
         """
         if not self.path.is_file():
             return []
-        manifests: list[Manifest] = []
+        entries: list[CatalogEntry] = []
         with self.path.open("r", encoding="utf-8") as handle:
             for number, line in enumerate(handle, start=1):
                 stripped = line.strip()
@@ -300,13 +464,16 @@ class JsonlCatalog:
                     # number so it is read by `next_version`, but it describes
                     # no bundle so it is not a catalog entry.
                     continue
+                location = self._resolved(payload.pop(LOCATION_KEY, None))
                 try:
-                    manifests.append(Manifest.model_validate(payload))
+                    manifest = Manifest.model_validate(payload)
                 except ValueError:
                     _LOGGER.warning(
                         "skipping invalid catalog entry on line %d in %s", number, self.path
                     )
-        return manifests
+                    continue
+                entries.append(CatalogEntry(manifest=manifest, location=location))
+        return entries
 
     def _reserved_versions(self, model_name: str, job_id: str | None) -> list[int]:
         """
@@ -360,7 +527,7 @@ class InMemoryCatalog:
 
     def __init__(self) -> None:
         """Start with an empty catalog."""
-        self._manifests: list[Manifest] = []
+        self._entries: list[CatalogEntry] = []
         self._reserved: dict[tuple[str, str | None], int] = {}
 
     def next_version(self, model_name: str, *, job_id: str | None = None) -> int:
@@ -382,14 +549,14 @@ class InMemoryCatalog:
         key = (model_name, job_id)
         recorded = [
             manifest.version
-            for manifest in self._manifests
+            for manifest in self._manifests()
             if manifest.model_name == model_name and manifest.job_id == job_id
         ]
         version = max([*recorded, self._reserved.get(key, 0)], default=0) + 1
         self._reserved[key] = version
         return version
 
-    def record(self, manifest: Manifest) -> None:
+    def record(self, manifest: Manifest, *, location: Path | None = None) -> None:
         """
         Record a manifest.
 
@@ -397,8 +564,11 @@ class InMemoryCatalog:
         ----------
         manifest
             The manifest to record.
+        location
+            The bundle's directory, kept as given.
         """
-        self._manifests.append(manifest)
+        stored = Path(location) if location is not None else None
+        self._entries.append(CatalogEntry(manifest=manifest, location=stored))
 
     def latest(self, model_name: str, *, job_id: str | None = None) -> Manifest | None:
         """
@@ -418,20 +588,77 @@ class InMemoryCatalog:
         """
         matching = [
             manifest
-            for manifest in self._manifests
+            for manifest in self._manifests()
             if manifest.model_name == model_name and manifest.job_id == job_id
         ]
         if not matching:
             return None
         return max(matching, key=lambda manifest: manifest.version)
 
-    def entries(self) -> Sequence[Manifest]:
+    def records(
+        self,
+        *,
+        model_name: str | None = None,
+        job_id: str | None = None,
+        tag: str | None = None,
+    ) -> Sequence[CatalogEntry]:
         """
-        Return every recorded manifest.
+        Return recorded entries, filtered exactly as :class:`JsonlCatalog` does.
+
+        Parameters
+        ----------
+        model_name
+            Restrict to one model.
+        job_id
+            Restrict to one job.
+        tag
+            Restrict to manifests carrying a tag.
+
+        Returns
+        -------
+        Sequence of CatalogEntry
+            Matching entries, ordered by model, job and version.
+        """
+        return _filtered(self._entries, model_name=model_name, job_id=job_id, tag=tag)
+
+    def entries(
+        self,
+        *,
+        model_name: str | None = None,
+        job_id: str | None = None,
+        tag: str | None = None,
+    ) -> Sequence[Manifest]:
+        """
+        Return recorded manifests, filtered exactly as :class:`JsonlCatalog` does.
+
+        The same signature and the same ordering as the persistent catalog,
+        so a test written against this one exercises the query a production
+        caller makes rather than a simpler one that happens to pass.
+
+        Parameters
+        ----------
+        model_name
+            Restrict to one model.
+        job_id
+            Restrict to one job.
+        tag
+            Restrict to manifests carrying a tag.
 
         Returns
         -------
         Sequence of Manifest
-            Recorded manifests, in the order they were recorded.
+            Matching manifests, ordered by model, job and version.
         """
-        return tuple(self._manifests)
+        records = self.records(model_name=model_name, job_id=job_id, tag=tag)
+        return tuple(entry.manifest for entry in records)
+
+    def _manifests(self) -> list[Manifest]:
+        """
+        Return every recorded manifest, in recording order.
+
+        Returns
+        -------
+        list of Manifest
+            The manifests.
+        """
+        return [entry.manifest for entry in self._entries]

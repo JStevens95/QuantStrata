@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...core.capability.simple import TabularModel
+from ...core.capability.supervised import SupervisedModel
 from ...core.runtime.components import model
 
 # Imported for its registration side effect: this is what puts the Torch
@@ -33,7 +33,7 @@ __all__ = ["LstmTabularModel"]
 
 
 @model("lstm_tabular", engine="torch")
-class LstmTabularModel(TabularModel):
+class LstmTabularModel(SupervisedModel):
     """
     Framework declaration for the flagship's temporal stream, alone.
 
@@ -68,9 +68,7 @@ class LstmTabularModel(TabularModel):
         """
         return data_module(spec)
 
-    def build_model(
-        self, spec: SupervisedRunSpec, signature: InputSignature
-    ) -> LstmTabular:
+    def build_model(self, spec: SupervisedRunSpec, signature: InputSignature) -> LstmTabular:
         """
         Return a fully parameterised network.
 

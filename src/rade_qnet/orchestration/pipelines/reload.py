@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from ...core.capability.definition import PredictorDefinition
-from ...core.capability.simple import RebuildableDataModule
+from ...core.capability.supervised import RebuildableDataModule
 from ...core.runtime.components import MODELS, ComponentError, get_model
 from ...core.runtime.errors import BundleError
 from ...core.runtime.logging import get_logger

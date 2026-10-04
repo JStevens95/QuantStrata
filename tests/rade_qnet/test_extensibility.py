@@ -41,7 +41,7 @@ from sklearn.ensemble import RandomForestRegressor
 
 # The five public names a third-party model needs, and nothing else.
 from src.rade_qnet.api import evaluate, infer, train
-from src.rade_qnet.core.capability.simple import TabularModel
+from src.rade_qnet.core.capability.supervised import SupervisedModel
 from src.rade_qnet.core.runtime.components import model
 from src.rade_qnet.core.spec.base import Spec
 from src.rade_qnet.engines import sklearn as _sklearn_engine  # noqa: F401
@@ -70,7 +70,7 @@ class ThirdPartySpec(Spec):
     max_depth: int = Field(default=4, ge=1)
 
 
-class ThirdPartyForest(TabularModel):
+class ThirdPartyForest(SupervisedModel):
     """
     A model as a user would write it, in a package of their own.
 
@@ -164,9 +164,7 @@ def dataset(tmp_path: Path) -> Path:
     with path.open("w", newline="") as handle:
         writer = csv.writer(handle)
         writer.writerow([f"f{index}" for index in range(4)] + ["target"])
-        writer.writerows(
-            [*row, target] for row, target in zip(features, targets, strict=True)
-        )
+        writer.writerows([*row, target] for row, target in zip(features, targets, strict=True))
     return path
 
 
@@ -211,9 +209,7 @@ class TestAModelFromOutsideTheFramework:
 
         assert result.bundle_directory is not None
 
-    def test_it_gets_the_full_lifecycle(
-        self, registered, dataset: Path, tmp_path: Path
-    ) -> None:
+    def test_it_gets_the_full_lifecycle(self, registered, dataset: Path, tmp_path: Path) -> None:
         """
         Train, re-score and predict, with no model-specific support.
 
@@ -228,9 +224,7 @@ class TestAModelFromOutsideTheFramework:
         assert evaluate(bundle).metric("test", "mae") == result.metric("test", "mae")
         assert infer(bundle).values.shape[0] > 0
 
-    def test_it_gets_the_reports_too(
-        self, registered, dataset: Path, tmp_path: Path
-    ) -> None:
+    def test_it_gets_the_reports_too(self, registered, dataset: Path, tmp_path: Path) -> None:
         """
         Reports are not reserved for models that ship with the framework.
 

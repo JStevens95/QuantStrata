@@ -438,9 +438,7 @@ def parse_tune_spec(payload: Mapping[str, Any], *, origin: str = "<mapping>") ->
     space = fields.get("space")
     if isinstance(space, Mapping) and "dimensions" not in space:
         fields["space"] = {
-            "dimensions": [
-                {"path": path, **_axis(path, axis)} for path, axis in space.items()
-            ]
+            "dimensions": [{"path": path, **_axis(path, axis)} for path, axis in space.items()]
         }
 
     try:

@@ -4,16 +4,16 @@
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
-| 1 | `__init__.py` | 49 | 2044 | `091c40db891a0eac` |
+| 1 | `__init__.py` | 53 | 2328 | `30037d65e0ddf548` |
 | 2 | `definition.py` | 317 | 12057 | `0cd0a0d1750e8b1c` |
 | 3 | `protocols.py` | 265 | 10203 | `438101cea82e2646` |
-| 4 | `simple.py` | 373 | 13534 | `5961853f29703f32` |
+| 4 | `supervised.py` | 397 | 14777 | `8e2b5101bac2f3be` |
 
 ---
 
 ## 1. `src/rade_qnet/core/capability/__init__.py`
 
-2044 bytes · SHA-256 `091c40db891a0eac`
+2328 bytes · SHA-256 `30037d65e0ddf548`
 
 ```python
 """
@@ -55,13 +55,17 @@ Modules
     ``Inductive``
         The model can predict for entities that were absent during training.
     [Phase 1 delivered, extended in Phase 3]
+``supervised.py``
+    ``SupervisedModel``, the base almost every supervised model subclasses:
+    it supplies data building, re-loading and the signature, so a model
+    writes one line of data wiring and ``build_model``.  Named for the
+    learning paradigm rather than the data shape -- tables, sequences and
+    graphs all use it.  [Phase 2 as ``simple.py``, renamed after Phase 6]
 
 Planned modules
 ---------------
-``simple.py``
-    Convenience bases (``TabularModel`` and friends) that supply a standard
-    data module and split so a straightforward model needs no data code at
-    all.  [Phase 2]
+``policy.py``
+    The equivalent base for reinforcement-learning models.  [Phase 7]
 """
 
 __all__: tuple[str, ...] = ()
@@ -669,15 +673,32 @@ class Inductive(Protocol):
 
 ---
 
-## 4. `src/rade_qnet/core/capability/simple.py`
+## 4. `src/rade_qnet/core/capability/supervised.py`
 
-13534 bytes · SHA-256 `5961853f29703f32`
+14777 bytes · SHA-256 `8e2b5101bac2f3be`
 
 ```python
 """
-Convenience bases for models that need no data code of their own.
+The base class for supervised models: learn a mapping from inputs to targets.
 
-:class:`TabularModel` supplies two of the three stages a
+There is one base per *learning paradigm*, not per data shape:
+
+- :class:`SupervisedModel` (here) -- learns from a fixed dataset of inputs
+  and known targets. Ridge, a gradient-boosted tree, an LSTM and the
+  graph-plus-recurrent flagship are all supervised, whatever their data
+  looks like.
+- A reinforcement-learning base -- learns by acting in an environment --
+  arrives with Phase 7.
+- An unsupervised base is deliberately *not* provided until a pipeline
+  exists that can train one; an empty base with no reader would be a promise
+  the framework cannot keep.
+
+The shape of the data -- a table, sequences, a graph -- is the data module's
+business, not the base class's. An earlier name, ``TabularModel``, suggested
+otherwise, and was wrong even then: the flagship is a graph model and has
+always used this base.
+
+:class:`SupervisedModel` supplies two of the three stages a
 :class:`~.definition.PredictorDefinition` demands, leaving a model author one
 method of substance to write: build the network. That is what makes the short
 model definition in ``ARCHITECTURE.md`` §1 possible, and it is the mechanism
@@ -697,12 +718,12 @@ so a lazy import inside a method would not escape it. That rule protects a
 property worth more than the convenience: a host that only opens a bundle or
 reads a spec does not need the data layer installed.
 
-So :meth:`TabularModel.data_module` is a hook the model package fills in with
+So :meth:`SupervisedModel.data_module` is a hook the model package fills in with
 one line, and the class supplies everything else. The promise holds up to that
 one line::
 
     @model("my_model")
-    class MyModel(TabularModel):
+    class MyModel(SupervisedModel):
         def data_module(self, spec):
             return TabularDataModule()
 
@@ -730,7 +751,7 @@ if TYPE_CHECKING:
     from ..contract.signature import InputSignature
     from ..spec.run import SupervisedRunSpec
 
-__all__ = ["DataModuleLike", "RebuildableDataModule", "TabularModel"]
+__all__ = ["DataModuleLike", "RebuildableDataModule", "SupervisedModel"]
 
 _LOGGER = get_logger(__name__)
 
@@ -782,7 +803,7 @@ class RebuildableDataModule(Protocol):
 @runtime_checkable
 class DataModuleLike(Protocol):
     """
-    The two methods :class:`TabularModel` needs from a data module.
+    The two methods :class:`SupervisedModel` needs from a data module.
 
     Narrow on purpose. ``core`` cannot name
     :class:`~rade_qnet.sources.dataset.module.DataModule` without importing
@@ -834,13 +855,20 @@ class DataModuleLike(Protocol):
         ...
 
 
-class TabularModel(PredictorDefinition):
+class SupervisedModel(PredictorDefinition):
     """
-    A predictor whose data is a table and whose batching is standard.
+    A supervised predictor fed through the standard prepared dataset.
 
-    Supplies :meth:`build_data` and :meth:`signature`, so a subclass
-    implements :meth:`data_module` -- one line -- and
-    :meth:`~.definition.PredictorDefinition.build_model`.
+    Supplies :meth:`build_data`, :meth:`rebuild_data` and :meth:`signature`,
+    so a subclass implements :meth:`data_module` -- one line -- and
+    :meth:`~.definition.PredictorDefinition.build_model`. Any data shape is
+    welcome, provided the data module returns a dataset carrying
+    ``signature``, ``state`` and ``lineage`` and batch sources satisfying
+    :class:`~rade_qnet.core.contract.source.BatchSource`.
+
+    A model whose data cannot take that shape subclasses
+    :class:`~.definition.PredictorDefinition` directly and writes its own
+    ``build_data``.
     """
 
     @abstractmethod
@@ -902,7 +930,7 @@ class TabularModel(PredictorDefinition):
         if missing:
             raise ComponentError(
                 f"the prepared dataset from {type(module).__name__}.build() has no "
-                f"{missing}; TabularModel expects the standard PreparedDataset shape"
+                f"{missing}; SupervisedModel expects the standard PreparedDataset shape"
             )
 
         return self._wrap(module, prepared, spec)

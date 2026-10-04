@@ -15,8 +15,8 @@ definition of done.
 Scope
 -----
 These tests cover the **model-independent** framework.  Model-specific suites
-arrive with the phase that builds the model, which is why ``models`` and
-``domains`` hold placeholder packages rather than full mirrors.
+arrive with the phase that builds the model, which is why ``models`` holds
+placeholder packages rather than a full mirror until each model is delivered.
 
 Naming
 ------

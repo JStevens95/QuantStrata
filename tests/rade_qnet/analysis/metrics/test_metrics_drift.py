@@ -90,9 +90,7 @@ class TestIdenticalDistributions:
 
     def test_no_warning_is_raised_for_an_undrifted_feature(self, baseline, same):
         """The quiet path produces no text at all."""
-        metrics = drift_metrics(
-            baseline.reshape(-1, 1), same.reshape(-1, 1), feature_names=("x",)
-        )
+        metrics = drift_metrics(baseline.reshape(-1, 1), same.reshape(-1, 1), feature_names=("x",))
 
         assert drift_warnings(metrics) == ()
 

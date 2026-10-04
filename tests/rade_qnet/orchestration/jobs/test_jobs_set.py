@@ -39,7 +39,7 @@ from src.rade_qnet.testkit.fixtures import SyntheticEngine, isolated_registries
 from .support import (
     ENGINE_TAG,
     MODEL_NAME,
-    SyntheticTabularModel,
+    SyntheticSupervisedModel,
     job_set_payload,
     write_linear_dataset,
 )
@@ -61,7 +61,7 @@ def _registries():
     # pass or fail on collection order.
     with isolated_registries(empty=True):
         register_engine(ENGINE_TAG)(SyntheticEngine)
-        register_model(MODEL_NAME, engine=ENGINE_TAG)(SyntheticTabularModel)
+        register_model(MODEL_NAME, engine=ENGINE_TAG)(SyntheticSupervisedModel)
         yield
 
 

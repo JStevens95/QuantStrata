@@ -203,9 +203,7 @@ class TrainPipeline(Pipeline[TrainingResult]):
         # one case -- a failed write -- where it is read most carefully.
         if self.saved is None:
             return result
-        return result.model_copy(
-            update={"bundle_directory": str(self.saved.directory)}
-        )
+        return result.model_copy(update={"bundle_directory": str(self.saved.directory)})
 
     def resolve(self) -> None:
         """
@@ -528,7 +526,7 @@ class TrainPipeline(Pipeline[TrainingResult]):
         # registered, so the catalog never advertises a bundle that is not
         # there.
         if self.context.catalog is not None and saved.manifest is not None:
-            self.context.catalog.record(saved.manifest)
+            self.context.catalog.record(saved.manifest, location=saved.directory)
         return bundle
 
     def _next_version(self) -> int:
@@ -627,7 +625,6 @@ class TrainPipeline(Pipeline[TrainingResult]):
             )
         return self.engine
 
-
     @classmethod
     def _static_inputs(cls, data: DataBundle[object]) -> Mapping[str, object]:
         """
@@ -673,5 +670,3 @@ class TrainPipeline(Pipeline[TrainingResult]):
         if features is None:
             return data.lineage
         return data.lineage.model_copy(update={"quality": quality_metrics(features)})
-
-

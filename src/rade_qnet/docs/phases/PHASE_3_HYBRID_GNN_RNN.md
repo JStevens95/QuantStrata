@@ -84,7 +84,7 @@ static_inputs = {
 
 | `rade_ml_pt` | `rade_qnet` | Axis | Fits on | Notes |
 | --- | --- | --- | --- | --- |
-| `load_data` | `HybridDataModule.load` | — | — | Reads through `domains.pnl` from Phase 4; a direct reader until then |
+| `load_data` | `HybridDataModule.load` | — | — | Reads the group directory directly; the `domains.pnl` route was dropped (Phase 4 §8.9) |
 | `standardise_pnl_history` | `transforms.scaling`, in `fit_state` | Scenario | **Train rows only** | Already correct in `rade_ml_pt`; preserved |
 | `dimension_reduction` | `transforms.reduction`, in `fit_state` | Scenario | `fit_on` flag | Parity: `all`. Default: `train`. Defect 9 |
 | `_update_trade_attributes`, `_update_trade_pnl` | `transform` | — | — | Applies the reduced basis to attributes and history |

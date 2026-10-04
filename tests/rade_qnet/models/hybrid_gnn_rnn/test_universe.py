@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.rade_qnet.domains.pnl.universe import Universe
+from src.rade_qnet.models.hybrid_gnn_rnn.state import Universe
 
 
 @pytest.fixture
@@ -43,8 +43,9 @@ class TestCounts:
         A universe with no targets is degenerate but representable.
 
         Refusing it here would move the error somewhere less informative:
-        a cluster with no targets is a portfolio problem, and the portfolio
-        reader is where that reads clearly.
+        a data directory with no targets is a problem with the data, and the
+        model's ``data.py``, which reads ``universe.json``, is where that
+        reads clearly.
         """
         assert Universe(elementary_ids=("e1",), target_ids=()).n_targets == 0
 

@@ -74,9 +74,7 @@ DRIFT_THRESHOLDS = {
 }
 
 
-def population_stability_index(
-    baseline: NDArray[np.floating], live: NDArray[np.floating]
-) -> float:
+def population_stability_index(baseline: NDArray[np.floating], live: NDArray[np.floating]) -> float:
     """
     Measure how much probability mass moved between bins.
 
@@ -127,9 +125,7 @@ def population_stability_index(
     return float(np.sum((live_share - base_share) * np.log(live_share / base_share)))
 
 
-def kolmogorov_smirnov(
-    baseline: NDArray[np.floating], live: NDArray[np.floating]
-) -> float:
+def kolmogorov_smirnov(baseline: NDArray[np.floating], live: NDArray[np.floating]) -> float:
     """
     Measure the largest gap between two cumulative distributions.
 

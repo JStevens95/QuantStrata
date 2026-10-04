@@ -168,9 +168,7 @@ class TestWhatTheFixtureCanAndCannotShow:
         between the flagship and the baselines has become worth running.
         Treat a failure here as good news and go read §8.6.
         """
-        directory = Path(
-            "tests/fixtures/rade_qnet/golden/hybrid_gnn_rnn/input"
-        )
+        directory = Path("tests/fixtures/rade_qnet/golden/hybrid_gnn_rnn/input")
         if not directory.exists():  # pragma: no cover - depends on the checkout
             pytest.skip("the Phase 0 golden fixture is not present")
 
@@ -180,9 +178,7 @@ class TestWhatTheFixtureCanAndCannotShow:
         for index in range(targets.shape[1]):
             column = targets[:, index]
             fitted = features @ np.linalg.lstsq(features, column, rcond=None)[0]
-            explained = 1 - ((column - fitted) ** 2).sum() / (
-                (column - column.mean()) ** 2
-            ).sum()
+            explained = 1 - ((column - fitted) ** 2).sum() / ((column - column.mean()) ** 2).sum()
             assert explained > 0.99, (
                 f"target {index} is no longer linear in the inputs "
                 f"(R^2 {explained:.4f}); the fixture may now be able to "
@@ -197,9 +193,7 @@ class TestEachBaselineRuns:
         ("name", "engine", "settings"),
         [
             ("ridge", "sklearn", {}),
-            pytest.param(
-                "xgb_tabular", "xgboost", {"n_estimators": 20}, marks=needs_xgboost
-            ),
+            pytest.param("xgb_tabular", "xgboost", {"n_estimators": 20}, marks=needs_xgboost),
             ("lstm_tabular", "torch", {"epochs": 3}),
         ],
     )
@@ -231,9 +225,7 @@ class TestEachBaselineRuns:
         ("name", "engine", "settings"),
         [
             ("ridge", "sklearn", {}),
-            pytest.param(
-                "xgb_tabular", "xgboost", {"n_estimators": 20}, marks=needs_xgboost
-            ),
+            pytest.param("xgb_tabular", "xgboost", {"n_estimators": 20}, marks=needs_xgboost),
         ],
     )
     def test_every_report_renders_for_a_one_shot_engine(
@@ -259,9 +251,7 @@ class TestEachBaselineRuns:
         written = {path.name for path in reports.iterdir()}
         assert {"summary.md", "baselines.md", "data_quality.md"} <= written
 
-    def test_a_one_shot_baseline_runs_in_a_job_set(
-        self, dataset: Path, tmp_path: Path
-    ) -> None:
+    def test_a_one_shot_baseline_runs_in_a_job_set(self, dataset: Path, tmp_path: Path) -> None:
         """
         Phase 4's fan-out does not care that there is no training loop.
 
@@ -290,9 +280,7 @@ class TestEachBaselineRuns:
         )
         assert [job.succeeded for job in manifest.jobs] == [True, True]
 
-    def test_a_one_shot_baseline_is_tunable(
-        self, dataset: Path, tmp_path: Path
-    ) -> None:
+    def test_a_one_shot_baseline_is_tunable(self, dataset: Path, tmp_path: Path) -> None:
         """
         A search over ``alpha``, end to end.
 
@@ -352,9 +340,7 @@ class TestTheInputContractIsEnforcedByThePipeline:
     guarantee.
     """
 
-    def test_a_model_that_accepts_anything_still_runs(
-        self, dataset: Path, tmp_path: Path
-    ) -> None:
+    def test_a_model_that_accepts_anything_still_runs(self, dataset: Path, tmp_path: Path) -> None:
         """
         An unconstrained requirement is not a disabled pipeline stage.
 
@@ -364,9 +350,7 @@ class TestTheInputContractIsEnforcedByThePipeline:
         """
         __import__("src.rade_qnet.models.ridge")
 
-        result = train(
-            specification(dataset, "ridge", "sklearn"), output_root=tmp_path
-        )
+        result = train(specification(dataset, "ridge", "sklearn"), output_root=tmp_path)
         assert result.bundle_directory is not None
 
     def test_a_signature_the_model_cannot_consume_is_refused(

@@ -21,6 +21,8 @@ starts, and every failure is reported together.
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 import yaml
 
@@ -289,6 +291,41 @@ class TestPlacement:
         """
         with pytest.raises((SpecError, ValueError)):
             parse_job_set_spec(payload(placement={"executor": "dask"}))
+
+    def test_spawn_is_accepted_on_every_platform(self):
+        """
+        The default start method must work everywhere.
+
+        Stated as a test because the whole point of defaulting to ``spawn``
+        is that a specification written on one platform runs on another.
+        """
+        spec = parse_job_set_spec(payload(placement={"start_method": "spawn"}))
+
+        assert spec.placement.start_method == "spawn"
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="forkserver is available off Windows")
+    def test_forkserver_is_refused_on_windows(self):
+        """
+        A POSIX-only start method fails at parse time, not mid-run.
+
+        Without the check, ``multiprocessing.get_context('forkserver')``
+        raises from inside the executor -- after the data build, with a
+        message naming neither the setting nor the file it came from.
+        """
+        with pytest.raises((SpecError, ValueError), match="not available on Windows"):
+            parse_job_set_spec(payload(placement={"start_method": "forkserver"}))
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="forkserver is genuinely absent on Windows")
+    def test_forkserver_is_accepted_off_windows(self):
+        """
+        The check rejects only what the platform actually lacks.
+
+        A guard that refused ``forkserver`` everywhere would be a silent
+        feature removal for the platforms that have it.
+        """
+        spec = parse_job_set_spec(payload(placement={"start_method": "forkserver"}))
+
+        assert spec.placement.start_method == "forkserver"
 
 
 class TestRoundTripThroughYaml:

@@ -7,7 +7,7 @@
 | 1 | `__init__.py` | 40 | 1382 | `8e878ba14afd847c` |
 | 2 | `data.py` | 70 | 2472 | `45111227031bd139` |
 | 3 | `model.py` | 53 | 1769 | `86653e260ade081f` |
-| 4 | `register.py` | 106 | 3602 | `0eee88e46a642960` |
+| 4 | `register.py` | 106 | 3612 | `1cacbb9686650b6a` |
 | 5 | `spec.py` | 44 | 1532 | `968365b42f941d08` |
 
 ---
@@ -204,7 +204,7 @@ def build(settings: RidgeSpec) -> Ridge:
 
 ## 4. `src/rade_qnet/models/ridge/register.py`
 
-3602 bytes · SHA-256 `0eee88e46a642960`
+3612 bytes · SHA-256 `1cacbb9686650b6a`
 
 ```python
 """
@@ -228,7 +228,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...core.capability.simple import TabularModel
+from ...core.capability.supervised import SupervisedModel
 from ...core.runtime.components import model
 
 # Imported for its registration side effect: this is what puts the
@@ -253,7 +253,7 @@ __all__ = ["RidgeModel"]
 
 
 @model("ridge", engine="sklearn")
-class RidgeModel(TabularModel):
+class RidgeModel(SupervisedModel):
     """
     Framework declaration for the ridge regression.
 

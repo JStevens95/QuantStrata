@@ -1,5 +1,9 @@
 """
-Train the flagship across a portfolio of clusters, in parallel.
+Train the flagship across every group of a dataset, in parallel.
+
+Here each data group is one cluster of a P&L book -- that is this
+application's vocabulary. The framework only sees groups: a manifest naming
+them and a directory per group.
 
 This is the Phase 4 deliverable in executable form. Phase 3 trained one
 cluster; this trains several at once, each with its own model complexity,
@@ -30,8 +34,8 @@ Running it
 ----------
 ::
 
-    python examples/rade_qnet/phase4_train_portfolio.py
-    python examples/rade_qnet/phase4_train_portfolio.py --sequential
+    python examples/rade_qnet/phase4_train_groups.py
+    python examples/rade_qnet/phase4_train_groups.py --sequential
 
 It builds its portfolio from the golden fixture captured in Phase 0, so it
 needs no external data. Artifacts land under ``artifacts/rade_qnet/phase4``.
@@ -51,7 +55,7 @@ import shutil
 from pathlib import Path
 
 from rade_qnet import api
-from rade_qnet.domains.pnl.portfolio import MANIFEST_FILENAME
+from rade_qnet.orchestration.jobs.groups import MANIFEST_FILENAME
 
 # Imported for its registration side effect, which is what makes
 # `hybrid_gnn_rnn` resolvable by name. The workers do not rely on this
@@ -112,17 +116,17 @@ def build_portfolio(root: Path) -> Path:
         entries.append(
             {
                 "name": name,
-                "elementary_ids": [f"{name}_E{index}" for index in range(n_elementary)],
+                "input_ids": [f"{name}_E{index}" for index in range(n_elementary)],
                 "target_ids": [f"{name}_T0"],
                 "asset_class": name.split("__")[0],
             }
         )
 
     # Declared but never created: the partial-failure demonstration.
-    entries.append({"name": BROKEN_CLUSTER, "elementary_ids": [], "target_ids": []})
+    entries.append({"name": BROKEN_CLUSTER, "input_ids": [], "target_ids": []})
     (root / BROKEN_CLUSTER).mkdir()
 
-    (root / MANIFEST_FILENAME).write_text(json.dumps({"clusters": entries}, indent=2))
+    (root / MANIFEST_FILENAME).write_text(json.dumps({"groups": entries}, indent=2))
     return root
 
 
@@ -148,7 +152,7 @@ def complexity_for(cluster) -> dict:  # noqa: ANN001  - the hook's own type
     # Wider for clusters with more to learn from, bounded at both ends so a
     # single outsized cluster cannot produce a model that will not fit in
     # memory alongside the others running beside it.
-    units = max(8, min(32, cluster.universe.n_elementary))
+    units = max(8, min(32, len(cluster.input_ids)))
     return {"model": {"params": {"units": units}}}
 
 
@@ -166,7 +170,7 @@ def main() -> None:
 
     portfolio_root = build_portfolio(OUTPUT_ROOT / "portfolio")
 
-    manifest = api.train_portfolio(
+    manifest = api.train_groups(
         portfolio_root,
         defaults={
             "model": {"name": "hybrid_gnn_rnn"},

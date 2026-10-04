@@ -8,12 +8,12 @@
 | 2 | `base.py` | 76 | 3189 | `0a27b41675af387a` |
 | 3 | `data.py` | 460 | 15051 | `460a756d41e5f3a6` |
 | 4 | `hardware.py` | 111 | 4569 | `82afd37e1cf52534` |
-| 5 | `jobs.py` | 533 | 19900 | `52fd20676baea8dc` |
+| 5 | `jobs.py` | 583 | 22143 | `9c2d0251603666ce` |
 | 6 | `merge.py` | 182 | 7103 | `89eeb600e0a48ae8` |
 | 7 | `reports.py` | 76 | 2488 | `090156f7b9a0c8a7` |
 | 8 | `run.py` | 383 | 12864 | `1b82a04a916ca8f0` |
 | 9 | `training.py` | 336 | 12006 | `70e3ec454e04fd70` |
-| 10 | `tune.py` | 522 | 17481 | `04de021fa2194e1d` |
+| 10 | `tune.py` | 520 | 17451 | `80cff9f039f91d2f` |
 
 ---
 
@@ -755,7 +755,7 @@ class HardwareSpec(Spec):
 
 ## 5. `src/rade_qnet/core/spec/jobs.py`
 
-19900 bytes · SHA-256 `52fd20676baea8dc`
+22143 bytes · SHA-256 `9c2d0251603666ce`
 
 ```python
 """
@@ -810,6 +810,7 @@ up as the same overloaded flag.
 from __future__ import annotations
 
 import json
+import sys
 from collections import Counter
 from collections.abc import Mapping
 from pathlib import Path
@@ -836,6 +837,13 @@ __all__ = [
 #: Where jobs run. ``auto`` defers to
 #: :func:`rade_qnet.orchestration.compute.policy.choose_placement`.
 ExecutorName = Literal["auto", "local", "processes", "gpus"]
+
+#: Worker start methods that exist only on POSIX platforms.
+#:
+#: ``fork`` is here for completeness even though :class:`PlacementSpec` does
+#: not offer it -- the set describes the platforms, not this schema, so it
+#: stays correct if the schema ever widens.
+_POSIX_ONLY_START_METHODS = frozenset({"fork", "forkserver"})
 
 #: Top-level keys of a job entry that are the job's own metadata rather than
 #: part of its run-specification override. Everything else in a job entry is
@@ -959,6 +967,10 @@ class PlacementSpec(Spec):
         only one tested: ``fork`` is unsafe in a process that has already
         initialised a threaded numerical library or a GPU context, and the
         resulting hangs are intermittent and extremely hard to attribute.
+
+        ``forkserver`` does not exist on Windows, so it is rejected there at
+        validation time rather than raising a bare ``ValueError`` from deep
+        inside the executor once the data has already been built.
     memory_per_job_gb
         An estimate of a single job's peak resident memory, used by the
         policy to cap the worker count. ``None`` means do not cap, which is
@@ -977,6 +989,44 @@ class PlacementSpec(Spec):
     threads_per_worker: int | None = Field(default=None, ge=1)
     start_method: Literal["spawn", "forkserver"] = "spawn"
     memory_per_job_gb: float | None = Field(default=None, gt=0.0)
+
+    @model_validator(mode="after")
+    def _reject_a_start_method_this_platform_lacks(self) -> PlacementSpec:
+        """
+        Refuse a start method the running platform cannot provide.
+
+        ``forkserver`` is POSIX-only. Without this check, a specification
+        written on Linux and run on Windows raises ``ValueError: cannot find
+        context for 'forkserver'`` from inside
+        :class:`~rade_qnet.orchestration.compute.processes.ProcessExecutor` --
+        after the data build, with a message that names neither the setting
+        nor the file it came from.
+
+        Decided from ``sys.platform`` rather than by asking
+        ``multiprocessing.get_all_start_methods()``, which would be the
+        authoritative answer. Importing :mod:`multiprocessing` costs about
+        28ms and nothing else in ``core`` pulls it in, so asking it here would
+        load a process-management library into every program that merely
+        parses a specification -- against the property that ``core`` stays
+        cheap to import. Windows is the only platform without
+        ``forkserver``, so the cheap test and the authoritative one agree.
+
+        Returns
+        -------
+        PlacementSpec
+            Unchanged.
+
+        Raises
+        ------
+        ValueError
+            If this platform does not offer the requested start method. Names
+            the alternative, because the useful next action is picking it.
+        """
+        if sys.platform == "win32" and self.start_method in _POSIX_ONLY_START_METHODS:
+            raise ValueError(
+                f"start_method {self.start_method!r} is not available on Windows; use 'spawn'"
+            )
+        return self
 
 
 class JobSetSpec(Spec):
@@ -2310,7 +2360,7 @@ class RlTrainingSpec(Spec):
 
 ## 10. `src/rade_qnet/core/spec/tune.py`
 
-17481 bytes · SHA-256 `04de021fa2194e1d`
+17451 bytes · SHA-256 `80cff9f039f91d2f`
 
 ```python
 """
@@ -2753,9 +2803,7 @@ def parse_tune_spec(payload: Mapping[str, Any], *, origin: str = "<mapping>") ->
     space = fields.get("space")
     if isinstance(space, Mapping) and "dimensions" not in space:
         fields["space"] = {
-            "dimensions": [
-                {"path": path, **_axis(path, axis)} for path, axis in space.items()
-            ]
+            "dimensions": [{"path": path, **_axis(path, axis)} for path, axis in space.items()]
         }
 
     try:

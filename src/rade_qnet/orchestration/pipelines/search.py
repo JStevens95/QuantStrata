@@ -138,10 +138,7 @@ def _random(spec: TuneSpec) -> list[dict[str, Any]]:
     # docstring.
     generator = np.random.default_rng(spec.seed)
     proposals = [
-        {
-            dimension.path: _draw(dimension, generator)
-            for dimension in spec.space.dimensions
-        }
+        {dimension.path: _draw(dimension, generator) for dimension in spec.space.dimensions}
         for _ in range(spec.trials)
     ]
     _LOGGER.info(
@@ -219,9 +216,7 @@ def _draw(dimension: Dimension, generator: np.random.Generator) -> object:
         # budget. Sampling uniformly in the value instead would put nine
         # tenths of the trials in the top decade of a range like 1e-4 to
         # 1e-1, which is almost never what the range was meant to express.
-        return float(
-            math.exp(generator.uniform(math.log(low), math.log(high)))
-        )
+        return float(math.exp(generator.uniform(math.log(low), math.log(high))))
     return float(generator.uniform(low, high))
 
 

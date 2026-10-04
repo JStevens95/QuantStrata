@@ -42,7 +42,7 @@ from src.rade_qnet.storage.catalog import InMemoryCatalog
 from src.rade_qnet.testkit.fixtures import isolated_registries, make_run_context
 
 from .support import (
-    SyntheticTabularModel,
+    SyntheticSupervisedModel,
     make_spec,
     register_components,
     write_linear_dataset,
@@ -121,11 +121,9 @@ def bundle(tmp_path, spec):
         The bundle.
     """
     pipeline = TrainPipeline(
-        context=make_run_context(
-            output_directory=tmp_path / "run", catalog=InMemoryCatalog()
-        ),
+        context=make_run_context(output_directory=tmp_path / "run", catalog=InMemoryCatalog()),
         spec=spec,
-        definition=SyntheticTabularModel(),
+        definition=SyntheticSupervisedModel(),
     )
     pipeline.execute()
     assert pipeline.saved is not None
@@ -164,9 +162,7 @@ def entity_aware(tmp_path, directory, entities):
         entities=entities,
     )
     loaded = pipeline.load()
-    data = loaded.definition.rebuild_data(
-        loaded.spec, state=loaded.state, lineage=loaded.lineage
-    )
+    data = loaded.definition.rebuild_data(loaded.spec, state=loaded.state, lineage=loaded.lineage)
     return pipeline, loaded, replace(data, entity_ids=KNOWN_ENTITIES)
 
 
@@ -264,9 +260,7 @@ class TestTheForwardPass:
         loaded = pipeline.load()
         data = pipeline.rebuild_data(loaded)
         handle = pipeline.restore(loaded, data)
-        raw = pipeline._engine(loaded).predict(
-            handle, scoring_source(data, "test")
-        )
+        raw = pipeline._engine(loaded).predict(handle, scoring_source(data, "test"))
         expected = loaded.state.inverse_transform_targets(np.asarray(raw, dtype=np.float64))
 
         assert np.allclose(predictions.values, np.ravel(expected))
@@ -387,9 +381,7 @@ class TestUnseenEntities:
 
         pipeline._check_entities(replace(loaded, definition=InductiveDefinition()), data)
 
-    def test_answering_false_is_refused_like_not_declaring_at_all(
-        self, tmp_path, bundle
-    ):
+    def test_answering_false_is_refused_like_not_declaring_at_all(self, tmp_path, bundle):
         """
         Because the answer is a method, not the mere presence of one.
 

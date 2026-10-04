@@ -22,7 +22,7 @@ from __future__ import annotations
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
-from ...core.capability.simple import TabularModel
+from ...core.capability.supervised import SupervisedModel
 from ...core.runtime.components import model
 
 # Imported for its import side effect: this is what puts the Torch engine
@@ -51,7 +51,7 @@ __all__ = ["HybridGnnRnnModel"]
 
 
 @model("hybrid_gnn_rnn", engine="torch")
-class HybridGnnRnnModel(TabularModel):
+class HybridGnnRnnModel(SupervisedModel):
     """
     Framework declaration for the hybrid graph-temporal network.
 

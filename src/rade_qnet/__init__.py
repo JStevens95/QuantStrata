@@ -41,21 +41,22 @@ Package map
     Understanding a run: metrics, pure plotting functions and the report
     writers that persist artifacts to disk.
 ``models``
-    The model library.  ``hybrid_gnn_rnn`` is the flagship; ``baselines``
-    holds deliberately simple models that keep the framework honest.
-``domains``
-    Business context (P&L replication, hedging, trading).  Nothing in the
-    layers above may import this package.
+    The model library.  ``hybrid_gnn_rnn`` is the flagship; ``ridge``,
+    ``xgb_tabular`` and ``lstm_tabular`` are deliberately simple models that
+    keep the framework honest.  Business vocabulary -- what a column means,
+    which instruments a model replicates -- lives here, in each model's own
+    ``data.py``, and nowhere in the layers below.
 ``testkit``
     Tools that prove a model conforms to the framework's contracts.  Not
-    part of the production runtime.
+    needed to *run* anything, but the fastest way to confirm a new model is
+    wired correctly.
 ``api``
-    The front door: ``train``, ``train_jobs`` and ``train_portfolio``.  A
-    module rather than a package, because it adds no behaviour -- it only
-    assembles pieces a caller could assemble by hand.  It lives at the top
-    level because it reaches across layers that may not see each other:
-    ``orchestration`` may not import ``domains``, but expanding a book into
-    jobs and then running them needs both.
+    The front door: ``train``, ``train_jobs``, ``train_groups``,
+    ``evaluate``, ``infer`` and ``tune``.  A module rather than a package,
+    because it adds no behaviour -- it only assembles pieces a caller could
+    assemble by hand.  It lives at the top level because it reaches across
+    layers that may not see each other: ``orchestration`` may not import
+    ``models``, but resolving a model by name and running it needs both.
 
 Import convention
 -----------------

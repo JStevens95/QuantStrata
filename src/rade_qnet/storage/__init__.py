@@ -29,6 +29,17 @@ Modules
     discipline and an append-oriented log rather than whole-file rewrites.
     ``JsonlCatalog`` for real runs, ``InMemoryCatalog`` for tests and
     notebooks.  [Phase 1, delivered]
+``registry.py``
+    ``RunRegistry``: choose a trained run by tag, by best metric or by an
+    alias such as ``production``, and record promotions and tags added after
+    training as append-only events beside the catalog -- never by rewriting a
+    bundle.  [Delivered after Phase 6]
+``locking.py``
+    The exclusive file lock that makes the catalog's single-writer discipline
+    real, with one implementation per platform behind one function.  Separate
+    from ``catalog.py`` because ``fcntl`` is POSIX-only: imported there, it
+    made the entire library fail to load on Windows rather than lose a
+    feature.  [Phase 1, delivered]
 ``tracker.py``
     Experiment tracking behind one interface, with a no-op default.  Tracking
     is optional infrastructure; a run must never fail because a tracking server

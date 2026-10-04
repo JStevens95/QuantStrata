@@ -189,7 +189,7 @@ flowchart LR
 
 ### 4.1 The layering constraint
 
-`orchestration` may not import `domains` or `models`. All three pipelines
+`orchestration` may not import `models`. All three pipelines
 resolve their model through the registry, exactly as `TrainPipeline` does, so
 none of them knows what a flagship is.
 

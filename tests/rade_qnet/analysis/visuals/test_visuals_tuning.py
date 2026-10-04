@@ -199,9 +199,7 @@ class TestParameterImportance:
         overrides, objectives = search
         with_categorical = [{**proposal, "sampler": "adam"} for proposal in overrides]
 
-        assert "sampler" not in labels(
-            parameter_importance_figure(with_categorical, objectives)
-        )
+        assert "sampler" not in labels(parameter_importance_figure(with_categorical, objectives))
 
     def test_a_constant_parameter_is_skipped(self, search):
         """A parameter that never varied cannot have mattered."""

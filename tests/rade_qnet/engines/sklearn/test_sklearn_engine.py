@@ -224,9 +224,7 @@ class TestPersistence:
 
         assert np.array_equal(before, engine.predict(restored, learnable_source()))
 
-    def test_loading_into_a_different_kind_of_estimator_is_refused(
-        self, tmp_path: Path
-    ) -> None:
+    def test_loading_into_a_different_kind_of_estimator_is_refused(self, tmp_path: Path) -> None:
         """
         A ridge's weights are not a forest's, and the shapes may well agree.
 

@@ -111,9 +111,7 @@ def learnable_source(seed: int = 0) -> SyntheticTensorSource:
     rng = np.random.default_rng(seed)
     features = rng.normal(size=(N_SAMPLES, N_FEATURES))
     target = np.sin(features[:, 0]) + features[:, 1] ** 2 - features[:, 2]
-    return SyntheticTensorSource(
-        features=features, targets=target[:, None], batch_size=32
-    )
+    return SyntheticTensorSource(features=features, targets=target[:, None], batch_size=32)
 
 
 def prepared(engine: XGBoostEngine, model: object, **kwargs: object) -> object:
@@ -199,7 +197,7 @@ class TestTheOpenMpWorkaround:
         so, and this test is the second line of defence.
         """
         source = Path("src/rade_qnet/engines/xgboost/__init__.py").read_text()
-        assert "find_spec(\"torch\")" in source
+        assert 'find_spec("torch")' in source
         assert source.index("import torch") < source.index("from .engine")
 
 
@@ -258,9 +256,7 @@ class TestFitting:
     def test_the_training_loss_falls(self) -> None:
         """Boosting that does not reduce training error is not boosting."""
         engine = XGBoostEngine()
-        outcome = engine.fit(
-            prepared(engine, booster()), {"train": learnable_source()}, training()
-        )
+        outcome = engine.fit(prepared(engine, booster()), {"train": learnable_source()}, training())
         assert outcome.history[-1].train_loss < outcome.history[0].train_loss
 
     def test_a_validation_split_is_watched(self) -> None:
@@ -399,9 +395,7 @@ class TestRefusals:
         """
         engine = XGBoostEngine()
         with pytest.raises(EngineError, match=r"XGBoostTrainingSpec|engine"):
-            engine.prepare(
-                booster(), hardware=HardwareSpec(device="cpu"), training=object()
-            )
+            engine.prepare(booster(), hardware=HardwareSpec(device="cpu"), training=object())
 
     def test_static_inputs_are_refused(self) -> None:
         """A graph has no column in a design matrix."""

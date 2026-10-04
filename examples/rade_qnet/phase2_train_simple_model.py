@@ -16,7 +16,7 @@ alignment of predictions to targets, the versioning, the bundle, the reports
 
 What this demonstrates, in order
 --------------------------------
-1. A model is declared by subclassing ``TabularModel``: one line of data
+1. A model is declared by subclassing ``SupervisedModel``: one line of data
    wiring and one of model construction.
 2. The pipeline resolves its components from the specification before it
    touches any data, so an unsupported combination fails in milliseconds.
@@ -55,7 +55,7 @@ import torch
 from torch import nn
 
 from src.rade_qnet.analysis.reports import baselines, curves, quality, summary  # noqa: F401
-from src.rade_qnet.core.capability.simple import TabularModel
+from src.rade_qnet.core.capability.supervised import SupervisedModel
 from src.rade_qnet.core.contract.bundle import ModelBundle
 from src.rade_qnet.core.contract.data import DataBundle
 from src.rade_qnet.core.contract.result import TrainingResult
@@ -132,11 +132,11 @@ class Mlp(nn.Module):
 
 
 @register_model(MODEL_NAME, engine="torch")
-class TabularMlp(TabularModel):
+class TabularMlp(SupervisedModel):
     """
     The whole of a user's model definition.
 
-    Two methods. ``TabularModel`` supplies ``build_data`` and ``signature``,
+    Two methods. ``SupervisedModel`` supplies ``build_data`` and ``signature``,
     which between them do the reading, splitting, scaling, windowing,
     fingerprinting and source construction -- around twenty lines that would
     otherwise be copied into every simple model, each copy a separate

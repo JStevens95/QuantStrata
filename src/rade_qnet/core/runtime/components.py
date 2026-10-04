@@ -299,7 +299,7 @@ def model(name: str, *, engine: str) -> Callable[[ClassT], ClassT]:
     ::
 
         @model("ridge", engine="sklearn")
-        class Ridge(TabularModel):
+        class Ridge(SupervisedModel):
             spec = RidgeSpec
     """
 

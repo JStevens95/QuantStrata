@@ -18,6 +18,13 @@ Planned modules
 ``test_storage_catalog.py``
     Registration, query by model and job, and concurrent writes from several
     processes losing no entry.  [Phase 1]
+``test_storage_registry.py``
+    Selecting runs by tag, metric and alias; tags and promotions recorded
+    without rewriting a bundle; and concurrent decisions from several
+    processes losing none.
+``test_storage_locking.py``
+    The cross-platform lock: retry deadline, lock-file errors, and mutual
+    exclusion between processes.
 ``test_storage_tracker.py``
     The tracking interface, and that an unreachable backend degrades to a
     warning instead of failing a completed run.  [Phase 1]

@@ -341,9 +341,7 @@ class XGBoostEngine:
             # access to state the framework cannot see. Disabled when there is
             # no validation split, because stopping on training error selects
             # the most overfitted round available.
-            early_stopping_rounds=(
-                spec.early_stopping_rounds if _WATCHED in matrices else None
-            ),
+            early_stopping_rounds=(spec.early_stopping_rounds if _WATCHED in matrices else None),
             verbose_eval=False,
         )
 
@@ -457,8 +455,7 @@ class XGBoostEngine:
         """
         if not isinstance(model, BoosterModel):
             raise EngineError(
-                f"expected a BoosterModel to load into and received a "
-                f"{type(model).__name__}"
+                f"expected a BoosterModel to load into and received a {type(model).__name__}"
             )
         booster = xgb.Booster()
         try:
@@ -468,8 +465,7 @@ class XGBoostEngine:
             booster.load_model(bytearray(path.read_bytes()))
         except Exception as error:
             raise EngineError(
-                f"could not read a booster from {path} "
-                f"[{type(error).__name__}] {error}"
+                f"could not read a booster from {path} [{type(error).__name__}] {error}"
             ) from error
         model.booster = booster
         return model
@@ -509,9 +505,7 @@ class XGBoostEngine:
         if best is None and history:
             best = len(history) - 1
         stopped_early = bool(
-            watched
-            and spec.early_stopping_rounds is not None
-            and len(history) < spec.n_estimators
+            watched and spec.early_stopping_rounds is not None and len(history) < spec.n_estimators
         )
         return FitOutcome(
             history=history,
@@ -644,9 +638,7 @@ def _history_from(
         EpochRecord(
             epoch=index,
             train_loss=float(value),
-            val_loss=(
-                float(validation_losses[index]) if index < len(validation_losses) else None
-            ),
+            val_loss=(float(validation_losses[index]) if index < len(validation_losses) else None),
             seconds=per_round,
         )
         for index, value in enumerate(train_losses)

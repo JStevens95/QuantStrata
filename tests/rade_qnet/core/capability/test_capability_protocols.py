@@ -79,7 +79,6 @@ class FullyCapable:
         return True
 
 
-
 class TestOptingOut:
     """A model that declares nothing is charged for nothing."""
 

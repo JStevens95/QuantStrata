@@ -229,10 +229,7 @@ class RequiredInput(ContractModel):
             # constrain it, so that the shape check stays a shape check.
             declared = TensorSpec(shape=self.shape, dtype=self.dtype or spec.dtype)
             if not declared.is_compatible_with(spec):
-                return (
-                    f"has shape {spec.describe()}, but {declared.describe()} "
-                    f"is required"
-                )
+                return f"has shape {spec.describe()}, but {declared.describe()} is required"
         return None
 
 
@@ -288,9 +285,7 @@ class InputRequirement(ContractModel):
         for group, entries in (("dynamic", self.dynamic), ("static", self.static)):
             names = [entry.name for entry in entries if entry.name is not None]
             if len(names) != len(set(names)):
-                raise SpecError(
-                    f"the {group} requirements name an input twice: {sorted(names)}"
-                )
+                raise SpecError(f"the {group} requirements name an input twice: {sorted(names)}")
             if sum(1 for entry in entries if entry.name is None) > 1:
                 raise SpecError(
                     f"the {group} requirements contain more than one unnamed "

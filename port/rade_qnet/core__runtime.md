@@ -5,8 +5,8 @@
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 62 | 3025 | `041af9b78a9927f4` |
-| 2 | `components.py` | 548 | 15862 | `472ee6303390d874` |
-| 3 | `context.py` | 385 | 12885 | `8b11496fe3a01eee` |
+| 2 | `components.py` | 548 | 15865 | `d4892d7b478201e0` |
+| 3 | `context.py` | 391 | 13285 | `4a20729f709d8771` |
 | 4 | `errors.py` | 153 | 5378 | `f13eb08c3452f71f` |
 | 5 | `hashing.py` | 231 | 6505 | `f6d9f4a484edae26` |
 | 6 | `hooks.py` | 165 | 5574 | `a12ae9f374abea76` |
@@ -89,7 +89,7 @@ __all__: tuple[str, ...] = ()
 
 ## 2. `src/rade_qnet/core/runtime/components.py`
 
-15862 bytes · SHA-256 `472ee6303390d874`
+15865 bytes · SHA-256 `d4892d7b478201e0`
 
 ```python
 """
@@ -393,7 +393,7 @@ def model(name: str, *, engine: str) -> Callable[[ClassT], ClassT]:
     ::
 
         @model("ridge", engine="sklearn")
-        class Ridge(TabularModel):
+        class Ridge(SupervisedModel):
             spec = RidgeSpec
     """
 
@@ -646,7 +646,7 @@ def get_report(name: str) -> type:
 
 ## 3. `src/rade_qnet/core/runtime/context.py`
 
-12885 bytes · SHA-256 `8b11496fe3a01eee`
+13285 bytes · SHA-256 `4a20729f709d8771`
 
 ```python
 """
@@ -729,7 +729,7 @@ class Catalog(Protocol):
         """
         ...
 
-    def record(self, manifest: Manifest) -> None:
+    def record(self, manifest: Manifest, *, location: Path | None = None) -> None:
         """
         Record a written bundle.
 
@@ -742,6 +742,12 @@ class Catalog(Protocol):
         ----------
         manifest
             The manifest of the bundle that was written.
+        location
+            The bundle's directory. Recorded so a run selected from the
+            catalog -- by tag, by alias, by best metric -- can be opened
+            without the reader knowing the directory layout, which differs
+            between a single run and a job set. Optional so an entry can
+            still be recorded where no directory exists.
         """
         ...
 

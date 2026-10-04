@@ -9,8 +9,9 @@ produces.
 
 The one thing ``api`` genuinely contributes is reaching across layers that
 are not allowed to see each other. ``orchestration`` may not import
-``domains``; :func:`~rade_qnet.api.train_portfolio` reads a book, expands it
-into jobs, and hands them to a runner that has no idea a cluster exists.
+``models``; :func:`~rade_qnet.api.train_groups` reads a group manifest,
+expands it into jobs, and hands them to a runner that has no idea a group
+exists.
 """
 
 from __future__ import annotations
@@ -24,17 +25,17 @@ from src.rade_qnet import api
 from src.rade_qnet.core.runtime.components import engine as register_engine
 from src.rade_qnet.core.runtime.components import model as register_model
 from src.rade_qnet.core.runtime.errors import SpecError
-from src.rade_qnet.domains.pnl.portfolio import MANIFEST_FILENAME
 from src.rade_qnet.orchestration.compute.local import LocalExecutor
+from src.rade_qnet.orchestration.jobs.groups import MANIFEST_FILENAME
 from src.rade_qnet.testkit.fixtures import SyntheticEngine, isolated_registries
 
 from .orchestration.jobs.support import (
-    CLUSTER_FILENAME,
     DIRECTORY_MODEL_NAME,
     ENGINE_TAG,
+    GROUP_FILENAME,
     MODEL_NAME,
     SyntheticDirectoryModel,
-    SyntheticTabularModel,
+    SyntheticSupervisedModel,
     job_set_payload,
     write_linear_dataset,
 )
@@ -56,7 +57,7 @@ def _registries():
     # pass or fail on collection order.
     with isolated_registries(empty=True):
         register_engine(ENGINE_TAG)(SyntheticEngine)
-        register_model(MODEL_NAME, engine=ENGINE_TAG)(SyntheticTabularModel)
+        register_model(MODEL_NAME, engine=ENGINE_TAG)(SyntheticSupervisedModel)
         register_model(DIRECTORY_MODEL_NAME, engine=ENGINE_TAG)(SyntheticDirectoryModel)
         yield
 
@@ -259,31 +260,30 @@ class TestTrainingAJobSet:
         assert [record.job_id for record in manifest.failed] == ["bad"]
 
 
-class TestTrainingAPortfolio:
-    """`api.train_portfolio`, which is why this module sits above the layers."""
+class TestTrainingAcrossGroups:
+    """``api.train_groups``, which is why this module sits above the layers."""
 
     @pytest.fixture
-    def book(self, tmp_path):
+    def data_root(self, tmp_path):
         """
-        Lay out a two-cluster portfolio, one data file per cluster.
+        Lay out a two-group set, one data file per group.
 
-        Each cluster gets its own file, which is the layout
-        `cluster_overrides` assumes: a directory per cluster, named in the
-        source parameters.
+        Each group gets its own file, which is the layout ``group_overrides``
+        assumes: a directory per group, named in the source parameters.
 
         Returns
         -------
         pathlib.Path
-            The portfolio directory.
+            The group set directory.
         """
-        root = tmp_path / "book"
-        clusters = [{"name": "alpha"}, {"name": "beta"}]
+        root = tmp_path / "data"
+        groups = [{"name": "alpha"}, {"name": "beta"}]
         root.mkdir()
-        for entry in clusters:
+        for entry in groups:
             directory = root / entry["name"]
             directory.mkdir()
-            write_linear_dataset(directory / CLUSTER_FILENAME)
-        (root / MANIFEST_FILENAME).write_text(json.dumps({"clusters": clusters}), encoding="utf-8")
+            write_linear_dataset(directory / GROUP_FILENAME)
+        (root / MANIFEST_FILENAME).write_text(json.dumps({"groups": groups}), encoding="utf-8")
         return root
 
     @pytest.fixture
@@ -291,9 +291,9 @@ class TestTrainingAPortfolio:
         """
         Provide the shared run-specification fragment.
 
-        A model source, because that is the shape a cluster override
-        produces: `domains.pnl` names a directory, and reading a directory
-        is the model's business rather than the framework's.
+        A model source, because that is the shape a group override produces:
+        it names a directory, and reading a directory is the model's
+        business rather than the framework's.
 
         Returns
         -------
@@ -307,15 +307,15 @@ class TestTrainingAPortfolio:
             "reports": {"enabled": []},
         }
 
-    def test_one_job_runs_per_cluster(self, book, defaults, tmp_path):
+    def test_one_job_runs_per_group(self, data_root, defaults, tmp_path):
         """
         Read, expand, dispatch -- the three steps, as one call.
 
-        The middle one is the step that is easy to get subtly wrong, which
-        is why it is worth a function rather than a docstring.
+        The middle one is the step that is easy to get subtly wrong, which is
+        why it is worth a function rather than a docstring.
         """
-        manifest = api.train_portfolio(
-            book,
+        manifest = api.train_groups(
+            data_root,
             defaults=defaults,
             output_root=tmp_path / "out",
             executor=LocalExecutor(),
@@ -323,45 +323,94 @@ class TestTrainingAPortfolio:
 
         assert [record.job_id for record in manifest.jobs] == ["alpha", "beta"]
 
-    def test_a_cluster_filter_restricts_the_set(self, book, defaults, tmp_path):
-        """Running part of a book runs part of a book."""
-        manifest = api.train_portfolio(
-            book,
+    def test_a_group_filter_restricts_the_set(self, data_root, defaults, tmp_path):
+        """Naming some groups trains only those groups."""
+        manifest = api.train_groups(
+            data_root,
             defaults=defaults,
             output_root=tmp_path / "out",
-            clusters=["beta"],
+            groups=["beta"],
             executor=LocalExecutor(),
         )
 
         assert [record.job_id for record in manifest.jobs] == ["beta"]
 
-    def test_per_cluster_overrides_reach_the_jobs(self, book, defaults, tmp_path):
+    def test_per_group_overrides_reach_the_jobs(self, data_root, defaults, tmp_path):
         """
-        The hook that makes a portfolio a job set rather than a loop.
+        The hook that makes a group set a job set rather than a loop.
 
-        Asserted through a setting that survives into the manifest, since
-        the exact fit makes both clusters score identically.
+        Asserted through a setting that survives into the manifest, since the
+        exact fit makes both groups score identically.
         """
-        manifest = api.train_portfolio(
-            book,
+        manifest = api.train_groups(
+            data_root,
             defaults=defaults,
             output_root=tmp_path / "out",
-            overrides_for=lambda cluster: {"seed": 7 if cluster.name == "alpha" else 9},
+            overrides_for=lambda group: {"seed": 7 if group.name == "alpha" else 9},
             executor=LocalExecutor(),
         )
 
         assert manifest.record("alpha").seed != manifest.record("beta").seed
 
-    def test_a_missing_portfolio_fails_before_anything_runs(self, defaults, tmp_path):
+    def test_a_missing_group_set_fails_before_anything_runs(self, defaults, tmp_path):
         """
         Read first, dispatch second.
 
-        A book that is not there is knowable without training anything.
+        A directory that is not there is knowable without training anything.
         """
         with pytest.raises(SpecError):
-            api.train_portfolio(
-                tmp_path / "absent", defaults=defaults, output_root=tmp_path / "out"
+            api.train_groups(tmp_path / "absent", defaults=defaults, output_root=tmp_path / "out")
+
+    def test_two_variants_of_a_set_share_one_catalog(self, data_root, defaults, tmp_path):
+        """
+        So a registry can compare them.
+
+        Each variant of a set has its own directory -- its name carries the
+        specification digest -- and the catalog once defaulted to that
+        directory, so no query could see both variants at once.
+        """
+        for seed in (1, 2):
+            api.train_groups(
+                data_root,
+                defaults={**defaults, "seed": seed},
+                output_root=tmp_path / "out",
+                groups=["alpha"],
+                executor=LocalExecutor(),
             )
+
+        versions = [run.version for run in api.registry(tmp_path / "out").runs(job="alpha")]
+        assert versions == [1, 2]
+
+
+class TestSelectingTrainedRuns:
+    """``api.registry``: from many trained runs back to the one wanted."""
+
+    def test_runs_trained_with_a_tag_are_selected_by_it(self, dataset, tmp_path):
+        """The tag set at training time is the one queried by."""
+        root = tmp_path / "out"
+        api.train({**run_payload(dataset, root), "tags": ["sweep"]})
+        api.train({**run_payload(dataset, root), "seed": 3})
+
+        selected = api.registry(root).runs(tags=["sweep"])
+
+        assert [run.version for run in selected] == [1]
+
+    def test_a_selected_run_can_be_promoted_and_evaluated(self, dataset, tmp_path):
+        """
+        The whole round trip, through public functions only.
+
+        Train, pick the best, promote it, find it again by alias, and score
+        the directory the registry hands back.
+        """
+        root = tmp_path / "out"
+        api.train({**run_payload(dataset, root), "tags": ["sweep"]})
+        runs = api.registry(root)
+        runs.promote(runs.best("r2", direction="maximise", tags=["sweep"]), "production")
+
+        production = runs.get(MODEL_NAME, alias="production")
+        result = api.evaluate(production.directory)
+
+        assert result.evaluations["test"].metrics["r2"] == pytest.approx(1.0)
 
 
 def tune_payload(dataset, output_root):
@@ -517,9 +566,7 @@ class TestSearchingASpace:
 
     def test_a_search_runs_from_a_mapping(self, tmp_path, dataset):
         """The notebook case."""
-        result = api.tune(
-            tune_payload(dataset, tmp_path), output_root=tmp_path / "searches"
-        )
+        result = api.tune(tune_payload(dataset, tmp_path), output_root=tmp_path / "searches")
 
         assert len(result.trials) == 3
 
@@ -533,9 +580,7 @@ class TestSearchingASpace:
 
     def test_the_winner_is_identified(self, tmp_path, dataset):
         """With the direction and split recorded alongside it."""
-        result = api.tune(
-            tune_payload(dataset, tmp_path), output_root=tmp_path / "searches"
-        )
+        result = api.tune(tune_payload(dataset, tmp_path), output_root=tmp_path / "searches")
 
         assert result.best.succeeded
         assert result.direction == "minimise"
@@ -543,9 +588,7 @@ class TestSearchingASpace:
 
     def test_each_trial_keeps_its_bundle(self, tmp_path, dataset):
         """Which is the difference between acting on a search and repeating it."""
-        result = api.tune(
-            tune_payload(dataset, tmp_path), output_root=tmp_path / "searches"
-        )
+        result = api.tune(tune_payload(dataset, tmp_path), output_root=tmp_path / "searches")
 
         assert result.best.bundle_directory is not None
         assert (tmp_path / "searches").exists()
@@ -559,14 +602,10 @@ class TestSearchingASpace:
         """
         from pathlib import Path  # noqa: PLC0415
 
-        result = api.tune(
-            tune_payload(dataset, tmp_path), output_root=tmp_path / "searches"
-        )
+        result = api.tune(tune_payload(dataset, tmp_path), output_root=tmp_path / "searches")
         rescored = api.evaluate(Path(result.best.bundle_directory))
 
-        assert rescored.metric("validation", "mae") == pytest.approx(
-            result.best.objective
-        )
+        assert rescored.metric("validation", "mae") == pytest.approx(result.best.objective)
 
     def test_a_search_is_named_in_its_directory(self, tmp_path, dataset):
         """So two searches in one root are told apart."""

@@ -5,7 +5,7 @@
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 35 | 1297 | `6bc47bdcc1b578ae` |
-| 2 | `drift.py` | 405 | 14447 | `902254ea33203124` |
+| 2 | `drift.py` | 401 | 14435 | `a6c640555cfab43e` |
 | 3 | `quality.py` | 291 | 9823 | `0378d66d5bfb2ed7` |
 | 4 | `regression.py` | 342 | 11129 | `2e7f22aa6facf8dd` |
 
@@ -57,7 +57,7 @@ __all__: tuple[str, ...] = ()
 
 ## 2. `src/rade_qnet/analysis/metrics/drift.py`
 
-14447 bytes · SHA-256 `902254ea33203124`
+14435 bytes · SHA-256 `a6c640555cfab43e`
 
 ```python
 """
@@ -136,9 +136,7 @@ DRIFT_THRESHOLDS = {
 }
 
 
-def population_stability_index(
-    baseline: NDArray[np.floating], live: NDArray[np.floating]
-) -> float:
+def population_stability_index(baseline: NDArray[np.floating], live: NDArray[np.floating]) -> float:
     """
     Measure how much probability mass moved between bins.
 
@@ -189,9 +187,7 @@ def population_stability_index(
     return float(np.sum((live_share - base_share) * np.log(live_share / base_share)))
 
 
-def kolmogorov_smirnov(
-    baseline: NDArray[np.floating], live: NDArray[np.floating]
-) -> float:
+def kolmogorov_smirnov(baseline: NDArray[np.floating], live: NDArray[np.floating]) -> float:
     """
     Measure the largest gap between two cumulative distributions.
 

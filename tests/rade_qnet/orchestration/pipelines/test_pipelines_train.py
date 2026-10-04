@@ -37,7 +37,7 @@ import pytest
 # imported before the context opened.
 from src.rade_qnet.analysis.reports import curves, quality, summary  # noqa: F401
 from src.rade_qnet.analysis.reports.base import Report, report
-from src.rade_qnet.core.capability.simple import TabularModel
+from src.rade_qnet.core.capability.supervised import SupervisedModel
 from src.rade_qnet.core.contract.bundle import ModelBundle
 from src.rade_qnet.core.contract.data import DataBundle, TensorBatchData
 from src.rade_qnet.core.runtime.components import ENGINES
@@ -130,7 +130,7 @@ def dataset(tmp_path):
     return path
 
 
-class SyntheticTabularModel(TabularModel):
+class SyntheticSupervisedModel(SupervisedModel):
     """A model definition needing one line of data code, as advertised."""
 
     component_name = "synthetic_tabular"
@@ -187,7 +187,7 @@ def pipeline(tmp_path, dataset):
     return TrainPipeline(
         context=make_run_context(output_directory=tmp_path / "run"),
         spec=make_spec(dataset),
-        definition=SyntheticTabularModel(),
+        definition=SyntheticSupervisedModel(),
     )
 
 
@@ -232,7 +232,7 @@ class TestStageSequence:
         pipeline = TrainPipeline(
             context=make_run_context(output_directory=tmp_path / "run", hooks=(hook,)),
             spec=make_spec(dataset),
-            definition=SyntheticTabularModel(),
+            definition=SyntheticSupervisedModel(),
         )
         pipeline.execute()
         started = [event[1] for event in hook.events if event[0] == "stage_start"]
@@ -251,7 +251,7 @@ class TestStageSequence:
         pipeline = TrainPipeline(
             context=make_run_context(output_directory=tmp_path / "run", hooks=(hook,)),
             spec=make_spec(dataset),
-            definition=SyntheticTabularModel(),
+            definition=SyntheticSupervisedModel(),
         )
         pipeline.execute()
         started = [event[1] for event in hook.events if event[0] == "stage_start"]
@@ -269,7 +269,7 @@ class TestStageSequence:
         pipeline = TrainPipeline(
             context=make_run_context(output_directory=tmp_path / "run", hooks=(hook,)),
             spec=make_spec(dataset),
-            definition=SyntheticTabularModel(),
+            definition=SyntheticSupervisedModel(),
         )
         pipeline.execute()
         started = [event[1] for event in hook.events if event[0] == "stage_start"]
@@ -286,7 +286,7 @@ class TestStageSequence:
         pipeline = TrainPipeline(
             context=make_run_context(output_directory=tmp_path / "run", hooks=(hook,)),
             spec=make_spec(dataset, reports={"enabled": ("summary",)}),
-            definition=SyntheticTabularModel(),
+            definition=SyntheticSupervisedModel(),
         )
         pipeline.execute()
         started = [event[1] for event in hook.events if event[0] == "stage_start"]
@@ -306,7 +306,7 @@ class TestResolution:
         pipeline = TrainPipeline(
             context=make_run_context(output_directory=tmp_path / "run"),
             spec=make_spec(dataset),
-            definition=SyntheticTabularModel(),
+            definition=SyntheticSupervisedModel(),
         )
         # The engine is removed rather than misnamed in the spec, because the
         # spec's discriminated union rejects an unknown engine tag before the
@@ -331,7 +331,7 @@ class TestResolution:
         pipeline = TrainPipeline(
             context=make_run_context(output_directory=tmp_path / "run"),
             spec=make_spec(dataset, reports={"enabled": ("no_such_report",)}),
-            definition=SyntheticTabularModel(),
+            definition=SyntheticSupervisedModel(),
         )
         with pytest.raises(StageError) as caught:
             pipeline.execute()
@@ -408,7 +408,7 @@ class TestTheNumbers:
             result = TrainPipeline(
                 context=make_run_context(output_directory=tmp_path / f"scaled_{scale_target}"),
                 spec=spec,
-                definition=SyntheticTabularModel(),
+                definition=SyntheticSupervisedModel(),
             ).execute()
             errors[scale_target] = result.evaluations["test"].metrics
 
@@ -528,7 +528,7 @@ class TestScoringAlignment:
                         "target": rows.astype(np.float64),
                     }
 
-        class ShufflingModel(SyntheticTabularModel):
+        class ShufflingModel(SyntheticSupervisedModel):
             """Replaces the training split with a source that cannot be ordered."""
 
             def build_data(self, spec):
@@ -657,7 +657,7 @@ class TestPersistence:
         succeeding = TrainPipeline(
             context=make_run_context(output_directory=tmp_path / "ok", catalog=catalog),
             spec=make_spec(dataset),
-            definition=SyntheticTabularModel(),
+            definition=SyntheticSupervisedModel(),
         )
         succeeding.execute()
         # `entries` rather than `next_version`, because the latter *reserves* a
@@ -668,7 +668,7 @@ class TestPersistence:
         failing = TrainPipeline(
             context=make_run_context(output_directory=tmp_path / "bad", catalog=catalog),
             spec=make_spec(dataset),
-            definition=SyntheticTabularModel(),
+            definition=SyntheticSupervisedModel(),
         )
 
         def explode(handle, data):
@@ -682,6 +682,22 @@ class TestPersistence:
             failing.execute()
         assert len(catalog.entries()) == registered == 1
 
+    def test_the_catalog_records_where_the_bundle_is(self, tmp_path, dataset):
+        """
+        So a run selected from the catalog can be opened.
+
+        The layout differs between a single run and a job set, so a reader
+        cannot derive the directory -- it has to be recorded.
+        """
+        catalog = InMemoryCatalog()
+        pipeline = TrainPipeline(
+            context=make_run_context(output_directory=tmp_path / "run", catalog=catalog),
+            spec=make_spec(dataset),
+            definition=SyntheticSupervisedModel(),
+        )
+        pipeline.execute()
+        assert catalog.records()[0].location == pipeline.saved.directory
+
 
 class TestReports:
     """Enabled declaratively, and never load-bearing."""
@@ -691,7 +707,7 @@ class TestReports:
         pipeline = TrainPipeline(
             context=make_run_context(output_directory=tmp_path / "run"),
             spec=make_spec(dataset, reports={"enabled": ("summary", "curves", "quality")}),
-            definition=SyntheticTabularModel(),
+            definition=SyntheticSupervisedModel(),
         )
         pipeline.execute()
         written = {
@@ -719,7 +735,7 @@ class TestReports:
         pipeline = TrainPipeline(
             context=make_run_context(output_directory=tmp_path / "run"),
             spec=make_spec(dataset, reports={"enabled": ("explodes",)}),
-            definition=SyntheticTabularModel(),
+            definition=SyntheticSupervisedModel(),
         )
         result = pipeline.execute()
         assert result.evaluations["test"].metrics["r2"] == pytest.approx(1.0, abs=1e-9)
@@ -743,7 +759,7 @@ class TestReports:
         pipeline = TrainPipeline(
             context=make_run_context(output_directory=tmp_path / "run"),
             spec=make_spec(dataset, reports={"enabled": ("explodes_too",), "fail_fast": True}),
-            definition=SyntheticTabularModel(),
+            definition=SyntheticSupervisedModel(),
         )
         with pytest.raises(StageError) as caught:
             pipeline.execute()
@@ -772,7 +788,7 @@ class TestTheReportHook:
         pipeline = TrainPipeline(
             context=make_run_context(output_directory=tmp_path / "run"),
             spec=make_spec(dataset, reports={"enabled": ("summary", "curves")}),
-            definition=SyntheticTabularModel(),
+            definition=SyntheticSupervisedModel(),
         )
         assert pipeline.report_names() == ("summary", "curves")
 
@@ -806,7 +822,7 @@ class TestTheReportHook:
         pipeline = Insisting(
             context=make_run_context(output_directory=tmp_path / "run"),
             spec=make_spec(dataset, reports={"enabled": ()}),
-            definition=SyntheticTabularModel(),
+            definition=SyntheticSupervisedModel(),
         )
         pipeline.execute()
         assert (pipeline.context.reports_directory / "insisted.md").is_file()
@@ -831,7 +847,7 @@ class TestTheReportHook:
         pipeline = Insisting(
             context=make_run_context(output_directory=tmp_path / "run"),
             spec=make_spec(dataset, reports={"enabled": ()}),
-            definition=SyntheticTabularModel(),
+            definition=SyntheticSupervisedModel(),
         )
         with pytest.raises(StageError) as caught:
             pipeline.execute()
@@ -845,7 +861,7 @@ class TestInstrumentation:
     def test_a_failure_is_attributed_to_its_stage(self, tmp_path, dataset):
         """Not "something raised during training" but "fit raised"."""
 
-        class BrokenFit(SyntheticTabularModel):
+        class BrokenFit(SyntheticSupervisedModel):
             """A definition whose fit stage fails."""
 
         pipeline = TrainPipeline(
@@ -888,7 +904,7 @@ class TestInstrumentation:
         pipeline = TrainPipeline(
             context=make_run_context(output_directory=tmp_path / "run", hooks=(hook,)),
             spec=make_spec(dataset, reports={"enabled": ("missing",)}),
-            definition=SyntheticTabularModel(),
+            definition=SyntheticSupervisedModel(),
         )
         with pytest.raises(StageError):
             pipeline.execute()
@@ -918,7 +934,7 @@ class TestCustomisationTiers:
         pipeline = ScoresTestOnly(
             context=make_run_context(output_directory=tmp_path / "run"),
             spec=make_spec(dataset),
-            definition=SyntheticTabularModel(),
+            definition=SyntheticSupervisedModel(),
         )
         result = pipeline.execute()
         assert set(result.evaluations) == {"test"}
@@ -964,7 +980,7 @@ class TestDelegation:
         pipeline stage adds no check of its own.
         """
 
-        class NoTrainSplit(SyntheticTabularModel):
+        class NoTrainSplit(SyntheticSupervisedModel):
             """Drops the training split."""
 
             def build_data(self, spec):

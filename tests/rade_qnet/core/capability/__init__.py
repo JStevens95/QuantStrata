@@ -15,7 +15,7 @@ Planned modules
 ``test_capability_protocols.py``
     Runtime detection of each opt-in capability, verified both ways: present
     and detected, absent and ignored.  [Phase 1]
-``test_capability_simple.py``
-    The convenience bases, asserting that a minimal model needs no data code.
-    [Phase 2]
+``test_capability_supervised.py``
+    ``SupervisedModel``, asserting that a minimal model needs one line of data
+    code, and that every fault it detects names the model package.  [Phase 2]
 """

@@ -1,10 +1,10 @@
 """
-Tests for the simple-model shortcut.
+Tests for ``SupervisedModel``, the base class for supervised models.
 
-``TabularModel`` exists so that a straightforward model is a short file. It
+``SupervisedModel`` exists so that a straightforward model is a short file. It
 supplies ``build_data`` and ``signature``, leaving a subclass to write
-``data_module`` -- one line -- and ``build_model``. Without it, every simple
-model would reimplement the same twenty lines of source-to-payload wrapping,
+``data_module`` -- one line -- and ``build_model``. Without it, every
+supervised model would reimplement the same twenty lines of source-to-payload wrapping,
 and each copy would be a separate opportunity to get it wrong.
 
 The design point worth recording is that ``data_module`` is *abstract* rather
@@ -30,7 +30,7 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.capability.simple import DataModuleLike, TabularModel
+from src.rade_qnet.core.capability.supervised import DataModuleLike, SupervisedModel
 from src.rade_qnet.core.runtime.errors import ComponentError
 from src.rade_qnet.core.spec.data import TabularSourceSpec
 from src.rade_qnet.core.spec.run import SupervisedRunSpec
@@ -66,8 +66,8 @@ def spec(tmp_path):
     )
 
 
-class Tabular(TabularModel):
-    """The whole of a simple model's data wiring, as a subclass should write it."""
+class CsvRegressor(SupervisedModel):
+    """The whole of a supervised model's data wiring, as a subclass should write it."""
 
     def data_module(self, spec):
         """Return the built-in tabular module."""
@@ -92,7 +92,7 @@ class TestTheDependencyDirection:
         import a layer above it, and the one-way stack would no longer be one
         way. One line per subclass is the price.
         """
-        assert "data_module" in TabularModel.__abstractmethods__
+        assert "data_module" in SupervisedModel.__abstractmethods__
 
     def test_the_expected_interface_is_declared_structurally(self):
         """
@@ -124,7 +124,7 @@ class TestTheDependencyDirection:
 
 
 class TestBuildData:
-    """The twenty lines a simple model no longer has to write."""
+    """The twenty lines a supervised model no longer has to write."""
 
     def test_one_payload_per_split(self, spec):
         """
@@ -133,7 +133,7 @@ class TestBuildData:
         A fixed three-payload assumption would break on a run with no
         validation fraction, which is a legitimate configuration.
         """
-        bundle = Tabular().build_data(spec)
+        bundle = CsvRegressor().build_data(spec)
         assert set(bundle.splits) == {"train", "validation", "test"}
 
     def test_each_payload_reports_its_sample_count(self, spec):
@@ -143,7 +143,7 @@ class TestBuildData:
         A zero would make a reported mean loss infinite, and an inflated one
         would make it quietly too small.
         """
-        bundle = Tabular().build_data(spec)
+        bundle = CsvRegressor().build_data(spec)
         assert all(payload.n_samples > 0 for payload in bundle.splits.values())
 
     def test_the_source_is_stored_as_the_loader(self, spec):
@@ -155,7 +155,7 @@ class TestBuildData:
         drift apart -- which they would, the first time a stage rebuilt one
         and not the other.
         """
-        bundle = Tabular().build_data(spec)
+        bundle = CsvRegressor().build_data(spec)
         loader = bundle.splits["train"].loader
         assert loader.n_samples == bundle.splits["train"].n_samples
 
@@ -166,7 +166,7 @@ class TestBuildData:
         A reconstructed signature agrees with the real one only while two
         pieces of code agree about the transforms.
         """
-        bundle = Tabular().build_data(spec)
+        bundle = CsvRegressor().build_data(spec)
         assert bundle.signature.dynamic
         assert bundle.state is not None
 
@@ -177,7 +177,7 @@ class TestBuildData:
         Lost here, a run could not be compared against another one, and
         comparison is how anyone finds out the data changed.
         """
-        assert Tabular().build_data(spec).lineage.source_fingerprint
+        assert CsvRegressor().build_data(spec).lineage.source_fingerprint
 
     def test_the_signature_defaults_to_the_data_build_s(self, spec):
         """
@@ -187,7 +187,7 @@ class TestBuildData:
         signature describes what the model used rather than what was
         available -- but that is an override, not the default.
         """
-        model = Tabular()
+        model = CsvRegressor()
         bundle = model.build_data(spec)
         assert model.signature(bundle) is bundle.signature
 
@@ -204,7 +204,7 @@ class TestComponentErrors:
         wrong.
         """
 
-        class NotAModule(Tabular):
+        class NotAModule(CsvRegressor):
             """A model whose data module is not a data module."""
 
             def data_module(self, spec):
@@ -244,7 +244,7 @@ class TestComponentErrors:
                 del prepared, spec, seed
                 return {}
 
-        class WithBadModule(Tabular):
+        class WithBadModule(CsvRegressor):
             """A model wired to the broken module."""
 
             def data_module(self, spec):
@@ -280,7 +280,7 @@ class TestComponentErrors:
                 del prepared, spec, seed
                 return {"train": object()}
 
-        class WithBadSources(Tabular):
+        class WithBadSources(CsvRegressor):
             """A model wired to the broken module."""
 
             def data_module(self, spec):

@@ -356,9 +356,7 @@ class TunePipeline(Pipeline[TuningResult]):
         _LOGGER.info("%s", result.describe())
         return result
 
-    def refit(
-        self, definition: PredictorDefinition, result: TuningResult
-    ) -> TuningResult:
+    def refit(self, definition: PredictorDefinition, result: TuningResult) -> TuningResult:
         """
         Optionally retrain the winner on train and validation combined.
 
@@ -537,10 +535,7 @@ class TunePipeline(Pipeline[TuningResult]):
         bool
             True if a shared dataset would be wrong.
         """
-        return any(
-            path == "source" or path.startswith("source.")
-            for path in self.spec.space.paths
-        )
+        return any(path == "source" or path.startswith("source.") for path in self.spec.space.paths)
 
 
 class _SharedDataTrainPipeline(TrainPipeline):

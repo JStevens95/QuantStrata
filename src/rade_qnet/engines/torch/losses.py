@@ -9,15 +9,17 @@ an unrecognised name fails when the spec is read -- listing what is available
 
 The asymmetric losses, and why they are in the framework
 --------------------------------------------------------
-``asymmetric`` and ``quantile`` look domain-specific and are deliberately
-here rather than in ``domains``.
+``asymmetric`` and ``quantile`` look domain-specific, but neither is: each is
+a general statement about how to weigh errors -- over-prediction against
+under-prediction, or one quantile of the error distribution -- and both are
+used well outside P&L work.
 
-The reason is that a loss is consumed by the *learner*, and the learner is
-engine code. Putting a loss in ``domains`` would require ``engines`` to import
-``domains``, which the dependency rule forbids -- and forbids for good reason:
-it would make the Torch engine unusable without the P&L package installed.
+They live here because a loss is consumed by the *learner*, and the learner
+is engine code. A loss that only one model needs can still be registered from
+that model's package without touching this module; the registry is what makes
+that possible.
 
-What is domain-specific is the *choice* of loss and the value of its
+What is problem-specific is the *choice* of loss and the value of its
 asymmetry, and those live in a configuration file where they belong.
 
 Both reduce to a mean over the batch rather than a sum, so a loss value is

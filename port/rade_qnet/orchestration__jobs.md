@@ -1,19 +1,21 @@
 # `src/rade_qnet/orchestration/jobs`
 
-4 file(s). Create the directory, then create each file below with the exact contents of its block.
+6 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
-| 1 | `__init__.py` | 56 | 2160 | `6d1b581f5bd21ac3` |
-| 2 | `manifest.py` | 407 | 12734 | `0a5173658b335f6b` |
-| 3 | `set.py` | 335 | 11474 | `309bbb0a049e589c` |
-| 4 | `unit.py` | 301 | 11485 | `dbcca9ec2df2b2c8` |
+| 1 | `__init__.py` | 64 | 2610 | `38c0c4fe2f3800a8` |
+| 2 | `fanout.py` | 165 | 6078 | `53090f7ef26e54f6` |
+| 3 | `groups.py` | 441 | 13842 | `e51d04f043e63356` |
+| 4 | `manifest.py` | 407 | 12734 | `0a5173658b335f6b` |
+| 5 | `set.py` | 336 | 11660 | `8aa5850984437273` |
+| 6 | `unit.py` | 301 | 11485 | `dbcca9ec2df2b2c8` |
 
 ---
 
 ## 1. `src/rade_qnet/orchestration/jobs/__init__.py`
 
-2160 bytes · SHA-256 `6d1b581f5bd21ac3`
+2610 bytes · SHA-256 `38c0c4fe2f3800a8`
 
 ```python
 """
@@ -21,8 +23,8 @@ One model, many jobs.
 
 A job set is deliberately simple: a list of jobs, each one a full independent
 training run of the same model, differing in its data slice and -- optionally
--- in its architecture complexity.  A liquid cluster with abundant history can
-be given a wider, deeper configuration than a sparse one, from the same
+-- in its architecture complexity.  A data group with abundant history can be
+given a wider, deeper configuration than a sparse one, from the same
 specification file.
 
 What a job set is *not* is a special kind of model.  There is no ensemble
@@ -45,15 +47,23 @@ Modules
     with per-job overrides, dispatches through an executor, and aggregates the
     results.  Partial failure is first-class -- one failed job does not
     discard the others.
+``groups.py``
+    ``read_group_set(root)``: which data groups exist on disk, read from a
+    declared ``groups.json`` manifest, with a cheap snapshot fingerprint for
+    provenance.  Knows nothing about what a group *means*.
+``fanout.py``
+    ``job_set_for_groups``: turns a group set into a ``JobSetSpec``, one job
+    per group, with a per-group override hook and the snapshot fingerprint
+    carried as a tag onto every bundle.
 
-A layering note
----------------
-``orchestration`` may not import ``domains`` or ``models``, so nothing here
-can ask a domain to partition a portfolio into jobs.  It does not need to:
-that expansion happens before the runner sees anything and arrives as a
-``JobSetSpec``, and the model is resolved by name through the registry.  The
-constraint is what turned portfolio expansion into a separate, independently
-testable function rather than a branch inside the runner.
+Why expansion is separate from the runner
+-----------------------------------------
+The runner runs jobs and nothing else.  Expanding a group set into jobs
+happens before the runner sees anything and arrives as an ordinary
+``JobSetSpec``, so a hand-written set and an expanded one are
+indistinguishable to it -- which is what keeps the runner a job runner
+rather than a group runner.  The model is resolved by name through the
+registry, because ``orchestration`` may not import ``models``.
 """
 
 from __future__ import annotations
@@ -76,7 +86,631 @@ __all__ = [
 
 ---
 
-## 2. `src/rade_qnet/orchestration/jobs/manifest.py`
+## 2. `src/rade_qnet/orchestration/jobs/fanout.py`
+
+6078 bytes · SHA-256 `53090f7ef26e54f6`
+
+```python
+"""
+Turning a set of data groups into the jobs a job set fans out over.
+
+This is the bridge between "a directory holding four groups" and "a job set
+with four jobs". It produces a :class:`~rade_qnet.core.spec.jobs.JobSetSpec`:
+shared defaults, one job per group, each job overriding the directory it
+reads and anything the caller wants to vary.
+
+Why expansion is separate from the runner
+-----------------------------------------
+:mod:`rade_qnet.orchestration.jobs.set` knows how to run *jobs* and nothing
+else. By the time it sees anything, there are only jobs -- a caller wrote the
+set by hand, or this module expanded a group set into one, and the runner
+cannot tell the difference. That is exactly the property that makes the
+runner reusable: the moment it knew what a group was, it would stop being a
+job runner and start being a group runner.
+
+Settings per group
+------------------
+The reason a group set is a job set rather than a loop is that groups are not
+alike. One with abundant history supports a wider, deeper model than a thin
+one, and forcing both to the same configuration means either underfitting the
+first or overfitting the second. :func:`job_set_for_groups` therefore takes a
+per-group override hook, which is the mechanism behind that whole
+proposition.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
+from ...core.runtime.logging import get_logger
+from ...core.spec.jobs import JobSetSpec, parse_job_set_spec
+from ...core.spec.merge import deep_merge
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
+    from pathlib import Path
+
+    from .groups import DataGroup, GroupSet
+
+__all__ = ["FINGERPRINT_KEY", "fingerprint_tag", "group_overrides", "job_set_for_groups"]
+
+_LOGGER = get_logger(__name__)
+
+#: Prefix the snapshot digest is tagged with, so every bundle in the set can
+#: be traced back to the data it was trained on.
+FINGERPRINT_KEY = "data_fingerprint"
+
+
+def fingerprint_tag(fingerprint: str) -> str:
+    """
+    Encode a snapshot digest as a set tag.
+
+    A set's tags are free-form labels rather than a mapping, so a key-value
+    fact has to be encoded into one. Done here, in one place, because the
+    writer and every future reader have to agree on the encoding, and a
+    convention applied at two call sites is a convention that will eventually
+    be applied at one.
+
+    Parameters
+    ----------
+    fingerprint
+        The group set's snapshot digest.
+
+    Returns
+    -------
+    str
+        For example ``data_fingerprint=7f3a9c21...``.
+    """
+    return f"{FINGERPRINT_KEY}={fingerprint}"
+
+
+def group_overrides(group: DataGroup) -> dict[str, Any]:
+    """
+    Return the overrides every group job needs, whatever the model.
+
+    Only the source directory. Deliberately minimal: anything else would be
+    this module deciding how a model should be configured, which it is in no
+    position to know -- the whole point of the framework is that the model
+    declares that.
+
+    Parameters
+    ----------
+    group
+        The group.
+
+    Returns
+    -------
+    dict
+        An override fragment, merged over the set's defaults.
+    """
+    return {"source": {"params": {"directory": str(group.directory)}}}
+
+
+def job_set_for_groups(
+    groups: GroupSet,
+    *,
+    defaults: Mapping[str, Any],
+    output_root: Path,
+    name: str | None = None,
+    placement: Mapping[str, Any] | None = None,
+    overrides_for: Callable[[DataGroup], Mapping[str, Any]] | None = None,
+) -> JobSetSpec:
+    """
+    Expand a group set into a job set, one job per group.
+
+    Parameters
+    ----------
+    groups
+        The groups to train over.
+    defaults
+        The run-specification fragment every job shares: the model, the
+        source kind, the training settings. Merged *under* each job's
+        overrides, so a per-group setting wins and everything it does not
+        mention survives.
+    output_root
+        Where the set writes.
+    name
+        The set's label, used in its run identifier and so in its directory
+        name. Defaults to ``groups``.
+    placement
+        Where jobs run. ``None`` leaves it to the placement policy, which is
+        the normal path.
+    overrides_for
+        Per-group overrides, merged over :func:`group_overrides`. This is the
+        hook that lets a data-rich group get a wider model than a thin one,
+        which is the reason a group set is a job set at all.
+
+    Returns
+    -------
+    JobSetSpec
+        A validated job set. Validated here rather than at dispatch, so a
+        set that expands into something misconfigured fails at expansion --
+        where the error can say which group -- rather than after some of its
+        jobs have already trained.
+    """
+    jobs = []
+    for group in groups:
+        overrides: dict[str, Any] = dict(group_overrides(group))
+        if overrides_for is not None:
+            # Merged by the job-set loader's own rules rather than ad hoc
+            # here, so a per-group fragment follows exactly the same merge
+            # semantics as one written by hand in a file. Two merge
+            # implementations would eventually disagree, and the
+            # disagreement would look like a model behaving differently
+            # depending on how it was launched.
+            overrides = deep_merge(overrides, overrides_for(group))
+        jobs.append({"id": group.name, "overrides": overrides, "description": group.describe()})
+
+    spec = parse_job_set_spec(
+        {
+            "name": name or "groups",
+            "output_root": str(output_root),
+            "defaults": dict(defaults),
+            "jobs": jobs,
+            **({"placement": dict(placement)} if placement is not None else {}),
+            # Carried as a tag so it reaches every bundle. A result that
+            # looks surprising six months from now is asked one question
+            # first: was this trained on the data I think it was.
+            "tags": [fingerprint_tag(groups.fingerprint)],
+        }
+    )
+    _LOGGER.info("expanded %s into %d job(s)", groups.describe(), len(spec.jobs))
+    return spec
+```
+
+---
+
+## 3. `src/rade_qnet/orchestration/jobs/groups.py`
+
+13842 bytes · SHA-256 `e51d04f043e63356`
+
+```python
+"""
+Which data groups exist on disk, and which snapshot of them a run used.
+
+A **data group** is one self-contained training problem: its own directory,
+its own input and target columns, its own history. A set of them is what
+turns a single run into a job set -- one model trained per group, in
+parallel, each writing its own bundle.
+
+This is the general mechanism behind "train this model over every slice of my
+data". A slice might be a region, a desk, a product line, a book of
+instruments; the framework does not care, and that is the point. Nothing here
+knows what a group *means*, only that it has a name, a directory and a set of
+column identifiers.
+
+Why a declared manifest rather than a directory listing
+-------------------------------------------------------
+A group set is described by a JSON file, not by whichever subdirectories
+happen to be present. A listing silently changes meaning the moment somebody
+leaves a scratch folder behind, and a job set that quietly grew a
+forty-first member is a result nobody asked for. The manifest makes the
+membership a decision rather than an accident.
+
+The fingerprint
+---------------
+Every group set read here is fingerprinted, and the fingerprint is tagged
+onto every bundle the resulting job set produces. The reason is the question
+asked about every result that looks surprising: *was this trained on the data
+I think it was?* Six months later the directory has been refreshed, columns
+have been added, and a digest captured at the time is the only way to answer.
+
+The digest covers what identifies the snapshot -- the group names, their
+column identifiers, and the size and modification time of every file read --
+rather than the file contents. Hashing gigabytes on every run to detect a
+change that a size and a timestamp already reveal would make the check
+expensive enough that somebody eventually turns it off, and a provenance
+check nobody runs is worth nothing.
+
+What this module does not do
+----------------------------
+It does not read the data. A group's history is read by whatever data module
+the model declares, through the ordinary source machinery, because the shape
+that history needs to be in is the model's business. This module answers the
+prior question: which groups exist, what is in them, and which snapshot is
+it.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from ...core.runtime.errors import SpecError
+from ...core.runtime.hashing import digest_payload
+from ...core.runtime.logging import get_logger
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Iterator, Sequence
+
+__all__ = ["MANIFEST_FILENAME", "DataGroup", "GroupSet", "read_group_set"]
+
+_LOGGER = get_logger(__name__)
+
+#: The file a group set directory is described by.
+MANIFEST_FILENAME = "groups.json"
+
+#: Manifest keys consumed directly by this module. Anything else in an entry
+#: is carried through as a free-form attribute, which is what lets a caller
+#: annotate a group without this module growing a field for it.
+_RESERVED_KEYS = frozenset({"name", "directory", "input_ids", "target_ids"})
+
+
+@dataclass(frozen=True, slots=True)
+class DataGroup:
+    """
+    One self-contained training problem.
+
+    Parameters
+    ----------
+    name
+        The group's identifier, which becomes a job identifier and therefore
+        a directory name and a seed component. Keep it to characters that are
+        safe in a path, for that reason.
+    directory
+        Where this group's data lives.
+    input_ids, target_ids
+        Identifiers for the group's input and target columns, in column
+        order.
+
+        Carried for **provenance and reporting**, not for computation: they
+        go into the snapshot fingerprint and into a log line, and that is
+        all this module does with them. A model that needs to interpret its
+        columns reads them through its own ``data.py``, in whatever
+        vocabulary it uses -- which is why these are plain tuples here
+        rather than a framework type that would have to name the two sides
+        of somebody else's problem.
+    attributes
+        Free-form annotations from the manifest -- a region, a desk, a
+        currency. Carried rather than interpreted, because every caller
+        partitions their data differently and a fixed set of fields here
+        would be wrong for the second one.
+    """
+
+    name: str
+    directory: Path
+    input_ids: tuple[str, ...]
+    target_ids: tuple[str, ...]
+    attributes: dict[str, str]
+
+    @property
+    def n_columns(self) -> int:
+        """
+        How many columns the group covers, inputs and targets together.
+
+        Returns
+        -------
+        int
+            The count.
+        """
+        return len(self.input_ids) + len(self.target_ids)
+
+    def describe(self) -> str:
+        """
+        Return a one-line description, for a log and a progress line.
+
+        Returns
+        -------
+        str
+            For example ``FX__G10: 24 input, 6 target column(s)``.
+        """
+        return f"{self.name}: {len(self.input_ids)} input, {len(self.target_ids)} target column(s)"
+
+
+@dataclass(frozen=True, slots=True)
+class GroupSet:
+    """
+    A set of data groups and the fingerprint of the snapshot they came from.
+
+    Parameters
+    ----------
+    groups
+        The groups, in manifest order. Order is preserved rather than sorted
+        so that a job set's directory listing matches the file somebody
+        wrote.
+    root
+        The directory the set was read from.
+    fingerprint
+        Digest of the snapshot, recorded against every bundle trained from
+        it.
+    """
+
+    groups: tuple[DataGroup, ...]
+    root: Path
+    fingerprint: str
+
+    def __len__(self) -> int:
+        """
+        Return how many groups there are.
+
+        Returns
+        -------
+        int
+            The count.
+        """
+        return len(self.groups)
+
+    def __iter__(self) -> Iterator[DataGroup]:
+        """
+        Iterate the groups in manifest order.
+
+        Yields
+        ------
+        DataGroup
+            Each group.
+        """
+        return iter(self.groups)
+
+    @property
+    def names(self) -> tuple[str, ...]:
+        """
+        Every group name, in manifest order.
+
+        Returns
+        -------
+        tuple of str
+            The names.
+        """
+        return tuple(group.name for group in self.groups)
+
+    def group(self, name: str) -> DataGroup:
+        """
+        Return one group by name.
+
+        Parameters
+        ----------
+        name
+            The group's identifier.
+
+        Returns
+        -------
+        DataGroup
+            The group.
+
+        Raises
+        ------
+        KeyError
+            If there is no such group, listing the ones there are. The usual
+            cause is a typo in a caller's group filter, and the list is what
+            turns that into a one-second fix.
+        """
+        for group in self.groups:
+            if group.name == name:
+                return group
+        raise KeyError(f"no group named {name!r}; this set has {list(self.names)}")
+
+    def select(self, names: Iterable[str] | None) -> GroupSet:
+        """
+        Return a set restricted to some groups.
+
+        The fingerprint is **kept**, not recomputed. A subset of a snapshot
+        was still trained on that snapshot, and recomputing would make two
+        runs over different subsets of identical data look like runs over
+        different data.
+
+        Parameters
+        ----------
+        names
+            Which groups to keep, in the order given. ``None`` keeps
+            everything, which is the common case and avoids the caller
+            branching.
+
+        Returns
+        -------
+        GroupSet
+            The restricted set.
+
+        Raises
+        ------
+        KeyError
+            If any name is not in the set.
+        """
+        if names is None:
+            return self
+        return GroupSet(
+            groups=tuple(self.group(name) for name in names),
+            root=self.root,
+            fingerprint=self.fingerprint,
+        )
+
+    def describe(self) -> str:
+        """
+        Return a one-line summary.
+
+        Returns
+        -------
+        str
+            For example ``4 group(s), 138 column(s), snapshot a1b2c3d4``.
+        """
+        columns = sum(group.n_columns for group in self.groups)
+        return f"{len(self.groups)} group(s), {columns} column(s), snapshot {self.fingerprint[:8]}"
+
+
+def read_group_set(root: Path) -> GroupSet:
+    """
+    Read a group set from a directory and fingerprint the snapshot.
+
+    Parameters
+    ----------
+    root
+        The directory, containing a manifest named ``groups.json``.
+
+    Returns
+    -------
+    GroupSet
+        The groups and the snapshot digest.
+
+    Raises
+    ------
+    SpecError
+        If the manifest is absent, unreadable, or describes a group whose
+        directory does not exist. Checked here, once, rather than left to
+        surface inside whichever job happened to be scheduled first: a set
+        with a missing directory is knowable before any training starts, and
+        discovering it thirty-nine jobs in is the framework's fault.
+    """
+    manifest_path = root / MANIFEST_FILENAME
+    if not manifest_path.exists():
+        raise SpecError(
+            f"no group manifest at {manifest_path}. A group set directory is "
+            f"described by a {MANIFEST_FILENAME} listing its groups, rather than "
+            f"by whatever subdirectories happen to be present"
+        )
+
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise SpecError(f"{manifest_path} is not readable JSON: {error}") from error
+
+    groups = tuple(
+        _group(entry, root=root, origin=manifest_path) for entry in _entries(payload, manifest_path)
+    )
+    if not groups:
+        raise SpecError(f"{manifest_path} declares no groups; a set needs at least one")
+
+    group_set = GroupSet(
+        groups=groups,
+        root=root,
+        fingerprint=_fingerprint(groups, manifest_path),
+    )
+    _LOGGER.info("read group set from %s: %s", root, group_set.describe())
+    return group_set
+
+
+def _entries(payload: object, origin: Path) -> Sequence[dict[str, object]]:
+    """
+    Pull the group list out of a manifest payload.
+
+    Parameters
+    ----------
+    payload
+        The parsed JSON.
+    origin
+        The file, for error messages.
+
+    Returns
+    -------
+    sequence of dict
+        The group entries.
+
+    Raises
+    ------
+    SpecError
+        If the payload is not a mapping with a list of groups.
+    """
+    if not isinstance(payload, dict) or not isinstance(payload.get("groups"), list):
+        raise SpecError(
+            f"{origin} must be a mapping with a 'groups' list, received {type(payload).__name__}"
+        )
+    return payload["groups"]
+
+
+def _group(entry: object, *, root: Path, origin: Path) -> DataGroup:
+    """
+    Build one group from a manifest entry.
+
+    Parameters
+    ----------
+    entry
+        The entry.
+    root
+        The set's directory, which relative group paths are resolved
+        against.
+    origin
+        The manifest file, for error messages.
+
+    Returns
+    -------
+    DataGroup
+        The group.
+
+    Raises
+    ------
+    SpecError
+        If the entry is malformed or names a directory that is not there.
+    """
+    if not isinstance(entry, dict) or "name" not in entry:
+        raise SpecError(f"{origin}: each group needs at least a 'name', received {entry!r}")
+
+    name = str(entry["name"])
+    directory = root / str(entry.get("directory", name))
+    if not directory.is_dir():
+        raise SpecError(f"{origin}: group {name!r} points at {directory}, which is not a directory")
+
+    return DataGroup(
+        name=name,
+        directory=directory,
+        input_ids=tuple(str(value) for value in entry.get("input_ids", ())),
+        target_ids=tuple(str(value) for value in entry.get("target_ids", ())),
+        attributes={
+            str(key): str(value) for key, value in entry.items() if key not in _RESERVED_KEYS
+        },
+    )
+
+
+def _fingerprint(groups: Sequence[DataGroup], manifest_path: Path) -> str:
+    """
+    Digest what identifies this snapshot.
+
+    Covers the manifest's own size and modification time, plus each group's
+    name, column identifiers and directory contents by size and timestamp.
+    Not the data itself: hashing gigabytes on every run to detect a change a
+    timestamp already reveals makes the check expensive enough that somebody
+    eventually disables it, and a provenance check nobody runs is worth
+    nothing.
+
+    Parameters
+    ----------
+    groups
+        The groups.
+    manifest_path
+        The manifest, which is included in the digest.
+
+    Returns
+    -------
+    str
+        A hex digest.
+    """
+    payload: dict[str, object] = {"manifest": _stat(manifest_path)}
+    for group in groups:
+        payload[group.name] = {
+            "input_ids": list(group.input_ids),
+            "target_ids": list(group.target_ids),
+            # Sorted, because a directory listing's order is filesystem
+            # specific and would make the same snapshot fingerprint
+            # differently on two machines.
+            "files": {
+                path.name: _stat(path)
+                for path in sorted(group.directory.rglob("*"))
+                if path.is_file()
+            },
+        }
+    return digest_payload(payload)
+
+
+def _stat(path: Path) -> dict[str, int]:
+    """
+    Return the size and modification time a fingerprint uses.
+
+    Parameters
+    ----------
+    path
+        The file.
+
+    Returns
+    -------
+    dict
+        Size in bytes and modification time in nanoseconds.
+    """
+    info = path.stat()
+    return {"size": info.st_size, "mtime_ns": info.st_mtime_ns}
+```
+
+---
+
+## 4. `src/rade_qnet/orchestration/jobs/manifest.py`
 
 12734 bytes · SHA-256 `0a5173658b335f6b`
 
@@ -492,9 +1126,9 @@ def _relative(path: Path | None, root: Path) -> str | None:
 
 ---
 
-## 3. `src/rade_qnet/orchestration/jobs/set.py`
+## 5. `src/rade_qnet/orchestration/jobs/set.py`
 
-11474 bytes · SHA-256 `309bbb0a049e589c`
+11660 bytes · SHA-256 `8aa5850984437273`
 
 ```python
 """
@@ -516,20 +1150,18 @@ parallel runs provably equivalent: there is no branch here to get wrong.
 **Aggregate last.** Results come back in input order, are turned into
 manifest rows, and the manifest is written atomically at the end.
 
-Why the runner cannot ask a domain for its jobs
------------------------------------------------
-``orchestration`` may not import ``domains`` or ``models``. So this runner
-cannot ask ``domains.pnl`` to partition a portfolio, and cannot import the
-flagship.
-
-It does not need to. Expanding a portfolio into jobs happens *before* the
-runner sees anything -- by the user, by ``domains.pnl.clusters``, or by
+Why the runner does not expand anything itself
+----------------------------------------------
+Expanding a group set into jobs happens *before* the runner sees anything --
+by the user writing a file, by
+:func:`~rade_qnet.orchestration.jobs.fanout.job_set_for_groups`, or by
 ``rade_qnet.api`` -- and arrives as a ``JobSetSpec``. The model is resolved
-through the registry by name, exactly as ``TrainPipeline`` does it.
+through the registry by name, exactly as ``TrainPipeline`` does it, because
+``orchestration`` may not import ``models``.
 
-This is the layering doing its job rather than obstructing it: the
-constraint forced portfolio expansion to be a separate, independently
-testable function instead of a branch inside the runner.
+Keeping the two apart is what makes expansion a separate, independently
+testable function instead of a branch inside the runner, and keeps the
+runner ignorant of where its jobs came from.
 """
 
 from __future__ import annotations
@@ -581,9 +1213,12 @@ class JobSetRunner:
         Where jobs run. ``None`` asks the placement policy, which is the
         normal path and the one ``placement.executor: auto`` means.
     catalog_root
-        Where bundles are recorded, or ``None`` to skip recording. Defaults
-        to the set's output directory, so a set's bundles are indexed
-        together.
+        Where bundles are recorded. Defaults to the set's ``output_root`` --
+        the same place a single run records -- so every run under one root
+        shares one catalog, and a registry over it can compare a sweep's
+        variants or this week's retrains with last week's. Defaulting to the
+        set's own directory, as this once did, gave every variant of a set
+        its own catalog, and no query could see across them.
     metadata
         Free-form annotations carried into every job's run context.
     """
@@ -603,7 +1238,7 @@ class JobSetRunner:
         self.executor = executor
         self.metadata = dict(metadata or {})
         self.output_directory = spec.output_root / self.run_id
-        self.catalog_root = catalog_root if catalog_root is not None else self.output_directory
+        self.catalog_root = catalog_root if catalog_root is not None else spec.output_root
 
     def run(self) -> JobSetManifest:
         """
@@ -836,7 +1471,7 @@ class JobSetRunner:
 
 ---
 
-## 4. `src/rade_qnet/orchestration/jobs/unit.py`
+## 6. `src/rade_qnet/orchestration/jobs/unit.py`
 
 11485 bytes · SHA-256 `dbcca9ec2df2b2c8`
 

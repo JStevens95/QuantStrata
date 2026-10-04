@@ -31,9 +31,7 @@ def variant(**params: object):
         The validated specification.
     """
     spec = run_spec()
-    reference = spec.model.model_copy(
-        update={"params": {**spec.model.params, **params}}
-    )
+    reference = spec.model.model_copy(update={"params": {**spec.model.params, **params}})
     return spec.model_copy(update={"model": reference})
 
 
@@ -174,10 +172,7 @@ class TestTheOverride:
         }
         proposals = proposals_for(space)
 
-        feasible = {
-            (p["model.params.units"], p["model.params.fusion_heads"])
-            for p in proposals
-        }
+        feasible = {(p["model.params.units"], p["model.params.fusion_heads"]) for p in proposals}
         assert feasible == {(8, 1), (16, 1), (24, 1), (24, 3), (8, 4), (16, 4), (24, 4)}
 
     def test_every_surviving_proposal_actually_builds(self) -> None:
@@ -250,7 +245,5 @@ class TestTheOverride:
         that it changed nothing for anybody else.
         """
         pipeline = TunePipeline.__new__(TunePipeline)
-        pipeline.spec = tune_spec(
-            {"model.params.units": [8, 16], "model.params.fusion_heads": [3]}
-        )
+        pipeline.spec = tune_spec({"model.params.units": [8, 16], "model.params.fusion_heads": [3]})
         assert len(pipeline.propose()) == 2

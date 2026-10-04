@@ -119,9 +119,7 @@ class TestNamedRequirements:
         produce a decreasing loss and attribute every prediction to the
         wrong instrument -- invisible in every metric a run reports.
         """
-        requirement = InputRequirement(
-            dynamic=(RequiredInput(name="pnl_history", rank=3),)
-        )
+        requirement = InputRequirement(dynamic=(RequiredInput(name="pnl_history", rank=3),))
         with pytest.raises(ContractError, match="'pnl_history' is required"):
             requirement.check(signature(something_else=WINDOW), model="m")
 
@@ -151,9 +149,7 @@ class TestNamedRequirements:
         believes the model is using information it cannot see. The second
         is invisible in every metric, so it is refused rather than logged.
         """
-        requirement = InputRequirement(
-            dynamic=(RequiredInput(name="pnl_history", rank=3),)
-        )
+        requirement = InputRequirement(dynamic=(RequiredInput(name="pnl_history", rank=3),))
         with pytest.raises(ContractError, match="does not consume"):
             requirement.check(signature(pnl_history=WINDOW, spare=FLAT), model="m")
 
@@ -163,9 +159,7 @@ class TestOptionalRefinements:
 
     def test_a_wrong_dtype_is_refused_when_declared(self) -> None:
         """An index tensor of floats is a bug, not a conversion."""
-        requirement = InputRequirement(
-            dynamic=(RequiredInput(rank=2, dtype="int64"),)
-        )
+        requirement = InputRequirement(dynamic=(RequiredInput(rank=2, dtype="int64"),))
         with pytest.raises(ContractError, match="dtype float32"):
             requirement.check(signature(indices=FLAT), model="m")
 
@@ -177,16 +171,10 @@ class TestOptionalRefinements:
         of the book. Pinning it would duplicate a number the signature
         already carries, and two copies of a number can disagree.
         """
-        requirement = InputRequirement(
-            dynamic=(RequiredInput(rank=2, shape=(None, 2)),)
-        )
-        requirement.check(
-            signature(edges=TensorSpec(shape=(99, 2), dtype="int64")), model="m"
-        )
+        requirement = InputRequirement(dynamic=(RequiredInput(rank=2, shape=(None, 2)),))
+        requirement.check(signature(edges=TensorSpec(shape=(99, 2), dtype="int64")), model="m")
         with pytest.raises(ContractError, match="is required"):
-            requirement.check(
-                signature(edges=TensorSpec(shape=(99, 3), dtype="int64")), model="m"
-            )
+            requirement.check(signature(edges=TensorSpec(shape=(99, 3), dtype="int64")), model="m")
 
     def test_unconstrained_accepts_anything(self) -> None:
         """
@@ -195,9 +183,7 @@ class TestOptionalRefinements:
         Spelled rather than left unset, so a reader knows the question was
         asked and answered.
         """
-        InputRequirement.unconstrained().check(
-            signature(a=WINDOW, b=FLAT), model="ridge"
-        )
+        InputRequirement.unconstrained().check(signature(a=WINDOW, b=FLAT), model="ridge")
 
 
 class TestTheDeclarationItselfIsChecked:
@@ -212,9 +198,7 @@ class TestTheDeclarationItselfIsChecked:
         contract.
         """
         with pytest.raises(ValidationError, match="more than one unnamed"):
-            InputRequirement(
-                dynamic=(RequiredInput(rank=3), RequiredInput(rank=3))
-            )
+            InputRequirement(dynamic=(RequiredInput(rank=3), RequiredInput(rank=3)))
 
     def test_a_duplicated_name_is_refused(self) -> None:
         """Two requirements on one input cannot both be the contract."""

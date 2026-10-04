@@ -42,7 +42,6 @@ FRAMEWORK_LAYERS = (
     "analysis",
     "engines",
     "orchestration",
-    "domains",
     "models",
     "testkit",
 )
@@ -59,9 +58,13 @@ FRAMEWORK_LAYERS = (
 #     by name through the component registry.  If a pipeline imported a model,
 #     the framework would depend on the library it exists to serve, and no
 #     user could add a model without editing the framework.
-#   * Nothing may import ``domains``.  A domain knows that a number is a P&L
-#     in a particular currency.  The moment a training loop knows that, the
-#     framework stops being reusable on the next problem.
+#   * No framework layer carries business vocabulary.  Knowing that a number
+#     is a P&L in a particular currency is a model's business, expressed in
+#     its own ``data.py``; the moment a training loop knows it, the framework
+#     stops being reusable on the next problem.  There was once a ``domains``
+#     layer for such knowledge; everything in it turned out to be either
+#     generic (now in ``orchestration.jobs``) or one model's vocabulary (now
+#     in that model), so the layer was removed.
 ALLOWED_DEPENDENCIES: dict[str, frozenset[str]] = {
     # The vocabulary. Depends on nothing, which is what lets a spec be parsed
     # and hashed in a process that has never imported a training library.
@@ -78,12 +81,8 @@ ALLOWED_DEPENDENCIES: dict[str, frozenset[str]] = {
     # The conductor. Sees everything below it, and the model library only
     # through the registry.
     "orchestration": frozenset({"core", "sources", "storage", "analysis", "engines"}),
-    # Business context. Contributes adapters, metrics and environments.
-    "domains": frozenset({"core", "sources", "analysis"}),
     # The model library sits on top of the whole framework.
-    "models": frozenset(
-        {"core", "sources", "storage", "analysis", "engines", "orchestration", "domains"}
-    ),
+    "models": frozenset({"core", "sources", "storage", "analysis", "engines", "orchestration"}),
     # Conformance tooling exercises the framework, but never a specific model.
     "testkit": frozenset({"core", "sources", "storage", "analysis", "engines", "orchestration"}),
 }
@@ -103,11 +102,11 @@ ALLOWED_DEPENDENCIES: dict[str, frozenset[str]] = {
 # allowlist.
 CORE_PERMITTED_THIRD_PARTY = frozenset({"numpy", "pydantic", "typing_extensions", "yaml"})
 
-# Sub-trees whose tests are deliberately deferred.  Model-specific and
-# domain-specific tests arrive with the phase that builds the model, so
+# Sub-trees whose tests are deliberately deferred.  Model-specific tests
+# arrive with the phase that builds the model, so
 # requiring a mirrored test package for every layer beneath them now would
 # create empty directories that assert nothing.
-DEFERRED_TEST_SUBTREES = frozenset({"models", "domains"})
+DEFERRED_TEST_SUBTREES = frozenset({"models"})
 
 # Sub-trees inside a deferred one that have since been delivered, and are
 # therefore held to the mirroring rule again.  Listed explicitly rather than
@@ -121,7 +120,6 @@ DELIVERED_TEST_SUBTREES = frozenset(
         "models/ridge",
         "models/xgb_tabular",
         "models/lstm_tabular",
-        "domains/pnl",
     }
 )
 

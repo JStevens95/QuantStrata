@@ -200,6 +200,5 @@ def _feature_width(signature: InputSignature) -> int:
     for tensor in signature.dynamic.values():
         return int(tensor.shape[-1])
     raise ContractError(
-        "the signature declares no dynamic input, so there is nothing for a "
-        "recurrence to read"
+        "the signature declares no dynamic input, so there is nothing for a recurrence to read"
     )

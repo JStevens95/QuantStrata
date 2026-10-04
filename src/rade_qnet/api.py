@@ -1,11 +1,11 @@
 """
-The front door: two functions that cover most of what anybody wants.
+The front door: a handful of functions that cover most of what anybody wants.
 
 Everything underneath is deliberately composable -- a context, a
 specification, a definition, a pipeline, an executor -- because that is what
 makes the framework extensible. But composability is a cost at the call site,
 and the two most common things anyone does are *train this configuration* and
-*train it across a book*. Those should be one line each.
+*train it across every group of my data*. Those should be one line each.
 
 Nothing here adds behaviour. Every function assembles the same pieces a
 caller could assemble by hand, which is the property that keeps this module
@@ -17,11 +17,10 @@ Where the layers sit
 --------------------
 This module lives at the top of the package rather than inside
 ``orchestration``, because it reaches across layers that are not allowed to
-see each other. ``orchestration`` may not import ``domains`` or ``models``;
-``api`` may import both. :func:`train_portfolio` is the clearest case: it
-reads a portfolio (``domains``), expands it into jobs (``domains``), and
-hands the jobs to a runner (``orchestration``) that has no idea a cluster
-exists.
+see each other. ``orchestration`` may not import ``models``; ``api`` may.
+:func:`train_groups` is the clearest case: it resolves the model by name
+through the registry, reads a group set and expands it into jobs, then hands
+the jobs to a runner that has no idea a group exists.
 """
 
 from __future__ import annotations
@@ -45,8 +44,8 @@ from .core.spec.run import (
     parse_run_spec,
 )
 from .core.spec.tune import TuneSpec, load_tune_spec, parse_tune_spec
-from .domains.pnl.clusters import job_set_for
-from .domains.pnl.portfolio import read_portfolio
+from .orchestration.jobs.fanout import job_set_for_groups
+from .orchestration.jobs.groups import read_group_set
 from .orchestration.jobs.set import JobSetRunner
 from .orchestration.pipelines.evaluate import EvaluatePipeline
 from .orchestration.pipelines.infer import InferPipeline
@@ -56,6 +55,7 @@ from .orchestration.pipelines.train import TrainPipeline
 from .orchestration.pipelines.tune import TunePipeline
 from .storage.bundle import BundleError, load_manifest
 from .storage.catalog import JsonlCatalog
+from .storage.registry import RunRegistry
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -66,11 +66,11 @@ if TYPE_CHECKING:
         TrainingResult,
         TuningResult,
     )
-    from .domains.pnl.portfolio import Cluster
     from .orchestration.compute.base import Executor
+    from .orchestration.jobs.groups import DataGroup
     from .orchestration.jobs.manifest import JobSetManifest
 
-__all__ = ["evaluate", "infer", "train", "train_jobs", "train_portfolio", "tune"]
+__all__ = ["evaluate", "infer", "registry", "train", "train_groups", "train_jobs", "tune"]
 
 _LOGGER = get_logger(__name__)
 
@@ -308,8 +308,9 @@ def train_jobs(
         specification digest, so re-running the same file extends the same
         directory rather than scattering partial sets beside it.
     catalog_root
-        Where bundles are recorded, or ``None`` to index them together
-        under the set's own directory.
+        Where bundles are recorded, or ``None`` for the set's
+        ``output_root`` -- the same catalog a single run under that root
+        uses, so :func:`registry` sees every run together.
     metadata
         Free-form annotations carried into every job's run context.
 
@@ -332,62 +333,96 @@ def train_jobs(
     ).run()
 
 
-def train_portfolio(
-    portfolio_root: Path | str,
+def train_groups(
+    root: Path | str,
     *,
     defaults: Mapping[str, object],
     output_root: Path | str,
-    clusters: Iterable[str] | None = None,
+    groups: Iterable[str] | None = None,
     name: str | None = None,
     placement: Mapping[str, object] | None = None,
-    overrides_for: Callable[[Cluster], Mapping[str, object]] | None = None,
+    overrides_for: Callable[[DataGroup], Mapping[str, object]] | None = None,
     executor: Executor | None = None,
+    catalog_root: Path | str | None = None,
 ) -> JobSetManifest:
     """
-    Train one model per cluster across a portfolio.
+    Train one model per data group across a group set.
 
-    The three steps a caller would otherwise write out: read the book,
+    The three steps a caller would otherwise write out: read the manifest,
     expand it into jobs, run them. Worth a function because the middle step
     is the one that is easy to get subtly wrong -- forgetting to carry the
-    snapshot fingerprint, or merging the per-cluster overrides in the wrong
-    order so that each job silently reads the whole book.
+    snapshot fingerprint, or merging the per-group overrides in the wrong
+    order so that each job silently reads the whole dataset.
 
     Parameters
     ----------
-    portfolio_root
-        The portfolio directory, containing a cluster manifest.
+    root
+        The group set directory, containing a group manifest.
     defaults
         The run-specification fragment every job shares.
     output_root
         Where the set writes.
-    clusters
-        Which clusters to train, or ``None`` for all of them.
+    groups
+        Which groups to train, or ``None`` for all of them.
     name
         The set's label.
     placement
         Where jobs run, or ``None`` to leave it to the placement policy.
     overrides_for
-        Per-cluster overrides. The hook that lets a liquid cluster get a
-        wider model than a thin one, which is the reason a portfolio is a
+        Per-group overrides. The hook that lets a data-rich group get a
+        wider model than a thin one, which is the reason a group set is a
         job set rather than a loop.
     executor
         An executor to use instead of the one the policy would choose.
+    catalog_root
+        Where bundles are recorded, or ``None`` for ``output_root``.
 
     Returns
     -------
     JobSetManifest
-        One record per cluster.
+        One record per group.
     """
-    portfolio = read_portfolio(Path(portfolio_root)).select(clusters)
-    spec = job_set_for(
-        portfolio,
+    group_set = read_group_set(Path(root)).select(groups)
+    spec = job_set_for_groups(
+        group_set,
         defaults=defaults,
         output_root=Path(output_root),
         name=name,
         placement=placement,
         overrides_for=overrides_for,
     )
-    return train_jobs(spec, executor=executor)
+    return train_jobs(spec, executor=executor, catalog_root=catalog_root)
+
+
+def registry(root: Path | str | None = None) -> RunRegistry:
+    """
+    Open the registry of trained runs under a root.
+
+    The way back from "I trained a lot of things" to "this one": list runs
+    by tag, pick the best by a metric, promote one to an alias, and pass its
+    directory to :func:`evaluate` or :func:`infer`.
+
+    Parameters
+    ----------
+    root
+        The catalog directory -- the ``output_root`` (or ``catalog_root``)
+        training used. ``None`` for the default search root.
+
+    Returns
+    -------
+    RunRegistry
+        The registry.
+
+    Examples
+    --------
+    ::
+
+        runs = api.registry("artifacts/eod")
+        best = runs.best("mae", direction="minimise", tags=["lr-sweep"])
+        runs.promote(best, "production")
+        api.infer(runs.get(best.model_name, alias="production").directory, source=...)
+    """
+    return RunRegistry(_directory(root) or _DEFAULT_ROOT)
 
 
 def _directory(value: Path | str | None) -> Path | None:
@@ -572,9 +607,7 @@ def _search_context(
     )
 
 
-def _bundle_context(
-    directory: Path, *, action: str, output_root: Path | str | None
-) -> RunContext:
+def _bundle_context(directory: Path, *, action: str, output_root: Path | str | None) -> RunContext:
     """
     Build the context an evaluation or inference run works under.
 

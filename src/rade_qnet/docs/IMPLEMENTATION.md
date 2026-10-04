@@ -113,7 +113,7 @@ designed around a use case nobody was yet running.
 | **1** | [Core](phases/PHASE_1_CORE.md) | `core`, `storage`, `analysis` bases, `testkit` | S | ✅ |
 | **2** | [Torch engine](phases/PHASE_2_TORCH_ENGINE.md) | `engines.torch`, `sources.dataset`, `TrainPipeline`; first model trains | 1 | ✅ |
 | **0+3** | [Baseline](phases/PHASE_0_BASELINE.md) + [Flagship](phases/PHASE_3_HYBRID_GNN_RNN.md) | Golden fixture, `testkit.parity`, `hybrid_gnn_rnn` single member, parity levels 1–4 | 2 | ✅ |
-| **4** | [Job sets](phases/PHASE_4_JOB_SETS.md) | `jobs`, `compute`, `domains.pnl`, `api`; parity level 5 | 3 | ✅ |
+| **4** | [Job sets](phases/PHASE_4_JOB_SETS.md) | `jobs` (incl. group sets), `compute`, `api`; parity level 5 | 3 | ✅ |
 | **5** | [Evaluate · infer · tune](phases/PHASE_5_EVALUATE_INFER_TUNE.md) | The other three pipelines, plus flagship overrides | 3 | ✅ |
 | **6** | [More engines](phases/PHASE_6_ADDITIONAL_ENGINES.md) | `engines.xgboost`, `engines.sklearn`, `baselines` | 2 | ✅ |
 | **7** | [Reinforcement learning](phases/PHASE_7_REINFORCEMENT_LEARNING.md) | `environment`, rollout/replay/offline/simulation, learners, `domains.hedging` | 5 | ⬜ |
@@ -124,7 +124,7 @@ flowchart TD
     P1["<b>1 · Core</b><br/>spec · contract · capability · runtime<br/>storage · analysis bases · testkit"]
     P2["<b>2 · Torch engine</b><br/>engine · loops · dataset source<br/>TrainPipeline — <i>first model trains</i>"]
     P3["<b>0+3 · Baseline and flagship</b><br/>golden fixture · parity harness ·<br/>hybrid_gnn_rnn, single member<br/><i>parity levels 1–4</i>"]
-    P4["<b>4 · Job sets</b><br/>jobs · executors · domains.pnl<br/><i>parity level 5</i>"]
+    P4["<b>4 · Job sets</b><br/>jobs · executors · group sets<br/><i>parity level 5</i>"]
     P5["<b>5 · Eval · infer · tune</b><br/>the other three pipelines"]
     P6["<b>6 · More engines</b><br/>xgboost · sklearn · baselines"]
     P7["<b>7 · Reinforcement learning</b><br/>environments · learners · hedging"]
@@ -292,17 +292,20 @@ one further defect was found. All of it is recorded in
 ### Phase 4 — [Job sets](phases/PHASE_4_JOB_SETS.md)
 
 Fan-out: `orchestration.jobs`, `orchestration.compute` (local, processes,
-GPUs), the override merge, the job-set manifest, and the `domains.pnl` adapters
-that supply each job's data slice.
+GPUs), the override merge, the job-set manifest, and the readers that supply
+each job's data slice (delivered as `domains.pnl`, since moved to
+`orchestration.jobs.groups` and `.fanout` — see
+[`PHASE_4_JOB_SETS.md` §8.9](phases/PHASE_4_JOB_SETS.md#89-the-domains-layer-is-removed)).
 
 Parity level 5 — sequential and parallel runs producing identical artifacts —
 is the gate. Partial failure is a feature: one unusable cluster must not
 discard thirty-nine good models.
 
-**Delivered.** Also `rade_qnet.api` (`train`, `train_jobs`, `train_portfolio`),
-`core.spec.merge`, `core.spec.jobs` and `analysis.visuals.jobset`. `Universe`
-moved from the flagship's state file to `domains.pnl`, where a second model
-over the same book can reach it without depending on the first.
+**Delivered.** Also `rade_qnet.api` (`train`, `train_jobs`, and what is now
+`train_groups`), `core.spec.merge`, `core.spec.jobs` and
+`analysis.visuals.jobset`. `Universe` was moved out of the flagship and later
+moved back, once the `domains` layer was removed: its vocabulary is the
+flagship's own.
 
 Two defects surfaced, both only visible once a job crossed a process
 boundary, and both found by the parity comparison failing rather than by
@@ -379,28 +382,20 @@ gradients that make them tractable.
 
 These affect the build and are flagged rather than decided unilaterally.
 
-### 7.1 Dependencies not declared
+### 7.1 Dependencies not declared — resolved
 
-`pydantic` is central to the design and is installed (2.12.5) but absent from
-`requirements.txt`. `ruff` is likewise installed but undeclared. Both need
-adding — proposed as a `requirements_rade_qnet.txt` matching the repository's
-existing per-package convention, rather than by editing the shared file.
+Declared in `pyproject.toml`, split the same way the
+`requirements_rade_qnet*.txt` files split them: a small base set, and one
+optional extra per engine (`torch`, `xgboost`, `sklearn`), plus `hybrid`,
+`parquet`, `all` and `dev`.
 
-### 7.2 Import prefix and packaging
+### 7.2 Import prefix and packaging — resolved
 
-The repository has no `pyproject.toml`, and `src/__init__.py` exists, so code
-is imported as `src.rade_qnet.*` and the suite is run from the repository root.
-
-That convention does not travel. A framework whose promise is "plug your model
-in" needs to be installable, and `src.`-prefixed imports cannot be.
-
-**Mitigated for now:** `rade_qnet` uses relative imports internally, so it is
-importable under *either* path with no change. Tests use `src.rade_qnet` to match
-the repository.
-
-**Recommended:** add a `pyproject.toml` declaring `rade_qnet` as an installable
-package so it can be `pip install -e .`-ed and imported as `rade_qnet`. This is a
-repository-level change and is deferred to an explicit decision.
+`pyproject.toml` now packages `rade_qnet` -- and only `rade_qnet`, discovered by
+pattern so the sibling packages under `src/` are not swept in -- so it installs
+with `pip install -e .` and imports as `rade_qnet`. `rade_qnet` uses relative
+imports internally, so it behaves identically under either path; the test
+suite keeps importing `src.rade_qnet` to match the rest of the repository.
 
 ### 7.3 No continuous integration
 

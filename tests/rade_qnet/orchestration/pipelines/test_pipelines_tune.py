@@ -29,7 +29,7 @@ from src.rade_qnet.testkit.fixtures import isolated_registries, make_run_context
 from .support import (
     ENGINE_TAG,
     MODEL_NAME,
-    SyntheticTabularModel,
+    SyntheticSupervisedModel,
     register_components,
     write_linear_dataset,
 )
@@ -130,7 +130,7 @@ def pipeline_for(tmp_path, spec, *, name="tune"):
     return TunePipeline(
         context=make_run_context(output_directory=tmp_path / name),
         spec=spec,
-        definition=SyntheticTabularModel(),
+        definition=SyntheticSupervisedModel(),
     )
 
 
@@ -287,7 +287,7 @@ class TestFailingTrials:
         spec = tune_spec(dataset, trials=4)
         pipeline = pipeline_for(tmp_path, spec)
 
-        original = SyntheticTabularModel.build_model
+        original = SyntheticSupervisedModel.build_model
         calls = {"n": 0}
 
         def flaky(self, run_spec, signature):
@@ -297,7 +297,7 @@ class TestFailingTrials:
                 raise RuntimeError("deliberate trial failure")
             return original(self, run_spec, signature)
 
-        monkeypatch.setattr(SyntheticTabularModel, "build_model", flaky)
+        monkeypatch.setattr(SyntheticSupervisedModel, "build_model", flaky)
         result = pipeline.execute()
 
         assert len(result.trials) == 4
@@ -313,7 +313,7 @@ class TestFailingTrials:
             """Fail every trial."""
             raise RuntimeError("deliberate trial failure")
 
-        monkeypatch.setattr(SyntheticTabularModel, "build_model", always_fails)
+        monkeypatch.setattr(SyntheticSupervisedModel, "build_model", always_fails)
 
         with pytest.raises(StageError, match=r"nothing to\s+select between"):
             pipeline.execute()
@@ -428,9 +428,7 @@ class TestTheSearchSpace:
     def test_a_log_scale_below_zero_is_rejected(self):
         """A log scale is undefined there, and would produce NaN proposals."""
         with pytest.raises(SpecError, match=r"undefined at or below zero"):
-            parse_tune_spec(
-                {"base": {}, "space": {"x": {"low": 0.0, "high": 1.0, "log": True}}}
-            )
+            parse_tune_spec({"base": {}, "space": {"x": {"low": 0.0, "high": 1.0, "log": True}}})
 
     def test_a_grid_cannot_enumerate_a_range(self):
         """
@@ -496,9 +494,7 @@ class TestProposals:
         It would be merged into a specification and fail validation for a
         reason that has nothing to do with what the user wrote.
         """
-        spec = parse_tune_spec(
-            {"base": {}, "space": {"n": [1, 2, 3]}, "trials": 10}
-        )
+        spec = parse_tune_spec({"base": {}, "space": {"n": [1, 2, 3]}, "trials": 10})
 
         assert all(type(proposal["n"]) is int for proposal in propose(spec))
 

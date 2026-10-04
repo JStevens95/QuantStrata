@@ -78,7 +78,7 @@ class Catalog(Protocol):
         """
         ...
 
-    def record(self, manifest: Manifest) -> None:
+    def record(self, manifest: Manifest, *, location: Path | None = None) -> None:
         """
         Record a written bundle.
 
@@ -91,6 +91,12 @@ class Catalog(Protocol):
         ----------
         manifest
             The manifest of the bundle that was written.
+        location
+            The bundle's directory. Recorded so a run selected from the
+            catalog -- by tag, by alias, by best metric -- can be opened
+            without the reader knowing the directory layout, which differs
+            between a single run and a job set. Optional so an entry can
+            still be recorded where no directory exists.
         """
         ...
 

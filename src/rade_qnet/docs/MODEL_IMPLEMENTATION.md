@@ -167,8 +167,8 @@ flowchart TD
 
 | Tier | Files | Base class | `data.py` holds | Example | Budget enforced? |
 |---|---|---|---|---|---|
-| **1** | 5 | `TabularModel` | `REQUIRES` + one-line `data_module` | `ridge`, `xgb_tabular`, `lstm_tabular` | Yes — ≤ 55 statements of ceremony |
-| **2** | 6 | `TabularModel` | same | *(none yet)* | No |
+| **1** | 5 | `SupervisedModel` | `REQUIRES` + one-line `data_module` | `ridge`, `xgb_tabular`, `lstm_tabular` | Yes — ≤ 55 statements of ceremony |
+| **2** | 6 | `SupervisedModel` | same | *(none yet)* | No |
 | **3** | 6+ | `PredictorDefinition` | `REQUIRES` + your `DataModule` subclass | *(none yet)* | No |
 | **4** | 9+ | `PredictorDefinition` | same | `hybrid_gnn_rnn` | No |
 
@@ -418,7 +418,7 @@ from ...engines import sklearn as _engine  # noqa: F401   ← see the warning be
 from .data import REQUIRES, data_module
 
 @model("ridge", engine="sklearn")
-class RidgeModel(TabularModel):
+class RidgeModel(SupervisedModel):
     requires = REQUIRES
     spec = RidgeSpec
 
@@ -493,7 +493,7 @@ Then declare it: `state_cls = YourState` on the class in `register.py`.
 
 No new file: `data.py` already exists. What changes is what `data_module`
 returns — your `DataModule` subclass instead of the framework's. Move the
-definition from `TabularModel` to `PredictorDefinition`.
+definition from `SupervisedModel` to `PredictorDefinition`.
 
 This is where most real models end up. `TabularDataModule` reads a CSV;
 anything behind a store, a warehouse or a service needs its own `load()`.
@@ -800,6 +800,27 @@ ruff check src/rade_qnet/models/your_model
 one. That is a real cost, paid once per reading, in exchange for a
 procedure with no judgement calls and a growth path with no refactors.
 
+### Record: `TabularModel` renamed to `SupervisedModel`
+
+*Decided after Phase 6.* The base was `TabularModel` in
+`core/capability/simple.py`. Both names described the wrong thing. Every
+model using it is supervised, but not every one is tabular: the flagship
+is a graph-plus-recurrent model and always used this base. "Simple" was
+worse, since it implied the base had a ceiling it does not have.
+
+The bases are now named for the **learning paradigm**, because that is
+what decides which pipeline trains the model:
+
+| Paradigm | Base | Status |
+| --- | --- | --- |
+| Supervised — inputs with known targets | `SupervisedModel` (`core.capability.supervised`) | Delivered |
+| Reinforcement — learns by acting in an environment | policy base (`core.capability.policy`) | Phase 7 |
+| Unsupervised — no targets | — | Not provided until a pipeline can train one |
+
+There is no unsupervised base yet on purpose. A base class with no pipeline
+behind it would register fine and then fail at train time. The framework
+would be making a promise it cannot keep.
+
 ---
 
 ## 12. Reference index
@@ -809,7 +830,7 @@ procedure with no judgement calls and a growth path with no refactors.
 | `Spec` | `rade_qnet.core.spec.base` |
 | `SupervisedRunSpec`, `ComponentRef` | `rade_qnet.core.spec.run` |
 | `TorchTrainingSpec`, `XGBoostTrainingSpec`, `SklearnTrainingSpec` | `rade_qnet.core.spec.training` |
-| `TabularModel` | `rade_qnet.core.capability.simple` |
+| `SupervisedModel` | `rade_qnet.core.capability.supervised` |
 | `PredictorDefinition`, `PolicyDefinition` | `rade_qnet.core.capability.definition` |
 | `FittedState` | `rade_qnet.core.contract.state` |
 | `InputSignature`, `TensorSpec` | `rade_qnet.core.contract.signature` |

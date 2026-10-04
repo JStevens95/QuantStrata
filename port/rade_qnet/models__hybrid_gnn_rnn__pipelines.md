@@ -7,7 +7,7 @@
 | 1 | `__init__.py` | 54 | 2553 | `2ee06142a0e2a995` |
 | 2 | `eval.py` | 260 | 9720 | `67a230246fd9e7fd` |
 | 3 | `train.py` | 79 | 3264 | `5e713339832a8ff7` |
-| 4 | `tune.py` | 223 | 9427 | `cf2bbeb6ebecc16c` |
+| 4 | `tune.py` | 218 | 9383 | `ed3556248dba4e94` |
 
 ---
 
@@ -433,7 +433,7 @@ class HybridTrainPipeline(TrainPipeline):
 
 ## 4. `src/rade_qnet/models/hybrid_gnn_rnn/pipelines/tune.py`
 
-9427 bytes · SHA-256 `cf2bbeb6ebecc16c`
+9383 bytes · SHA-256 `ed3556248dba4e94`
 
 ```python
 """
@@ -576,14 +576,9 @@ def is_buildable(spec: RunSpec) -> bool:
     try:
         model = HybridModelSpec.model_validate(dict(reference.params))
     except ValidationError as error:
-        raise SpecError(
-            f"the proposed model parameters do not parse: {error}"
-        ) from error
+        raise SpecError(f"the proposed model parameters do not parse: {error}") from error
 
-    return all(
-        model.width(block) % getattr(model, field) == 0
-        for block, field in _HEADED_BLOCKS
-    )
+    return all(model.width(block) % getattr(model, field) == 0 for block, field in _HEADED_BLOCKS)
 
 
 class HybridTunePipeline(TunePipeline):

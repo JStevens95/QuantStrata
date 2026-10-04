@@ -7,10 +7,10 @@
 | 1 | `__init__.py` | 66 | 2656 | `d99cf28ec67f4ec0` |
 | 2 | `data.py` | 686 | 25492 | `4a15225894ac6a82` |
 | 3 | `model.py` | 360 | 13187 | `e16abf150582ac66` |
-| 4 | `register.py` | 143 | 5599 | `23f8abc77104eaf8` |
+| 4 | `register.py` | 143 | 5609 | `66fbc28dae99d634` |
 | 5 | `reports.py` | 340 | 11956 | `11d6f5c7bbcf3f41` |
 | 6 | `spec.py` | 393 | 17434 | `a177505b14867755` |
-| 7 | `state.py` | 345 | 12558 | `d0b0bbe4416507d0` |
+| 7 | `state.py` | 466 | 16885 | `2e5ee264c98828d9` |
 | 8 | `visuals.py` | 261 | 8715 | `3ed7119fc00abd58` |
 
 ---
@@ -1156,7 +1156,7 @@ def _width(signature: InputSignature, name: str, *, axis: int, static: bool) -> 
 
 ## 4. `src/rade_qnet/models/hybrid_gnn_rnn/register.py`
 
-5599 bytes · SHA-256 `23f8abc77104eaf8`
+5609 bytes · SHA-256 `66fbc28dae99d634`
 
 ```python
 """
@@ -1183,7 +1183,7 @@ from __future__ import annotations
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
-from ...core.capability.simple import TabularModel
+from ...core.capability.supervised import SupervisedModel
 from ...core.runtime.components import model
 
 # Imported for its import side effect: this is what puts the Torch engine
@@ -1212,7 +1212,7 @@ __all__ = ["HybridGnnRnnModel"]
 
 
 @model("hybrid_gnn_rnn", engine="torch")
-class HybridGnnRnnModel(TabularModel):
+class HybridGnnRnnModel(SupervisedModel):
     """
     Framework declaration for the hybrid graph-temporal network.
 
@@ -2059,7 +2059,7 @@ _MISSING = object()
 
 ## 7. `src/rade_qnet/models/hybrid_gnn_rnn/state.py`
 
-12558 bytes · SHA-256 `d0b0bbe4416507d0`
+16885 bytes · SHA-256 `2e5ee264c98828d9`
 
 ```python
 """
@@ -2125,7 +2125,6 @@ from numpy.typing import NDArray
 
 from ...core.contract.state import FittedState
 from ...core.runtime.errors import BundleError
-from ...domains.pnl.universe import Universe
 from .features.encoder import EntityEncoderState
 from .features.graph import SparseGraphState
 
@@ -2135,6 +2134,128 @@ __all__ = ["HybridState", "StandardScalerState", "Universe"]
 #: information, so the choice only has to avoid dividing by zero; one leaves
 #: the centred column at zero, which is the honest encoding of "no variation".
 _ZERO_SCALE_REPLACEMENT = 1.0
+
+
+@dataclass(frozen=True, slots=True)
+class Universe:
+    """
+    Which instruments the feature and target columns refer to.
+
+    A replication problem has two sides. The **elementary** instruments are
+    the liquid things a desk can actually trade -- the hedging basis. The
+    **target** instruments are the illiquid or structured positions whose P&L
+    is being replicated. This model predicts the second from the first, and a
+    universe is the record of which is which, in which order.
+
+    Why the ordering is the dangerous part
+    --------------------------------------
+    The ordering is the contract between a matrix column and a real
+    instrument. A prediction is a vector of numbers; without a universe it is
+    a vector of numbers about nothing. Getting the order wrong does not raise
+    -- it produces plausible predictions attributed to the wrong instruments,
+    which is the most expensive mistake available in this problem and the
+    hardest to see.
+
+    Frozen for that reason: a universe is the thing every downstream index is
+    interpreted against. A fitted state, a prediction and a report all read
+    positions out of it, and one that could be reordered after a fit would
+    silently reattribute every one of them.
+
+    Why this lives in the model rather than the framework
+    -----------------------------------------------------
+    "Elementary" and "target" are P&L replication vocabulary, not framework
+    vocabulary. The framework's job is to carry whatever labels a model
+    declares, which it does through
+    :class:`~rade_qnet.core.contract.signature.InputSignature`; it has no
+    opinion about what the labels mean. Read from this model's own
+    ``universe.json`` by its ``data.py``, so a second model over the same
+    data reads the same file rather than importing from here.
+
+    Parameters
+    ----------
+    elementary_ids
+        The elementary instruments, **in column order** and already reduced
+        to the selected basis. Already reduced, because the alternative --
+        carrying the full set and a separate index of survivors -- means
+        every consumer has to apply the reduction itself, and one that
+        forgets produces results that are wrong rather than absent.
+    target_ids
+        The target instruments, in column order.
+    """
+
+    elementary_ids: tuple[str, ...]
+    target_ids: tuple[str, ...]
+
+    @property
+    def n_elementary(self) -> int:
+        """
+        How many elementary instruments survived basis selection.
+
+        Returns
+        -------
+        int
+            The count.
+        """
+        return len(self.elementary_ids)
+
+    @property
+    def n_targets(self) -> int:
+        """
+        How many target instruments are predicted.
+
+        Returns
+        -------
+        int
+            The count.
+        """
+        return len(self.target_ids)
+
+    @property
+    def instrument_ids(self) -> tuple[str, ...]:
+        """
+        Every instrument, elementary block first.
+
+        The row order of the combined attribute matrix, which is why the
+        concatenation happens here rather than at each call site: two places
+        choosing the same order by convention is a convention that will
+        eventually be broken by someone who did not know it existed.
+
+        Returns
+        -------
+        tuple of str
+            Elementary identifiers followed by target identifiers.
+        """
+        return self.elementary_ids + self.target_ids
+
+    def position_of(self, instrument_id: str) -> int:
+        """
+        Return an instrument's row in the combined attribute matrix.
+
+        Parameters
+        ----------
+        instrument_id
+            The identifier.
+
+        Returns
+        -------
+        int
+            Its position.
+
+        Raises
+        ------
+        KeyError
+            If the universe does not contain it. Raised rather than returning
+            ``-1``, which indexes the last row perfectly happily and would
+            attribute a prediction to whichever instrument happened to be
+            there.
+        """
+        try:
+            return self.instrument_ids.index(instrument_id)
+        except ValueError:
+            raise KeyError(
+                f"{instrument_id!r} is not in this universe of "
+                f"{self.n_elementary} elementary and {self.n_targets} target instrument(s)"
+            ) from None
 
 
 @dataclass(frozen=True, slots=True)

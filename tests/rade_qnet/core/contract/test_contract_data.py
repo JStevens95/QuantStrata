@@ -265,11 +265,9 @@ class TestDataBundle:
         """
         assert isinstance(make_tensor_bundle(), DataBundle)
 
-
     def test_the_payload_type_is_preserved(self):
         """The generic parameter is real, not decorative."""
         assert isinstance(make_tensor_bundle().split("train"), TensorBatchData)
-
 
     def test_the_bundle_is_frozen(self):
         """A build's output must not be edited by a later stage."""

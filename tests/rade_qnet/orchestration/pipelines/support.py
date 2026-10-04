@@ -25,7 +25,7 @@ import csv
 
 import numpy as np
 
-from src.rade_qnet.core.capability.simple import TabularModel
+from src.rade_qnet.core.capability.supervised import SupervisedModel
 from src.rade_qnet.core.runtime.components import engine as register_engine
 from src.rade_qnet.core.runtime.components import model as register_model
 from src.rade_qnet.core.spec.data import TabularSourceSpec
@@ -39,7 +39,7 @@ __all__ = [
     "N_FEATURES",
     "TRUE_COEFFICIENTS",
     "TRUE_INTERCEPT",
-    "SyntheticTabularModel",
+    "SyntheticSupervisedModel",
     "make_spec",
     "register_components",
     "write_linear_dataset",
@@ -64,7 +64,7 @@ TRUE_COEFFICIENTS = np.array([1.5, -0.7, 0.3, 2.0])
 TRUE_INTERCEPT = 0.4
 
 
-class SyntheticTabularModel(TabularModel):
+class SyntheticSupervisedModel(SupervisedModel):
     """A model definition needing one line of data code, as advertised."""
 
     component_name = MODEL_NAME
@@ -92,7 +92,7 @@ def register_components() -> None:
     error about the wrong thing.
     """
     register_engine(ENGINE_TAG)(SyntheticEngine)
-    register_model(MODEL_NAME, engine=ENGINE_TAG)(SyntheticTabularModel)
+    register_model(MODEL_NAME, engine=ENGINE_TAG)(SyntheticSupervisedModel)
 
 
 def write_linear_dataset(path, *, n_rows: int = 400, seed: int = 11, shift: float = 0.0):

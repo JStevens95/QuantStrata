@@ -319,9 +319,7 @@ def parallel_coordinates_figure(
         # should not have to check the direction to know which lines to look
         # at.
         colourmap = "viridis_r" if direction == "minimise" else "viridis"
-        mapping = axes.scatter(
-            np.zeros_like(scores), scaled[:, 0], c=scores, cmap=colourmap, s=0
-        )
+        mapping = axes.scatter(np.zeros_like(scores), scaled[:, 0], c=scores, cmap=colourmap, s=0)
         for row, score in zip(scaled, scores, strict=True):
             axes.plot(
                 range(len(axes_names)),
@@ -391,11 +389,7 @@ def _numeric_column(
         because a correlation against it is undefined and a parallel axis
         for it is a horizontal line that tells the reader nothing.
     """
-    raw = [
-        proposal.get(path)
-        for proposal, keep in zip(overrides, scored, strict=True)
-        if keep
-    ]
+    raw = [proposal.get(path) for proposal, keep in zip(overrides, scored, strict=True) if keep]
     if any(value is None or isinstance(value, bool) for value in raw):
         return None
     if not all(isinstance(value, int | float) for value in raw):

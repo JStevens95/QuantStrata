@@ -161,9 +161,7 @@ class TestRefusals:
         Raising here names the actual problem, which is a source or a split
         that produced nothing.
         """
-        empty = SyntheticTensorSource(
-            features=np.zeros((0, 3)), targets=np.zeros((0, 1))
-        )
+        empty = SyntheticTensorSource(features=np.zeros((0, 3)), targets=np.zeros((0, 1)))
         with pytest.raises(EngineError, match="no batches"):
             drain(empty)
 
@@ -177,8 +175,6 @@ class TestRefusals:
                 for batch in super().batches():
                     yield {k: v for k, v in batch.items() if k != "target"}
 
-        untargeted = Untargeted(
-            features=np.zeros((8, 3)), targets=np.zeros((8, 1))
-        )
+        untargeted = Untargeted(features=np.zeros((8, 3)), targets=np.zeros((8, 1)))
         with pytest.raises(EngineError, match="target"):
             drain(untargeted)

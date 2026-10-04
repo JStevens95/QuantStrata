@@ -648,7 +648,6 @@ class TestCapabilityClauses:
                 return True
 
 
-
 class TestAgreementWithTheContracts:
     """The suite and the contracts must not drift apart."""
 

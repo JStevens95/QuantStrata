@@ -27,11 +27,9 @@ Modules
     Early stopping, checkpointing, learning-rate scheduling, gradient-norm
     tracking.  [Phase 2]
 ``losses.py``
-    The loss registry, including the asymmetric and quantile objectives used
-    for P&L work.  A loss is engine code because the *learner* consumes it,
-    so the P&L-shaped objectives live here rather than in ``domains`` -- the
-    dependency rule forbids the alternative, and rightly: it would make this
-    engine unusable without the P&L package installed.  [Phase 2]
+    The loss registry, including the asymmetric and quantile objectives.  A
+    loss is engine code because the *learner* consumes it; a loss only one
+    model needs is registered from that model's package instead.  [Phase 2]
 ``hardware.py``
     Device selection, autocast and precision policy, and ``torch.compile``
     application -- resolved from ``HardwareSpec``.  [Phase 2]

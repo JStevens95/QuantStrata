@@ -1,0 +1,156 @@
+# `.`
+
+1 file(s). Create the directory, then create each file below with the exact contents of its block.
+
+| # | File | Lines | Bytes | SHA-256 |
+| --- | --- | ---: | ---: | --- |
+| 1 | `pyproject.toml` | 139 | 5974 | `fba21c243bfdeb98` |
+
+---
+
+## 1. `pyproject.toml`
+
+5974 bytes · SHA-256 `fba21c243bfdeb98`
+
+```toml
+# Packaging for the rade_qnet framework.
+#
+# Scope
+# -----
+# This file packages `src/rade_qnet` and nothing else, even though `src/`
+# holds a couple of dozen sibling packages. That is deliberate: `rade_qnet`
+# is the one that is meant to be installed, ported and depended on, and
+# `[tool.setuptools] packages` names it explicitly rather than letting
+# automatic discovery sweep up the rest. A future sibling that wants
+# packaging gets its own distribution, not a line here.
+#
+# Why this file exists at all
+# ---------------------------
+# Without it the framework is not installable, so every entry point needs
+# `PYTHONPATH=src` set correctly or `import rade_qnet` fails -- including in
+# the worker processes a job set spawns, where the variable is easy to lose.
+# `pip install -e .` makes the import work the same way everywhere.
+#
+# Dependencies are split the same way `requirements_rade_qnet*.txt` splits
+# them, and for the same reason: installing the base set gets you spec
+# parsing, data building, bundles and reports with no training library at
+# all. A CPU-only host that serves predictions from a saved state never
+# installs CUDA.
+#
+#   pip install -e .                  the framework, no engines
+#   pip install -e ".[torch]"         + the PyTorch engine
+#   pip install -e ".[all,dev]"       everything, plus linting and tests
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rade-qnet"
+description = "Quantitative Neural Engine & Toolkit: a backend-agnostic ML/RL framework"
+readme = "src/rade_qnet/docs/README.md"
+# 3.12 is a floor, not a preference: the framework uses PEP 695 type
+# parameter syntax (`def load_fitted_state[StateT: FittedState](...)`) in a
+# dozen modules, which is a syntax error on 3.11.
+requires-python = ">=3.12"
+# Read from `rade_qnet.__version__` rather than duplicated here, so the
+# package and the distribution can never disagree about which version is
+# installed. See [tool.setuptools.dynamic] below.
+dynamic = ["version"]
+# No `license` key: PEP 639 requires an SPDX expression there, and this is
+# not open-source code. The classifier carries the same information, and
+# `Private :: Do Not Upload` is an unregistered classifier that PyPI rejects
+# outright -- a deliberate guard against an accidental publish.
+classifiers = [
+    "Private :: Do Not Upload",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    # Specification and contract validation. The two-level error policy in
+    # `core.spec.base` depends on v2 validator semantics; v1 will not work.
+    "pydantic>=2.6,<3",
+    # Reading YAML run specifications. On the `core` third-party allowlist
+    # for this reason and no other.
+    "PyYAML>=6.0",
+    # Array payloads, metrics and seeding.
+    "numpy>=1.26",
+    # Figure factories in `analysis.visuals`. A dependency of `analysis`,
+    # not of `core`: a host that only reads bundles does not plot.
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+# The PyTorch engine. The floor is 2.2 because the engine relies on
+# `weights_only=True` being the default-safe load path, stable lazy-parameter
+# materialisation, and `use_deterministic_algorithms(warn_only=True)` -- see
+# requirements_rade_qnet_torch.txt for why each one is load-bearing rather
+# than merely preferred.
+torch = ["torch>=2.2"]
+
+# The gradient-boosted-trees engine.
+xgboost = ["xgboost>=2.0"]
+
+# The scikit-learn engine. `joblib` is imported directly by the engine to
+# persist a fitted estimator, so it is declared rather than relied on as a
+# transitive dependency of scikit-learn.
+sklearn = ["scikit-learn>=1.4", "joblib>=1.3"]
+
+# The flagship hybrid GNN-RNN model. SciPy supplies the column-pivoted QR
+# used for basis selection, which NumPy has no equivalent for and which
+# cannot be approximated: a last-bit difference in a pivot selects a
+# different instrument rather than shifting a number slightly.
+hybrid = ["scipy>=1.11"]
+
+# Parquet input. Optional by design -- `sources.dataset.io` parses CSV with
+# the standard library and dispatches Parquet through pandas only when a
+# Parquet path is actually supplied, so this is never imposed on a consumer
+# that reads CSV.
+parquet = ["pandas>=2.0", "pyarrow>=14.0"]
+
+# Every engine and every model. Does not include `dev`.
+all = [
+    "rade-qnet[torch]",
+    "rade-qnet[xgboost]",
+    "rade-qnet[sklearn]",
+    "rade-qnet[hybrid]",
+    "rade-qnet[parquet]",
+]
+
+# Linting, formatting and the test suite. Ruff is configured by
+# `src/rade_qnet/ruff.toml`, which `tests/rade_qnet/ruff.toml` extends, so
+# both trees are held to one standard.
+dev = ["ruff>=0.6", "pytest>=8.0"]
+
+[tool.setuptools.packages.find]
+# Discovery is scoped by pattern rather than listed package by package. A
+# hand-written list is wrong the first time a sub-package is added, and the
+# failure is silent: the module is simply missing from the installed wheel.
+# `include` is what keeps the sibling packages under `src/` out, so this is
+# self-maintaining without being greedy.
+where = ["src"]
+include = ["rade_qnet*"]
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.dynamic]
+version = { attr = "rade_qnet.__version__" }
+
+[tool.setuptools.package-data]
+# The architecture notes, guide, coding standards and phase plans ship with
+# the package. They are the framework's documentation of its own conventions,
+# and a reader who has the installed package but not the repository is
+# exactly the reader who needs them.
+"rade_qnet" = ["docs/*.md", "docs/phases/*.md", "ruff.toml"]
+
+[tool.pytest.ini_options]
+# Only the rade_qnet suite. The sibling packages under `src/` have their own
+# tests, some of which do not currently collect, and a default that fails on
+# someone else's tree makes `pytest` useless as a check of this one.
+testpaths = ["tests/rade_qnet"]
+# Import test modules as `src.rade_qnet.*` via the repository root, matching
+# how the suite already imports the package under test.
+pythonpath = ["."]
+```
+

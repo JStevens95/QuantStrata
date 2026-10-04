@@ -448,5 +448,3 @@ def align(
             f"target collection kept, or the model's output has an extra axis"
         )
     return flat_predictions, flat_targets
-
-

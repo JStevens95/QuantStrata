@@ -37,13 +37,17 @@ Modules
     ``Inductive``
         The model can predict for entities that were absent during training.
     [Phase 1 delivered, extended in Phase 3]
+``supervised.py``
+    ``SupervisedModel``, the base almost every supervised model subclasses:
+    it supplies data building, re-loading and the signature, so a model
+    writes one line of data wiring and ``build_model``.  Named for the
+    learning paradigm rather than the data shape -- tables, sequences and
+    graphs all use it.  [Phase 2 as ``simple.py``, renamed after Phase 6]
 
 Planned modules
 ---------------
-``simple.py``
-    Convenience bases (``TabularModel`` and friends) that supply a standard
-    data module and split so a straightforward model needs no data code at
-    all.  [Phase 2]
+``policy.py``
+    The equivalent base for reinforcement-learning models.  [Phase 7]
 """
 
 __all__: tuple[str, ...] = ()

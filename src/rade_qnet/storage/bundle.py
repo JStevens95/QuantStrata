@@ -411,9 +411,7 @@ def load_spec(saved: SavedBundle) -> RunSpec:
     try:
         return parse_run_spec(payload, origin=str(path))
     except SpecError as error:
-        raise BundleError(
-            f"{path} no longer validates as a run specification: {error}"
-        ) from error
+        raise BundleError(f"{path} no longer validates as a run specification: {error}") from error
 
 
 def load_fitted_state[StateT: FittedState](

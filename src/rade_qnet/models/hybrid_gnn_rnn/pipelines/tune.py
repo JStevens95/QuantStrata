@@ -138,14 +138,9 @@ def is_buildable(spec: RunSpec) -> bool:
     try:
         model = HybridModelSpec.model_validate(dict(reference.params))
     except ValidationError as error:
-        raise SpecError(
-            f"the proposed model parameters do not parse: {error}"
-        ) from error
+        raise SpecError(f"the proposed model parameters do not parse: {error}") from error
 
-    return all(
-        model.width(block) % getattr(model, field) == 0
-        for block, field in _HEADED_BLOCKS
-    )
+    return all(model.width(block) % getattr(model, field) == 0 for block, field in _HEADED_BLOCKS)
 
 
 class HybridTunePipeline(TunePipeline):

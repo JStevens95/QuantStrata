@@ -21,7 +21,7 @@ and the outputs are from actual runs, not illustrations.
 5. [Still tier 1 — your own architecture](#5-still-tier-1--your-own-architecture)
 6. [Tier 3 — your own data: the flagship, single member](#6-tier-3--your-own-data-the-flagship-single-member)
 7. [Tier 4 — your own pipeline stages](#7-tier-4--your-own-pipeline-stages)
-8. [Portfolio mode — one model, many books](#8-portfolio-mode--one-model-many-books)
+8. [Group mode — one model, many slices of data](#8-group-mode--one-model-many-slices-of-data)
 9. [The contracts, precisely](#9-the-contracts-precisely)
 10. [The registry](#10-the-registry)
 11. [The run specification](#11-the-run-specification)
@@ -206,7 +206,7 @@ from .data import REQUIRES, data_module
 
 
 @model("ridge", engine="sklearn")
-class RidgeModel(TabularModel):
+class RidgeModel(SupervisedModel):
     requires = REQUIRES
     spec = RidgeSpec
 
@@ -246,8 +246,9 @@ producing an obscure failure inside scikit-learn twenty minutes later.
 `"ridge"` and declares that it trains on the sklearn engine. This is what
 makes `{"model": {"name": "ridge"}}` resolve.
 
-`TabularModel` — the base class for anything whose data is a table. It
-supplies `build_data`, `signature` and `rebuild_data` for you. You override
+`SupervisedModel` — the base class for any model that learns from inputs
+with known targets, whatever shape the data takes (a table, sequences, a
+graph). It supplies `build_data`, `signature` and `rebuild_data` for you. You override
 only `data_module` and `build_model`.
 
 `del spec` / `del signature` — an explicit statement that the argument is
@@ -322,7 +323,7 @@ class LstmTabular(nn.Module):
 
 
 @model("lstm_tabular", engine="torch")
-class LstmTabularModel(TabularModel):
+class LstmTabularModel(SupervisedModel):
     spec = LstmTabularSpec
 
     def data_module(self, spec: SupervisedRunSpec) -> TabularDataModule:
@@ -387,7 +388,7 @@ the mathematics finds registration boilerplate first and gives up.
 # src/rade_qnet/models/hybrid_gnn_rnn/register.py  (abridged)
 
 @model("hybrid_gnn_rnn", engine="torch")
-class HybridGnnRnnModel(TabularModel):
+class HybridGnnRnnModel(SupervisedModel):
     spec = HybridModelSpec          # validates model.params
     data_spec = HybridDataSpec      # validates source.params
     state_cls = HybridState         # what the data build fits
@@ -539,39 +540,47 @@ absence is documented so a reader does not assume it was forgotten.
 
 ---
 
-## 8. Portfolio mode — one model, many books
+## 8. Group mode — one model, many slices of data
 
-Portfolio mode is not a different model or a different code path. It is the
-same model run once per cluster, with per-cluster configuration.
+Group mode is not a different model or a different code path. It is the same
+model run once per data group, with per-group configuration. A group is
+whatever slice your problem has -- a region, a desk, a product line, one
+cluster of a P&L book. The framework does not care what a group means; it
+only needs a manifest naming the groups and a directory per group.
 
 ### The layout
 
 ```
-portfolio/
-├── universe.json          the manifest
-├── FX__G10/               one directory per cluster
+data/
+├── groups.json            the manifest
+├── FX__G10/               one directory per group
 ├── FX__EM/
 └── RATES__USD/
 ```
 
 ```json
 {
-  "clusters": [
-    {"name": "FX__G10",  "elementary_ids": ["..."], "target_ids": ["..."],
+  "groups": [
+    {"name": "FX__G10", "input_ids": ["..."], "target_ids": ["..."],
      "asset_class": "FX"},
-    {"name": "FX__EM",   "elementary_ids": ["..."], "target_ids": ["..."],
+    {"name": "FX__EM",  "input_ids": ["..."], "target_ids": ["..."],
      "asset_class": "FX"}
   ]
 }
 ```
+
+`name` is required and becomes the job id. `input_ids` and `target_ids` are
+optional and used only for provenance and log lines -- the model reads its
+own columns through its own `data.py`. Any other key (`asset_class` above) is
+kept as a free-form attribute your override hook can read.
 
 ### Running it
 
 ```python
 from rade_qnet import api
 
-manifest = api.train_portfolio(
-    portfolio_root,
+manifest = api.train_groups(
+    "data",
     defaults={
         "model": {"name": "hybrid_gnn_rnn"},
         "source": {"kind": "model", "transforms": {"sequence": {"length": 4}}},
@@ -579,7 +588,7 @@ manifest = api.train_portfolio(
         "hardware": {"device": "cpu", "determinism": "strict",
                      "threads_per_worker": 1},
     },
-    output_root="artifacts/portfolio",
+    output_root="artifacts/groups",
     name="nightly",
     overrides_for=complexity_for,
 )
@@ -591,19 +600,20 @@ print(manifest.metric_by_job("test", "mae"))
 ### The hook that makes it worth having
 
 ```python
-def complexity_for(cluster) -> dict:
-    units = max(8, min(32, cluster.universe.n_elementary))
+def complexity_for(group) -> dict:
+    units = max(8, min(32, len(group.input_ids)))
     return {"model": {"params": {"units": units}}}
 ```
 
-This is why a portfolio is a job set rather than a `for` loop. Forcing one
-configuration on every cluster means underfitting the liquid ones or
-overfitting the thin ones. The rule is written against the cluster, so it does
-not go stale the first time the book changes.
+This is why a group set is a job set rather than a `for` loop. Forcing one
+configuration on every group means underfitting the data-rich ones or
+overfitting the thin ones. The rule is written against the group -- its
+column counts and its attributes -- so it does not go stale the first time
+the data changes.
 
 ### Three properties that matter operationally
 
-**Partial failure is a result, not a crash.** One broken cluster does not take
+**Partial failure is a result, not a crash.** One broken group does not take
 down the run. The manifest records which jobs succeeded and which did not, and
 the successful bundles are on disk.
 
@@ -617,9 +627,10 @@ The reason `threads_per_worker: 1` appears in the defaults above is exactly
 this: the thread count fixes the order a floating-point reduction accumulates
 in, and therefore the last few significant figures.
 
-**Every job is an ordinary run.** Each cluster produces a normal bundle. You
-evaluate, infer from and compare them with the same functions you use for a
-single model. There is no portfolio-specific artefact format to learn.
+**Every job is an ordinary run.** Each group produces a normal bundle, tagged
+with the snapshot fingerprint of the data it was trained on. You evaluate,
+infer from and compare them with the same functions you use for a single
+model. There is no group-specific artefact format to learn.
 
 ---
 
@@ -627,14 +638,14 @@ single model. There is no portfolio-specific artefact format to learn.
 
 This is the reference section. Everything above is an application of it.
 
-### `ModelDefinition` → `PredictorDefinition` → `TabularModel`
+### `ModelDefinition` → `PredictorDefinition` → `SupervisedModel`
 
 What you must implement, by base class:
 
 | Base | Abstract methods | Use when |
 | --- | --- | --- |
-| `PredictorDefinition` | `build_data`, `signature`, `build_model` | Your data is not a table and you want full control |
-| `TabularModel` | `data_module`, `build_model` | Almost always |
+| `PredictorDefinition` | `build_data`, `signature`, `build_model` | Your data module cannot return the standard prepared dataset and you want full control |
+| `SupervisedModel` | `data_module`, `build_model` | Almost always |
 | `PolicyDefinition` | `build_environment`, `signature`, `build_policy` | Reinforcement learning (Phase 7) |
 
 Optional class attributes on any of them:
@@ -790,7 +801,7 @@ registration is just an import.
 from pydantic import Field
 from sklearn.ensemble import RandomForestRegressor
 
-from rade_qnet.core.capability.simple import TabularModel
+from rade_qnet.core.capability.supervised import SupervisedModel
 from rade_qnet.core.runtime.components import model
 from rade_qnet.core.spec.base import Spec
 from rade_qnet.engines import sklearn as _engine     # registers the engine
@@ -803,7 +814,7 @@ class AcmeMomentumSpec(Spec):
 
 
 @model("acme_momentum", engine="sklearn")
-class AcmeMomentum(TabularModel):
+class AcmeMomentum(SupervisedModel):
     spec = AcmeMomentumSpec
 
     def data_module(self, spec) -> TabularDataModule:
@@ -836,7 +847,7 @@ evaluate(result.bundle_directory)   # re-scores identically
 infer(result.bundle_directory)      # predicts, with provenance
 ```
 
-Six public names is the entire surface: `TabularModel`, `model`, `Spec`, a
+Six public names is the entire surface: `SupervisedModel`, `model`, `Spec`, a
 data module, the engine package, and `api`. Everything in §12 — the bundle,
 the lineage, the reports, exact re-scoring — comes with it.
 
@@ -963,6 +974,60 @@ assumed, and `baseline_metrics` — the score of a predictor with no
 information. A mean absolute error of 0.03 is either excellent or embarrassing
 and only the baseline says which.
 
+### Choosing among runs: tags, best, aliases
+
+Every run under one `output_root` is recorded in one catalog, whether it came
+from `api.train`, `api.train_jobs` or `api.train_groups`. `api.registry`
+reads that catalog. It answers the questions that follow a batch of training,
+and records the answer to the last one:
+
+```python
+from rade_qnet import api
+
+# Train with tags: they are written into each bundle's manifest.
+for lr in (1e-2, 1e-3, 1e-4):
+    api.train({**config, "tags": ["lr-sweep"],
+               "training": {**config["training"], "learning_rate": lr}})
+
+runs = api.registry("artifacts/eod")
+
+runs.runs(tags=["lr-sweep"])                               # which runs are the sweep?
+best = runs.best("mae", direction="minimise", tags=["lr-sweep"])   # which was best?
+runs.promote(best, "production")                           # this one is in production
+runs.tag(best, "reviewed")                                 # recorded after the fact
+
+live = runs.get("ridge", alias="production")               # later, from anywhere
+api.infer(live.directory, source=new_data)
+for event in runs.history(model="ridge"):                  # who promoted what, and when
+    print(event.describe())
+```
+
+There are two kinds of label:
+
+| | Tag | Alias |
+| --- | --- | --- |
+| Says what a run… | *was* — `lr-sweep`, `baseline`, `reviewed` | *is for* — `production`, `champion` |
+| Points at | any number of runs | exactly one version per model and job |
+| Set | at training time (`tags:` in the spec), or later with `tag()` | with `promote()`, moved by promoting another run |
+
+Aliases are scoped per job, so in a group set each group has its own
+`production` model. `latest` always means the highest version.
+
+**Bundles are never rewritten.** A tag added later and every promotion are
+appended to `registry.jsonl` beside the catalog, under the same
+cross-process lock. Two people promoting at once both get recorded, and the
+log doubles as the audit trail. A tag set at training time is part of the
+bundle's record and cannot be removed.
+
+**`best` needs a direction.** `r2` is maximised and `mae` minimised. A
+guess based on the metric's name would eventually guess wrong on a custom
+metric and quietly select the worst run.
+
+**There is no `delete`.** Removing bundles is a retention decision: how
+long, which ones, who may. A one-line delete makes the irreversible
+operation the easy one. To stop a run being selected, untag or demote it.
+To reclaim disk, act on the bundle directories deliberately.
+
 ---
 
 ## 13. Running in production
@@ -979,7 +1044,7 @@ order.
 `resolve_seed` is a named stage, so there is no path through the pipeline that
 leaves an RNG unseeded.
 
-**Let partial failure happen.** In a portfolio run, one bad cluster should not
+**Let partial failure happen.** In a group run, one bad group should not
 block the other forty. Check `manifest.jobs` for `succeeded` and alert on the
 count, not on the exception.
 

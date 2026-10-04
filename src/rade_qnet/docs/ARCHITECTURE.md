@@ -106,25 +106,21 @@ the model, and it should be raised rather than worked around.
 
 ## 3. The layer stack
 
-Nine top-level packages, forming a one-way stack. A package may import from
+Eight top-level packages, forming a one-way stack. A package may import from
 the packages below it and never from the packages above.
 
 ```mermaid
 flowchart TD
-    MODELS["<b>models</b><br/>the model library<br/><i>hybrid_gnn_rnn · baselines</i>"]
-    DOMAINS["<b>domains</b><br/>business context<br/><i>pnl · hedging · trading</i>"]
+    MODELS["<b>models</b><br/>the model library, and the only home of business vocabulary<br/><i>hybrid_gnn_rnn · ridge · xgb_tabular · lstm_tabular</i>"]
     ORCH["<b>orchestration</b><br/>pipelines · jobs · compute"]
     ENGINES["<b>engines</b><br/>torch · xgboost · sklearn"]
     SOURCES["<b>sources</b><br/>dataset · environment · batching"]
-    STORAGE["<b>storage</b><br/>bundle · catalog · tracker"]
+    STORAGE["<b>storage</b><br/>bundle · catalog · registry · tracker"]
     ANALYSIS["<b>analysis</b><br/>metrics · visuals · reports"]
     CORE["<b>core</b><br/>spec · contract · capability · runtime"]
     TESTKIT["<b>testkit</b><br/>conformance · parity · fixtures"]
 
     MODELS --> ORCH
-    MODELS --> DOMAINS
-    DOMAINS --> SOURCES
-    DOMAINS --> ANALYSIS
     ORCH --> ENGINES
     ORCH --> STORAGE
     ORCH --> ANALYSIS
@@ -136,7 +132,6 @@ flowchart TD
 
     style CORE fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
     style MODELS fill:#f3e5f5,stroke:#6a1b9a
-    style DOMAINS fill:#fff3e0,stroke:#e65100
     style TESTKIT fill:#eceff1,stroke:#455a64
 ```
 
@@ -163,9 +158,15 @@ through the component registry. If a pipeline imported a model, the framework
 would depend on the library it exists to serve, and no user could add a model
 without editing the framework.
 
-**Nothing may import `domains`.** A domain knows that a number is a P&L in a
-particular currency on a particular desk. The moment a training loop knows
-that, the framework stops being reusable on the next problem.
+**Business vocabulary lives only in `models`.** Knowing that a number is a
+P&L in a particular currency on a particular desk is a model's business,
+expressed in its own `data.py`. The moment a training loop knows it, the
+framework stops being reusable on the next problem. An earlier design gave
+such knowledge its own `domains` layer; on inspection everything in it was
+either generic machinery (now `orchestration.jobs.groups` and `.fanout`) or
+one model's vocabulary (now in that model), so the layer was removed. The
+test for where a new file belongs: *would it be different on another team's
+problem?* If yes, it belongs in a model.
 
 **`storage` may not import `engines`.** Serialising weights is the engine's
 job — it knows what a `state_dict` is. Storage takes the bytes an engine hands
@@ -672,6 +673,14 @@ loading a model executes arbitrary code from the file.
 read-modify-write loses entries. Not often. Just often enough that nobody
 trusts the catalog, and the index gets rebuilt by hand.
 
+**Decisions are events, not edits.** Choosing among runs -- by tag, by best
+metric, by an alias such as `production` -- is `storage.registry`. A tag
+added after training, or a promotion, is appended to a log beside the
+catalog rather than written into the bundle, so the record of what was
+trained never depends on what was decided later, and the log is the audit
+trail. Every run under one `output_root` shares one catalog, so a sweep's
+variants and successive retrains can be compared. See `GUIDE.md` §12.
+
 **Tracking is optional infrastructure.** A run must never fail because a
 tracking server is unreachable. The default is a no-op.
 
@@ -829,7 +838,7 @@ from ...engines import sklearn as _engine  # noqa: F401  -- registers the engine
 from .data import REQUIRES, data_module
 
 @model("ridge", engine="sklearn")
-class RidgeModel(TabularModel):
+class RidgeModel(SupervisedModel):
     """Framework declaration for the ridge regression."""
 
     requires = REQUIRES
@@ -864,7 +873,7 @@ that only pays off for large models is a framework people work around.
 ```python
 # rade_qnet/models/hybrid_gnn_rnn/register.py
 @model("hybrid_gnn_rnn", engine="torch")
-class HybridGnnRnnModel(TabularModel):
+class HybridGnnRnnModel(SupervisedModel):
     """Framework declaration for the hybrid graph-temporal network."""
 
     requires = REQUIRES             # the six inputs it consumes, by name
@@ -915,7 +924,7 @@ result = api.train("configs/hybrid_eurusd.yaml")
 print(result.evaluations["test"].metrics["mae"])   # already in original target units
 ```
 
-### Train it across a portfolio
+### Train it across many groups
 
 ```python
 manifest = api.train_jobs("configs/hybrid_portfolio.yaml")
@@ -924,16 +933,16 @@ for record in manifest.failed:                 # a failed job is a record, not a
     print(record.job_id, record.failure_kind, record.failure_message)
 ```
 
-Or, when the jobs are the clusters of a book rather than a hand-written
-list — which is the usual case:
+Or, when the jobs are the groups of a dataset described by a `groups.json`
+manifest rather than a hand-written list — which is the usual case:
 
 ```python
-manifest = api.train_portfolio(
-    "data/books/eod",
-    defaults={...},                            # the fragment every cluster shares
+manifest = api.train_groups(
+    "data/eod",
+    defaults={...},                            # the fragment every group shares
     output_root="artifacts/eod",
-    overrides_for=lambda cluster: {            # per-cluster complexity
-        "model": {"params": {"units": min(32, cluster.universe.n_elementary)}}
+    overrides_for=lambda group: {              # per-group complexity
+        "model": {"params": {"units": min(32, len(group.input_ids))}}
     },
 )
 ```
@@ -1013,7 +1022,7 @@ rade-qnet tune       configs/hybrid_tune.yaml --trials 50
 ```mermaid
 flowchart LR
     A["1. Write model.py<br/><i>the architecture</i>"] --> B["2. Write spec.py<br/><i>its parameters</i>"]
-    B --> C["3. Write data.py<br/><i>or use TabularModel</i>"]
+    B --> C["3. Write data.py<br/><i>or use SupervisedModel</i>"]
     C --> D["4. Write register.py<br/><i>bind it together</i>"]
     D --> E["5. Run the<br/>conformance suite"]
     E --> F["Full lifecycle:<br/>train · evaluate · infer · tune<br/>· job sets · bundles · reports"]

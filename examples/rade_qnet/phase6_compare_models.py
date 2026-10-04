@@ -139,8 +139,7 @@ def write_tabular_view(destination: Path) -> Path:
         writer = csv.writer(handle)
         writer.writerow([*universe["elementary_ids"], "target"])
         writer.writerows(
-            [*row, target]
-            for row, target in zip(elementary, targets[:, TARGET_INDEX], strict=True)
+            [*row, target] for row, target in zip(elementary, targets[:, TARGET_INDEX], strict=True)
         )
     return path
 

@@ -6,8 +6,8 @@
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 47 | 2125 | `8ed63db8039871d8` |
 | 2 | `data.py` | 69 | 2412 | `338b3f7edf0d2b0e` |
-| 3 | `model.py` | 205 | 6765 | `0df5a27b646f6ec5` |
-| 4 | `register.py` | 90 | 2746 | `d6a19e8200e6cb55` |
+| 3 | `model.py` | 204 | 6754 | `cac89769b93bf1b1` |
+| 4 | `register.py` | 88 | 2742 | `6c27ef7ca1b2f4c6` |
 | 5 | `spec.py` | 29 | 720 | `684004c8b0263ebe` |
 
 ---
@@ -148,7 +148,7 @@ def data_module(spec: SupervisedRunSpec) -> TabularDataModule:
 
 ## 3. `src/rade_qnet/models/lstm_tabular/model.py`
 
-6765 bytes · SHA-256 `0df5a27b646f6ec5`
+6754 bytes · SHA-256 `cac89769b93bf1b1`
 
 ```python
 """
@@ -353,8 +353,7 @@ def _feature_width(signature: InputSignature) -> int:
     for tensor in signature.dynamic.values():
         return int(tensor.shape[-1])
     raise ContractError(
-        "the signature declares no dynamic input, so there is nothing for a "
-        "recurrence to read"
+        "the signature declares no dynamic input, so there is nothing for a recurrence to read"
     )
 ```
 
@@ -362,7 +361,7 @@ def _feature_width(signature: InputSignature) -> int:
 
 ## 4. `src/rade_qnet/models/lstm_tabular/register.py`
 
-2746 bytes · SHA-256 `d6a19e8200e6cb55`
+2742 bytes · SHA-256 `6c27ef7ca1b2f4c6`
 
 ```python
 """
@@ -378,7 +377,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...core.capability.simple import TabularModel
+from ...core.capability.supervised import SupervisedModel
 from ...core.runtime.components import model
 
 # Imported for its registration side effect: this is what puts the Torch
@@ -400,7 +399,7 @@ __all__ = ["LstmTabularModel"]
 
 
 @model("lstm_tabular", engine="torch")
-class LstmTabularModel(TabularModel):
+class LstmTabularModel(SupervisedModel):
     """
     Framework declaration for the flagship's temporal stream, alone.
 
@@ -435,9 +434,7 @@ class LstmTabularModel(TabularModel):
         """
         return data_module(spec)
 
-    def build_model(
-        self, spec: SupervisedRunSpec, signature: InputSignature
-    ) -> LstmTabular:
+    def build_model(self, spec: SupervisedRunSpec, signature: InputSignature) -> LstmTabular:
         """
         Return a fully parameterised network.
 

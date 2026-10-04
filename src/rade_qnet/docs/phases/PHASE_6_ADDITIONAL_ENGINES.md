@@ -39,7 +39,7 @@ What it measures instead is whether the abstractions are *true*. Every phase
 so far had exactly one engine, so every claim about the engine interface was
 untested by construction: an interface with one implementation is not an
 interface, it is a spelling of that implementation. The same is true of
-`PredictorDefinition` and `TabularModel`, which have had precisely one real
+`PredictorDefinition` and `SupervisedModel`, which have had precisely one real
 consumer — a model with a graph, a recurrent stream, custom reports and a
 bespoke data build. Nothing has yet asked whether the framework is pleasant
 for a model with none of those things.
@@ -251,7 +251,7 @@ believed.
 
 ```mermaid
 flowchart LR
-    P2["<b>Phase 2</b><br/>Engine contract ·<br/>conformance suite ·<br/>TabularModel"] --> P6["<b>Phase 6</b>"]
+    P2["<b>Phase 2</b><br/>Engine contract ·<br/>conformance suite ·<br/>SupervisedModel"] --> P6["<b>Phase 6</b>"]
     P6 -->|"baseline comparison in<br/>every run's report"| P5["<b>Phase 5</b><br/>evaluate"]
     P6 -->|"the benchmark the<br/>flagship must beat"| P3["<b>Phase 3</b>"]
     P6 -.->|"findings about<br/>interface awkwardness"| P2
@@ -350,7 +350,7 @@ Beyond the universal criteria in
 | The engine contract needs changing for a one-shot fit | A Phase 2 abstraction was wrong | That is the phase working. Fix Phase 2, re-run its tests, record it in §8 |
 | A baseline exceeds its budget | The framework is not actually cheap for simple models | Treat it as a framework defect, not an acceptable cost. Do not raise the number |
 | Tree engines get a parallel pipeline | The lifecycle forks and the claim of one lifecycle becomes false | One payload type (§3.1); declare absent capabilities; the AST test in §5 |
-| `TabularModel`'s default split is wrong for trees | Silent leakage in a model nobody scrutinises because it is "just a baseline" | Baselines go through the same conformance suite, including the leakage checks |
+| `SupervisedModel`'s default split is wrong for trees | Silent leakage in a model nobody scrutinises because it is "just a baseline" | Baselines go through the same conformance suite, including the leakage checks |
 | `joblib` reintroduces the pickling problem | A saved model becomes refactor-fragile and unsafe to load | Refuse a payload whose estimator class does not match; record the deviation (§3.3) |
 | XGBoost becomes a hard dependency by accident | A host that trains no trees pays for the import | Import inside the engine package only; marked, skipping tests |
 | The baseline comparison is read as a ranking | A 0.0001 difference on a 400-row fixture gets believed | Report side by side, declare no winner (§3.8) |

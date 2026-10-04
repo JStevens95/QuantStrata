@@ -8,7 +8,7 @@
 | 2 | `base.py` | 65 | 2674 | `81ce5965d3e537f2` |
 | 3 | `bundle.py` | 288 | 8644 | `231daf12828c92fa` |
 | 4 | `data.py` | 376 | 13517 | `7683689102e6d630` |
-| 5 | `requirement.py` | 447 | 16937 | `bff48fa703f13c1f` |
+| 5 | `requirement.py` | 442 | 16835 | `b0fd78b19bc479cd` |
 | 6 | `result.py` | 641 | 21578 | `42cbfb1d3debd019` |
 | 7 | `signature.py` | 386 | 12855 | `fcb7ccefc6bb9043` |
 | 8 | `source.py` | 176 | 6275 | `0f58535c7104056f` |
@@ -841,7 +841,7 @@ class DataBundle[PayloadT]:
 
 ## 5. `src/rade_qnet/core/contract/requirement.py`
 
-16937 bytes · SHA-256 `bff48fa703f13c1f`
+16835 bytes · SHA-256 `b0fd78b19bc479cd`
 
 ```python
 """
@@ -1075,10 +1075,7 @@ class RequiredInput(ContractModel):
             # constrain it, so that the shape check stays a shape check.
             declared = TensorSpec(shape=self.shape, dtype=self.dtype or spec.dtype)
             if not declared.is_compatible_with(spec):
-                return (
-                    f"has shape {spec.describe()}, but {declared.describe()} "
-                    f"is required"
-                )
+                return f"has shape {spec.describe()}, but {declared.describe()} is required"
         return None
 
 
@@ -1134,9 +1131,7 @@ class InputRequirement(ContractModel):
         for group, entries in (("dynamic", self.dynamic), ("static", self.static)):
             names = [entry.name for entry in entries if entry.name is not None]
             if len(names) != len(set(names)):
-                raise SpecError(
-                    f"the {group} requirements name an input twice: {sorted(names)}"
-                )
+                raise SpecError(f"the {group} requirements name an input twice: {sorted(names)}")
             if sum(1 for entry in entries if entry.name is None) > 1:
                 raise SpecError(
                     f"the {group} requirements contain more than one unnamed "

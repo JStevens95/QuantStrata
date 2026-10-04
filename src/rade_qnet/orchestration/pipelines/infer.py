@@ -215,9 +215,7 @@ class InferPipeline(Pipeline[Predictions]):
         if self.source is not None:
             spec = spec.model_copy(update={"source": self.source})
 
-        data = loaded.definition.rebuild_data(
-            spec, state=loaded.state, lineage=loaded.lineage
-        )
+        data = loaded.definition.rebuild_data(spec, state=loaded.state, lineage=loaded.lineage)
         self._check_entities(loaded, data)
         return data
 
@@ -370,9 +368,7 @@ class InferPipeline(Pipeline[Predictions]):
                 "framework_version": loaded.lineage.framework_version,
             },
         )
-        _LOGGER.info(
-            "predicted %d value(s) with %s", predictions.n_predictions, loaded.describe()
-        )
+        _LOGGER.info("predicted %d value(s) with %s", predictions.n_predictions, loaded.describe())
         return predictions
 
     def _scenario_indices(

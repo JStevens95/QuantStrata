@@ -6,7 +6,7 @@
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 33 | 1378 | `9687c52982db50ec` |
 | 2 | `adapters.py` | 336 | 12759 | `db160d94f8229598` |
-| 3 | `engine.py` | 547 | 19385 | `971b2412886894bf` |
+| 3 | `engine.py` | 541 | 19325 | `5afad89979d0fb3e` |
 
 ---
 
@@ -399,7 +399,7 @@ def reject_static(static: Mapping[str, object]) -> None:
 
 ## 3. `src/rade_qnet/engines/sklearn/engine.py`
 
-19385 bytes · SHA-256 `971b2412886894bf`
+19325 bytes · SHA-256 `5afad89979d0fb3e`
 
 ```python
 """
@@ -725,8 +725,7 @@ class SklearnEngine:
             values = handle.unwrapped.predict(split.features)
         except Exception as error:
             raise EngineError(
-                f"{type(handle.unwrapped).__name__}.predict failed "
-                f"[{type(error).__name__}] {error}"
+                f"{type(handle.unwrapped).__name__}.predict failed [{type(error).__name__}] {error}"
             ) from error
         return np.asarray(values, dtype=np.float64).reshape(split.n_samples, -1)
 
@@ -779,8 +778,7 @@ class SklearnEngine:
             loaded = joblib.load(path)
         except Exception as error:
             raise EngineError(
-                f"could not read the estimator at {path} "
-                f"[{type(error).__name__}] {error}"
+                f"could not read the estimator at {path} [{type(error).__name__}] {error}"
             ) from error
 
         if type(loaded) is not type(model):
@@ -792,9 +790,7 @@ class SklearnEngine:
             )
         return loaded
 
-    def _validation_loss(
-        self, handle: ModelHandle, source: BatchSource | None
-    ) -> float | None:
+    def _validation_loss(self, handle: ModelHandle, source: BatchSource | None) -> float | None:
         """
         Score the validation split after fitting, if there is one.
 
@@ -926,9 +922,7 @@ def _reject_unusable_hardware(hardware: HardwareSpec) -> None:
         )
 
 
-def _mean_squared_error(
-    predictions: NDArray[np.floating], targets: NDArray[np.floating]
-) -> float:
+def _mean_squared_error(predictions: NDArray[np.floating], targets: NDArray[np.floating]) -> float:
     """
     Return the mean squared error, for the fit history.
 

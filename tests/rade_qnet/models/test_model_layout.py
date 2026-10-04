@@ -52,9 +52,7 @@ if TYPE_CHECKING:
 #: The five files every model package has, at every tier. Absent any one of
 #: them the package is incomplete even if it imports and runs, because the
 #: next reader cannot rely on the convention to find anything.
-REQUIRED_FILES = frozenset(
-    {"__init__.py", "spec.py", "model.py", "register.py", "data.py"}
-)
+REQUIRED_FILES = frozenset({"__init__.py", "spec.py", "model.py", "register.py", "data.py"})
 
 #: Files a model package may additionally contain, and nothing else. Each
 #: name means a specific thing; see ``rade_qnet.models.__init__``. The point of
@@ -108,9 +106,7 @@ def model_packages() -> list[Path]:
         One per model, sorted by name.
     """
     return sorted(
-        path
-        for path in MODELS_ROOT.iterdir()
-        if path.is_dir() and path.name != "__pycache__"
+        path for path in MODELS_ROOT.iterdir() if path.is_dir() and path.name != "__pycache__"
     )
 
 
@@ -213,11 +209,7 @@ class TestEveryModelIsAPackage:
         *unanswerable*: a contributor cannot tell which shape theirs should
         be, and whichever they pick is inconsistent with half the library.
         """
-        loose = [
-            path.name
-            for path in MODELS_ROOT.glob("*.py")
-            if path.name != "__init__.py"
-        ]
+        loose = [path.name for path in MODELS_ROOT.glob("*.py") if path.name != "__init__.py"]
         assert not loose, (
             f"models are packages, not modules; found {loose} directly under "
             f"{MODELS_ROOT}. Move each into models/<name>/ with the four "
@@ -305,9 +297,7 @@ class TestTheRequiredFilesExist:
         privately inside one model.
         """
         allowed = REQUIRED_FILES | OPTIONAL_FILES
-        strays = sorted(
-            path.name for path in package.glob("*.py") if path.name not in allowed
-        )
+        strays = sorted(path.name for path in package.glob("*.py") if path.name not in allowed)
         assert not strays, (
             f"{package.name} contains {strays}, which the model layout does "
             f"not define. Permitted files: {sorted(allowed)}. Permitted "
@@ -315,9 +305,7 @@ class TestTheRequiredFilesExist:
         )
 
     @pytest.mark.parametrize("package", model_packages(), ids=lambda p: p.name)
-    def test_no_directory_is_named_outside_the_vocabulary(
-        self, package: Path
-    ) -> None:
+    def test_no_directory_is_named_outside_the_vocabulary(self, package: Path) -> None:
         """Sub-directories are limited the same way, and for the same reason."""
         strays = sorted(
             path.name
@@ -332,9 +320,7 @@ class TestTheRequiredFilesExist:
         )
 
     @pytest.mark.parametrize("package", model_packages(), ids=lambda p: p.name)
-    def test_pipeline_overrides_are_named_for_their_stage(
-        self, package: Path
-    ) -> None:
+    def test_pipeline_overrides_are_named_for_their_stage(self, package: Path) -> None:
         """
         A ``pipelines/`` directory holds only stage overrides.
 
@@ -347,9 +333,7 @@ class TestTheRequiredFilesExist:
         if not pipelines.is_dir():
             pytest.skip(f"{package.name} overrides no pipeline stage")
         strays = sorted(
-            path.name
-            for path in pipelines.glob("*.py")
-            if path.name not in PIPELINE_FILES
+            path.name for path in pipelines.glob("*.py") if path.name not in PIPELINE_FILES
         )
         assert not strays, (
             f"{package.name}/pipelines contains {strays}; a stage override "
@@ -367,9 +351,7 @@ class TestTheSplitIsReal:
     """
 
     @pytest.mark.parametrize("package", model_packages(), ids=lambda p: p.name)
-    def test_model_py_does_not_import_the_frameworks_wiring(
-        self, package: Path
-    ) -> None:
+    def test_model_py_does_not_import_the_frameworks_wiring(self, package: Path) -> None:
         """
         ``model.py`` is mathematics and knows nothing about running.
 
@@ -394,9 +376,7 @@ class TestTheSplitIsReal:
         )
 
     @pytest.mark.parametrize("package", model_packages(), ids=lambda p: p.name)
-    def test_registration_happens_in_register_py_and_nowhere_else(
-        self, package: Path
-    ) -> None:
+    def test_registration_happens_in_register_py_and_nowhere_else(self, package: Path) -> None:
         """
         Exactly one ``@model(...)`` per package, in ``register.py``.
 
@@ -414,14 +394,11 @@ class TestTheSplitIsReal:
                 )
             else:
                 assert not names, (
-                    f"{path} registers {names}; registration belongs in "
-                    f"{package.name}/register.py"
+                    f"{path} registers {names}; registration belongs in {package.name}/register.py"
                 )
 
     @pytest.mark.parametrize("package", model_packages(), ids=lambda p: p.name)
-    def test_importing_the_package_registers_the_model(
-        self, package: Path
-    ) -> None:
+    def test_importing_the_package_registers_the_model(self, package: Path) -> None:
         """
         The ``__init__`` reaches ``register``, so importing is enough.
 
@@ -491,9 +468,7 @@ class TestSimpleModelsStayCheap:
     said so.
     """
 
-    @pytest.mark.parametrize(
-        "name", ["ridge", "xgb_tabular", "lstm_tabular"]
-    )
+    @pytest.mark.parametrize("name", ["ridge", "xgb_tabular", "lstm_tabular"])
     def test_a_tier_1_model_fits_in_the_budget(self, name: str) -> None:
         """
         Everything except ``model.py``, summed across the package.
@@ -505,9 +480,7 @@ class TestSimpleModelsStayCheap:
         """
         package = MODELS_ROOT / name
         total = sum(
-            statements(path)
-            for path in sorted(package.glob("*.py"))
-            if path.name != "model.py"
+            statements(path) for path in sorted(package.glob("*.py")) if path.name != "model.py"
         )
         assert total <= TIER_1_BUDGET, (
             f"{name} spends {total} statements on ceremony against a budget "

@@ -25,19 +25,19 @@ from pathlib import Path
 
 import numpy as np
 
-from src.rade_qnet.core.capability.simple import TabularModel
+from src.rade_qnet.core.capability.supervised import SupervisedModel
 from src.rade_qnet.sources.dataset.io import read_table
 from src.rade_qnet.sources.dataset.module import TabularDataModule
 from src.rade_qnet.testkit.fixtures import LinearModel
 
 __all__ = [
-    "CLUSTER_FILENAME",
     "DIRECTORY_MODEL_NAME",
     "ENGINE_TAG",
+    "GROUP_FILENAME",
     "MODEL_NAME",
     "N_FEATURES",
     "SyntheticDirectoryModel",
-    "SyntheticTabularModel",
+    "SyntheticSupervisedModel",
     "job_set_payload",
     "write_linear_dataset",
 ]
@@ -59,7 +59,7 @@ TRUE_COEFFICIENTS = np.array([1.5, -0.7, 0.3, 2.0])
 TRUE_INTERCEPT = 0.25
 
 
-class SyntheticTabularModel(TabularModel):
+class SyntheticSupervisedModel(SupervisedModel):
     """A model definition needing one line of data code, as advertised."""
 
     component_name = MODEL_NAME
@@ -147,23 +147,23 @@ def job_set_payload(dataset: Path, output_root: Path, **overrides: object) -> di
 #: thing that matters here: where their data comes from.
 DIRECTORY_MODEL_NAME = "synthetic_directory"
 
-#: The file a cluster directory is expected to contain.
-CLUSTER_FILENAME = "pnl.csv"
+#: The file each group directory is expected to contain.
+GROUP_FILENAME = "data.csv"
 
 
 class DirectoryDataModule(TabularDataModule):
     """
     Reads its table from a directory named in ``source.params``.
 
-    What a P&L cluster actually looks like: a directory per cluster, which
-    is the shape ``domains.pnl.clusters`` overrides. The tabular module
-    reads a path from the spec directly, so the only thing changed here is
-    where the path comes from.
+    What a data group looks like on disk: a directory per group, which is
+    the shape :func:`~rade_qnet.orchestration.jobs.fanout.group_overrides`
+    points each job at. The tabular module reads a path from the spec
+    directly, so the only thing changed here is where the path comes from.
     """
 
     def load(self, spec):
         """
-        Read the cluster's table.
+        Read the group's table.
 
         Parameters
         ----------
@@ -176,14 +176,14 @@ class DirectoryDataModule(TabularDataModule):
             The parsed table.
         """
         return read_table(
-            Path(spec.params["directory"]) / CLUSTER_FILENAME,
+            Path(spec.params["directory"]) / GROUP_FILENAME,
             target_column="target",
             feature_columns=None,
             attribute_columns=(),
         )
 
 
-class SyntheticDirectoryModel(SyntheticTabularModel):
+class SyntheticDirectoryModel(SyntheticSupervisedModel):
     """The synthetic model, reading one directory per cluster."""
 
     component_name = DIRECTORY_MODEL_NAME

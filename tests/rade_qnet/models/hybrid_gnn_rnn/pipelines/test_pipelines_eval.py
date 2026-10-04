@@ -65,9 +65,7 @@ class TestThePerTargetArithmetic:
         wrong, and completely invisible in the aggregate.
         """
         matrix = np.array([[0.0, 10.0], [0.0, 10.0]])
-        errors = per_target_errors(
-            np.ravel(matrix), np.zeros(matrix.size), n_targets=2
-        )
+        errors = per_target_errors(np.ravel(matrix), np.zeros(matrix.size), n_targets=2)
         assert list(errors) == [0.0, 10.0]
 
     def test_a_single_target_collapses_to_the_pooled_error(self) -> None:

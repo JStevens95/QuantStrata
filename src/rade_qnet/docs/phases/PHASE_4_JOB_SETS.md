@@ -267,7 +267,7 @@ Beyond the universal criteria in
       process pool; Phase 4 is the first phase that uses it in anger.)*
 - [x] `policy.py` picks a sensible executor and worker count unaided.
 - [x] GPU tests marked and skipped, not omitted.
-- [x] `examples/rade_qnet/phase4_train_portfolio.py` trains a multi-cluster
+- [x] `examples/rade_qnet/phase4_train_groups.py` trains a multi-cluster
       portfolio and prints the job-set summary.
 
 ---
@@ -477,6 +477,38 @@ libraries that read their thread count at load time, which
 different windows, and only the specification one is authoritative for
 reproducibility.
 
+### 8.9 The `domains` layer is removed
+
+*Decided after Phase 6, while preparing the framework for a second team.*
+
+The design reserved a `domains` layer for business context, so that no
+training loop would ever learn what a P&L is. The rule was right; the layer
+was the wrong way to enforce it. Inspected file by file, `domains.pnl`
+contained two kinds of thing, and neither was business context:
+
+- **Generic machinery wearing business names.** `Portfolio`, `Cluster` and
+  `read_portfolio` read a manifest of named data slices and expand them into
+  a job set. Nothing in that is about P&L. It is now
+  `orchestration.jobs.groups` (`GroupSet`, `DataGroup`, `read_group_set`,
+  manifest `groups.json`) and `orchestration.jobs.fanout`
+  (`job_set_for_groups`, `group_overrides`). `api.train_portfolio` is now
+  `api.train_groups`.
+- **One model's vocabulary.** `Universe` (elementary and target instruments)
+  is how the flagship reads its data. A second model over the same files
+  would read them its own way, in its own `data.py`. It moved back to
+  `models/hybrid_gnn_rnn/state.py`, reversing §8.4.
+
+The rule now reads: business vocabulary lives only in `models`, inside each
+model's `data.py` (`ARCHITECTURE.md` §4). The group manifest's `input_ids` and
+`target_ids` are provenance only; the model still reads its own columns. Any
+other manifest key is kept as a free-form attribute that a per-group override
+hook can read, which covers what the cluster's `asset_class` used to do
+without the framework knowing the word.
+
+The deferred `domains.pnl.metrics` (§8.3) and `domains.hedging` (Phase 7) are
+not lost. Metrics a model wants belong in that model's `reports.py`; a hedging
+environment belongs to the model that trains in it.
+
 ### 8.8 The record
 
 | Date | Deviation | Reason |
@@ -488,3 +520,4 @@ reproducibility.
 | Phase 4 | `api.py` added, having been in no phase | §8.5 |
 | Phase 4 | Defect 12: registrations do not survive a process boundary | §8.6 |
 | Phase 4 | Defect 13: thread budget moved from the executor to the spec | §8.7 |
+| After Phase 6 | `domains` layer removed; group sets moved to `orchestration.jobs` | §8.9 |

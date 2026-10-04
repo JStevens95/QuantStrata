@@ -4,7 +4,7 @@
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
-| 1 | `__init__.py` | 92 | 4267 | `3634e983af7166b6` |
+| 1 | `__init__.py` | 90 | 4121 | `a386a3c89b5a653f` |
 | 2 | `callbacks.py` | 689 | 21954 | `dd2f519795a353cc` |
 | 3 | `checkpoint.py` | 300 | 10634 | `ede6db2968503f60` |
 | 4 | `distributed.py` | 276 | 9479 | `0c0492e6dc473abb` |
@@ -12,7 +12,7 @@
 | 6 | `hardware.py` | 369 | 12848 | `1e6d10f5dc810e55` |
 | 7 | `loaders.py` | 288 | 10182 | `856ddcfb1c2ca4e9` |
 | 8 | `loops.py` | 462 | 14963 | `f43d783b05f0da87` |
-| 9 | `losses.py` | 346 | 9851 | `2992dbf812cdca1e` |
+| 9 | `losses.py` | 348 | 9939 | `43b81664fc961647` |
 | 10 | `materialise.py` | 329 | 11265 | `b19a9c1b5031cb03` |
 | 11 | `predictor.py` | 179 | 6452 | `87c7e1bff8d8aba1` |
 | 12 | `seeding.py` | 124 | 5679 | `34f9f4cfe1207350` |
@@ -21,7 +21,7 @@
 
 ## 1. `src/rade_qnet/engines/torch/__init__.py`
 
-4267 bytes · SHA-256 `3634e983af7166b6`
+4121 bytes · SHA-256 `a386a3c89b5a653f`
 
 ```python
 """
@@ -53,11 +53,9 @@ Modules
     Early stopping, checkpointing, learning-rate scheduling, gradient-norm
     tracking.  [Phase 2]
 ``losses.py``
-    The loss registry, including the asymmetric and quantile objectives used
-    for P&L work.  A loss is engine code because the *learner* consumes it,
-    so the P&L-shaped objectives live here rather than in ``domains`` -- the
-    dependency rule forbids the alternative, and rightly: it would make this
-    engine unusable without the P&L package installed.  [Phase 2]
+    The loss registry, including the asymmetric and quantile objectives.  A
+    loss is engine code because the *learner* consumes it; a loss only one
+    model needs is registered from that model's package instead.  [Phase 2]
 ``hardware.py``
     Device selection, autocast and precision policy, and ``torch.compile``
     application -- resolved from ``HardwareSpec``.  [Phase 2]
@@ -3147,7 +3145,7 @@ def _log_epoch(record: EpochRecord, epochs: int) -> None:
 
 ## 9. `src/rade_qnet/engines/torch/losses.py`
 
-9851 bytes · SHA-256 `2992dbf812cdca1e`
+9939 bytes · SHA-256 `43b81664fc961647`
 
 ```python
 """
@@ -3161,15 +3159,17 @@ an unrecognised name fails when the spec is read -- listing what is available
 
 The asymmetric losses, and why they are in the framework
 --------------------------------------------------------
-``asymmetric`` and ``quantile`` look domain-specific and are deliberately
-here rather than in ``domains``.
+``asymmetric`` and ``quantile`` look domain-specific, but neither is: each is
+a general statement about how to weigh errors -- over-prediction against
+under-prediction, or one quantile of the error distribution -- and both are
+used well outside P&L work.
 
-The reason is that a loss is consumed by the *learner*, and the learner is
-engine code. Putting a loss in ``domains`` would require ``engines`` to import
-``domains``, which the dependency rule forbids -- and forbids for good reason:
-it would make the Torch engine unusable without the P&L package installed.
+They live here because a loss is consumed by the *learner*, and the learner
+is engine code. A loss that only one model needs can still be registered from
+that model's package without touching this module; the registry is what makes
+that possible.
 
-What is domain-specific is the *choice* of loss and the value of its
+What is problem-specific is the *choice* of loss and the value of its
 asymmetry, and those live in a configuration file where they belong.
 
 Both reduce to a mean over the batch rather than a sum, so a loss value is

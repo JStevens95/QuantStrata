@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...core.capability.simple import TabularModel
+from ...core.capability.supervised import SupervisedModel
 from ...core.runtime.components import model
 
 # Imported for its registration side effect: this is what puts the
@@ -44,7 +44,7 @@ __all__ = ["RidgeModel"]
 
 
 @model("ridge", engine="sklearn")
-class RidgeModel(TabularModel):
+class RidgeModel(SupervisedModel):
     """
     Framework declaration for the ridge regression.
 

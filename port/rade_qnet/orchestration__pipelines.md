@@ -5,14 +5,14 @@
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 37 | 1462 | `f610fecec664a1cf` |
-| 2 | `evaluate.py` | 397 | 13979 | `509da2af4be7d5ca` |
-| 3 | `infer.py` | 495 | 17073 | `1b6d06b15a104a75` |
-| 4 | `reload.py` | 273 | 9476 | `260a299a85ba559c` |
+| 2 | `evaluate.py` | 395 | 13957 | `3150d1c68327da62` |
+| 3 | `infer.py` | 491 | 17029 | `9c1ae0b09dee881d` |
+| 4 | `reload.py` | 273 | 9480 | `610dd23976455dee` |
 | 5 | `resolve.py` | 125 | 4824 | `af2865110166c9da` |
-| 6 | `scoring.py` | 452 | 16203 | `7ebf299601abd91d` |
-| 7 | `search.py` | 250 | 8047 | `0f1f9353cef00b38` |
-| 8 | `train.py` | 677 | 24636 | `7610e61b277c2c10` |
-| 9 | `tune.py` | 609 | 20862 | `f81deb7b747fcf9c` |
+| 6 | `scoring.py` | 450 | 16201 | `3d037aa08bb52fc8` |
+| 7 | `search.py` | 245 | 7991 | `bc5a82484ab0bcb8` |
+| 8 | `train.py` | 672 | 24637 | `c39a4a5b04adcfb7` |
+| 9 | `tune.py` | 604 | 20814 | `60a311d8aa2dc1ea` |
 
 ---
 
@@ -64,7 +64,7 @@ __all__: tuple[str, ...] = ()
 
 ## 2. `src/rade_qnet/orchestration/pipelines/evaluate.py`
 
-13979 bytes · SHA-256 `509da2af4be7d5ca`
+13957 bytes · SHA-256 `3150d1c68327da62`
 
 ```python
 """
@@ -259,9 +259,7 @@ class EvaluatePipeline(Pipeline[EvaluationResult]):
         if self.source is not None:
             spec = spec.model_copy(update={"source": self.source})
 
-        return loaded.definition.rebuild_data(
-            spec, state=loaded.state, lineage=loaded.lineage
-        )
+        return loaded.definition.rebuild_data(spec, state=loaded.state, lineage=loaded.lineage)
 
     def restore(self, loaded: LoadedBundle, data: DataBundle[object]) -> ModelHandle:
         """
@@ -470,7 +468,7 @@ class EvaluatePipeline(Pipeline[EvaluationResult]):
 
 ## 3. `src/rade_qnet/orchestration/pipelines/infer.py`
 
-17073 bytes · SHA-256 `1b6d06b15a104a75`
+17029 bytes · SHA-256 `9c1ae0b09dee881d`
 
 ```python
 """
@@ -690,9 +688,7 @@ class InferPipeline(Pipeline[Predictions]):
         if self.source is not None:
             spec = spec.model_copy(update={"source": self.source})
 
-        data = loaded.definition.rebuild_data(
-            spec, state=loaded.state, lineage=loaded.lineage
-        )
+        data = loaded.definition.rebuild_data(spec, state=loaded.state, lineage=loaded.lineage)
         self._check_entities(loaded, data)
         return data
 
@@ -845,9 +841,7 @@ class InferPipeline(Pipeline[Predictions]):
                 "framework_version": loaded.lineage.framework_version,
             },
         )
-        _LOGGER.info(
-            "predicted %d value(s) with %s", predictions.n_predictions, loaded.describe()
-        )
+        _LOGGER.info("predicted %d value(s) with %s", predictions.n_predictions, loaded.describe())
         return predictions
 
     def _scenario_indices(
@@ -974,7 +968,7 @@ class InferPipeline(Pipeline[Predictions]):
 
 ## 4. `src/rade_qnet/orchestration/pipelines/reload.py`
 
-9476 bytes · SHA-256 `260a299a85ba559c`
+9480 bytes · SHA-256 `610dd23976455dee`
 
 ```python
 """
@@ -1014,7 +1008,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from ...core.capability.definition import PredictorDefinition
-from ...core.capability.simple import RebuildableDataModule
+from ...core.capability.supervised import RebuildableDataModule
 from ...core.runtime.components import MODELS, ComponentError, get_model
 from ...core.runtime.errors import BundleError
 from ...core.runtime.logging import get_logger
@@ -1390,7 +1384,7 @@ def pipeline_for[PipelineT: type](
 
 ## 6. `src/rade_qnet/orchestration/pipelines/scoring.py`
 
-16203 bytes · SHA-256 `7ebf299601abd91d`
+16201 bytes · SHA-256 `3d037aa08bb52fc8`
 
 ```python
 """
@@ -1843,15 +1837,13 @@ def align(
             f"target collection kept, or the model's output has an extra axis"
         )
     return flat_predictions, flat_targets
-
-
 ```
 
 ---
 
 ## 7. `src/rade_qnet/orchestration/pipelines/search.py`
 
-8047 bytes · SHA-256 `0f1f9353cef00b38`
+7991 bytes · SHA-256 `bc5a82484ab0bcb8`
 
 ```python
 """
@@ -1994,10 +1986,7 @@ def _random(spec: TuneSpec) -> list[dict[str, Any]]:
     # docstring.
     generator = np.random.default_rng(spec.seed)
     proposals = [
-        {
-            dimension.path: _draw(dimension, generator)
-            for dimension in spec.space.dimensions
-        }
+        {dimension.path: _draw(dimension, generator) for dimension in spec.space.dimensions}
         for _ in range(spec.trials)
     ]
     _LOGGER.info(
@@ -2075,9 +2064,7 @@ def _draw(dimension: Dimension, generator: np.random.Generator) -> object:
         # budget. Sampling uniformly in the value instead would put nine
         # tenths of the trials in the top decade of a range like 1e-4 to
         # 1e-1, which is almost never what the range was meant to express.
-        return float(
-            math.exp(generator.uniform(math.log(low), math.log(high)))
-        )
+        return float(math.exp(generator.uniform(math.log(low), math.log(high))))
     return float(generator.uniform(low, high))
 
 
@@ -2110,7 +2097,7 @@ def _choice(values: Sequence[object], generator: np.random.Generator) -> object:
 
 ## 8. `src/rade_qnet/orchestration/pipelines/train.py`
 
-24636 bytes · SHA-256 `7610e61b277c2c10`
+24637 bytes · SHA-256 `c39a4a5b04adcfb7`
 
 ```python
 """
@@ -2318,9 +2305,7 @@ class TrainPipeline(Pipeline[TrainingResult]):
         # one case -- a failed write -- where it is read most carefully.
         if self.saved is None:
             return result
-        return result.model_copy(
-            update={"bundle_directory": str(self.saved.directory)}
-        )
+        return result.model_copy(update={"bundle_directory": str(self.saved.directory)})
 
     def resolve(self) -> None:
         """
@@ -2643,7 +2628,7 @@ class TrainPipeline(Pipeline[TrainingResult]):
         # registered, so the catalog never advertises a bundle that is not
         # there.
         if self.context.catalog is not None and saved.manifest is not None:
-            self.context.catalog.record(saved.manifest)
+            self.context.catalog.record(saved.manifest, location=saved.directory)
         return bundle
 
     def _next_version(self) -> int:
@@ -2742,7 +2727,6 @@ class TrainPipeline(Pipeline[TrainingResult]):
             )
         return self.engine
 
-
     @classmethod
     def _static_inputs(cls, data: DataBundle[object]) -> Mapping[str, object]:
         """
@@ -2788,15 +2772,13 @@ class TrainPipeline(Pipeline[TrainingResult]):
         if features is None:
             return data.lineage
         return data.lineage.model_copy(update={"quality": quality_metrics(features)})
-
-
 ```
 
 ---
 
 ## 9. `src/rade_qnet/orchestration/pipelines/tune.py`
 
-20862 bytes · SHA-256 `f81deb7b747fcf9c`
+20814 bytes · SHA-256 `60a311d8aa2dc1ea`
 
 ```python
 """
@@ -3157,9 +3139,7 @@ class TunePipeline(Pipeline[TuningResult]):
         _LOGGER.info("%s", result.describe())
         return result
 
-    def refit(
-        self, definition: PredictorDefinition, result: TuningResult
-    ) -> TuningResult:
+    def refit(self, definition: PredictorDefinition, result: TuningResult) -> TuningResult:
         """
         Optionally retrain the winner on train and validation combined.
 
@@ -3338,10 +3318,7 @@ class TunePipeline(Pipeline[TuningResult]):
         bool
             True if a shared dataset would be wrong.
         """
-        return any(
-            path == "source" or path.startswith("source.")
-            for path in self.spec.space.paths
-        )
+        return any(path == "source" or path.startswith("source.") for path in self.spec.space.paths)
 
 
 class _SharedDataTrainPipeline(TrainPipeline):

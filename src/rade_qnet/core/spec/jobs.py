@@ -50,6 +50,7 @@ up as the same overloaded flag.
 from __future__ import annotations
 
 import json
+import sys
 from collections import Counter
 from collections.abc import Mapping
 from pathlib import Path
@@ -76,6 +77,13 @@ __all__ = [
 #: Where jobs run. ``auto`` defers to
 #: :func:`rade_qnet.orchestration.compute.policy.choose_placement`.
 ExecutorName = Literal["auto", "local", "processes", "gpus"]
+
+#: Worker start methods that exist only on POSIX platforms.
+#:
+#: ``fork`` is here for completeness even though :class:`PlacementSpec` does
+#: not offer it -- the set describes the platforms, not this schema, so it
+#: stays correct if the schema ever widens.
+_POSIX_ONLY_START_METHODS = frozenset({"fork", "forkserver"})
 
 #: Top-level keys of a job entry that are the job's own metadata rather than
 #: part of its run-specification override. Everything else in a job entry is
@@ -199,6 +207,10 @@ class PlacementSpec(Spec):
         only one tested: ``fork`` is unsafe in a process that has already
         initialised a threaded numerical library or a GPU context, and the
         resulting hangs are intermittent and extremely hard to attribute.
+
+        ``forkserver`` does not exist on Windows, so it is rejected there at
+        validation time rather than raising a bare ``ValueError`` from deep
+        inside the executor once the data has already been built.
     memory_per_job_gb
         An estimate of a single job's peak resident memory, used by the
         policy to cap the worker count. ``None`` means do not cap, which is
@@ -217,6 +229,44 @@ class PlacementSpec(Spec):
     threads_per_worker: int | None = Field(default=None, ge=1)
     start_method: Literal["spawn", "forkserver"] = "spawn"
     memory_per_job_gb: float | None = Field(default=None, gt=0.0)
+
+    @model_validator(mode="after")
+    def _reject_a_start_method_this_platform_lacks(self) -> PlacementSpec:
+        """
+        Refuse a start method the running platform cannot provide.
+
+        ``forkserver`` is POSIX-only. Without this check, a specification
+        written on Linux and run on Windows raises ``ValueError: cannot find
+        context for 'forkserver'`` from inside
+        :class:`~rade_qnet.orchestration.compute.processes.ProcessExecutor` --
+        after the data build, with a message that names neither the setting
+        nor the file it came from.
+
+        Decided from ``sys.platform`` rather than by asking
+        ``multiprocessing.get_all_start_methods()``, which would be the
+        authoritative answer. Importing :mod:`multiprocessing` costs about
+        28ms and nothing else in ``core`` pulls it in, so asking it here would
+        load a process-management library into every program that merely
+        parses a specification -- against the property that ``core`` stays
+        cheap to import. Windows is the only platform without
+        ``forkserver``, so the cheap test and the authoritative one agree.
+
+        Returns
+        -------
+        PlacementSpec
+            Unchanged.
+
+        Raises
+        ------
+        ValueError
+            If this platform does not offer the requested start method. Names
+            the alternative, because the useful next action is picking it.
+        """
+        if sys.platform == "win32" and self.start_method in _POSIX_ONLY_START_METHODS:
+            raise ValueError(
+                f"start_method {self.start_method!r} is not available on Windows; use 'spawn'"
+            )
+        return self
 
 
 class JobSetSpec(Spec):

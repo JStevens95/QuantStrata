@@ -7,7 +7,7 @@
 | 1 | `__init__.py` | 22 | 647 | `8a5273793dc9fa45` |
 | 2 | `data.py` | 75 | 2785 | `f7ff36bf6ec13828` |
 | 3 | `model.py` | 72 | 2857 | `c7cf7a7b0632cefd` |
-| 4 | `register.py` | 86 | 2510 | `a16f7ac199cfcc32` |
+| 4 | `register.py` | 84 | 2506 | `902f0cd66d6c1738` |
 | 5 | `spec.py` | 55 | 2332 | `446633bfa7a1d14b` |
 
 ---
@@ -210,7 +210,7 @@ def build(settings: XgbTabularSpec) -> BoosterModel:
 
 ## 4. `src/rade_qnet/models/xgb_tabular/register.py`
 
-2510 bytes · SHA-256 `a16f7ac199cfcc32`
+2506 bytes · SHA-256 `902f0cd66d6c1738`
 
 ```python
 """
@@ -227,7 +227,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...core.capability.simple import TabularModel
+from ...core.capability.supervised import SupervisedModel
 from ...core.runtime.components import model
 from .data import REQUIRES, data_module
 from .model import build
@@ -243,7 +243,7 @@ __all__ = ["XgbTabularModel"]
 
 
 @model("xgb_tabular", engine="xgboost")
-class XgbTabularModel(TabularModel):
+class XgbTabularModel(SupervisedModel):
     """
     Framework declaration for the boosted-tree model.
 
@@ -278,9 +278,7 @@ class XgbTabularModel(TabularModel):
         """
         return data_module(spec)
 
-    def build_model(
-        self, spec: SupervisedRunSpec, signature: InputSignature
-    ) -> BoosterModel:
+    def build_model(self, spec: SupervisedRunSpec, signature: InputSignature) -> BoosterModel:
         """
         Construct the unfitted booster holder.
 

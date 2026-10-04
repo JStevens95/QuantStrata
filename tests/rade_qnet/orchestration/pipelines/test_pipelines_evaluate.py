@@ -37,7 +37,7 @@ from src.rade_qnet.testkit.fixtures import isolated_registries, make_run_context
 
 from .support import (
     MODEL_NAME,
-    SyntheticTabularModel,
+    SyntheticSupervisedModel,
     make_spec,
     register_components,
     write_linear_dataset,
@@ -110,11 +110,9 @@ def trained(tmp_path, spec):
         The :class:`TrainingResult` and the bundle directory.
     """
     pipeline = TrainPipeline(
-        context=make_run_context(
-            output_directory=tmp_path / "run", catalog=InMemoryCatalog()
-        ),
+        context=make_run_context(output_directory=tmp_path / "run", catalog=InMemoryCatalog()),
         spec=spec,
-        definition=SyntheticTabularModel(),
+        definition=SyntheticSupervisedModel(),
     )
     result = pipeline.execute()
     assert pipeline.saved is not None
@@ -479,14 +477,12 @@ class TestPredictionsAreUnchanged:
         trainer = TrainPipeline(
             context=make_run_context(output_directory=tmp_path / "again"),
             spec=spec,
-            definition=SyntheticTabularModel(),
+            definition=SyntheticSupervisedModel(),
         )
         trainer.execute()
         trained_data = trainer.build_data(spec)
         assert trainer.handle is not None
-        expected = trainer._engine().predict(
-            trainer.handle, scoring_source(trained_data, "test")
-        )
+        expected = trainer._engine().predict(trainer.handle, scoring_source(trained_data, "test"))
 
         pipeline = EvaluatePipeline(
             context=make_run_context(output_directory=tmp_path / "eval"),
@@ -495,8 +491,6 @@ class TestPredictionsAreUnchanged:
         loaded = pipeline.load()
         data = pipeline.rebuild_data(loaded)
         handle = pipeline.restore(loaded, data)
-        actual = pipeline._engine(loaded).predict(
-            handle, scoring_source(data, "test")
-        )
+        actual = pipeline._engine(loaded).predict(handle, scoring_source(data, "test"))
 
         assert np.allclose(np.ravel(actual), np.ravel(expected))

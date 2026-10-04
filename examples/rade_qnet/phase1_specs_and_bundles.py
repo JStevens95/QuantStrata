@@ -214,7 +214,7 @@ def write(bundle: ModelBundle, catalog: JsonlCatalog, root: Path, version: int) 
     )
     # Recorded only after the write succeeded. A catalog entry pointing at a
     # bundle that does not exist is worse than no entry at all.
-    catalog.record(saved.manifest)
+    catalog.record(saved.manifest, location=saved.directory)
 
     show("written to", str(saved.directory.relative_to(root)))
     show("files hashed", str(len(saved.manifest.files)))
