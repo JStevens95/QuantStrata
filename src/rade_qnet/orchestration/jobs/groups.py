@@ -51,9 +51,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ...core.runtime.errors import SpecError
-from ...core.runtime.hashing import digest_payload
-from ...core.runtime.logging import get_logger
+from ...core.lifecycle.errors import SpecError
+from ...core.provenance.hashing import digest_payload
+from ...core.provenance.logging import get_logger
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Sequence

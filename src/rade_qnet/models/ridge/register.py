@@ -19,8 +19,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...core.capability.supervised import SupervisedModel
-from ...core.runtime.components import model
+from ...core.authoring.supervised import SupervisedModel
+from ...core.lifecycle.components import model
 
 # Imported for its registration side effect: this is what puts the
 # scikit-learn engine in the registry. The decorator below declares

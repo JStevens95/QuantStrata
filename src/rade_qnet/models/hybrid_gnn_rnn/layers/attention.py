@@ -43,7 +43,7 @@ from __future__ import annotations
 import torch
 from torch import Tensor, nn
 
-from ....core.runtime.errors import ContractError
+from ....core.lifecycle.errors import ContractError
 from ..spec import HybridModelSpec
 from .gnn import LAYER_NORM_EPS, activation_function
 

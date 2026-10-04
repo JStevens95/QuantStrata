@@ -16,9 +16,9 @@ Modules
     ``ModelDefinition`` and its two specialisations, ``PredictorDefinition``
     (learns from a fixed dataset) and ``PolicyDefinition`` (learns by
     interacting with an environment), plus the ``@model`` registration
-    decorator re-exported from ``core.runtime.components`` so a model author
+    decorator re-exported from ``core.lifecycle.components`` so a model author
     needs one import.  [Phase 1, delivered]
-``protocols.py``
+``capabilities.py``
     The opt-in capabilities:
 
     ``StaticInputs``
@@ -55,6 +55,18 @@ pipeline exists that can train one -- an empty base with no reader is a
 promise the framework cannot keep, and the cost of adding it later is one
 module, whereas the cost of publishing it early is every model author who
 subclasses something that does not work.
+
+On the two names
+----------------
+This package was ``capability`` and its ``capabilities.py`` was
+``protocols.py``.  The folder had taken its name from one of its own files,
+and that file had been left with a name describing its *form* rather than its
+contents -- everything in ``core`` is protocols, so naming one module that
+distinguishes nothing.
+
+The package is now named for its audience.  ``authoring`` is the one
+sub-package of ``core`` a model author has to read, and saying so in the name
+is worth more than restating the taxonomy.
 """
 
 __all__: tuple[str, ...] = ()

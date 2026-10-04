@@ -30,7 +30,7 @@ from src.rade_qnet.core.contract.bundle import (
     WEIGHTS_FILENAME,
     Manifest,
 )
-from src.rade_qnet.core.runtime.errors import BundleError
+from src.rade_qnet.core.lifecycle.errors import BundleError
 from src.rade_qnet.storage.bundle import (
     TEMPORARY_PREFIX,
     bundle_directory,

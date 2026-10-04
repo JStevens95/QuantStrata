@@ -22,7 +22,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.runtime.errors import SpecError
+from src.rade_qnet.core.lifecycle.errors import SpecError
 from src.rade_qnet.core.spec.data import (
     ChronologicalSplitSpec,
     ExplicitSplitSpec,

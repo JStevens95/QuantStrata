@@ -24,7 +24,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from src.rade_qnet.core.runtime.errors import EngineError
+from src.rade_qnet.core.lifecycle.errors import EngineError
 from src.rade_qnet.engines.torch.training.losses import (
     asymmetric_loss,
     build_loss,

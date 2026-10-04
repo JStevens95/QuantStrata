@@ -23,8 +23,8 @@ import torch
 
 from src.rade_qnet.core.contract.data import TARGET_KEY
 from src.rade_qnet.core.contract.signature import PolicySignature, SpaceSpec
-from src.rade_qnet.core.runtime.components import get_learner
-from src.rade_qnet.core.runtime.errors import EngineError
+from src.rade_qnet.core.lifecycle.components import get_learner
+from src.rade_qnet.core.lifecycle.errors import EngineError
 from src.rade_qnet.engines.torch.learners.random import RandomLearner
 
 DISCRETE = PolicySignature(

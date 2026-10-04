@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from matplotlib.figure import Figure
 
-from ...core.runtime.errors import ContractError
+from ...core.lifecycle.errors import ContractError
 from .figures import DEFAULT_FIGSIZE
 from .style import PALETTE, figure_style
 

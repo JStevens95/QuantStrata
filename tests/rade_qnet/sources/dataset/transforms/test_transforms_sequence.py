@@ -19,7 +19,7 @@ import numpy as np
 import pytest
 
 from src.rade_qnet.core.contract.data import SplitIndices
-from src.rade_qnet.core.runtime.errors import ContractError
+from src.rade_qnet.core.lifecycle.errors import ContractError
 from src.rade_qnet.sources.dataset.transforms.sequence import (
     extract_windows,
     usable_labels,

@@ -37,7 +37,7 @@ import numpy as np
 from numpy.typing import NDArray
 from pydantic import Field
 
-from ..runtime.errors import ContractError, SpecError
+from ..lifecycle.errors import ContractError, SpecError
 from .base import ContractModel
 from .signature import InputSignature
 from .state import FittedState
@@ -294,7 +294,7 @@ class DataBundle[PayloadT]:
         inference needs it and nothing else can supply it. Asking a model to
         predict for an instrument absent from training is a request that
         must be refused unless the model declares
-        :class:`~rade_qnet.core.capability.protocols.Inductive`, and deciding
+        :class:`~rade_qnet.core.authoring.capabilities.Inductive`, and deciding
         whether an instrument was absent means knowing which were present.
         Without this field the only alternatives are to dig the list out of
         whichever fitted sub-state happens to hold it, or to not check --

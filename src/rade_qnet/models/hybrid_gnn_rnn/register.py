@@ -22,8 +22,8 @@ from __future__ import annotations
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
-from ...core.capability.supervised import SupervisedModel
-from ...core.runtime.components import model
+from ...core.authoring.supervised import SupervisedModel
+from ...core.lifecycle.components import model
 
 # Imported for its import side effect: this is what puts the Torch engine
 # and its supervised learner in the registry. The decorator below declares

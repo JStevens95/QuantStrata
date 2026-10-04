@@ -23,8 +23,8 @@ from pathlib import Path
 
 from matplotlib.figure import Figure
 
-from ...core.runtime.errors import SpecError
-from ...core.runtime.logging import get_logger
+from ...core.lifecycle.errors import SpecError
+from ...core.provenance.logging import get_logger
 
 __all__ = ["SUPPORTED_FORMATS", "save_figure"]
 

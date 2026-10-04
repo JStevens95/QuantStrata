@@ -808,7 +808,7 @@ involved and invisible in a `FitOutcome`.
 Four registries, one decorator each:
 
 ```python
-from rade_qnet.core.runtime.components import model, engine, learner, report
+from rade_qnet.core.lifecycle.components import model, engine, learner, report
 
 @model("my_model", engine="torch")   # MODELS
 @engine("my_engine")                 # ENGINES
@@ -851,8 +851,8 @@ registration is just an import.
 from pydantic import Field
 from sklearn.ensemble import RandomForestRegressor
 
-from rade_qnet.core.capability.supervised import SupervisedModel
-from rade_qnet.core.runtime.components import model
+from rade_qnet.core.authoring.supervised import SupervisedModel
+from rade_qnet.core.lifecycle.components import model
 from rade_qnet.core.spec.base import Spec
 from rade_qnet.engines import sklearn as _engine     # registers the engine
 from rade_qnet.sources.dataset.tabular import TabularDataModule

@@ -25,7 +25,7 @@ import csv
 from src.rade_qnet.analysis.reports.base import ReportContext
 from src.rade_qnet.analysis.reports.curves import HISTORY_FILENAME, CurvesReport
 from src.rade_qnet.core.contract.result import EpochRecord, FitOutcome, TrainingResult
-from src.rade_qnet.core.runtime.components import get_report
+from src.rade_qnet.core.lifecycle.components import get_report
 from src.rade_qnet.testkit.fixtures import make_model_bundle, make_training_result
 
 

@@ -39,7 +39,7 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Literal
 
-from ...core.runtime.logging import get_logger
+from ...core.provenance.logging import get_logger
 from .processes import CUDA_VISIBILITY_VARIABLE, ProcessExecutor
 
 if TYPE_CHECKING:

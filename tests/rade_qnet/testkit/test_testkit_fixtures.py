@@ -24,10 +24,10 @@ from src.rade_qnet.core.contract.result import TrainingResult
 from src.rade_qnet.core.contract.signature import InputSignature
 from src.rade_qnet.core.contract.source import BatchSource
 from src.rade_qnet.core.contract.state import FittedState
-from src.rade_qnet.core.runtime.components import MODELS, REPORTS
-from src.rade_qnet.core.runtime.context import RunContext
-from src.rade_qnet.core.runtime.hashing import digest_spec
-from src.rade_qnet.core.runtime.hooks import PipelineHook
+from src.rade_qnet.core.lifecycle.components import MODELS, REPORTS
+from src.rade_qnet.core.lifecycle.context import RunContext
+from src.rade_qnet.core.lifecycle.hooks import PipelineHook
+from src.rade_qnet.core.provenance.hashing import digest_spec
 from src.rade_qnet.core.spec.run import SupervisedRunSpec
 from src.rade_qnet.testkit.conformance import check_data_bundle, check_fitted_state, check_source
 from src.rade_qnet.testkit.fixtures import (

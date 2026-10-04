@@ -16,7 +16,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.runtime.errors import ContractError
+from src.rade_qnet.core.lifecycle.errors import ContractError
 from src.rade_qnet.models.hybrid_gnn_rnn.features.encoder import (
     EntityEncoderState,
     decay_lambdas,

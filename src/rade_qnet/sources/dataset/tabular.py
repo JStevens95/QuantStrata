@@ -25,8 +25,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ...core.contract.signature import InputSignature, TensorSpec
-from ...core.runtime.errors import SpecError
-from ...core.runtime.logging import get_logger
+from ...core.lifecycle.errors import SpecError
+from ...core.provenance.logging import get_logger
 from .module import ELEMENT_DTYPE, FEATURE_INPUT_NAME, DataModule
 from .tables import TableData, read_table
 from .transforms.composite import DatasetState

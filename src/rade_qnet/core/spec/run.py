@@ -22,7 +22,7 @@ from typing import Annotated, Any, Literal
 import yaml
 from pydantic import Field, TypeAdapter, ValidationError, model_validator
 
-from ..runtime.errors import SpecError
+from ..lifecycle.errors import SpecError
 from .base import Spec
 from .data import ModelSourceSpec, SourceSpec
 from .hardware import HardwareSpec

@@ -43,7 +43,7 @@ from typing import TYPE_CHECKING, ClassVar, Self
 import numpy as np
 
 from ....core.contract.state import FittedState
-from ....core.runtime.errors import BundleError, ContractError
+from ....core.lifecycle.errors import BundleError, ContractError
 from .encoding import EncodingState
 from .reduction import ReductionState
 from .scaling import ScalingState

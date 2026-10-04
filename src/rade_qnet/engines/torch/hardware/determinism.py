@@ -1,7 +1,7 @@
 """
 Seeds Torch's random number generators, and makes ``strict`` mean something.
 
-``core.runtime.seeding`` seeds Python and NumPy and then calls out to whatever
+``core.provenance.seeding`` seeds Python and NumPy and then calls out to whatever
 seeders have registered. It cannot seed Torch itself: ``core`` has an empty
 dependency set, so it cannot import a training library. The registration
 therefore belongs here, in the package that owns the library -- which is the
@@ -37,8 +37,8 @@ import os
 
 import torch
 
-from ....core.runtime.logging import get_logger
-from ....core.runtime.seeding import Determinism, register_seeder
+from ....core.provenance.logging import get_logger
+from ....core.provenance.seeding import Determinism, register_seeder
 
 __all__ = ["SEEDER_NAME", "seed_torch"]
 

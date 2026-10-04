@@ -54,8 +54,8 @@ from ...analysis.metrics.regression import baseline_metrics, regression_metrics
 from ...core.contract.data import TensorBatchData
 from ...core.contract.result import EvalResult
 from ...core.contract.source import BatchSource, OrderedSource
-from ...core.runtime.errors import ContractError
-from ...core.runtime.logging import get_logger
+from ...core.lifecycle.errors import ContractError
+from ...core.provenance.logging import get_logger
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping

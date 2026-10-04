@@ -27,7 +27,7 @@ import json
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.runtime.errors import ContractError
+from src.rade_qnet.core.lifecycle.errors import ContractError
 from src.rade_qnet.testkit.parity import (
     Comparison,
     ParityReport,

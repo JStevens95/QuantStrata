@@ -19,7 +19,7 @@ from src.rade_qnet.analysis.visuals.tuning import (
     parameter_importance_figure,
     trial_history_figure,
 )
-from src.rade_qnet.core.runtime.errors import ContractError
+from src.rade_qnet.core.lifecycle.errors import ContractError
 
 #: Enough trials to clear the minimum the influence chart insists on, and
 #: few enough to read in a failure message.

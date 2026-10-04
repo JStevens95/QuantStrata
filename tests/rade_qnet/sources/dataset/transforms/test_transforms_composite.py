@@ -24,7 +24,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.runtime.errors import ContractError
+from src.rade_qnet.core.lifecycle.errors import ContractError
 from src.rade_qnet.core.spec.data import ScalingSpec
 from src.rade_qnet.sources.dataset.transforms.composite import CompositeState, DatasetState
 from src.rade_qnet.sources.dataset.transforms.encoding import EncodingState

@@ -27,9 +27,9 @@ from __future__ import annotations
 
 import pytest
 
-from src.rade_qnet.core.runtime.components import engine as register_engine
-from src.rade_qnet.core.runtime.components import model as register_model
-from src.rade_qnet.core.runtime.errors import SpecError
+from src.rade_qnet.core.lifecycle.components import engine as register_engine
+from src.rade_qnet.core.lifecycle.components import model as register_model
+from src.rade_qnet.core.lifecycle.errors import SpecError
 from src.rade_qnet.core.spec.jobs import parse_job_set_spec
 from src.rade_qnet.orchestration.compute.local import LocalExecutor
 from src.rade_qnet.orchestration.jobs.manifest import MANIFEST_FILENAME, JobSetManifest

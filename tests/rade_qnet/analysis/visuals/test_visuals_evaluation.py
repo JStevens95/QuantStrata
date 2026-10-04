@@ -23,7 +23,7 @@ from src.rade_qnet.analysis.visuals.evaluation import (
     error_by_bucket_figure,
     residual_against_prediction_figure,
 )
-from src.rade_qnet.core.runtime.errors import ContractError
+from src.rade_qnet.core.lifecycle.errors import ContractError
 
 
 def bar_heights(figure: Figure) -> list[float]:

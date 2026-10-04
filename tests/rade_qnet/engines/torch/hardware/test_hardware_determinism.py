@@ -24,7 +24,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from src.rade_qnet.core.runtime.seeding import (
+from src.rade_qnet.core.provenance.seeding import (
     register_seeder,
     registered_seeders,
     seed_everything,

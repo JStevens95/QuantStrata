@@ -41,7 +41,7 @@ The four customisation tiers, concretely
 3. **Override one stage.** Subclass, replace ``build_data`` or ``evaluate``,
    inherit the rest -- with their timing, logging and error attribution.
 4. **Override** ``run``. Change the sequence. Still gets the run-level
-   bookkeeping from :meth:`~rade_qnet.core.runtime.pipeline.Pipeline.execute`.
+   bookkeeping from :meth:`~rade_qnet.core.lifecycle.pipeline.Pipeline.execute`.
 """
 
 from __future__ import annotations
@@ -50,18 +50,18 @@ from typing import TYPE_CHECKING
 
 from ...analysis.metrics.quality import quality_metrics
 from ...analysis.reports.base import ReportContext
-from ...core.capability.definition import PredictorDefinition
+from ...core.authoring.definition import PredictorDefinition
 from ...core.contract.bundle import ModelBundle
 from ...core.contract.data import (
     DataBundle,
 )
 from ...core.contract.result import EvalResult, FitOutcome, TrainingResult
 from ...core.contract.signature import InputSignature
-from ...core.runtime.components import get_engine, get_report
-from ...core.runtime.errors import ComponentError
-from ...core.runtime.logging import get_logger
-from ...core.runtime.pipeline import Pipeline
-from ...core.runtime.seeding import seed_everything
+from ...core.lifecycle.components import get_engine, get_report
+from ...core.lifecycle.errors import ComponentError
+from ...core.lifecycle.pipeline import Pipeline
+from ...core.provenance.logging import get_logger
+from ...core.provenance.seeding import seed_everything
 from ...engines.base import Engine, ModelHandle
 from ...storage.bundle import write_bundle
 from ..stages.scoring import (
@@ -78,7 +78,7 @@ if TYPE_CHECKING:
     from ...analysis.reports.base import Report, ReportOutcome
     from ...core.contract.bundle import SavedBundle
     from ...core.contract.data import DataLineage
-    from ...core.runtime.context import RunContext
+    from ...core.lifecycle.context import RunContext
     from ...core.spec.run import SupervisedRunSpec
 
 __all__ = ["TrainPipeline"]
@@ -169,9 +169,9 @@ class TrainPipeline(Pipeline[TrainingResult]):
         Execute the stage sequence.
 
         Each stage goes through
-        :meth:`~rade_qnet.core.runtime.pipeline.Pipeline.step`, so each is timed,
+        :meth:`~rade_qnet.core.lifecycle.pipeline.Pipeline.step`, so each is timed,
         logged, reported to hooks, and -- on failure -- wrapped in a
-        :class:`~rade_qnet.core.runtime.errors.StageError` naming the stage.
+        :class:`~rade_qnet.core.lifecycle.errors.StageError` naming the stage.
 
         Returns
         -------

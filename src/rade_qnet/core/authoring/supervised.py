@@ -61,8 +61,8 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from ..contract.data import DataBundle, TensorBatchData
 from ..contract.source import BatchSource
-from ..runtime.errors import ComponentError
-from ..runtime.logging import get_logger
+from ..lifecycle.errors import ComponentError
+from ..provenance.logging import get_logger
 from .definition import PredictorDefinition
 
 if TYPE_CHECKING:

@@ -68,7 +68,7 @@ this phase is in that position.
 | Module | Delivers | Status |
 | --- | --- | --- |
 | `sources.environment.protocol` | `Environment`, `StepOutcome` | Delivered |
-| `core.capability.policy` | `PolicyModel`, the third paradigm base | Delivered |
+| `core.authoring.policy` | `PolicyModel`, the third paradigm base | Delivered |
 | `sources.batching.rollout` | `RolloutSource` — unbounded on-policy experience | Delivered |
 | `engines.torch.training.loops.fit_steps` | The step-driven driver and `PolicyLearner` | Delivered |
 | `engines.torch.learners.random` | `RandomLearner` — the no-update control | Delivered |

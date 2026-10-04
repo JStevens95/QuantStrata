@@ -26,7 +26,7 @@ from src.rade_qnet.core.contract.result import (
     Predictions,
     TrainingResult,
 )
-from src.rade_qnet.core.runtime.errors import ContractError
+from src.rade_qnet.core.lifecycle.errors import ContractError
 from src.rade_qnet.testkit.fixtures import make_training_result
 
 

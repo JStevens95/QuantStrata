@@ -34,11 +34,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from ...core.capability.definition import PredictorDefinition
-from ...core.capability.supervised import RebuildableDataModule
-from ...core.runtime.components import MODELS, ComponentError, get_model
-from ...core.runtime.errors import BundleError
-from ...core.runtime.logging import get_logger
+from ...core.authoring.definition import PredictorDefinition
+from ...core.authoring.supervised import RebuildableDataModule
+from ...core.lifecycle.components import MODELS, ComponentError, get_model
+from ...core.lifecycle.errors import BundleError
+from ...core.provenance.logging import get_logger
 from ...core.spec.run import SupervisedRunSpec
 from ...storage.bundle import (
     load_fitted_state,

@@ -26,7 +26,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
-from ..runtime.errors import SpecError
+from ..lifecycle.errors import SpecError
 from .base import Spec
 
 __all__ = [

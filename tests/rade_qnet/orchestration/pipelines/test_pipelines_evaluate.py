@@ -26,8 +26,8 @@ import numpy as np
 import pytest
 
 from src.rade_qnet.core.contract.result import EvaluationResult
-from src.rade_qnet.core.runtime.components import MODELS
-from src.rade_qnet.core.runtime.errors import StageError
+from src.rade_qnet.core.lifecycle.components import MODELS
+from src.rade_qnet.core.lifecycle.errors import StageError
 from src.rade_qnet.core.spec.data import ScalingSpec, TabularSourceSpec, TransformsSpec
 from src.rade_qnet.orchestration.pipelines.evaluate import EvaluatePipeline
 from src.rade_qnet.orchestration.pipelines.train import TrainPipeline

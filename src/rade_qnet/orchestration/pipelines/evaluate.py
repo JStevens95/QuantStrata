@@ -37,10 +37,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ...core.contract.result import EvalResult, EvaluationResult
-from ...core.runtime.components import get_engine
-from ...core.runtime.errors import ContractError
-from ...core.runtime.logging import get_logger
-from ...core.runtime.pipeline import Pipeline
+from ...core.lifecycle.components import get_engine
+from ...core.lifecycle.errors import ContractError
+from ...core.lifecycle.pipeline import Pipeline
+from ...core.provenance.logging import get_logger
 from ...engines.base import Engine
 from ..stages.reload import load_bundle
 from ..stages.scoring import EVALUATED_SPLITS, score_splits, static_inputs
@@ -49,7 +49,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from ...core.contract.data import DataBundle
-    from ...core.runtime.context import RunContext
+    from ...core.lifecycle.context import RunContext
     from ...core.spec.data import SourceSpec
     from ...engines.base import ModelHandle
     from ..stages.reload import LoadedBundle

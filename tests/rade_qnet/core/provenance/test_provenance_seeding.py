@@ -23,8 +23,8 @@ import random
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.runtime.errors import SpecError
-from src.rade_qnet.core.runtime.seeding import (
+from src.rade_qnet.core.lifecycle.errors import SpecError
+from src.rade_qnet.core.provenance.seeding import (
     derive_seed,
     register_seeder,
     registered_seeders,

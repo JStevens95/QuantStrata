@@ -23,7 +23,7 @@ import numpy as np
 from numpy.typing import NDArray
 from pydantic import Field, model_validator
 
-from ..runtime.errors import ContractError, SpecError
+from ..lifecycle.errors import ContractError, SpecError
 from .base import ContractModel
 
 __all__ = [

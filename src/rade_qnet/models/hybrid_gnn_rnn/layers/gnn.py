@@ -61,7 +61,7 @@ from collections.abc import Callable
 import torch
 from torch import Tensor, nn
 
-from ....core.runtime.errors import ContractError
+from ....core.lifecycle.errors import ContractError
 from ..spec import ActivationName, HybridModelSpec
 
 __all__ = ["GnnBlock", "GraphSage", "MixedGraphSage", "activation_function"]

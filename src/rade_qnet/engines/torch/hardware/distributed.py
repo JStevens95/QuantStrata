@@ -41,8 +41,8 @@ from typing import TYPE_CHECKING
 import torch
 import torch.distributed as distributed_backend
 
-from ....core.runtime.errors import EngineError
-from ....core.runtime.logging import get_logger
+from ....core.lifecycle.errors import EngineError
+from ....core.provenance.logging import get_logger
 from ..materialise import has_lazy_parameters
 
 if TYPE_CHECKING:

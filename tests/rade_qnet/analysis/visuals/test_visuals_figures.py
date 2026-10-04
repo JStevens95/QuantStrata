@@ -23,7 +23,7 @@ from src.rade_qnet.analysis.visuals.figures import (
     residual_histogram_figure,
     training_curve_figure,
 )
-from src.rade_qnet.core.runtime.errors import ContractError
+from src.rade_qnet.core.lifecycle.errors import ContractError
 
 #: Each factory, pre-bound to a valid minimal call, so the shared-contract
 #: tests below can be written once rather than four times.

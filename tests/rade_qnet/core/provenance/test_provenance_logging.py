@@ -16,7 +16,7 @@ import logging
 
 import pytest
 
-from src.rade_qnet.core.runtime.logging import (
+from src.rade_qnet.core.provenance.logging import (
     ROOT_LOGGER_NAME,
     apply_context_payload,
     bound_context,
@@ -44,7 +44,7 @@ class TestLoggerNaming:
 
     def test_loggers_live_under_the_framework_root(self):
         """One root means an application can configure the framework alone."""
-        assert get_logger("rade_qnet.core.runtime.pipeline").name.startswith(ROOT_LOGGER_NAME)
+        assert get_logger("rade_qnet.core.lifecycle.pipeline").name.startswith(ROOT_LOGGER_NAME)
 
     def test_the_src_prefix_is_stripped(self):
         """

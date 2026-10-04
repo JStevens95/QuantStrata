@@ -44,7 +44,7 @@ from typing import Literal, Protocol
 
 import numpy as np
 
-from .errors import SpecError
+from ..lifecycle.errors import SpecError
 from .logging import get_logger
 
 __all__ = [

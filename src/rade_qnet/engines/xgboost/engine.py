@@ -68,9 +68,9 @@ import numpy as np
 import xgboost as xgb
 
 from ...core.contract.result import EpochRecord, FitOutcome
-from ...core.runtime.components import engine as register_engine
-from ...core.runtime.errors import EngineError
-from ...core.runtime.logging import get_logger
+from ...core.lifecycle.components import engine as register_engine
+from ...core.lifecycle.errors import EngineError
+from ...core.provenance.logging import get_logger
 from ...core.spec.training import XGBoostTrainingSpec
 from ..base import EngineCapabilities, ModelHandle
 from ..loaders import drain, reject_static

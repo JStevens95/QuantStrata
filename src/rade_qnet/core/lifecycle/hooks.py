@@ -20,7 +20,7 @@ destroy four hours of training. Hook exceptions are caught, logged at warning
 level with the hook and stage named, and execution continues. The one
 exception is :meth:`PipelineHook.on_run_start`, where a hook that cannot
 initialise should say so before any compute is spent -- see
-:class:`~rade_qnet.core.runtime.pipeline.Pipeline` for where that line is drawn.
+:class:`~rade_qnet.core.lifecycle.pipeline.Pipeline` for where that line is drawn.
 """
 
 from __future__ import annotations
@@ -117,7 +117,7 @@ class PipelineHook:
             Stage name.
         error
             The exception, before it is wrapped in a
-            :class:`~rade_qnet.core.runtime.errors.StageError`.
+            :class:`~rade_qnet.core.lifecycle.errors.StageError`.
         """
 
     def on_epoch_end(self, epoch: int, metrics: Mapping[str, float]) -> None:

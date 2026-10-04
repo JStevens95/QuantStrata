@@ -43,7 +43,7 @@ import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from ...core.runtime.logging import get_logger
+from ...core.provenance.logging import get_logger
 from .gpus import GpuExecutor, visible_device_ids
 from .local import LocalExecutor
 from .processes import ProcessExecutor

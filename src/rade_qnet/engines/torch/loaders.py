@@ -48,8 +48,8 @@ import numpy as np
 import torch
 
 from ...core.contract.data import TARGET_KEY
-from ...core.runtime.errors import ContractError
-from ...core.runtime.logging import get_logger
+from ...core.lifecycle.errors import ContractError
+from ...core.provenance.logging import get_logger
 from .materialise import torch_dtype
 
 if TYPE_CHECKING:

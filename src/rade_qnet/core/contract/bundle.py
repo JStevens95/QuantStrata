@@ -23,7 +23,7 @@ from pathlib import Path
 
 from pydantic import Field, model_validator
 
-from ..runtime.errors import BundleError, SpecError
+from ..lifecycle.errors import BundleError, SpecError
 from ..spec.run import ReinforcementRunSpec, SupervisedRunSpec
 from .base import ContractModel
 from .data import DataLineage

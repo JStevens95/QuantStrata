@@ -40,8 +40,8 @@ import pytest
 if find_spec("xgboost") is None:  # pragma: no cover - depends on the host
     pytest.skip("xgboost is not installed", allow_module_level=True)
 
-from src.rade_qnet.core.runtime.components import get_engine
-from src.rade_qnet.core.runtime.errors import EngineError
+from src.rade_qnet.core.lifecycle.components import get_engine
+from src.rade_qnet.core.lifecycle.errors import EngineError
 from src.rade_qnet.core.spec.hardware import HardwareSpec
 from src.rade_qnet.core.spec.training import XGBoostTrainingSpec
 

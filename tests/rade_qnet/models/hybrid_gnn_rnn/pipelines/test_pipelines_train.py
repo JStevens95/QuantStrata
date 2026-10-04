@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from src.rade_qnet.core.runtime.components import get_report
+from src.rade_qnet.core.lifecycle.components import get_report
 from src.rade_qnet.models.hybrid_gnn_rnn.pipelines.train import (
     HYBRID_REPORTS,
     HybridTrainPipeline,

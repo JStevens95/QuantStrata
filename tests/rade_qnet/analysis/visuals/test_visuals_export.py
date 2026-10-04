@@ -19,7 +19,7 @@ import pytest
 from matplotlib.figure import Figure
 
 from src.rade_qnet.analysis.visuals.export import SUPPORTED_FORMATS, save_figure
-from src.rade_qnet.core.runtime.errors import SpecError
+from src.rade_qnet.core.lifecycle.errors import SpecError
 
 
 @pytest.fixture

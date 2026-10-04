@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...core.runtime.logging import get_logger
+from ...core.provenance.logging import get_logger
 from .base import WorkResult, execute_item
 
 if TYPE_CHECKING:

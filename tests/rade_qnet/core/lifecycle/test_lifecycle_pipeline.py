@@ -15,11 +15,11 @@ import logging
 
 import pytest
 
-from src.rade_qnet.core.runtime.context import RunContext
-from src.rade_qnet.core.runtime.errors import StageError
-from src.rade_qnet.core.runtime.hooks import PipelineHook
-from src.rade_qnet.core.runtime.logging import configure_logging, current_context
-from src.rade_qnet.core.runtime.pipeline import Pipeline
+from src.rade_qnet.core.lifecycle.context import RunContext
+from src.rade_qnet.core.lifecycle.errors import StageError
+from src.rade_qnet.core.lifecycle.hooks import PipelineHook
+from src.rade_qnet.core.lifecycle.pipeline import Pipeline
+from src.rade_qnet.core.provenance.logging import configure_logging, current_context
 from src.rade_qnet.testkit.fixtures import RecordingHook
 
 

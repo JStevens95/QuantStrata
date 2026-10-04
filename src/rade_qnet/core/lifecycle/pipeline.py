@@ -34,8 +34,8 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING
 
+from ..provenance.logging import get_logger
 from .errors import StageError
-from .logging import get_logger
 
 if TYPE_CHECKING:
     from pathlib import Path

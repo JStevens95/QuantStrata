@@ -61,8 +61,8 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from ..core.runtime.errors import ContractError
-from ..core.runtime.logging import get_logger
+from ..core.lifecycle.errors import ContractError
+from ..core.provenance.logging import get_logger
 
 __all__ = [
     "ADJACENCY_VALUE_ATOL",

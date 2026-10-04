@@ -51,7 +51,7 @@ from typing import Any, Self
 import numpy as np
 from numpy.typing import NDArray
 
-from ....core.runtime.errors import ContractError
+from ....core.lifecycle.errors import ContractError
 from ..spec import AttributeEncoderSpec
 
 __all__ = ["EncodedAttributes", "EntityEncoderState", "decay_lambdas"]

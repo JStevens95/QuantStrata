@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 from torch import Tensor, nn
 
-from ...core.runtime.errors import ContractError
+from ...core.lifecycle.errors import ContractError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

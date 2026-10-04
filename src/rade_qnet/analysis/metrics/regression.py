@@ -27,7 +27,7 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
-from ...core.runtime.errors import ContractError
+from ...core.lifecycle.errors import ContractError
 
 __all__ = [
     "baseline_metrics",

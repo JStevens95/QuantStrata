@@ -54,10 +54,10 @@ from sklearn.ensemble import RandomForestRegressor
 
 # The five public names a third-party model needs, and nothing else.
 from src.rade_qnet.api import evaluate, infer, train
-from src.rade_qnet.core.capability.supervised import SupervisedModel
-from src.rade_qnet.core.runtime.components import engine as register_engine
-from src.rade_qnet.core.runtime.components import get_engine, model
-from src.rade_qnet.core.runtime.errors import SpecError
+from src.rade_qnet.core.authoring.supervised import SupervisedModel
+from src.rade_qnet.core.lifecycle.components import engine as register_engine
+from src.rade_qnet.core.lifecycle.components import get_engine, model
+from src.rade_qnet.core.lifecycle.errors import SpecError
 from src.rade_qnet.core.spec.base import Spec
 from src.rade_qnet.core.spec.run import parse_run_spec
 from src.rade_qnet.engines import sklearn as _sklearn_engine  # noqa: F401

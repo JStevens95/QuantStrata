@@ -25,7 +25,7 @@ import numpy as np
 from matplotlib.figure import Figure
 from numpy.typing import NDArray
 
-from ...core.runtime.errors import ContractError
+from ...core.lifecycle.errors import ContractError
 from .style import figure_style
 
 __all__ = [

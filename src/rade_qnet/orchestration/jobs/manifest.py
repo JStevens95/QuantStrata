@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from ... import __version__
-from ...core.runtime.logging import get_logger
+from ...core.provenance.logging import get_logger
 
 if TYPE_CHECKING:
     from ..compute.base import WorkResult

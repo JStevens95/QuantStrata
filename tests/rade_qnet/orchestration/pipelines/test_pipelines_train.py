@@ -37,12 +37,12 @@ import pytest
 # imported before the context opened.
 from src.rade_qnet.analysis.reports import curves, quality, summary  # noqa: F401
 from src.rade_qnet.analysis.reports.base import Report, report
-from src.rade_qnet.core.capability.supervised import SupervisedModel
+from src.rade_qnet.core.authoring.supervised import SupervisedModel
 from src.rade_qnet.core.contract.bundle import ModelBundle
 from src.rade_qnet.core.contract.data import DataBundle, TensorBatchData
-from src.rade_qnet.core.runtime.components import ENGINES
-from src.rade_qnet.core.runtime.components import engine as register_engine
-from src.rade_qnet.core.runtime.errors import StageError
+from src.rade_qnet.core.lifecycle.components import ENGINES
+from src.rade_qnet.core.lifecycle.components import engine as register_engine
+from src.rade_qnet.core.lifecycle.errors import StageError
 from src.rade_qnet.core.spec.data import (
     ScalingSpec,
     TabularSourceSpec,

@@ -1,7 +1,7 @@
 """
 What an environment is: reset it, step it, and ask what it accepts.
 
-:class:`~rade_qnet.core.capability.definition.PolicyDefinition.build_environment`
+:class:`~rade_qnet.core.authoring.definition.PolicyDefinition.build_environment`
 has promised since Phase 1 that it returns "an environment satisfying one of
 the environment protocols in ``rade_qnet.sources.environment``". Until this
 module there were no such protocols -- the promise named something that did

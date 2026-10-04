@@ -25,9 +25,9 @@ import csv
 
 import numpy as np
 
-from src.rade_qnet.core.capability.supervised import SupervisedModel
-from src.rade_qnet.core.runtime.components import engine as register_engine
-from src.rade_qnet.core.runtime.components import model as register_model
+from src.rade_qnet.core.authoring.supervised import SupervisedModel
+from src.rade_qnet.core.lifecycle.components import engine as register_engine
+from src.rade_qnet.core.lifecycle.components import model as register_model
 from src.rade_qnet.core.spec.data import TabularSourceSpec
 from src.rade_qnet.core.spec.run import SupervisedRunSpec
 from src.rade_qnet.sources.dataset.tabular import TabularDataModule

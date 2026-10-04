@@ -7,7 +7,7 @@ means every later improvement to training has to be made twice, and the two
 copies diverge at the first deadline.
 
 What is here is therefore deliberately *not* a second lifecycle. It is a
-second :class:`~rade_qnet.core.runtime.pipeline.Pipeline` with the same stage
+second :class:`~rade_qnet.core.lifecycle.pipeline.Pipeline` with the same stage
 names in the same order, producing the same
 :class:`~rade_qnet.core.contract.result.TrainingResult` into the same bundle
 layout, resolved through the same
@@ -58,23 +58,23 @@ from ...core.contract.bundle import ModelBundle
 from ...core.contract.data import DataLineage
 from ...core.contract.result import TrainingResult
 from ...core.contract.state import IdentityFittedState
-from ...core.runtime.components import get_engine, get_report
-from ...core.runtime.errors import ComponentError
-from ...core.runtime.hashing import digest_spec
-from ...core.runtime.logging import get_logger
-from ...core.runtime.pipeline import Pipeline
-from ...core.runtime.seeding import seed_everything
+from ...core.lifecycle.components import get_engine, get_report
+from ...core.lifecycle.errors import ComponentError
+from ...core.lifecycle.pipeline import Pipeline
+from ...core.provenance.hashing import digest_spec
+from ...core.provenance.logging import get_logger
+from ...core.provenance.seeding import seed_everything
 from ...engines.base import Engine, InteractiveEngine, ModelHandle
 from ...sources.batching.rollout import RolloutSource
 from ...storage.bundle import write_bundle
 
 if TYPE_CHECKING:
     from ...analysis.reports.base import Report, ReportOutcome
-    from ...core.capability.definition import PolicyDefinition
+    from ...core.authoring.definition import PolicyDefinition
     from ...core.contract.bundle import SavedBundle
     from ...core.contract.result import FitOutcome
     from ...core.contract.signature import PolicySignature
-    from ...core.runtime.context import RunContext
+    from ...core.lifecycle.context import RunContext
     from ...core.spec.run import ReinforcementRunSpec
 
 __all__ = ["ReinforcePipeline"]

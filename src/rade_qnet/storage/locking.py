@@ -51,8 +51,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import IO, TYPE_CHECKING
 
-from ..core.runtime.errors import BundleError
-from ..core.runtime.logging import get_logger
+from ..core.lifecycle.errors import BundleError
+from ..core.provenance.logging import get_logger
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator

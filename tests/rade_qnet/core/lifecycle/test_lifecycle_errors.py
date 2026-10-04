@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.rade_qnet.core.runtime.errors import (
+from src.rade_qnet.core.lifecycle.errors import (
     BundleError,
     CapabilityError,
     ComponentError,

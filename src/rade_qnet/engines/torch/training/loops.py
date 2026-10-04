@@ -11,7 +11,7 @@ Why the learner protocols are declared here
 -------------------------------------------
 The loop is the consumer, so the loop declares the interface it needs. The
 same dependency inversion puts ``Catalog`` and ``Tracker`` in
-``core.runtime.context`` rather than in ``storage``: the party that depends on
+``core.lifecycle.context`` rather than in ``storage``: the party that depends on
 a capability owns its definition, and the party that provides it satisfies a
 contract it need not import.
 
@@ -67,8 +67,8 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 import torch
 
 from ....core.contract.result import EpochRecord, FitOutcome
-from ....core.runtime.errors import EngineError
-from ....core.runtime.logging import get_logger
+from ....core.lifecycle.errors import EngineError
+from ....core.provenance.logging import get_logger
 from ..loaders import TARGET_KEY, StaticInputs, to_device_batches, to_tensor
 from .callbacks import EpochContext
 
@@ -585,7 +585,7 @@ class ExperienceSummary(Protocol):
 
     Checked with ``isinstance`` and skipped when absent, which is the
     framework's standard capability pattern -- see
-    ``core.capability.protocols``. Optional rather than part of
+    ``core.authoring.capabilities``. Optional rather than part of
     :class:`~rade_qnet.core.contract.source.BatchSource` because a replay
     source serving stored transitions has no episodes of its own to report,
     and widening the source protocol would force it to invent an answer.

@@ -45,10 +45,10 @@ from ..core.contract.result import EpochRecord, EvalResult, FitOutcome, Training
 from ..core.contract.signature import InputSignature, SpaceSpec, TensorSpec
 from ..core.contract.source import BatchSource
 from ..core.contract.state import FittedState
-from ..core.runtime.components import ENGINES, LEARNERS, MODELS, REPORTS
-from ..core.runtime.context import RunContext
-from ..core.runtime.errors import EngineError
-from ..core.runtime.hooks import PipelineHook
+from ..core.lifecycle.components import ENGINES, LEARNERS, MODELS, REPORTS
+from ..core.lifecycle.context import RunContext
+from ..core.lifecycle.errors import EngineError
+from ..core.lifecycle.hooks import PipelineHook
 from ..core.spec.run import RunSpec, parse_run_spec
 from ..engines.base import EngineCapabilities, ModelHandle
 from ..sources.environment import StepOutcome
@@ -126,7 +126,7 @@ def isolated_registries(*, empty: bool = False) -> Iterator[None]:
 
     Examples
     --------
-    >>> from rade_qnet.core.runtime.components import MODELS
+    >>> from rade_qnet.core.lifecycle.components import MODELS
     >>> with isolated_registries():
     ...     MODELS.register("temporary", object)
     >>> "temporary" in MODELS

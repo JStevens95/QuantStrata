@@ -25,7 +25,7 @@ send across a process boundary.
 
 How validation failures surface
 -------------------------------
-Validators in this package raise :class:`~rade_qnet.core.runtime.errors.SpecError`.
+Validators in this package raise :class:`~rade_qnet.core.lifecycle.errors.SpecError`.
 Pydantic *collects* that rather than letting it propagate, because
 ``SpecError`` subclasses ``ValueError`` -- which is the entire reason for that
 dual inheritance. The practical consequence is a deliberate two-level policy:

@@ -52,8 +52,8 @@ import numpy as np
 
 from ...core.contract.data import TARGET_KEY
 from ...core.contract.signature import InputSignature, PolicySignature, TensorSpec
-from ...core.runtime.errors import ContractError
-from ...core.runtime.logging import get_logger
+from ...core.lifecycle.errors import ContractError
+from ...core.provenance.logging import get_logger
 from ..environment.protocol import Environment
 
 if TYPE_CHECKING:

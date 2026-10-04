@@ -31,7 +31,7 @@ import pytest
 
 from src.rade_qnet.core.contract.data import DataLineage, SplitIndices
 from src.rade_qnet.core.contract.signature import InputSignature, TensorSpec
-from src.rade_qnet.core.runtime.errors import BundleError, SpecError
+from src.rade_qnet.core.lifecycle.errors import BundleError, SpecError
 from src.rade_qnet.sources.dataset.cache import PreparedDataset
 from src.rade_qnet.sources.dataset.tables import fingerprint_source, read_table
 from src.rade_qnet.testkit.fixtures import StandardisingState

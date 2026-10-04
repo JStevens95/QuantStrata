@@ -265,7 +265,7 @@ class HybridDataSpec(Spec):    # validates source.params
 
 | Must | Must not |
 |---|---|
-| Export a class (an `nn.Module`) **or** a `build(...)` factory | Import `core.runtime.components` |
+| Export a class (an `nn.Module`) **or** a `build(...)` factory | Import `core.lifecycle.components` |
 | Be readable as mathematics | Import `core.spec.run` or `core.spec.training` |
 | Take plain arguments: settings, widths, a signature | Touch the registry or any engine |
 
@@ -803,7 +803,7 @@ procedure with no judgement calls and a growth path with no refactors.
 ### Record: `TabularModel` renamed to `SupervisedModel`
 
 *Decided after Phase 6.* The base was `TabularModel` in
-`core/capability/simple.py`. Both names described the wrong thing. Every
+`core/authoring/simple.py`. Both names described the wrong thing. Every
 model using it is supervised, but not every one is tabular: the flagship
 is a graph-plus-recurrent model and always used this base. "Simple" was
 worse, since it implied the base had a ceiling it does not have.
@@ -813,8 +813,8 @@ what decides which pipeline trains the model:
 
 | Paradigm | Base | Status |
 | --- | --- | --- |
-| Supervised — inputs with known targets | `SupervisedModel` (`core.capability.supervised`) | Delivered |
-| Reinforcement — learns by acting in an environment | policy base (`core.capability.policy`) | Phase 7 |
+| Supervised — inputs with known targets | `SupervisedModel` (`core.authoring.supervised`) | Delivered |
+| Reinforcement — learns by acting in an environment | policy base (`core.authoring.policy`) | Phase 7 |
 | Unsupervised — no targets | — | Not provided until a pipeline can train one |
 
 There is no unsupervised base yet on purpose. A base class with no pipeline
@@ -830,15 +830,15 @@ would be making a promise it cannot keep.
 | `Spec` | `rade_qnet.core.spec.base` |
 | `SupervisedRunSpec`, `ComponentRef` | `rade_qnet.core.spec.run` |
 | `TorchTrainingSpec`, `XGBoostTrainingSpec`, `SklearnTrainingSpec` | `rade_qnet.core.spec.training` |
-| `SupervisedModel` | `rade_qnet.core.capability.supervised` |
-| `PredictorDefinition`, `PolicyDefinition` | `rade_qnet.core.capability.definition` |
+| `SupervisedModel` | `rade_qnet.core.authoring.supervised` |
+| `PredictorDefinition`, `PolicyDefinition` | `rade_qnet.core.authoring.definition` |
 | `FittedState` | `rade_qnet.core.contract.state` |
 | `InputSignature`, `TensorSpec` | `rade_qnet.core.contract.signature` |
 | `InputRequirement`, `RequiredInput` | `rade_qnet.core.contract.requirement` |
 | `BatchSource` | `rade_qnet.core.contract.source` |
 | `DataBundle`, `DataLineage` | `rade_qnet.core.contract.data` |
 | `ModelBundle`, `SavedBundle` | `rade_qnet.core.contract.bundle` |
-| `@model`, `MODELS`, `get_model` | `rade_qnet.core.runtime.components` |
+| `@model`, `MODELS`, `get_model` | `rade_qnet.core.lifecycle.components` |
 | `DataModule`, `TabularDataModule` | `rade_qnet.sources.dataset.module` |
 
 | Example | Tier | Shows |

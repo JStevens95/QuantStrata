@@ -26,7 +26,7 @@ import sys
 import pytest
 import yaml
 
-from src.rade_qnet.core.runtime.errors import SpecError
+from src.rade_qnet.core.lifecycle.errors import SpecError
 from src.rade_qnet.core.spec.jobs import (
     JobSetSpec,
     JobSpec,

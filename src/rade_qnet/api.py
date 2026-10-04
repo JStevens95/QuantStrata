@@ -29,12 +29,12 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .core.capability.definition import PolicyDefinition, PredictorDefinition
-from .core.runtime.components import get_model
-from .core.runtime.context import RunContext
-from .core.runtime.errors import ComponentError, SpecError
-from .core.runtime.hashing import abbreviate_digest, digest_spec
-from .core.runtime.logging import get_logger
+from .core.authoring.definition import PolicyDefinition, PredictorDefinition
+from .core.lifecycle.components import get_model
+from .core.lifecycle.context import RunContext
+from .core.lifecycle.errors import ComponentError, SpecError
+from .core.provenance.hashing import abbreviate_digest, digest_spec
+from .core.provenance.logging import get_logger
 from .core.spec.data import SourceSpec
 from .core.spec.jobs import JobSetSpec, load_job_set_spec, parse_job_set_spec
 from .core.spec.run import (
@@ -239,7 +239,7 @@ def infer(
     entities
         Identifiers to predict for, or ``None`` for whatever the source
         holds. Naming entities the model never saw requires it to declare
-        :class:`~rade_qnet.core.capability.protocols.Inductive`; otherwise
+        :class:`~rade_qnet.core.authoring.capabilities.Inductive`; otherwise
         the request is refused rather than answered with a default
         embedding.
     output_root

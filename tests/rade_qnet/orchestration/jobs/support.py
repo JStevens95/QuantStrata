@@ -25,7 +25,7 @@ from pathlib import Path
 
 import numpy as np
 
-from src.rade_qnet.core.capability.supervised import SupervisedModel
+from src.rade_qnet.core.authoring.supervised import SupervisedModel
 from src.rade_qnet.sources.dataset.tables import read_table
 from src.rade_qnet.sources.dataset.tabular import TabularDataModule
 from src.rade_qnet.testkit.fixtures import LinearModel

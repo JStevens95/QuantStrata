@@ -43,7 +43,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from src.rade_qnet.core.runtime.components import LEARNERS, MODELS, REPORTS
+from src.rade_qnet.core.lifecycle.components import LEARNERS, MODELS, REPORTS
 from src.rade_qnet.testkit.fixtures import isolated_registries
 
 if TYPE_CHECKING:
@@ -73,7 +73,7 @@ PIPELINE_FILES = frozenset({"__init__.py", "train.py", "eval.py", "tune.py"})
 #: Modules ``model.py`` may not import, because importing them means the
 #: mathematics has been mixed back into the wiring. Matched on the dotted
 #: suffix so that a relative import reads the same as an absolute one.
-WIRING_MODULES = ("core.runtime.components", "core.spec.run", "core.spec.training")
+WIRING_MODULES = ("core.lifecycle.components", "core.spec.run", "core.spec.training")
 
 #: Statements of *ceremony* a tier 1 model may contain: everything in the
 #: package except ``model.py``.
@@ -142,7 +142,7 @@ def imported_modules(path: Path) -> Iterator[str]:
     Yield the dotted name of every module a file imports.
 
     Relative imports are yielded without their leading dots, so that
-    ``from ...core.runtime.components import model`` and the absolute form
+    ``from ...core.lifecycle.components import model`` and the absolute form
     produce the same string and a single rule covers both.
 
     Parameters

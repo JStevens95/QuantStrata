@@ -38,7 +38,7 @@ import numpy as np
 from matplotlib.figure import Figure
 
 from ...analysis.visuals.style import figure_style
-from ...core.runtime.errors import ContractError
+from ...core.lifecycle.errors import ContractError
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray

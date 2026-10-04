@@ -33,10 +33,10 @@ import pytest
 import torch
 
 from src.rade_qnet import api
-from src.rade_qnet.core.capability.policy import PolicyModel
-from src.rade_qnet.core.runtime.components import engine as register_engine
-from src.rade_qnet.core.runtime.components import model as register_model
-from src.rade_qnet.core.runtime.errors import BundleError, SpecError, StageError
+from src.rade_qnet.core.authoring.policy import PolicyModel
+from src.rade_qnet.core.lifecycle.components import engine as register_engine
+from src.rade_qnet.core.lifecycle.components import model as register_model
+from src.rade_qnet.core.lifecycle.errors import BundleError, SpecError, StageError
 from src.rade_qnet.core.spec.run import parse_run_spec
 from src.rade_qnet.engines.torch import TorchEngine
 from src.rade_qnet.orchestration.pipelines.reinforce import ReinforcePipeline

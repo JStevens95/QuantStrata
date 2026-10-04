@@ -40,7 +40,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ..core.contract.data import TARGET_KEY
-from ..core.runtime.errors import EngineError
+from ..core.lifecycle.errors import EngineError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

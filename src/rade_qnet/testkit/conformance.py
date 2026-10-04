@@ -17,7 +17,7 @@ numbers, and is wrong. A few examples of what is checked and what it catches:
 - A :class:`~rade_qnet.core.contract.state.FittedState` whose inverse is not an
   inverse reports metrics in the wrong units, so every number is
   incomparable with every other run.
-- A :class:`~rade_qnet.core.capability.protocols.Routable` member that
+- A :class:`~rade_qnet.core.authoring.capabilities.Routable` member that
   over-declares its coverage attributes predictions to instruments it never
   trained on.
 
@@ -44,13 +44,19 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
-from ..core.capability.protocols import CustomStep, Inductive, Precomputable, Routable, StaticInputs
+from ..core.authoring.capabilities import (
+    CustomStep,
+    Inductive,
+    Precomputable,
+    Routable,
+    StaticInputs,
+)
 from ..core.contract.data import TARGET_KEY, Batch, DataBundle
 from ..core.contract.result import FitOutcome
 from ..core.contract.signature import InputSignature
 from ..core.contract.source import BatchSource
 from ..core.contract.state import FittedState
-from ..core.runtime.logging import get_logger
+from ..core.provenance.logging import get_logger
 from ..core.spec.hardware import HardwareSpec
 from ..engines.base import Engine, EngineCapabilities, ModelHandle
 
@@ -485,7 +491,7 @@ def check_model_capabilities(
         The model object, or its definition.
     assigned_targets
         The targets a job assigned, if the model is
-        :class:`~rade_qnet.core.capability.protocols.Routable`. Needed to check
+        :class:`~rade_qnet.core.authoring.capabilities.Routable`. Needed to check
         that declared coverage is a subset of what was assigned.
     subject
         Name for the messages.

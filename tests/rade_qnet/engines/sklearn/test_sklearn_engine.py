@@ -24,8 +24,8 @@ import numpy as np
 import pytest
 from sklearn.linear_model import Lasso, Ridge
 
-from src.rade_qnet.core.runtime.components import get_engine
-from src.rade_qnet.core.runtime.errors import EngineError
+from src.rade_qnet.core.lifecycle.components import get_engine
+from src.rade_qnet.core.lifecycle.errors import EngineError
 from src.rade_qnet.core.spec.hardware import HardwareSpec
 from src.rade_qnet.core.spec.training import SklearnTrainingSpec
 from src.rade_qnet.engines.sklearn import SklearnEngine

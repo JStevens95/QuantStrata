@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.runtime.errors import ContractError
+from src.rade_qnet.core.lifecycle.errors import ContractError
 from src.rade_qnet.core.spec.data import (
     ChronologicalSplitSpec,
     ExplicitSplitSpec,

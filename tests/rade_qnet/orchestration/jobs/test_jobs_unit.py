@@ -24,9 +24,9 @@ import pickle
 
 import pytest
 
-from src.rade_qnet.core.runtime.components import engine as register_engine
-from src.rade_qnet.core.runtime.components import model as register_model
-from src.rade_qnet.core.runtime.errors import ComponentError
+from src.rade_qnet.core.lifecycle.components import engine as register_engine
+from src.rade_qnet.core.lifecycle.components import model as register_model
+from src.rade_qnet.core.lifecycle.errors import ComponentError
 from src.rade_qnet.core.spec.jobs import parse_job_set_spec
 from src.rade_qnet.orchestration.jobs.set import JobSetRunner
 from src.rade_qnet.orchestration.jobs.unit import JobOutcome, JobPayload, run_job

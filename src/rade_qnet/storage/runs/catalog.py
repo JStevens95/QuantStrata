@@ -37,7 +37,7 @@ A file lock is advisory and is unreliable on some network filesystems --
 notably NFS without a lock daemon. On a shared filesystem, point the catalog
 at local storage, or substitute an implementation backed by a database. That
 limitation is contained by the
-:class:`~rade_qnet.core.runtime.context.Catalog` protocol: an alternative
+:class:`~rade_qnet.core.lifecycle.context.Catalog` protocol: an alternative
 implementation -- including :class:`InMemoryCatalog` below -- substitutes with
 no change anywhere else, which is the reason that protocol is declared in
 ``core`` rather than this class being used directly.
@@ -70,7 +70,7 @@ from pathlib import Path
 from typing import IO
 
 from ...core.contract.bundle import Manifest
-from ...core.runtime.logging import get_logger
+from ...core.provenance.logging import get_logger
 from ..locking import exclusive_lock
 
 __all__ = ["CatalogEntry", "InMemoryCatalog", "JsonlCatalog"]
@@ -168,7 +168,7 @@ class JsonlCatalog:
     """
     A single-writer catalog backed by an append-only JSON Lines file.
 
-    Satisfies :class:`~rade_qnet.core.runtime.context.Catalog`.
+    Satisfies :class:`~rade_qnet.core.lifecycle.context.Catalog`.
 
     Parameters
     ----------
@@ -516,7 +516,7 @@ class InMemoryCatalog:
     """
     A catalog that keeps everything in memory.
 
-    Satisfies :class:`~rade_qnet.core.runtime.context.Catalog`. Used by
+    Satisfies :class:`~rade_qnet.core.lifecycle.context.Catalog`. Used by
     ``rade_qnet.testkit`` so a pipeline test needs no filesystem and no locking,
     and usable in a notebook where nothing should be persisted.
 

@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from src.rade_qnet.core.runtime.components import (
+from src.rade_qnet.core.lifecycle.components import (
     ENGINES,
     MODELS,
     REPORTS,

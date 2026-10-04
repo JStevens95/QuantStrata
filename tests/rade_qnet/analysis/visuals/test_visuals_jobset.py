@@ -22,7 +22,7 @@ from src.rade_qnet.analysis.visuals.jobset import (
     metric_ranking_figure,
     wall_time_figure,
 )
-from src.rade_qnet.core.runtime.errors import ContractError
+from src.rade_qnet.core.lifecycle.errors import ContractError
 
 #: Three jobs with clearly separated scores, so an ordering mistake cannot
 #: hide behind near-ties.

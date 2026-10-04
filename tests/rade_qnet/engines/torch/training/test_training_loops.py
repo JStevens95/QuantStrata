@@ -36,7 +36,7 @@ from torch import nn
 
 from src.rade_qnet.core.contract.data import TARGET_KEY
 from src.rade_qnet.core.contract.signature import SpaceSpec
-from src.rade_qnet.core.runtime.errors import EngineError
+from src.rade_qnet.core.lifecycle.errors import EngineError
 from src.rade_qnet.core.spec.training import CheckpointSpec, EarlyStoppingSpec
 from src.rade_qnet.engines.torch.training.callbacks import (
     BestCheckpoint,

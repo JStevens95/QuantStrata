@@ -32,7 +32,7 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from ..runtime.errors import ContractError, SpecError
+from ..lifecycle.errors import ContractError, SpecError
 from .base import ContractModel
 
 __all__ = ["InputSignature", "PolicySignature", "SpaceSpec", "TensorSpec"]

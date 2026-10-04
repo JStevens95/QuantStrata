@@ -56,9 +56,9 @@ import numpy as np
 
 from ... import __version__
 from ...core.contract.data import DataLineage, SplitIndices
-from ...core.runtime.errors import ContractError
-from ...core.runtime.hashing import digest_spec
-from ...core.runtime.logging import get_logger
+from ...core.lifecycle.errors import ContractError
+from ...core.provenance.hashing import digest_spec
+from ...core.provenance.logging import get_logger
 from .cache import PreparedDataset
 
 if TYPE_CHECKING:

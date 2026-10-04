@@ -43,7 +43,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
-from ...core.runtime.logging import get_logger
+from ...core.provenance.logging import get_logger
 
 __all__ = [
     "Executor",

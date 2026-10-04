@@ -42,9 +42,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from src.rade_qnet.analysis.reports.base import ReportContext
 from src.rade_qnet.analysis.reports.summary import SummaryReport
 from src.rade_qnet.core.contract.bundle import ModelBundle, SavedBundle
-from src.rade_qnet.core.runtime.errors import BundleError
-from src.rade_qnet.core.runtime.hashing import digest_spec
-from src.rade_qnet.core.runtime.logging import configure_logging
+from src.rade_qnet.core.lifecycle.errors import BundleError
+from src.rade_qnet.core.provenance.hashing import digest_spec
+from src.rade_qnet.core.provenance.logging import configure_logging
 from src.rade_qnet.core.spec.run import RunSpec, load_run_spec, parse_run_spec
 from src.rade_qnet.storage.bundle import load_fitted_state, open_bundle, write_bundle
 from src.rade_qnet.storage.runs.catalog import JsonlCatalog

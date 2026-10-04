@@ -34,8 +34,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from ...core.runtime.errors import SpecError
-from ...core.runtime.logging import get_logger
+from ...core.lifecycle.errors import SpecError
+from ...core.provenance.logging import get_logger
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping, Sequence

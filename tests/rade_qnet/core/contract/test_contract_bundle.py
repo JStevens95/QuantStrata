@@ -26,7 +26,7 @@ from src.rade_qnet.core.contract.bundle import (
     ManifestEntry,
     SavedBundle,
 )
-from src.rade_qnet.core.runtime.errors import BundleError
+from src.rade_qnet.core.lifecycle.errors import BundleError
 from src.rade_qnet.testkit.fixtures import make_model_bundle
 
 DIGEST = "a" * 64

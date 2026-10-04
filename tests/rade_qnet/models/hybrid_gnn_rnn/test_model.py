@@ -14,7 +14,7 @@ import pytest
 import torch
 
 from src.rade_qnet.core.contract.signature import InputSignature, TensorSpec
-from src.rade_qnet.core.runtime.errors import ContractError
+from src.rade_qnet.core.lifecycle.errors import ContractError
 from src.rade_qnet.models.hybrid_gnn_rnn.model import HybridGnnRnn
 from src.rade_qnet.models.hybrid_gnn_rnn.spec import HybridModelSpec
 from src.rade_qnet.testkit.parity import compare_forward, load_golden

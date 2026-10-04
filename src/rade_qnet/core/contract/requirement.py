@@ -70,7 +70,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import field_validator, model_validator
 
-from ..runtime.errors import ContractError, SpecError
+from ..lifecycle.errors import ContractError, SpecError
 from .base import ContractModel
 from .signature import TensorSpec
 

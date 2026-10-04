@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from src.rade_qnet.analysis.reports.base import ReportContext
 from src.rade_qnet.analysis.reports.quality import QUALITY_FILENAME, QualityReport
-from src.rade_qnet.core.runtime.components import get_report
+from src.rade_qnet.core.lifecycle.components import get_report
 from src.rade_qnet.testkit.fixtures import make_lineage, make_model_bundle
 
 

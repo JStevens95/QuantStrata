@@ -26,10 +26,10 @@ embedding and a confident, meaningless number rather than an error -- which
 is the worst available outcome, because the number looks exactly like the
 real ones.
 
-:class:`~rade_qnet.core.capability.protocols.Inductive` is how a model says it
+:class:`~rade_qnet.core.authoring.capabilities.Inductive` is how a model says it
 can do better. This pipeline refuses the request when the capability is
 absent, and routes through
-:class:`~rade_qnet.core.capability.protocols.Inductive` when it
+:class:`~rade_qnet.core.authoring.capabilities.Inductive` when it
 is present.
 """
 
@@ -40,12 +40,12 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ...core.capability.protocols import Inductive
+from ...core.authoring.capabilities import Inductive
 from ...core.contract.result import Predictions
-from ...core.runtime.components import get_engine
-from ...core.runtime.errors import ContractError
-from ...core.runtime.logging import get_logger
-from ...core.runtime.pipeline import Pipeline
+from ...core.lifecycle.components import get_engine
+from ...core.lifecycle.errors import ContractError
+from ...core.lifecycle.pipeline import Pipeline
+from ...core.provenance.logging import get_logger
 from ...engines.base import Engine
 from ..stages.reload import load_bundle
 from ..stages.scoring import scoring_source, static_inputs
@@ -55,7 +55,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from ...core.contract.data import DataBundle
-    from ...core.runtime.context import RunContext
+    from ...core.lifecycle.context import RunContext
     from ...core.spec.data import SourceSpec
     from ...engines.base import ModelHandle
     from ..stages.reload import LoadedBundle
@@ -95,7 +95,7 @@ class InferPipeline(Pipeline[Predictions]):
         Identifiers to predict for. Defaults to ``None``, meaning whatever
         the source holds. Naming entities the model never saw requires the
         model to declare
-        :class:`~rade_qnet.core.capability.protocols.Inductive`.
+        :class:`~rade_qnet.core.authoring.capabilities.Inductive`.
     verify
         Whether to re-hash the bundle's files against its manifest.
 
@@ -428,7 +428,7 @@ class InferPipeline(Pipeline[Predictions]):
         ContractError
             If entities absent from training were requested and the model
             does not declare
-            :class:`~rade_qnet.core.capability.protocols.Inductive`.
+            :class:`~rade_qnet.core.authoring.capabilities.Inductive`.
         """
         if self.entities is None:
             return

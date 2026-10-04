@@ -248,7 +248,7 @@ discipline this sequencing exists to protect.
 ### Phase 1 — [Core](phases/PHASE_1_CORE.md)
 
 The framework's vocabulary and its supporting infrastructure: `core.spec`,
-`core.contract`, `core.capability`, `core.runtime`, plus `storage`, the
+`core.contract`, `core.authoring`, `core.lifecycle`, plus `storage`, the
 `analysis` bases and `testkit`.
 
 *The largest phase, and the one most worth getting right.* Nothing trains yet.

@@ -20,8 +20,8 @@ import json
 from collections.abc import Mapping
 from pathlib import Path
 
-from ...core.runtime.hashing import canonical_json
-from ...core.runtime.logging import get_logger
+from ...core.provenance.hashing import canonical_json
+from ...core.provenance.logging import get_logger
 
 __all__ = ["JsonlTracker", "NullTracker"]
 
@@ -32,7 +32,7 @@ class NullTracker:
     """
     A tracker that records nothing.
 
-    Satisfies :class:`~rade_qnet.core.runtime.context.Tracker`. The default, so
+    Satisfies :class:`~rade_qnet.core.lifecycle.context.Tracker`. The default, so
     that a run needs no tracking infrastructure to proceed.
 
     Every method is empty rather than raising ``NotImplementedError``: this is
@@ -88,7 +88,7 @@ class JsonlTracker:
     """
     A tracker that appends events to a local JSON Lines file.
 
-    Satisfies :class:`~rade_qnet.core.runtime.context.Tracker`. Useful when a
+    Satisfies :class:`~rade_qnet.core.lifecycle.context.Tracker`. Useful when a
     hosted tracker is unavailable or inappropriate, and as a reference for
     what an implementation has to do.
 
@@ -104,7 +104,7 @@ class JsonlTracker:
     Writes are appends with no locking, which is safe for the one-process-per
     -run case this is intended for; a job set should give each job its own
     file, which is what a per-job
-    :class:`~rade_qnet.core.runtime.context.RunContext` naturally produces.
+    :class:`~rade_qnet.core.lifecycle.context.RunContext` naturally produces.
     """
 
     def __init__(self, path: Path) -> None:

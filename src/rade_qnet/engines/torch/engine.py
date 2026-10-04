@@ -30,10 +30,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 import torch
 
-from ...core.runtime.components import LEARNERS, ComponentError, get_learner
-from ...core.runtime.components import engine as register_engine
-from ...core.runtime.errors import EngineError
-from ...core.runtime.logging import get_logger
+from ...core.lifecycle.components import LEARNERS, ComponentError, get_learner
+from ...core.lifecycle.components import engine as register_engine
+from ...core.lifecycle.errors import EngineError
+from ...core.provenance.logging import get_logger
 from ...core.spec.training import (
     CheckpointSpec,
     EarlyStoppingSpec,

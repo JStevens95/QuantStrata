@@ -18,7 +18,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from ...core.runtime.logging import get_logger
+from ...core.provenance.logging import get_logger
 from ..visuals.export import save_figure
 from ..visuals.figures import metric_comparison_figure, training_curve_figure
 from .base import Report, ReportContext, report

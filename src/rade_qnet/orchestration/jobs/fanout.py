@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from ...core.runtime.logging import get_logger
+from ...core.provenance.logging import get_logger
 from ...core.spec.jobs import JobSetSpec, parse_job_set_spec
 from ...core.spec.merge import deep_merge
 

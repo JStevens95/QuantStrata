@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.rade_qnet.core.capability.protocols import (
+from src.rade_qnet.core.authoring.capabilities import (
     CustomStep,
     Inductive,
     Precomputable,

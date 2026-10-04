@@ -33,9 +33,9 @@ import numpy as np
 
 from ...core.contract.data import DataLineage, SplitIndices
 from ...core.contract.signature import InputSignature
-from ...core.runtime.errors import BundleError, ContractError
-from ...core.runtime.hashing import abbreviate_digest, digest_payload
-from ...core.runtime.logging import get_logger
+from ...core.lifecycle.errors import BundleError, ContractError
+from ...core.provenance.hashing import abbreviate_digest, digest_payload
+from ...core.provenance.logging import get_logger
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from matplotlib.figure import Figure
 
-from src.rade_qnet.core.runtime.errors import ContractError
+from src.rade_qnet.core.lifecycle.errors import ContractError
 from src.rade_qnet.models.hybrid_gnn_rnn.features.graph import SparseGraphState
 from src.rade_qnet.models.hybrid_gnn_rnn.visuals import (
     edge_weight_figure,

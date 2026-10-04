@@ -17,12 +17,32 @@ Sub-packages
 ``contract``
     The typed payloads passed between pipeline stages.  A stage's signature is
     its contract with the rest of the framework.
-``capability``
+``authoring``
     The model-facing interface: the base class a model registers with, plus
-    the optional protocols a model may implement to unlock extra behaviour.
-``runtime``
-    The machinery that executes a pipeline: run context, the instrumented step
-    runner, hooks, component lookup, seeding and error types.
+    the optional capabilities it may implement to unlock extra behaviour.
+    Named for its audience -- this is the only sub-package a model author has
+    to read.
+``lifecycle``
+    How a run is assembled and how it is overridden: component lookup, the
+    template-method pipeline base, the ambient run context, hooks, and the
+    error hierarchy.  Read by somebody extending the framework.
+``provenance``
+    What every run can prove about itself: seeding, stable hashing, and
+    contextual logging.  Read by somebody who has to answer for a result.
+
+Why five, and why these five
+-----------------------------
+``lifecycle`` and ``provenance`` were one package called ``runtime``, holding
+eight modules whose only shared property was being needed everywhere.  That
+is a bin, and the name told a reader nothing: a sub-package of ``core`` being
+described as "run-time" does not narrow anything down.
+
+The line between them is *who opens the file*.  Someone registering a model,
+overriding a stage or attaching a hook reads ``lifecycle``.  Someone asked
+why Tuesday's number differs from Monday's reads ``provenance`` -- the seed,
+the digest and the log are the three things that answer it.  Those are
+different people on different days, and a package boundary that matches that
+is worth more than one that matches an import graph.
 
 Dependency rule
 ---------------

@@ -13,7 +13,7 @@ pass the weights are frozen and the graph does not change, so recomputing the
 embeddings for every batch repeats identical arithmetic -- which on a long
 evaluation pass can dominate everything else.
 
-:class:`~rade_qnet.core.capability.protocols.Precomputable` is how a model says
+:class:`~rade_qnet.core.authoring.capabilities.Precomputable` is how a model says
 so. This module is where the framework acts on the declaration, and the
 critical property is that it must not change any number. A performance path
 that quietly perturbs results is worse than no performance path at all,
@@ -34,9 +34,9 @@ from typing import TYPE_CHECKING
 import numpy as np
 import torch
 
-from ...core.capability.protocols import Precomputable
-from ...core.runtime.errors import EngineError
-from ...core.runtime.logging import get_logger
+from ...core.authoring.capabilities import Precomputable
+from ...core.lifecycle.errors import EngineError
+from ...core.provenance.logging import get_logger
 from .loaders import StaticInputs, to_device_batches
 
 if TYPE_CHECKING:

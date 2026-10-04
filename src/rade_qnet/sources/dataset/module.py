@@ -60,8 +60,8 @@ import numpy as np
 from ... import __version__
 from ...core.contract.data import DataLineage
 from ...core.contract.signature import InputSignature
-from ...core.runtime.hashing import digest_spec
-from ...core.runtime.logging import get_logger
+from ...core.provenance.hashing import digest_spec
+from ...core.provenance.logging import get_logger
 from ..batching.dataset import DatasetSource, sources_for
 from .cache import DatasetCache, PreparedDataset
 from .rebuild import RebuiltDataset, rebuild_dataset

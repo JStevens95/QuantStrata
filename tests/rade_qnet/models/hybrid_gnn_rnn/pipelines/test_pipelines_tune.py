@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.rade_qnet.core.runtime.errors import ContractError, SpecError
+from src.rade_qnet.core.lifecycle.errors import ContractError, SpecError
 from src.rade_qnet.core.spec.tune import parse_tune_spec
 from src.rade_qnet.models.hybrid_gnn_rnn.pipelines.tune import (
     HybridTunePipeline,

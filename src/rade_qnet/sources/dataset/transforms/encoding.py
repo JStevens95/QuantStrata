@@ -27,7 +27,7 @@ Unseen entities are refused, not guessed
 An entity absent at fit time has no code. Mapping it to a shared "unknown"
 bucket would let a transductive model return a confident prediction for an
 instrument it knows nothing about, which is the quiet failure the
-:class:`~rade_qnet.core.capability.protocols.Inductive` capability exists to
+:class:`~rade_qnet.core.authoring.capabilities.Inductive` capability exists to
 make visible. :meth:`EncodingState.encode` raises instead, and a model that
 genuinely generalises to unseen entities declares that capability and uses
 entity *features* rather than an identity code.
@@ -41,7 +41,7 @@ from typing import TYPE_CHECKING, Self
 import numpy as np
 
 from ....core.contract.state import FittedState
-from ....core.runtime.errors import BundleError, CapabilityError, ContractError
+from ....core.lifecycle.errors import BundleError, CapabilityError, ContractError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -184,7 +184,7 @@ class EncodingState(FittedState):
         ------
         CapabilityError
             If any identifier was not present at fit time. A
-            :class:`~rade_qnet.core.runtime.errors.CapabilityError` rather than a
+            :class:`~rade_qnet.core.lifecycle.errors.CapabilityError` rather than a
             contract error because the situation is meaningful: the caller
             asked a transductive encoder about an entity it cannot represent,
             which is precisely what the ``Inductive`` capability declares

@@ -19,8 +19,8 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from ..runtime.errors import SpecError
-from ..runtime.seeding import Determinism
+from ..lifecycle.errors import SpecError
+from ..provenance.seeding import Determinism
 from .base import Spec
 
 __all__ = ["HardwareSpec"]
@@ -54,7 +54,7 @@ class HardwareSpec(Spec):
         Distribution strategy for a single job across several devices.
     determinism
         How hard to work for bit-for-bit reproducibility. See
-        :mod:`rade_qnet.core.runtime.seeding` for what each level costs.
+        :mod:`rade_qnet.core.provenance.seeding` for what each level costs.
     threads_per_worker
         Intra-op thread budget. ``None`` leaves the library's default, which
         is correct for a single job and wrong under a process pool -- there

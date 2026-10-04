@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-from src.rade_qnet.core.runtime.logging import ROOT_LOGGER_NAME
+from src.rade_qnet.core.provenance.logging import ROOT_LOGGER_NAME
 
 # Resolved once at import time.  ``parents`` indexes from this file outwards:
 # [0] is tests/rade_qnet, [1] is tests, [2] is the repository root.

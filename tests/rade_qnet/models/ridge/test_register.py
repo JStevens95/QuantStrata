@@ -9,7 +9,7 @@ that fails tells you which.
 
 from __future__ import annotations
 
-from src.rade_qnet.core.runtime.components import MODELS, get_model
+from src.rade_qnet.core.lifecycle.components import MODELS, get_model
 from src.rade_qnet.core.spec.run import parse_run_spec
 from src.rade_qnet.models.ridge.register import RidgeModel
 from src.rade_qnet.models.ridge.spec import RidgeSpec

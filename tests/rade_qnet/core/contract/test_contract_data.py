@@ -23,7 +23,7 @@ from src.rade_qnet.core.contract.data import (
     SplitIndices,
     TensorBatchData,
 )
-from src.rade_qnet.core.runtime.errors import ContractError, SpecError
+from src.rade_qnet.core.lifecycle.errors import ContractError, SpecError
 from src.rade_qnet.testkit.fixtures import (
     make_lineage,
     make_signature,

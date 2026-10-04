@@ -26,7 +26,7 @@ import pytest
 from src.rade_qnet.analysis.reports.base import ReportContext
 from src.rade_qnet.analysis.reports.summary import SUMMARY_FILENAME, SummaryReport
 from src.rade_qnet.core.contract.result import EvalResult, FitOutcome, TrainingResult
-from src.rade_qnet.core.runtime.components import get_report
+from src.rade_qnet.core.lifecycle.components import get_report
 from src.rade_qnet.testkit.fixtures import make_model_bundle, make_training_result
 
 

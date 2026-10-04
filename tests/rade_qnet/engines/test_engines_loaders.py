@@ -17,7 +17,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.runtime.errors import EngineError
+from src.rade_qnet.core.lifecycle.errors import EngineError
 from src.rade_qnet.engines.loaders import drain, flatten, reject_static
 from src.rade_qnet.testkit.fixtures import SyntheticTensorSource
 

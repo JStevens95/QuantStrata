@@ -26,7 +26,7 @@ import torch
 
 from src.rade_qnet.core.contract.data import TARGET_KEY
 from src.rade_qnet.core.contract.signature import InputSignature, TensorSpec
-from src.rade_qnet.core.runtime.errors import ContractError
+from src.rade_qnet.core.lifecycle.errors import ContractError
 from src.rade_qnet.engines.torch.loaders import StaticInputs, to_device_batches, to_tensor
 from src.rade_qnet.testkit.fixtures import SyntheticTensorSource
 

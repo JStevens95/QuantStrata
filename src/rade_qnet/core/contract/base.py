@@ -23,7 +23,7 @@ The two shapes report failures differently, and the ``Raises`` sections in
 this package reflect that rather than papering over it.
 
 A **dataclass** validates in ``__post_init__`` and its exception propagates
-unchanged, so it raises :class:`~rade_qnet.core.runtime.errors.ContractError`
+unchanged, so it raises :class:`~rade_qnet.core.lifecycle.errors.ContractError`
 (or ``SpecError`` for :class:`~rade_qnet.core.contract.data.SplitIndices`, where
 the fault is a split specification rather than a payload) exactly as
 documented.

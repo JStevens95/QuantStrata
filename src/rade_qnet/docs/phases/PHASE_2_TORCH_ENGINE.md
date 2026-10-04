@@ -65,7 +65,7 @@ flowchart TD
         RB["reports/baselines.py"]
         RQ["reports/quality.py"]
     end
-    subgraph CAP["core.capability"]
+    subgraph CAP["core.authoring"]
         SI["supervised.py<br/><i>SupervisedModel (was simple.py / TabularModel)</i>"]
     end
 
@@ -383,7 +383,7 @@ table is the record, so a reader of the plan is never misled by it.
 | Deviation | Reason |
 | --- | --- |
 | `engines/base.py` delivered in Phase 2 rather than Phase 1 | The `Engine` protocol, `ModelHandle` and `EngineCapabilities` cannot be designed without a concrete engine to design them against. Written in Phase 1 they would have encoded guesses, and the first real engine would have changed all three. |
-| `EngineError` added to `core.runtime.errors` | Engine faults are neither specification faults nor contract faults, and reporting them as either made the messages misleading about where to look. |
+| `EngineError` added to `core.lifecycle.errors` | Engine faults are neither specification faults nor contract faults, and reporting them as either made the messages misleading about where to look. |
 | `transforms/composite.py` added as a fifth transforms module | §2.1 listed four. A bundle carries *one* fitted state, so something has to compose the parts and own the question of which one inverts the target; leaving that to each caller is how two callers come to disagree. |
 | `predict_in_batches` deliberately omitted from the `Engine` protocol | It is an implementation detail of how an engine walks a source, not part of the contract a pipeline depends on. In the protocol it would have forced every backend to expose a method only one of them needs. |
 

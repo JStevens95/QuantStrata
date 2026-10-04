@@ -43,8 +43,8 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from ....core.runtime.errors import BundleError, EngineError
-from ....core.runtime.logging import get_logger
+from ....core.lifecycle.errors import BundleError, EngineError
+from ....core.provenance.logging import get_logger
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

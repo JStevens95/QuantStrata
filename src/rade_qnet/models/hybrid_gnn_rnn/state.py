@@ -60,7 +60,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ...core.contract.state import FittedState
-from ...core.runtime.errors import BundleError
+from ...core.lifecycle.errors import BundleError
 from .features.encoder import EntityEncoderState
 from .features.graph import SparseGraphState
 

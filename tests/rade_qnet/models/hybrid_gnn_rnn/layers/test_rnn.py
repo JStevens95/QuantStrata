@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from src.rade_qnet.core.runtime.errors import ContractError
+from src.rade_qnet.core.lifecycle.errors import ContractError
 from src.rade_qnet.models.hybrid_gnn_rnn.layers.rnn import RnnBlock
 from src.rade_qnet.models.hybrid_gnn_rnn.spec import HybridModelSpec
 

@@ -72,8 +72,8 @@ from numpy.typing import NDArray
 
 from ...core.contract.requirement import InputRequirement, RequiredInput
 from ...core.contract.signature import InputSignature, TensorSpec
-from ...core.runtime.errors import ContractError
-from ...core.runtime.logging import get_logger
+from ...core.lifecycle.errors import ContractError
+from ...core.provenance.logging import get_logger
 from ...core.spec.data import SourceSpec
 from ...sources.dataset.module import DataModule
 from .features.basis import select_basis

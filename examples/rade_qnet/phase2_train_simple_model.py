@@ -55,15 +55,15 @@ import torch
 from torch import nn
 
 from src.rade_qnet.analysis.reports import baselines, curves, quality, summary  # noqa: F401
-from src.rade_qnet.core.capability.supervised import SupervisedModel
+from src.rade_qnet.core.authoring.supervised import SupervisedModel
 from src.rade_qnet.core.contract.bundle import ModelBundle
 from src.rade_qnet.core.contract.data import DataBundle
 from src.rade_qnet.core.contract.result import TrainingResult
 from src.rade_qnet.core.contract.signature import InputSignature
-from src.rade_qnet.core.runtime.components import model as register_model
-from src.rade_qnet.core.runtime.context import RunContext
-from src.rade_qnet.core.runtime.hashing import digest_spec
-from src.rade_qnet.core.runtime.logging import configure_logging
+from src.rade_qnet.core.lifecycle.components import model as register_model
+from src.rade_qnet.core.lifecycle.context import RunContext
+from src.rade_qnet.core.provenance.hashing import digest_spec
+from src.rade_qnet.core.provenance.logging import configure_logging
 from src.rade_qnet.core.spec.run import SupervisedRunSpec
 from src.rade_qnet.engines.base import ModelHandle
 from src.rade_qnet.engines.torch import TorchEngine  # noqa: F401  (registers 'torch')

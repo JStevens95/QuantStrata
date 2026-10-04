@@ -29,7 +29,7 @@ from src.rade_qnet.analysis.metrics.regression import (
     regression_metrics,
     root_mean_squared_error,
 )
-from src.rade_qnet.core.runtime.errors import ContractError
+from src.rade_qnet.core.lifecycle.errors import ContractError
 
 ALL_METRICS = (
     mean_absolute_error,

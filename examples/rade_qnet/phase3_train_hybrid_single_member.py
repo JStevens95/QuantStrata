@@ -31,9 +31,9 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from rade_qnet.core.runtime.components import get_model
-from rade_qnet.core.runtime.context import RunContext
-from rade_qnet.core.runtime.hashing import abbreviate_digest, digest_spec
+from rade_qnet.core.lifecycle.components import get_model
+from rade_qnet.core.lifecycle.context import RunContext
+from rade_qnet.core.provenance.hashing import abbreviate_digest, digest_spec
 from rade_qnet.core.spec.run import parse_run_spec
 from rade_qnet.models.hybrid_gnn_rnn.pipelines.train import HybridTrainPipeline
 

@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.runtime.hashing import (
+from src.rade_qnet.core.provenance.hashing import (
     abbreviate_digest,
     canonical_json,
     digest_arrays,
@@ -201,7 +201,7 @@ class TestStability:
         """
         program = (
             f"import sys; sys.path.insert(0, {str(repository_root)!r});"
-            "from src.rade_qnet.core.runtime.hashing import digest_payload;"
+            "from src.rade_qnet.core.provenance.hashing import digest_payload;"
             "print(digest_payload({'model': 'demo', 'seed': 3, 'nested': {'a': [1, 2]}}))"
         )
         completed = subprocess.run(

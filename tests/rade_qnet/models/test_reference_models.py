@@ -34,7 +34,7 @@ import numpy as np
 import pytest
 
 from src.rade_qnet.api import evaluate, infer, train, train_jobs, tune
-from src.rade_qnet.core.runtime.errors import StageError
+from src.rade_qnet.core.lifecycle.errors import StageError
 from src.rade_qnet.core.spec.jobs import parse_job_set_spec
 from src.rade_qnet.models.lstm_tabular.register import LstmTabularModel
 

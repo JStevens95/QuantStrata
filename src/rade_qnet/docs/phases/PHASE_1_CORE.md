@@ -8,7 +8,7 @@ consumes.**
 | ---------------------------- | ------------------------------------------------------------------------------------------------------- |
 | **Depends on**               | Scaffold                                                                                                |
 | **Blocks**                   | Everything                                                                                              |
-| **Delivers**                 | `core.spec`, `core.contract`, `core.capability`, `core.runtime`, `storage`, `analysis` bases, `testkit` |
+| **Delivers**                 | `core.spec`, `core.contract`, `core.authoring`, `core.lifecycle`, `storage`, `analysis` bases, `testkit` |
 | **Can run in parallel with** | The baseline capture, now the first half of phase 0+3                                                   |
 | **Nothing trains yet**       | That is Phase 2                                                                                         |
 | **Status**                   | Complete — see [§5](#5-definition-of-done) and [§7](#7-deviations)                                      |
@@ -178,7 +178,7 @@ learning. Defining it in Phase 1, before any source exists, is deliberate: a
 protocol written after its implementations describes them instead of
 constraining them.
 
-### 2.3 `core.capability`
+### 2.3 `core.authoring`
 
 `definition.py` holds `ModelDefinition` and its two specialisations,
 `PredictorDefinition` and `PolicyDefinition`, plus the `@model` decorator. The
@@ -196,7 +196,7 @@ detected, and a model implementing none is entirely unaffected by every
 capability that exists. The second is what makes adding a capability later a
 safe operation.
 
-### 2.4 `core.runtime`
+### 2.4 `core.lifecycle`
 
 
 | Module          | Contents                                                                                   |
@@ -344,8 +344,8 @@ flowchart LR
     CONTRACT["core.contract"] -->|"DataBundle"| SOURCES["sources (P2)"]
     CONTRACT -->|"InputSignature<br/>FitOutcome"| ENGINES["engines (P2)"]
     CONTRACT -->|"ModelBundle"| STOR["storage"]
-    CAP["core.capability"] -->|"@model · protocols"| MODELS["models (P3)"]
-    RT["core.runtime"] -->|"RunContext · step()"| PIPE
+    CAP["core.authoring"] -->|"@model · protocols"| MODELS["models (P3)"]
+    RT["core.lifecycle"] -->|"RunContext · step()"| PIPE
     RT -->|"registry"| ALL["every package"]
     STOR -->|"bundles"| EVAL["evaluate · infer (P5)"]
     ANA["analysis"] -->|"metrics · figures"| PIPE

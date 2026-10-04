@@ -31,7 +31,7 @@ import numpy as np
 import pytest
 
 from src.rade_qnet.core.contract.result import Predictions
-from src.rade_qnet.core.runtime.errors import ContractError, StageError
+from src.rade_qnet.core.lifecycle.errors import ContractError, StageError
 from src.rade_qnet.core.spec.data import ScalingSpec, TabularSourceSpec, TransformsSpec
 from src.rade_qnet.orchestration.pipelines.evaluate import EvaluatePipeline
 from src.rade_qnet.orchestration.pipelines.infer import InferPipeline

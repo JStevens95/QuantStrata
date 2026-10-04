@@ -10,7 +10,7 @@ The minimum is deliberately small
 :class:`PredictorDefinition` demands three methods: build the data, declare the
 signature, build the model. Everything else -- custom losses, static inputs,
 precomputation, job-set routing -- is an opt-in protocol from
-:mod:`rade_qnet.core.capability.protocols`.
+:mod:`rade_qnet.core.authoring.capabilities`.
 
 That split is what lets a linear model be forty lines and the flagship
 multi-cluster graph model be a package, without the framework treating them
@@ -36,7 +36,7 @@ from ..contract.data import DataBundle
 from ..contract.requirement import InputRequirement
 from ..contract.signature import InputSignature, PolicySignature
 from ..contract.state import FittedState
-from ..runtime.components import model
+from ..lifecycle.components import model
 
 if TYPE_CHECKING:
     from ..spec.run import ReinforcementRunSpec, SupervisedRunSpec

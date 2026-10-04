@@ -43,8 +43,8 @@ from typing import TYPE_CHECKING, Literal, Protocol
 
 import torch
 
-from ....core.runtime.errors import EngineError
-from ....core.runtime.logging import get_logger
+from ....core.lifecycle.errors import EngineError
+from ....core.provenance.logging import get_logger
 from .checkpoint import restore_state_dict, snapshot_state_dict
 
 if TYPE_CHECKING:

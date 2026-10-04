@@ -28,7 +28,7 @@ from src.rade_qnet.analysis.visuals.training import (
     training_diagnostics_figure,
 )
 from src.rade_qnet.core.contract.result import EpochRecord, FitOutcome
-from src.rade_qnet.core.runtime.errors import ContractError
+from src.rade_qnet.core.lifecycle.errors import ContractError
 
 
 def outcome(

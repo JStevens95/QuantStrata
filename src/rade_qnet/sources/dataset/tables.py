@@ -37,9 +37,9 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ...core.runtime.errors import BundleError, ContractError, SpecError
-from ...core.runtime.hashing import digest_file, digest_payload
-from ...core.runtime.logging import get_logger
+from ...core.lifecycle.errors import BundleError, ContractError, SpecError
+from ...core.provenance.hashing import digest_file, digest_payload
+from ...core.provenance.logging import get_logger
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence

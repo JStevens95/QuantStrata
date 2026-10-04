@@ -60,8 +60,8 @@ from typing import Self
 import numpy as np
 from numpy.typing import NDArray
 
-from ....core.runtime.errors import ContractError
-from ....core.runtime.logging import get_logger
+from ....core.lifecycle.errors import ContractError
+from ....core.provenance.logging import get_logger
 from ..spec import GraphSpec
 from .encoder import EncodedAttributes
 

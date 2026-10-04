@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.rade_qnet.core.runtime.errors import ComponentError
+from src.rade_qnet.core.lifecycle.errors import ComponentError
 from src.rade_qnet.models.hybrid_gnn_rnn.pipelines.eval import HybridEvalPipeline
 from src.rade_qnet.models.hybrid_gnn_rnn.pipelines.train import HybridTrainPipeline
 from src.rade_qnet.models.hybrid_gnn_rnn.pipelines.tune import HybridTunePipeline

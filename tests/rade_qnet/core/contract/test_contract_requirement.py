@@ -14,7 +14,7 @@ from pydantic import ValidationError
 
 from src.rade_qnet.core.contract.requirement import InputRequirement, RequiredInput
 from src.rade_qnet.core.contract.signature import InputSignature, TensorSpec
-from src.rade_qnet.core.runtime.errors import ContractError
+from src.rade_qnet.core.lifecycle.errors import ContractError
 
 WINDOW = TensorSpec(shape=(None, 5, 4), dtype="float32")
 FLAT = TensorSpec(shape=(None, 4), dtype="float32")

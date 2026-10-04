@@ -283,7 +283,7 @@ except TrackerError:
     logger.warning("metric tracking failed; metrics remain in the bundle", exc_info=True)
 ```
 
-**Raise the framework's own error types,** from `core.runtime.errors`. A
+**Raise the framework's own error types,** from `core.lifecycle.errors`. A
 `SpecError` is actionable by the user; a `ContractError` is a framework bug.
 Collapsing both into `ValueError` loses that distinction at exactly the moment
 it matters.
@@ -329,7 +329,7 @@ enforced by review.
 
 ```python
 from ..core.contract import DataBundle    # inside rade_qnet
-from ...core.runtime.errors import StageError
+from ...core.lifecycle.errors import StageError
 ```
 
 This is what keeps the package **relocatable**: it behaves identically imported

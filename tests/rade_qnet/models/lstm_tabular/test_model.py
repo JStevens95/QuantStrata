@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from src.rade_qnet.core.runtime.errors import ContractError
+from src.rade_qnet.core.lifecycle.errors import ContractError
 from src.rade_qnet.models.lstm_tabular.model import LstmTabular, _sequence_of
 from src.rade_qnet.models.lstm_tabular.spec import LstmTabularSpec
 

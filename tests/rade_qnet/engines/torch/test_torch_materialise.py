@@ -30,7 +30,7 @@ import torch
 from torch import nn
 
 from src.rade_qnet.core.contract.signature import InputSignature, TensorSpec
-from src.rade_qnet.core.runtime.errors import EngineError
+from src.rade_qnet.core.lifecycle.errors import EngineError
 from src.rade_qnet.engines.torch.materialise import (
     count_parameters,
     dummy_batch,

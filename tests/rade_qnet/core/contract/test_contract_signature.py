@@ -20,7 +20,7 @@ from src.rade_qnet.core.contract.signature import (
     SpaceSpec,
     TensorSpec,
 )
-from src.rade_qnet.core.runtime.errors import ContractError, SpecError
+from src.rade_qnet.core.lifecycle.errors import ContractError, SpecError
 
 
 @pytest.fixture

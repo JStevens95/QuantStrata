@@ -31,7 +31,7 @@ import pytest
 from src.rade_qnet.core.contract.data import TARGET_KEY
 from src.rade_qnet.core.contract.signature import SpaceSpec
 from src.rade_qnet.core.contract.source import BatchSource
-from src.rade_qnet.core.runtime.errors import ContractError
+from src.rade_qnet.core.lifecycle.errors import ContractError
 from src.rade_qnet.sources.batching.rollout import (
     ACTION_KEY,
     NEXT_OBSERVATION_KEY,

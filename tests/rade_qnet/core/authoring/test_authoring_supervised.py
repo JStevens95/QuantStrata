@@ -30,8 +30,8 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.capability.supervised import DataModuleLike, SupervisedModel
-from src.rade_qnet.core.runtime.errors import ComponentError
+from src.rade_qnet.core.authoring.supervised import DataModuleLike, SupervisedModel
+from src.rade_qnet.core.lifecycle.errors import ComponentError
 from src.rade_qnet.core.spec.data import TabularSourceSpec
 from src.rade_qnet.core.spec.run import SupervisedRunSpec
 from src.rade_qnet.sources.dataset.tabular import TabularDataModule

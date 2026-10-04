@@ -9,7 +9,7 @@ back.
 What crosses the boundary, and what does not
 ---------------------------------------------
 :class:`JobPayload` carries the **ingredients** of a
-:class:`~rade_qnet.core.runtime.context.RunContext`, not a context.
+:class:`~rade_qnet.core.lifecycle.context.RunContext`, not a context.
 
 A context holds hooks, a catalog and a tracker. Hooks are arbitrary user
 objects -- a progress bar bound to a terminal, a client holding a socket, a
@@ -42,10 +42,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ...core.runtime.components import get_model, import_registrations
-from ...core.runtime.context import RunContext
-from ...core.runtime.errors import SpecError
-from ...core.runtime.logging import get_logger
+from ...core.lifecycle.components import get_model, import_registrations
+from ...core.lifecycle.context import RunContext
+from ...core.lifecycle.errors import SpecError
+from ...core.provenance.logging import get_logger
 from ...storage.runs.catalog import JsonlCatalog
 from ..pipelines.train import TrainPipeline
 from ..stages.resolve import pipeline_for
@@ -53,7 +53,7 @@ from ..stages.resolve import pipeline_for
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from ...core.capability.definition import PredictorDefinition
+    from ...core.authoring.definition import PredictorDefinition
     from ...core.spec.run import SupervisedRunSpec
 
 __all__ = ["JobOutcome", "JobPayload", "run_job"]

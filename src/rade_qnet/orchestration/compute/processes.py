@@ -45,7 +45,7 @@ from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from typing import TYPE_CHECKING, Literal
 
-from ...core.runtime.logging import get_logger
+from ...core.provenance.logging import get_logger
 from .base import WorkFailure, WorkResult, execute_item
 
 if TYPE_CHECKING:

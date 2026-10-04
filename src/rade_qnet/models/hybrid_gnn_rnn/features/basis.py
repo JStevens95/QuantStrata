@@ -70,8 +70,8 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.linalg import qr
 
-from ....core.runtime.errors import ContractError
-from ....core.runtime.logging import get_logger
+from ....core.lifecycle.errors import ContractError
+from ....core.provenance.logging import get_logger
 
 __all__ = ["effective_rank", "select_basis"]
 

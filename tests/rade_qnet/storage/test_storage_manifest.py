@@ -18,7 +18,7 @@ from __future__ import annotations
 import pytest
 
 from src.rade_qnet.core.contract.bundle import BUNDLE_SCHEMA_VERSION
-from src.rade_qnet.core.runtime.errors import BundleError
+from src.rade_qnet.core.lifecycle.errors import BundleError
 from src.rade_qnet.storage.manifest import (
     EXCLUDED_DIRECTORIES,
     EXCLUDED_NAMES,

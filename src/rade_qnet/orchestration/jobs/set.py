@@ -36,10 +36,10 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
-from ...core.runtime.components import ENGINES, MODELS, registration_modules
-from ...core.runtime.context import RunContext
-from ...core.runtime.hashing import abbreviate_digest, digest_spec
-from ...core.runtime.logging import get_logger
+from ...core.lifecycle.components import ENGINES, MODELS, registration_modules
+from ...core.lifecycle.context import RunContext
+from ...core.provenance.hashing import abbreviate_digest, digest_spec
+from ...core.provenance.logging import get_logger
 from ..compute.base import WorkItem
 from ..compute.placement import Placement, choose_placement
 from .manifest import JobRecord, JobSetManifest

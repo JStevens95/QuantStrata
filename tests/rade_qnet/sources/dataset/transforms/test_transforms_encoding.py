@@ -30,7 +30,7 @@ import inspect
 
 import pytest
 
-from src.rade_qnet.core.runtime.errors import CapabilityError, ContractError
+from src.rade_qnet.core.lifecycle.errors import CapabilityError, ContractError
 from src.rade_qnet.sources.dataset.transforms.encoding import EncodingState
 
 UNIVERSE = ("EURUSD", "GBPUSD", "USDJPY")

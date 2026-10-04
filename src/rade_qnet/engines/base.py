@@ -493,7 +493,7 @@ class InteractiveEngine(Protocol):
     built, which is a better answer than a ``NotImplementedError`` from four
     stages in.
 
-    This is the same pattern as ``core.capability.protocols``, used for the
+    This is the same pattern as ``core.authoring.capabilities``, used for the
     same reason, and it is why the interactive pipeline resolves an engine
     through the ordinary registry and then asks one question of it.
 

@@ -17,7 +17,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.runtime.errors import BundleError
+from src.rade_qnet.core.lifecycle.errors import BundleError
 from src.rade_qnet.models.hybrid_gnn_rnn.features.encoder import EntityEncoderState
 from src.rade_qnet.models.hybrid_gnn_rnn.features.graph import build_graph
 from src.rade_qnet.models.hybrid_gnn_rnn.spec import AttributeEncoderSpec, GraphSpec

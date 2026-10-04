@@ -22,9 +22,9 @@ import pytest
 import yaml
 
 from src.rade_qnet import api
-from src.rade_qnet.core.runtime.components import engine as register_engine
-from src.rade_qnet.core.runtime.components import model as register_model
-from src.rade_qnet.core.runtime.errors import SpecError
+from src.rade_qnet.core.lifecycle.components import engine as register_engine
+from src.rade_qnet.core.lifecycle.components import model as register_model
+from src.rade_qnet.core.lifecycle.errors import SpecError
 from src.rade_qnet.orchestration.compute.local import LocalExecutor
 from src.rade_qnet.orchestration.jobs.groups import MANIFEST_FILENAME
 from src.rade_qnet.testkit.fixtures import SyntheticEngine, isolated_registries

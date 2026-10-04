@@ -31,12 +31,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ...core.runtime.components import report
-from ...core.runtime.logging import get_logger
+from ...core.lifecycle.components import report
+from ...core.provenance.logging import get_logger
 
 if TYPE_CHECKING:
     from ...core.contract.bundle import ModelBundle
-    from ...core.runtime.context import RunContext
+    from ...core.lifecycle.context import RunContext
 
 __all__ = ["Report", "ReportOutcome", "report"]
 
@@ -108,7 +108,7 @@ class Report(ABC):
     Base class for report writers.
 
     Subclasses implement :meth:`render` and are registered with
-    :func:`~rade_qnet.core.runtime.components.report`. The pipeline calls
+    :func:`~rade_qnet.core.lifecycle.components.report`. The pipeline calls
     :meth:`render_safely`, never :meth:`render` directly.
 
     Attributes

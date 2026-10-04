@@ -19,7 +19,7 @@ import inspect
 
 import pytest
 
-from src.rade_qnet.core.capability.definition import (
+from src.rade_qnet.core.authoring.definition import (
     ModelDefinition,
     PolicyDefinition,
     PredictorDefinition,
@@ -27,7 +27,7 @@ from src.rade_qnet.core.capability.definition import (
 )
 from src.rade_qnet.core.contract.signature import InputSignature, PolicySignature, SpaceSpec
 from src.rade_qnet.core.contract.state import FittedState
-from src.rade_qnet.core.runtime.components import MODELS
+from src.rade_qnet.core.lifecycle.components import MODELS
 from src.rade_qnet.testkit.fixtures import (
     StandardisingState,
     isolated_registries,

@@ -15,8 +15,8 @@ import json
 
 import pytest
 
-from src.rade_qnet.core.runtime.errors import SpecError
-from src.rade_qnet.core.runtime.hashing import digest_spec
+from src.rade_qnet.core.lifecycle.errors import SpecError
+from src.rade_qnet.core.provenance.hashing import digest_spec
 from src.rade_qnet.core.spec.run import (
     ComponentRef,
     ReinforcementRunSpec,

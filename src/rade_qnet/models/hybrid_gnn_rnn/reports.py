@@ -47,7 +47,7 @@ import numpy as np
 
 from ...analysis.reports.base import Report
 from ...analysis.visuals.export import save_figure
-from ...core.runtime.components import report
+from ...core.lifecycle.components import report
 from .state import HybridState
 from .visuals import (
     edge_weight_figure,

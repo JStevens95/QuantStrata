@@ -28,7 +28,7 @@ from src.rade_qnet.analysis.metrics.drift import (
     mean_shift,
     population_stability_index,
 )
-from src.rade_qnet.core.runtime.errors import ContractError
+from src.rade_qnet.core.lifecycle.errors import ContractError
 
 #: Large enough that sampling noise sits well below every threshold, so a
 #: "quiet on identical distributions" test is asserting the measure rather

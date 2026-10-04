@@ -12,7 +12,7 @@ Two of this model's layers reshape a width into heads::
     attention: width -> (attention_heads, width // attention_heads)
 
 Neither reshape is meaningful unless the width divides exactly, so both
-blocks raise :class:`~rade_qnet.core.runtime.errors.ContractError` at
+blocks raise :class:`~rade_qnet.core.lifecycle.errors.ContractError` at
 construction when it does not. That is the right behaviour -- the
 alternative is dropping ``width % heads`` features per head silently -- but
 it makes a joint search over ``units`` and ``*_heads`` wasteful in a way the
@@ -60,7 +60,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
 
-from ....core.runtime.errors import ContractError, SpecError
+from ....core.lifecycle.errors import ContractError, SpecError
 from ....orchestration.pipelines.tune import TunePipeline
 from ....orchestration.stages.search import expand
 from ..spec import HybridModelSpec

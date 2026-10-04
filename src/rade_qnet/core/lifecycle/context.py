@@ -30,9 +30,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
+from ..provenance.logging import bound_context, get_logger
+from ..provenance.seeding import derive_seed
 from .hooks import PipelineHook
-from .logging import bound_context, get_logger
-from .seeding import derive_seed
 
 if TYPE_CHECKING:
     from logging import Logger
@@ -61,7 +61,7 @@ class Catalog(Protocol):
     side -- ``entries`` and ``records``, which
     :class:`~rade_qnet.storage.runs.registry.RunRegistry` reads -- is deliberately
     absent, for the reason given at
-    :class:`~rade_qnet.core.capability.supervised.RebuildableDataModule`: an
+    :class:`~rade_qnet.core.authoring.supervised.RebuildableDataModule`: an
     ``isinstance`` check against a runtime-checkable protocol only tests that
     the methods exist, so widening this one would make every three-method
     stub in the suite stop satisfying it, failing training runs over methods

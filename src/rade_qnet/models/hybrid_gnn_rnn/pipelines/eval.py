@@ -55,7 +55,7 @@ from ....orchestration.stages.scoring import collect_targets, scoring_source
 if TYPE_CHECKING:
     from ....core.contract.data import DataBundle
     from ....core.contract.result import EvalResult, EvaluationResult
-    from ....core.runtime.handles import ModelHandle
+    from ....core.lifecycle.handles import ModelHandle
     from ....orchestration.stages.reload import LoadedBundle
 
 __all__ = ["HybridEvalPipeline", "breakdown_notes", "per_target_errors"]

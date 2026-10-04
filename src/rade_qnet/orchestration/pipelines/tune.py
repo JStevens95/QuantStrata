@@ -38,17 +38,17 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from ...core.contract.result import TrialRecord, TuningResult
-from ...core.runtime.components import get_model
-from ...core.runtime.context import RunContext
-from ...core.runtime.errors import ComponentError, ContractError, SpecError
-from ...core.runtime.logging import get_logger
-from ...core.runtime.pipeline import Pipeline
+from ...core.lifecycle.components import get_model
+from ...core.lifecycle.context import RunContext
+from ...core.lifecycle.errors import ComponentError, ContractError, SpecError
+from ...core.lifecycle.pipeline import Pipeline
+from ...core.provenance.logging import get_logger
 from ...core.spec.run import SupervisedRunSpec
 from ..stages.search import expand, propose
 from .train import TrainPipeline
 
 if TYPE_CHECKING:
-    from ...core.capability.definition import PredictorDefinition
+    from ...core.authoring.definition import PredictorDefinition
     from ...core.contract.data import DataBundle
     from ...core.spec.tune import TuneSpec
 

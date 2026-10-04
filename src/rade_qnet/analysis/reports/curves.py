@@ -17,7 +17,7 @@ from __future__ import annotations
 import csv
 from typing import TYPE_CHECKING
 
-from ...core.runtime.logging import get_logger
+from ...core.provenance.logging import get_logger
 from ..visuals.export import save_figure
 from ..visuals.figures import training_curve_figure
 from ..visuals.training import (

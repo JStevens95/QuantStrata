@@ -22,7 +22,7 @@ import json
 
 import pytest
 
-from src.rade_qnet.core.runtime.errors import SpecError
+from src.rade_qnet.core.lifecycle.errors import SpecError
 from src.rade_qnet.orchestration.jobs.groups import MANIFEST_FILENAME, GroupSet, read_group_set
 
 

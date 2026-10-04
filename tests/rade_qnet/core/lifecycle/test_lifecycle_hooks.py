@@ -14,7 +14,7 @@ import inspect
 
 import pytest
 
-from src.rade_qnet.core.runtime.hooks import PipelineHook
+from src.rade_qnet.core.lifecycle.hooks import PipelineHook
 
 #: Every hook point, with arguments that satisfy its signature. Kept as data so
 #: a newly added hook point is a one-line change here rather than a new test.

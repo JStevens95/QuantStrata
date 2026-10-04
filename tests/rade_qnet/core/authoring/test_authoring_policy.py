@@ -17,10 +17,10 @@ from __future__ import annotations
 
 import pytest
 
-from src.rade_qnet.core.capability.definition import PolicyDefinition
-from src.rade_qnet.core.capability.policy import EnvironmentLike, PolicyModel
+from src.rade_qnet.core.authoring.definition import PolicyDefinition
+from src.rade_qnet.core.authoring.policy import EnvironmentLike, PolicyModel
 from src.rade_qnet.core.contract.signature import PolicySignature, SpaceSpec
-from src.rade_qnet.core.runtime.errors import ComponentError
+from src.rade_qnet.core.lifecycle.errors import ComponentError
 
 OBSERVATION = SpaceSpec(kind="box", shape=(4,), dtype="float32", low=-1.0, high=1.0)
 ACTION = SpaceSpec(kind="discrete", n=2)

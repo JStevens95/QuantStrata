@@ -1,7 +1,7 @@
 """
 The base class for reinforcement-learning models: learn by acting.
 
-The third of the paradigm bases promised by :mod:`rade_qnet.core.capability`,
+The third of the paradigm bases promised by :mod:`rade_qnet.core.authoring`,
 and the one ``supervised.py`` says "arrives with Phase 7".
 
 Where :class:`~.supervised.SupervisedModel` learns a mapping from inputs to
@@ -59,8 +59,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from ..contract.signature import PolicySignature
-from ..runtime.errors import ComponentError
-from ..runtime.logging import get_logger
+from ..lifecycle.errors import ComponentError
+from ..provenance.logging import get_logger
 from .definition import PolicyDefinition
 
 if TYPE_CHECKING:

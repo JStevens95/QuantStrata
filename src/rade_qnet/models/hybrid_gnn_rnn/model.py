@@ -66,7 +66,7 @@ from typing import TYPE_CHECKING
 import torch
 from torch import Tensor, nn
 
-from ...core.runtime.errors import ContractError
+from ...core.lifecycle.errors import ContractError
 from .layers.attention import TargetAttentionLayer
 from .layers.fusion import FusionLayer
 from .layers.gnn import LAYER_NORM_EPS, GnnBlock

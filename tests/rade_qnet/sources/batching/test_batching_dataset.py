@@ -33,7 +33,7 @@ import pytest
 
 from src.rade_qnet.core.contract.data import TARGET_KEY
 from src.rade_qnet.core.contract.source import BatchSource, OrderedSource
-from src.rade_qnet.core.runtime.errors import ContractError
+from src.rade_qnet.core.lifecycle.errors import ContractError
 from src.rade_qnet.core.spec.data import LoaderSpec, SequenceSpec, TabularSourceSpec
 from src.rade_qnet.sources.batching.dataset import DatasetSource, sources_for
 from src.rade_qnet.sources.dataset.tabular import TabularDataModule

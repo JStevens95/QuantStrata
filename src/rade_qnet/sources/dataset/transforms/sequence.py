@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ....core.runtime.errors import ContractError
+from ....core.lifecycle.errors import ContractError
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray

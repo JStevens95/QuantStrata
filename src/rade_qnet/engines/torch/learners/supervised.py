@@ -33,9 +33,9 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from ....core.runtime.components import learner as register_learner
-from ....core.runtime.errors import EngineError
-from ....core.runtime.logging import get_logger
+from ....core.lifecycle.components import learner as register_learner
+from ....core.lifecycle.errors import EngineError
+from ....core.provenance.logging import get_logger
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

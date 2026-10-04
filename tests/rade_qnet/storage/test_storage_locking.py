@@ -28,7 +28,7 @@ from pathlib import Path
 
 import pytest
 
-from src.rade_qnet.core.runtime.errors import BundleError
+from src.rade_qnet.core.lifecycle.errors import BundleError
 from src.rade_qnet.storage.locking import exclusive_lock, retry_until_acquired
 
 
