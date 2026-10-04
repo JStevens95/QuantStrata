@@ -51,9 +51,8 @@ registry again and open a new handle.
 
 The interactive counterpart
 ----------------------------
-``Agent`` -- the same idea for a policy, answering ``act`` rather than
-``predict`` -- lands with the public :func:`rade_qnet.api.act`. It is a
-separate type rather than a flag, because a predictor is handed inputs and
+:class:`Agent` is the same idea for a policy, answering ``act`` rather than
+``predict``.  It is a separate type rather than a flag, because a predictor is handed inputs and
 returns values with provenance while an agent is handed one observation and
 returns one action, with no dataset, no split and nothing to attribute a
 number to. One class covering both would mean a method that sometimes took a
@@ -66,20 +65,40 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ..core.lifecycle.components import ComponentError, get_learner
+from ..core.lifecycle.errors import ContractError
 from ..core.provenance.logging import get_logger
 from .pipelines.infer import DEFAULT_SPLIT, InferPipeline
-from .stages.reload import load_bundle
+from .stages.reload import load_bundle, load_policy
 from .stages.resolve import pipeline_for
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from ..core.contract.result import Predictions
+    from ..core.contract.signature import PolicySignature
     from ..core.lifecycle.context import RunContext
     from ..core.spec.data import SourceSpec
-    from .stages.reload import LoadedBundle
+    from .stages.reload import LoadedBundle, LoadedPolicy
 
-__all__ = ["Predictor"]
+#: The method a learner declares when it can act without exploring.
+#:
+#: Looked up by name rather than declared on ``PolicyLearner``, so that
+#: serving does not add a contract method nothing yet honours -- the mistake
+#: ``EngineCapabilities`` made for four phases.
+#:
+#: Looked up on the learner *type* rather than on an instance, and that is
+#: not a convenience. Constructing a learner requires an optimiser built over
+#: the policy's parameters, a resolved hardware block and a gradient-norm
+#: tracker, none of which a served policy has or should have. The constraint
+#: that follows is the right one anyway: a greedy action depends on the
+#: policy's output and the action space, never on the exploration schedule or
+#: the state of the optimiser, so a correct implementation never needed an
+#: instance. A learner declares this as a ``staticmethod`` taking the policy
+#: and one observation.
+GREEDY_METHOD = "act_greedily"
+
+__all__ = ["Agent", "Predictor"]
 
 _LOGGER = get_logger(__name__)
 
@@ -248,3 +267,182 @@ class Predictor:
             _LOGGER.debug("%s has static inputs; preparing per prediction", self._loaded.model_name)
             return
         self._prepared = pipeline.handle
+
+
+class Agent:
+    """
+    A saved policy, held open so it can be asked for actions.
+
+    Construct one through :func:`rade_qnet.api.act` or
+    :func:`rade_qnet.api.load`, not directly.
+
+    A separate type from :class:`Predictor` rather than a flag on it. A
+    predictor is handed a dataset and returns values with provenance; an
+    agent is handed one observation and returns one action, with no split,
+    no identifiers and nothing to attribute a number to. One class covering
+    both would mean a method that sometimes took a ``source`` and sometimes
+    an ``observation``, and a caller discovering which at run time.
+
+    What is cached is simpler than for a predictor: a policy has no static
+    inputs, so there is no case where reuse could go stale, and the whole
+    rebuilt network is kept. The same two caveats apply -- a handle is not
+    thread-safe, and it is a snapshot that does not follow an alias.
+
+    Parameters
+    ----------
+    directory
+        The bundle directory.
+    verify
+        Whether to re-hash the bundle's files against its manifest. Done
+        once, at open.
+
+    Attributes
+    ----------
+    directory
+        Where the bundle was loaded from.
+
+    Raises
+    ------
+    BundleError
+        If the bundle holds a supervised model rather than a policy.
+    """
+
+    def __init__(self, directory: Path | str, *, verify: bool = True) -> None:
+        """
+        Open the bundle once and rebuild the policy from it.
+
+        Parameters
+        ----------
+        directory
+            The bundle directory.
+        verify
+            Whether to verify the bundle against its manifest.
+        """
+        self.directory = Path(directory)
+        self._loaded: LoadedPolicy = load_policy(self.directory, verify=verify)
+        # The type, not an instance: see GREEDY_METHOD for why one cannot be
+        # built here and why that is the correct constraint rather than a
+        # limitation to work around.
+        self._learner_name = self._loaded.spec.training.learner
+        self._learner_type = get_learner(self._learner_name)
+        _LOGGER.info("opened agent: %s", self._loaded.describe())
+
+    @property
+    def model_name(self) -> str:
+        """
+        Return the name the policy is registered under.
+
+        Returns
+        -------
+        str
+            From the manifest.
+        """
+        return self._loaded.model_name
+
+    @property
+    def signature(self) -> PolicySignature:
+        """
+        Return the spaces the policy was built against.
+
+        Returns
+        -------
+        PolicySignature
+            Read off the bundle rather than off an environment -- which is
+            the point of having saved them, since a served policy has no
+            environment to read them from.
+        """
+        return self._loaded.signature
+
+    def describe(self) -> str:
+        """
+        Return a one-line description, for a log or a health endpoint.
+
+        Returns
+        -------
+        str
+            Model name, version and both spaces.
+        """
+        return self._loaded.describe()
+
+    def act(self, observation: object) -> object:
+        """
+        Return the action the policy takes for one observation.
+
+        Greedily, with no exploration. A served agent is being asked what it
+        believes, not being trained, and that is the opposite of the choice
+        the ``fit_steps`` driver makes during training, where exploring is
+        the entire point.
+
+        That distinction is why this raises rather than falling back to
+        :meth:`PolicyLearner.act`. ``act`` is the *exploratory* action --
+        ``RandomPolicyLearner`` samples from the policy's output rather than
+        taking its argmax, deliberately. Serving through it would mean a
+        deployed policy quietly returning a different action each time it
+        was asked the same question, with no symptom to notice and no entry
+        in the log. Refusing is the only honest answer until a learner
+        declares a greedy mode, and the refusal names the method to add.
+
+        Parameters
+        ----------
+        observation
+            One observation, unbatched, matching the signature's
+            observation space.
+
+        Returns
+        -------
+        object
+            One action, matching the signature's action space.
+
+        Raises
+        ------
+        ContractError
+            If the observation does not match the declared space.
+        ComponentError
+            If the learner the policy was trained with declares no greedy
+            mode. Expected until the first real algorithm lands; the
+            message names ``act_greedily`` and the learner that lacks it.
+        """
+        self._check(observation)
+        greedily = getattr(self._learner_type, GREEDY_METHOD, None)
+        if greedily is None:
+            raise ComponentError(
+                f"the policy at {self.directory} was trained by the "
+                f"{self._learner_name!r} learner, which declares no "
+                f"{GREEDY_METHOD!r}. Serving a policy means acting without "
+                f"exploration, and this learner's 'act' explores by design -- "
+                f"using it here would return a different action each time the "
+                f"same observation was presented, silently and with nothing "
+                f"in the log to show it. Add a static "
+                f"{GREEDY_METHOD}(policy, observation) to the learner"
+            )
+        return greedily(self._loaded.policy, observation)
+
+    def _check(self, observation: object) -> None:
+        """
+        Refuse an observation the weights were not trained against.
+
+        Checked here rather than left to the engine because the failure a
+        shape mismatch produces downstream is not always an exception. A
+        network whose first layer happens to accept the wrong width returns
+        a number, and that number is indistinguishable from a real one.
+
+        Parameters
+        ----------
+        observation
+            What the caller passed.
+
+        Raises
+        ------
+        ContractError
+            If the observation's shape differs from the declared space's.
+        """
+        expected = tuple(self._loaded.signature.observation.shape)
+        shape = getattr(observation, "shape", None)
+        if shape is None or tuple(shape) == expected:
+            return
+        raise ContractError(
+            f"the policy at {self.directory} was trained against observations "
+            f"of shape {expected} but was given one of shape {tuple(shape)}; "
+            f"the bundle's signature is what the weights expect and cannot be "
+            f"adapted to"
+        )

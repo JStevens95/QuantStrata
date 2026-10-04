@@ -34,15 +34,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from ...core.authoring.definition import PredictorDefinition
+from ...core.authoring.definition import PolicyDefinition, PredictorDefinition
 from ...core.authoring.supervised import RebuildableDataModule
-from ...core.lifecycle.components import MODELS, ComponentError, get_model
+from ...core.lifecycle.components import MODELS, ComponentError, get_engine, get_model
 from ...core.lifecycle.errors import BundleError
 from ...core.provenance.logging import get_logger
-from ...core.spec.run import SupervisedRunSpec
+from ...core.spec.run import ReinforcementRunSpec, SupervisedRunSpec
 from ...storage.bundle import (
     load_fitted_state,
     load_lineage,
+    load_policy_signature,
     load_signature,
     load_spec,
     open_bundle,
@@ -53,10 +54,10 @@ if TYPE_CHECKING:
 
     from ...core.contract.bundle import SavedBundle
     from ...core.contract.data import DataLineage
-    from ...core.contract.signature import InputSignature
+    from ...core.contract.signature import InputSignature, PolicySignature
     from ...core.contract.state import FittedState
 
-__all__ = ["LoadedBundle", "load_bundle"]
+__all__ = ["LoadedBundle", "LoadedPolicy", "load_bundle", "load_policy"]
 
 _LOGGER = get_logger(__name__)
 
@@ -169,6 +170,178 @@ def load_bundle(directory: Path, *, verify: bool = True) -> LoadedBundle:
     )
     _LOGGER.info("loaded %s", loaded.describe())
     return loaded
+
+
+@dataclass(frozen=True, slots=True)
+class LoadedPolicy:
+    """
+    Everything needed to ask a saved policy for an action.
+
+    The interactive counterpart of :class:`LoadedBundle`, and deliberately
+    a separate type holding fewer things rather than a variant of it. A
+    policy bundle has no fitted state to apply, because nothing stood
+    between the environment and the network, and no lineage, because there
+    were no splits -- there was no dataset. Widening ``LoadedBundle`` with
+    two fields that are always empty for one of its two uses would mean
+    every reader of either path checking which it had.
+
+    Parameters
+    ----------
+    saved
+        The located bundle: its directory and verified manifest.
+    spec
+        The reinforcement run specification the policy was trained from.
+    definition
+        The model definition, resolved from the manifest's model name.
+    policy
+        The rebuilt network, with its saved parameters loaded.
+    signature
+        The observation and action spaces the policy was built against.
+        Read off the bundle rather than off an environment, which is the
+        whole point of having saved them: serving a policy means there is
+        no environment to read them from.
+    """
+
+    saved: SavedBundle
+    spec: ReinforcementRunSpec
+    definition: PolicyDefinition
+    policy: object
+    signature: PolicySignature
+
+    @property
+    def model_name(self) -> str:
+        """
+        Return the name the policy is registered under.
+
+        Returns
+        -------
+        str
+            From the manifest, so it is what was recorded rather than what
+            the resolved class happens to be called now.
+        """
+        return self.saved.manifest.model_name
+
+    def describe(self) -> str:
+        """
+        Return a one-line description, for a log and a health endpoint.
+
+        Returns
+        -------
+        str
+            Model name, bundle version and the two spaces, since the spaces
+            are what a caller most often has wrong.
+        """
+        return (
+            f"{self.model_name} v{self.saved.manifest.version} "
+            f"(observations {self.signature.observation.shape}, "
+            f"actions {self.signature.action.shape})"
+        )
+
+
+def load_policy(directory: Path, *, verify: bool = True) -> LoadedPolicy:
+    """
+    Open a saved policy and rebuild it, ready to be asked for actions.
+
+    The counterpart of :func:`load_bundle`, which refuses a policy bundle
+    on purpose. The two paths share the manifest handling and diverge
+    immediately after: there is no fitted state to load, no lineage to
+    honour, and the signature describes two spaces rather than a set of
+    named inputs and a target.
+
+    Note what this does *not* do: place the policy on a device. A served
+    policy answers one observation at a time, and the accelerator transfer
+    costs more than the forward pass it would accelerate. The policy stays
+    where :meth:`Engine.load_weights` left it.
+
+    Parameters
+    ----------
+    directory
+        The bundle directory.
+    verify
+        Whether to re-hash every file against the manifest.
+
+    Returns
+    -------
+    LoadedPolicy
+        The specification, definition, rebuilt policy and spaces.
+
+    Raises
+    ------
+    BundleError
+        If the bundle is missing or inconsistent, if it holds a supervised
+        model rather than a policy, or if its model is not registered in
+        this process.
+    """
+    saved = open_bundle(directory, verify=verify)
+    spec = load_spec(saved)
+
+    if not isinstance(spec, ReinforcementRunSpec):
+        raise BundleError(
+            f"the bundle at {directory} holds a {type(spec).__name__}; only "
+            f"a policy can be served through this path. A supervised model "
+            f"is served with api.load, which returns a Predictor"
+        )
+
+    definition = _policy_definition_for(saved.manifest.model_name, directory)
+    signature = load_policy_signature(saved)
+
+    engine = get_engine(spec.training.engine)()
+    policy = definition.build_policy(spec, signature)
+    policy = engine.materialise_policy(policy, signature)
+    policy = engine.load_weights(policy, saved.weights_path)
+
+    loaded = LoadedPolicy(
+        saved=saved,
+        spec=spec,
+        definition=definition,
+        policy=policy,
+        signature=signature,
+    )
+    _LOGGER.info("loaded policy %s", loaded.describe())
+    return loaded
+
+
+def _policy_definition_for(model_name: str, directory: Path) -> PolicyDefinition:
+    """
+    Resolve a manifest's model name into an instantiated policy definition.
+
+    Parameters
+    ----------
+    model_name
+        The name recorded in the manifest.
+    directory
+        The bundle directory, named in errors.
+
+    Returns
+    -------
+    PolicyDefinition
+        A fresh instance of the registered definition.
+
+    Raises
+    ------
+    BundleError
+        If the name is not registered here, or is registered to something
+        that is not a policy.
+    """
+    try:
+        model_type = get_model(model_name)
+    except ComponentError as error:
+        raise BundleError(
+            f"the bundle at {directory} was trained by a model named "
+            f"{model_name!r}, which is not registered in this process. A "
+            f"model registers when its package is imported, so import the "
+            f"package that defines it before loading the bundle. "
+            f"Registered here: {sorted(MODELS.names()) or 'nothing'}"
+        ) from error
+
+    definition = model_type()
+    if not isinstance(definition, PolicyDefinition):
+        raise BundleError(
+            f"the bundle at {directory} names the model {model_name!r}, which "
+            f"is registered as a {type(definition).__name__} rather than a "
+            f"policy; only a policy can be asked for an action"
+        )
+    return definition
 
 
 def _definition_for(model_name: str, directory: Path) -> PredictorDefinition:

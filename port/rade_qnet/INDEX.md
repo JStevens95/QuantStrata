@@ -1,6 +1,6 @@
 # Porting `rade_qnet` through a markdown-only proxy
 
-40 documents, 177 files, 50,294 lines, 1,791,267 bytes.
+40 documents, 178 files, 51,087 lines, 1,820,630 bytes.
 
 Each document below covers one directory. Work down the list in order: a parent directory always appears before its children, so the tree is importable at every step.
 
@@ -13,7 +13,7 @@ Each document below covers one directory. Work down the list in order: a parent 
 | # | Document | Directory | Files | Bytes |
 | --- | --- | --- | ---: | ---: |
 | 1 | [`_repository.md`](_repository.md) | `.` | 1 | 5,974 |
-| 2 | [`_root.md`](_root.md) | `src/rade_qnet` | 3 | 34,521 |
+| 2 | [`_root.md`](_root.md) | `src/rade_qnet` | 3 | 39,605 |
 | 3 | [`analysis.md`](analysis.md) | `src/rade_qnet/analysis` | 1 | 955 |
 | 4 | [`analysis__metrics.md`](analysis__metrics.md) | `src/rade_qnet/analysis/metrics` | 4 | 36,690 |
 | 5 | [`analysis__reports.md`](analysis__reports.md) | `src/rade_qnet/analysis/reports` | 6 | 48,453 |
@@ -39,11 +39,11 @@ Each document below covers one directory. Work down the list in order: a parent 
 | 25 | [`models__lstm_tabular.md`](models__lstm_tabular.md) | `src/rade_qnet/models/lstm_tabular` | 5 | 14,758 |
 | 26 | [`models__ridge.md`](models__ridge.md) | `src/rade_qnet/models/ridge` | 5 | 10,771 |
 | 27 | [`models__xgb_tabular.md`](models__xgb_tabular.md) | `src/rade_qnet/models/xgb_tabular` | 5 | 11,131 |
-| 28 | [`orchestration.md`](orchestration.md) | `src/rade_qnet/orchestration` | 1 | 1,227 |
+| 28 | [`orchestration.md`](orchestration.md) | `src/rade_qnet/orchestration` | 2 | 18,572 |
 | 29 | [`orchestration__compute.md`](orchestration__compute.md) | `src/rade_qnet/orchestration/compute` | 6 | 48,408 |
 | 30 | [`orchestration__jobs.md`](orchestration__jobs.md) | `src/rade_qnet/orchestration/jobs` | 6 | 58,453 |
-| 31 | [`orchestration__pipelines.md`](orchestration__pipelines.md) | `src/rade_qnet/orchestration/pipelines` | 6 | 102,254 |
-| 32 | [`orchestration__stages.md`](orchestration__stages.md) | `src/rade_qnet/orchestration/stages` | 5 | 40,907 |
+| 31 | [`orchestration__pipelines.md`](orchestration__pipelines.md) | `src/rade_qnet/orchestration/pipelines` | 6 | 103,198 |
+| 32 | [`orchestration__stages.md`](orchestration__stages.md) | `src/rade_qnet/orchestration/stages` | 5 | 46,897 |
 | 33 | [`sources.md`](sources.md) | `src/rade_qnet/sources` | 1 | 1,247 |
 | 34 | [`sources__batching.md`](sources__batching.md) | `src/rade_qnet/sources/batching` | 3 | 34,972 |
 | 35 | [`sources__dataset.md`](sources__dataset.md) | `src/rade_qnet/sources/dataset` | 7 | 97,065 |
@@ -94,7 +94,7 @@ sys.exit(1 if missing or differs else 0)
 ```
 fba21c243bfdeb98  pyproject.toml
 f0aa795153b0a74e  src/rade_qnet/__init__.py
-561f825b25dd9412  src/rade_qnet/api.py
+97da3806b2c8875e  src/rade_qnet/api.py
 f84c1e95253049a7  src/rade_qnet/ruff.toml
 c610c7393d3bee5b  src/rade_qnet/analysis/__init__.py
 6bc47bdcc1b578ae  src/rade_qnet/analysis/metrics/__init__.py
@@ -215,6 +215,7 @@ c7cf7a7b0632cefd  src/rade_qnet/models/xgb_tabular/model.py
 292e398c993f0db6  src/rade_qnet/models/xgb_tabular/register.py
 446633bfa7a1d14b  src/rade_qnet/models/xgb_tabular/spec.py
 41743506e557df79  src/rade_qnet/orchestration/__init__.py
+c2ee35c80b1a71f6  src/rade_qnet/orchestration/serving.py
 e51e01a50744d04c  src/rade_qnet/orchestration/compute/__init__.py
 4368fcdf46c5da38  src/rade_qnet/orchestration/compute/base.py
 518ba800f9e96a02  src/rade_qnet/orchestration/compute/gpus.py
@@ -229,12 +230,12 @@ e51e01a50744d04c  src/rade_qnet/orchestration/compute/__init__.py
 4b4447c3711fbf4c  src/rade_qnet/orchestration/jobs/unit.py
 67aa54d4ce6a7acf  src/rade_qnet/orchestration/pipelines/__init__.py
 f9f065ad810b76dc  src/rade_qnet/orchestration/pipelines/evaluate.py
-f53febd64a1946b7  src/rade_qnet/orchestration/pipelines/infer.py
+85df0b89051a7a26  src/rade_qnet/orchestration/pipelines/infer.py
 96b510ee66d5fd62  src/rade_qnet/orchestration/pipelines/reinforce.py
 f61cbb9d86175cd0  src/rade_qnet/orchestration/pipelines/train.py
 dd0d38b33938ebe7  src/rade_qnet/orchestration/pipelines/tune.py
 d4555a56cb073632  src/rade_qnet/orchestration/stages/__init__.py
-625a003bdd93daa9  src/rade_qnet/orchestration/stages/reload.py
+fd1d9434a83b8a95  src/rade_qnet/orchestration/stages/reload.py
 52a0bf45099efed5  src/rade_qnet/orchestration/stages/resolve.py
 2c240ae5ec2ff681  src/rade_qnet/orchestration/stages/scoring.py
 f3ffe459960cd03e  src/rade_qnet/orchestration/stages/search.py

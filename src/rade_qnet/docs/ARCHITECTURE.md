@@ -1049,8 +1049,61 @@ left unset, the budget is whatever each host decided. See
 ```python
 api.evaluate(bundle="hybrid_gnn_rnn/FX__G10/v7", split="test")
 api.tune("configs/hybrid_tune.yaml")              # data built once, reused per trial
-api.act(bundle="hedger/USD/v3", observation=obs)  # reinforcement-learning path
+api.infer("hybrid_gnn_rnn/FX__G10/v7", source=batch)
+api.act("hedger/USD/v3", observation)             # reinforcement-learning path
 ```
+
+### Serving: one shot, or held open
+
+`infer` and `act` rebuild the model on every call. For a scheduled batch run
+that is the guarantee rather than the waste — the artefact on disk is provably
+the artefact that produced the numbers. For a service answering requests it is
+unusable, so there is a held form of each:
+
+```python
+predictor = api.load("hybrid_gnn_rnn/FX__G10/v7")   # supervised
+predictor.predict(source=batch)
+
+hedger = api.agent("hedger/USD/v3")                 # reinforcement learning
+hedger.act(observation)
+```
+
+Two types rather than one with a flag. A predictor is handed a dataset and
+returns values with provenance; an agent is handed one observation and returns
+one action, with no split, no identifiers and nothing to attribute a number to.
+One class covering both would mean a method that sometimes took a `source` and
+sometimes an `observation`, discovered at run time.
+
+What a held handle caches is a correctness decision, not a performance one. The
+opened bundle and the weight-loaded model depend on the bundle alone and are
+kept. The *device-prepared* model is kept only when the model has no static
+inputs: a graph adjacency or an entity-attribute table comes from the data
+build, can change between requests, and a handle prepared against a stale one
+answers confidently from the wrong neighbourhood with no symptom. Most models
+have none.
+
+Two things a handle does not promise. It is **not thread-safe** — the engines
+mutate the model during a forward pass, so the supported pattern is one handle
+per worker. And it is a **snapshot**: promoting a new run to an alias does not
+move an open handle onto it, because swapping the model under a running service
+with no event in the log to explain the change in numbers is worse than
+requiring a restart.
+
+#### Acting is refused until it can be honest
+
+`PolicyLearner.act` is the *exploratory* action — `RandomLearner` samples from
+the policy's output rather than taking its argmax, deliberately. Serving
+through it would give a deployed policy that returned a different action each
+time it was asked the same question, silently. So `Agent.act` looks for an
+`act_greedily` on the learner and raises a `ComponentError` naming it when
+absent, which is the state until the first real algorithm lands.
+
+It is looked up on the learner *type*, not an instance, and that constraint is
+deliberate. Constructing a learner needs an optimiser over the policy's
+parameters, which a served policy has no business building — and a greedy
+action depends on the policy's output and the action space, never on the
+exploration schedule or the optimiser's state, so a correct implementation
+never needed an instance anyway.
 
 Or from the command line:
 

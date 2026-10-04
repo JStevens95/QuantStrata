@@ -53,7 +53,7 @@ from .orchestration.pipelines.infer import InferPipeline
 from .orchestration.pipelines.reinforce import ReinforcePipeline
 from .orchestration.pipelines.train import TrainPipeline
 from .orchestration.pipelines.tune import TunePipeline
-from .orchestration.serving import Predictor
+from .orchestration.serving import Agent, Predictor
 from .orchestration.stages.resolve import pipeline_for
 from .orchestration.stages.scoring import EVALUATED_SPLITS
 from .storage.bundle import BundleError, load_manifest
@@ -74,6 +74,8 @@ if TYPE_CHECKING:
     from .orchestration.jobs.manifest import JobSetManifest
 
 __all__ = [
+    "act",
+    "agent",
     "evaluate",
     "infer",
     "load",
@@ -520,6 +522,89 @@ def load(
     directory = Path(bundle)
     context = _bundle_context(directory, action="infer", output_root=output_root)
     return Predictor(directory, context=context, verify=verify)
+
+
+def agent(bundle: Path | str, *, verify: bool = True) -> Agent:
+    """
+    Open a saved policy and hold it, ready to be asked for actions.
+
+    The interactive counterpart of :func:`load`. A policy has no dataset to
+    score and no splits to honour, so there is nothing to pass but an
+    observation -- which is why this returns a different type rather than a
+    :class:`~rade_qnet.orchestration.serving.Predictor` in a different mood.
+
+    Parameters
+    ----------
+    bundle
+        The bundle directory, from a reinforcement run.
+    verify
+        Whether to re-hash the bundle's files against its manifest.
+
+    Returns
+    -------
+    Agent
+        Call :meth:`~rade_qnet.orchestration.serving.Agent.act` on it.
+
+    Raises
+    ------
+    BundleError
+        If the bundle holds a supervised model. Use :func:`load` for those.
+
+    Examples
+    --------
+    ::
+
+        hedger = api.agent("artifacts/hedger/v3")
+        position = hedger.act(observation)
+    """
+    return Agent(Path(bundle), verify=verify)
+
+
+def act(bundle: Path | str, observation: object, *, verify: bool = True) -> object:
+    """
+    Ask a saved policy for one action, opening it for the occasion.
+
+    The one-shot form, and the counterpart of :func:`infer`: convenient for
+    a notebook or a script, wasteful in a loop. Opening a bundle means
+    reading it, verifying it against its manifest and rebuilding the
+    network, and doing that per action would dominate the action itself by
+    orders of magnitude. A service uses :func:`agent` and keeps the handle.
+
+    Actions are taken greedily, with no exploration -- a served policy is
+    being asked what it believes, not being trained. Until a learner
+    declares a greedy mode this raises rather than falling back to the
+    exploratory action, because a deployed policy that quietly returned a
+    different action each time it was asked the same question would be
+    wrong with no symptom.
+
+    Parameters
+    ----------
+    bundle
+        The bundle directory.
+    observation
+        One observation, unbatched, matching the policy's observation space.
+    verify
+        Whether to re-hash the bundle's files against its manifest.
+
+    Returns
+    -------
+    object
+        One action, matching the policy's action space.
+
+    Raises
+    ------
+    ContractError
+        If the observation does not match the saved observation space.
+    ComponentError
+        If the learner the policy was trained with declares no greedy mode.
+
+    Examples
+    --------
+    ::
+
+        position = api.act("artifacts/hedger/v3", observation)
+    """
+    return agent(bundle, verify=verify).act(observation)
 
 
 def _directory(value: Path | str | None) -> Path | None:

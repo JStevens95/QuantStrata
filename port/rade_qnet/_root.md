@@ -5,7 +5,7 @@
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 85 | 3952 | `f0aa795153b0a74e` |
-| 2 | `api.py` | 733 | 25450 | `561f825b25dd9412` |
+| 2 | `api.py` | 887 | 30534 | `97da3806b2c8875e` |
 | 3 | `ruff.toml` | 111 | 5119 | `f84c1e95253049a7` |
 
 ---
@@ -106,7 +106,7 @@ __all__: tuple[str, ...] = ("__version__",)
 
 ## 2. `src/rade_qnet/api.py`
 
-25450 bytes · SHA-256 `561f825b25dd9412`
+30534 bytes · SHA-256 `97da3806b2c8875e`
 
 ```python
 """
@@ -164,6 +164,7 @@ from .orchestration.pipelines.infer import InferPipeline
 from .orchestration.pipelines.reinforce import ReinforcePipeline
 from .orchestration.pipelines.train import TrainPipeline
 from .orchestration.pipelines.tune import TunePipeline
+from .orchestration.serving import Agent, Predictor
 from .orchestration.stages.resolve import pipeline_for
 from .orchestration.stages.scoring import EVALUATED_SPLITS
 from .storage.bundle import BundleError, load_manifest
@@ -183,7 +184,18 @@ if TYPE_CHECKING:
     from .orchestration.jobs.groups import DataGroup
     from .orchestration.jobs.manifest import JobSetManifest
 
-__all__ = ["evaluate", "infer", "registry", "train", "train_groups", "train_jobs", "tune"]
+__all__ = [
+    "act",
+    "agent",
+    "evaluate",
+    "infer",
+    "load",
+    "registry",
+    "train",
+    "train_groups",
+    "train_jobs",
+    "tune",
+]
 
 _LOGGER = get_logger(__name__)
 
@@ -562,6 +574,148 @@ def registry(root: Path | str | None = None) -> RunRegistry:
         api.infer(runs.get(best.model_name, alias="production").directory, source=...)
     """
     return RunRegistry(_directory(root) or _DEFAULT_ROOT)
+
+
+def load(
+    bundle: Path | str,
+    *,
+    output_root: Path | str | None = None,
+    verify: bool = True,
+) -> Predictor:
+    """
+    Open a saved model and hold it, for a caller that will use it repeatedly.
+
+    The difference from :func:`infer` is what happens on the *second* call.
+    ``infer`` reads the bundle, verifies it against its manifest, rebuilds
+    the architecture and loads the weights, every time. For scheduled batch
+    scoring that is the guarantee rather than the waste -- the artefact on
+    disk is provably the artefact that produced the numbers. For a service
+    answering requests it is unusable, so this holds that work open.
+
+    What stays cached is everything that depends on the bundle alone. The
+    prepared model is cached too, but only for a model with no static
+    inputs, because a graph adjacency or an entity-attribute table can
+    change between requests and a handle prepared against a stale one would
+    answer confidently from the wrong neighbourhood. Most models have none.
+
+    A handle is a snapshot and is not thread-safe: one per worker. Promoting
+    a new run to an alias does not move an open handle onto it, because
+    swapping the model under a running service with no event in the log to
+    explain the change in numbers is worse than requiring a restart.
+
+    Parameters
+    ----------
+    bundle
+        The bundle directory.
+    output_root
+        Where predictions write. Defaults to the bundle's parent.
+    verify
+        Whether to re-hash the bundle's files against its manifest. Done
+        once here rather than per prediction, which is the point.
+
+    Returns
+    -------
+    Predictor
+        Call :meth:`~rade_qnet.orchestration.serving.Predictor.predict` on
+        it as often as you like. Every prediction carries the same
+        provenance a one-shot :func:`infer` produces.
+
+    Examples
+    --------
+    ::
+
+        runs = api.registry("artifacts/eod")
+        best = runs.get("hybrid_gnn_rnn", alias="production")
+        predictor = api.load(best.directory)
+        for batch in incoming:
+            predictions = predictor.predict(source=batch)
+    """
+    directory = Path(bundle)
+    context = _bundle_context(directory, action="infer", output_root=output_root)
+    return Predictor(directory, context=context, verify=verify)
+
+
+def agent(bundle: Path | str, *, verify: bool = True) -> Agent:
+    """
+    Open a saved policy and hold it, ready to be asked for actions.
+
+    The interactive counterpart of :func:`load`. A policy has no dataset to
+    score and no splits to honour, so there is nothing to pass but an
+    observation -- which is why this returns a different type rather than a
+    :class:`~rade_qnet.orchestration.serving.Predictor` in a different mood.
+
+    Parameters
+    ----------
+    bundle
+        The bundle directory, from a reinforcement run.
+    verify
+        Whether to re-hash the bundle's files against its manifest.
+
+    Returns
+    -------
+    Agent
+        Call :meth:`~rade_qnet.orchestration.serving.Agent.act` on it.
+
+    Raises
+    ------
+    BundleError
+        If the bundle holds a supervised model. Use :func:`load` for those.
+
+    Examples
+    --------
+    ::
+
+        hedger = api.agent("artifacts/hedger/v3")
+        position = hedger.act(observation)
+    """
+    return Agent(Path(bundle), verify=verify)
+
+
+def act(bundle: Path | str, observation: object, *, verify: bool = True) -> object:
+    """
+    Ask a saved policy for one action, opening it for the occasion.
+
+    The one-shot form, and the counterpart of :func:`infer`: convenient for
+    a notebook or a script, wasteful in a loop. Opening a bundle means
+    reading it, verifying it against its manifest and rebuilding the
+    network, and doing that per action would dominate the action itself by
+    orders of magnitude. A service uses :func:`agent` and keeps the handle.
+
+    Actions are taken greedily, with no exploration -- a served policy is
+    being asked what it believes, not being trained. Until a learner
+    declares a greedy mode this raises rather than falling back to the
+    exploratory action, because a deployed policy that quietly returned a
+    different action each time it was asked the same question would be
+    wrong with no symptom.
+
+    Parameters
+    ----------
+    bundle
+        The bundle directory.
+    observation
+        One observation, unbatched, matching the policy's observation space.
+    verify
+        Whether to re-hash the bundle's files against its manifest.
+
+    Returns
+    -------
+    object
+        One action, matching the policy's action space.
+
+    Raises
+    ------
+    ContractError
+        If the observation does not match the saved observation space.
+    ComponentError
+        If the learner the policy was trained with declares no greedy mode.
+
+    Examples
+    --------
+    ::
+
+        position = api.act("artifacts/hedger/v3", observation)
+    """
+    return agent(bundle, verify=verify).act(observation)
 
 
 def _directory(value: Path | str | None) -> Path | None:
