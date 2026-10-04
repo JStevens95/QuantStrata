@@ -5,7 +5,7 @@
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 42 | 2099 | `be147ade92895e66` |
-| 2 | `conformance.py` | 1182 | 40373 | `d4305777a4651f68` |
+| 2 | `conformance.py` | 1183 | 40426 | `0523b7740d3d7d62` |
 | 3 | `fixtures.py` | 1366 | 43686 | `77c26e7f74462931` |
 | 4 | `parity.py` | 1009 | 36687 | `ed3df40d131fa2e1` |
 
@@ -64,7 +64,7 @@ __all__: tuple[str, ...] = ()
 
 ## 2. `src/rade_qnet/testkit/conformance.py`
 
-40373 bytes · SHA-256 `d4305777a4651f68`
+40426 bytes · SHA-256 `0523b7740d3d7d62`
 
 ```python
 """
@@ -834,7 +834,8 @@ def check_engine(
         report.fail(
             "engine.capabilities",
             f"capabilities() returned a {type(capabilities).__name__} rather than "
-            f"an EngineCapabilities; the pipeline routes on its fields",
+            f"an EngineCapabilities; logs, reports and this suite read it to "
+            f"state what the engine supports",
         )
         return report
     report.passed_check("engine.capabilities")

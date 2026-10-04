@@ -1,6 +1,6 @@
 # Porting `rade_qnet` through a markdown-only proxy
 
-36 documents, 165 files, 46,780 lines, 1,651,733 bytes.
+36 documents, 165 files, 46,836 lines, 1,655,042 bytes.
 
 Each document below covers one directory. Work down the list in order: a parent directory always appears before its children, so the tree is importable at every step.
 
@@ -21,9 +21,9 @@ Each document below covers one directory. Work down the list in order: a parent 
 | 7 | [`core.md`](core.md) | `src/rade_qnet/core` | 1 | 1,277 |
 | 8 | [`core__capability.md`](core__capability.md) | `src/rade_qnet/core/capability` | 4 | 39,365 |
 | 9 | [`core__contract.md`](core__contract.md) | `src/rade_qnet/core/contract` | 9 | 91,726 |
-| 10 | [`core__runtime.md`](core__runtime.md) | `src/rade_qnet/core/runtime` | 9 | 76,283 |
+| 10 | [`core__runtime.md`](core__runtime.md) | `src/rade_qnet/core/runtime` | 9 | 77,022 |
 | 11 | [`core__spec.md`](core__spec.md) | `src/rade_qnet/core/spec` | 10 | 99,461 |
-| 12 | [`engines.md`](engines.md) | `src/rade_qnet/engines` | 2 | 19,516 |
+| 12 | [`engines.md`](engines.md) | `src/rade_qnet/engines` | 2 | 22,033 |
 | 13 | [`engines__sklearn.md`](engines__sklearn.md) | `src/rade_qnet/engines/sklearn` | 3 | 33,462 |
 | 14 | [`engines__torch.md`](engines__torch.md) | `src/rade_qnet/engines/torch` | 12 | 136,640 |
 | 15 | [`engines__torch__learners.md`](engines__torch__learners.md) | `src/rade_qnet/engines/torch/learners` | 2 | 11,016 |
@@ -47,7 +47,7 @@ Each document below covers one directory. Work down the list in order: a parent 
 | 33 | [`sources__environment.md`](sources__environment.md) | `src/rade_qnet/sources/environment` | 1 | 1,563 |
 | 34 | [`sources__environment__adapters.md`](sources__environment__adapters.md) | `src/rade_qnet/sources/environment/adapters` | 1 | 580 |
 | 35 | [`storage.md`](storage.md) | `src/rade_qnet/storage` | 7 | 89,242 |
-| 36 | [`testkit.md`](testkit.md) | `src/rade_qnet/testkit` | 4 | 122,845 |
+| 36 | [`testkit.md`](testkit.md) | `src/rade_qnet/testkit` | 4 | 122,898 |
 
 ## Verifying the result
 
@@ -128,7 +128,7 @@ fcb7ccefc6bb9043  src/rade_qnet/core/contract/signature.py
 c9795030254a3196  src/rade_qnet/core/contract/state.py
 041af9b78a9927f4  src/rade_qnet/core/runtime/__init__.py
 d4892d7b478201e0  src/rade_qnet/core/runtime/components.py
-4a20729f709d8771  src/rade_qnet/core/runtime/context.py
+79547c2c0a1e60a0  src/rade_qnet/core/runtime/context.py
 f13eb08c3452f71f  src/rade_qnet/core/runtime/errors.py
 f6d9f4a484edae26  src/rade_qnet/core/runtime/hashing.py
 a12ae9f374abea76  src/rade_qnet/core/runtime/hooks.py
@@ -145,8 +145,8 @@ bf9dcd660de9c2cb  src/rade_qnet/core/runtime/seeding.py
 1b82a04a916ca8f0  src/rade_qnet/core/spec/run.py
 70e3ec454e04fd70  src/rade_qnet/core/spec/training.py
 80cff9f039f91d2f  src/rade_qnet/core/spec/tune.py
-ab977f1168bbb0b0  src/rade_qnet/engines/__init__.py
-51a0d4d8b27f4e4d  src/rade_qnet/engines/base.py
+dbdaff90f6102a01  src/rade_qnet/engines/__init__.py
+ce0c99c5a7fb68bc  src/rade_qnet/engines/base.py
 9687c52982db50ec  src/rade_qnet/engines/sklearn/__init__.py
 db160d94f8229598  src/rade_qnet/engines/sklearn/adapters.py
 5afad89979d0fb3e  src/rade_qnet/engines/sklearn/engine.py
@@ -250,7 +250,7 @@ aedb0848af6c4401  src/rade_qnet/storage/manifest.py
 bd900ec7476ad023  src/rade_qnet/storage/registry.py
 49262e26b707ae17  src/rade_qnet/storage/tracker.py
 be147ade92895e66  src/rade_qnet/testkit/__init__.py
-d4305777a4651f68  src/rade_qnet/testkit/conformance.py
+0523b7740d3d7d62  src/rade_qnet/testkit/conformance.py
 77c26e7f74462931  src/rade_qnet/testkit/fixtures.py
 ed3df40d131fa2e1  src/rade_qnet/testkit/parity.py
 ```

@@ -56,6 +56,18 @@ class Catalog(Protocol):
     must be atomic, because the obvious implementation -- read the catalog,
     compute ``max + 1``, write it back -- loses a bundle whenever two runs
     finish together, and a parallel job set finishes runs together by design.
+
+    Only the three methods a *pipeline* calls are declared here. The query
+    side -- ``entries`` and ``records``, which
+    :class:`~rade_qnet.storage.registry.RunRegistry` reads -- is deliberately
+    absent, for the reason given at
+    :class:`~rade_qnet.core.capability.supervised.RebuildableDataModule`: an
+    ``isinstance`` check against a runtime-checkable protocol only tests that
+    the methods exist, so widening this one would make every three-method
+    stub in the suite stop satisfying it, failing training runs over methods
+    the training path never calls. The registry constructs a concrete
+    :class:`~rade_qnet.storage.catalog.JsonlCatalog` instead of accepting any
+    ``Catalog``, which is what makes that safe.
     """
 
     def next_version(self, model_name: str, *, job_id: str | None = None) -> int:

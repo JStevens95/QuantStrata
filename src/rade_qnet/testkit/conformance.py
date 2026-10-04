@@ -765,7 +765,8 @@ def check_engine(
         report.fail(
             "engine.capabilities",
             f"capabilities() returned a {type(capabilities).__name__} rather than "
-            f"an EngineCapabilities; the pipeline routes on its fields",
+            f"an EngineCapabilities; logs, reports and this suite read it to "
+            f"state what the engine supports",
         )
         return report
     report.passed_check("engine.capabilities")

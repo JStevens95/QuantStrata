@@ -7,8 +7,28 @@ library: how is a model instantiated, how is data materialised into the
 library's native form, how is a fit run, how is a checkpoint written, how is a
 prediction produced.
 
-Because the pipelines above talk only to this interface, adding a backend is a
-new sub-package and a registration line -- not a change to any pipeline.
+Because the pipelines above talk only to this interface, adding a backend
+changes no pipeline.
+
+Engines are framework-owned, models are not
+-------------------------------------------
+That is the one asymmetry worth knowing before planning work against this
+package.  A *model* plugs in entirely from outside: import it and it is
+registered, with no edit anywhere in ``rade_qnet`` (``test_extensibility.py``
+proves a third-party model gets the whole lifecycle).  An *engine* does not.
+Besides the sub-package and the registration line, a new engine needs its own
+training-spec type added to the ``TrainingSpec`` union in
+``core.spec.training`` -- the union is discriminated on a ``Literal`` engine
+name, so a fourth name does not validate until it is declared there.
+
+That is deliberate.  Each engine's settings get their own validated type,
+which is what stops a one-shot fit being configured with gradient-descent
+options, and it is a stronger guarantee than a free-form settings mapping
+could give.  The cost is that a backend cannot arrive from outside the
+distribution.  Stated here because the test suite makes it look otherwise:
+its synthetic engines register under the name ``sklearn``, reusing a
+discriminator that already exists, so none of them exercises a genuinely new
+engine name.  ``test_extensibility.py`` covers the refusal explicitly.
 
 Sub-packages
 ------------

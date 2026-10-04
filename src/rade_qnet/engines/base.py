@@ -70,9 +70,32 @@ class EngineCapabilities:
     """
     What an engine can and cannot do, declared rather than discovered.
 
-    A pipeline needs these answers *before* it starts, because several of them
-    change which stages it runs. Asking an engine to checkpoint and catching
-    the failure would mean discovering a limitation after the data build.
+    Declared rather than discovered, so that a limitation is stated in one
+    place: asking an engine to checkpoint and catching the failure would mean
+    finding out after the data build has already run.
+
+    What actually reads these flags
+    -------------------------------
+    The train pipeline logs :meth:`describe`, reports display it, and
+    ``testkit.conformance`` checks that an engine returns one. **No stage
+    branches on an individual field.** An earlier version of this docstring
+    said a pipeline "needs these answers before it starts, because several of
+    them change which stages it runs", and that was never true -- recorded
+    here rather than quietly corrected, because the next person to write a
+    stage will otherwise trust a flag that nothing enforces.
+
+    The enforcement it looks like it provides comes from the type system
+    instead, and more reliably. Each engine has its own training-spec type
+    exposing only the settings that engine supports, so
+    :class:`~rade_qnet.core.spec.training.SklearnTrainingSpec` has no
+    early-stopping field to misuse and an unsupported combination is
+    unconstructible rather than rejected at run time. That is the stronger of
+    the two mechanisms, which is why these flags have stayed advisory.
+
+    They are still worth declaring. A stage that genuinely does need to
+    branch -- the distributed path is the likeliest candidate -- should read
+    it from here rather than re-derive it from the engine's name, and a
+    reader comparing three engines gets one place to look.
 
     Parameters
     ----------
@@ -84,9 +107,9 @@ class EngineCapabilities:
         stopping inapplicable -- the engine's own, which runs per boosting
         round inside the library, is used instead.
     supports_validation_during_fit
-        Whether a validation source can be scored as training proceeds. When
-        false, a monitored callback has nothing to monitor and the pipeline
-        says so rather than silently reporting a best epoch of zero.
+        Whether a validation source can be scored as training proceeds. False
+        for an engine that scores internally, where nothing the framework
+        provides could observe or act on it mid-fit.
     supports_checkpointing
         Whether the best parameters can be captured and restored.
     supports_distributed

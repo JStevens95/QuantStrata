@@ -6,7 +6,7 @@
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 62 | 3025 | `041af9b78a9927f4` |
 | 2 | `components.py` | 548 | 15865 | `d4892d7b478201e0` |
-| 3 | `context.py` | 391 | 13285 | `4a20729f709d8771` |
+| 3 | `context.py` | 403 | 14024 | `79547c2c0a1e60a0` |
 | 4 | `errors.py` | 153 | 5378 | `f13eb08c3452f71f` |
 | 5 | `hashing.py` | 231 | 6505 | `f6d9f4a484edae26` |
 | 6 | `hooks.py` | 165 | 5574 | `a12ae9f374abea76` |
@@ -646,7 +646,7 @@ def get_report(name: str) -> type:
 
 ## 3. `src/rade_qnet/core/runtime/context.py`
 
-13285 bytes · SHA-256 `4a20729f709d8771`
+14024 bytes · SHA-256 `79547c2c0a1e60a0`
 
 ```python
 """
@@ -707,6 +707,18 @@ class Catalog(Protocol):
     must be atomic, because the obvious implementation -- read the catalog,
     compute ``max + 1``, write it back -- loses a bundle whenever two runs
     finish together, and a parallel job set finishes runs together by design.
+
+    Only the three methods a *pipeline* calls are declared here. The query
+    side -- ``entries`` and ``records``, which
+    :class:`~rade_qnet.storage.registry.RunRegistry` reads -- is deliberately
+    absent, for the reason given at
+    :class:`~rade_qnet.core.capability.supervised.RebuildableDataModule`: an
+    ``isinstance`` check against a runtime-checkable protocol only tests that
+    the methods exist, so widening this one would make every three-method
+    stub in the suite stop satisfying it, failing training runs over methods
+    the training path never calls. The registry constructs a concrete
+    :class:`~rade_qnet.storage.catalog.JsonlCatalog` instead of accepting any
+    ``Catalog``, which is what makes that safe.
     """
 
     def next_version(self, model_name: str, *, job_id: str | None = None) -> int:

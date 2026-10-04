@@ -27,6 +27,19 @@ public names a user would reach for, and if any of them moves, this test
 fails -- which is the point. A test that reached into internals to make
 itself work would be testing that the internals exist rather than that the
 public surface is sufficient.
+
+The other half: where extensibility stops
+-----------------------------------------
+A model plugs in from outside. An *engine* does not, and the last class here
+pins that boundary: a new engine name registers perfectly happily, and then
+a specification naming it is refused, because ``TrainingSpec`` is a union
+discriminated on a literal engine name. That trade is argued in the
+``engines`` package charter -- each engine's settings get their own validated
+type -- and it is asserted here so the limit is covered rather than inferred.
+
+Nothing else in the suite would notice if it changed: every synthetic engine
+registers under the name ``sklearn``, reusing a discriminator that already
+exists, so none of them exercises a genuinely new engine name.
 """
 
 from __future__ import annotations
@@ -42,11 +55,14 @@ from sklearn.ensemble import RandomForestRegressor
 # The five public names a third-party model needs, and nothing else.
 from src.rade_qnet.api import evaluate, infer, train
 from src.rade_qnet.core.capability.supervised import SupervisedModel
-from src.rade_qnet.core.runtime.components import model
+from src.rade_qnet.core.runtime.components import engine as register_engine
+from src.rade_qnet.core.runtime.components import get_engine, model
+from src.rade_qnet.core.runtime.errors import SpecError
 from src.rade_qnet.core.spec.base import Spec
+from src.rade_qnet.core.spec.run import parse_run_spec
 from src.rade_qnet.engines import sklearn as _sklearn_engine  # noqa: F401
 from src.rade_qnet.sources.dataset.module import TabularDataModule
-from src.rade_qnet.testkit.fixtures import isolated_registries
+from src.rade_qnet.testkit.fixtures import SyntheticEngine, isolated_registries
 
 #: The name the out-of-tree model claims. Registered inside a fixture rather
 #: than at import, so that collecting this module does not leave a component
@@ -255,3 +271,71 @@ class TestAModelFromOutsideTheFramework:
 
         with pytest.raises(Exception, match=r"n_estimators|greater than or equal"):
             train(invalid, output_root=tmp_path / "runs")
+
+
+#: An engine name the framework has never heard of, used to locate the edge of
+#: what can be added from outside.
+UNKNOWN_ENGINE = "jax"
+
+
+class TestTheBoundaryOfWhatPlugsIn:
+    """Models arrive from outside; engines do not. Pinned, rather than assumed."""
+
+    def test_a_new_engine_name_registers_without_complaint(self) -> None:
+        """
+        Half the boundary: the component registry is open to any name.
+
+        Worth asserting separately from the refusal below, because together
+        the two locate exactly where the limit falls. An engine is
+        registrable from anywhere; what it cannot do is appear in a
+        specification.
+        """
+        with isolated_registries():
+            register_engine(UNKNOWN_ENGINE)(SyntheticEngine)
+
+            assert get_engine(UNKNOWN_ENGINE) is SyntheticEngine
+
+    def test_but_a_specification_naming_it_is_refused(self, dataset: Path) -> None:
+        """
+        The other half: ``TrainingSpec`` is a closed union.
+
+        A fourth engine needs its own training-spec type declared in
+        ``core.spec.training``. That is a deliberate trade -- each engine's
+        settings get a validated type of their own, which is what stops a
+        one-shot fit being configured with gradient-descent options -- but it
+        does mean a backend cannot arrive from outside the distribution.
+
+        Asserted so that opening the union later has to come past this test,
+        rather than the limit being discovered by whoever first tries.
+
+        The type is the assertion, with no ``match`` on the wording: that
+        sentence is pydantic's, and the rest of the spec suite declines to
+        pin it for the same reason. What matters here is that an unknown
+        engine is a clean specification error rather than an obscure failure
+        somewhere inside a pipeline. The *content* of the message is covered
+        by the next test, against our own engine names.
+        """
+        with isolated_registries():
+            register_engine(UNKNOWN_ENGINE)(SyntheticEngine)
+            unknown = specification(dataset)
+            unknown["training"] = {"engine": UNKNOWN_ENGINE}
+
+            with pytest.raises(SpecError):
+                parse_run_spec(unknown)
+
+    def test_the_refusal_names_the_engines_that_would_work(self, dataset: Path) -> None:
+        """
+        Because the fix is to pick one of them, or to declare a fourth.
+
+        A bare "validation error" would leave a reader guessing between a
+        misspelt name, an uninstalled package and an engine that was never
+        written -- three different problems with three different answers.
+        """
+        unknown = specification(dataset)
+        unknown["training"] = {"engine": UNKNOWN_ENGINE}
+
+        with pytest.raises(SpecError) as caught:
+            parse_run_spec(unknown)
+
+        message = str(caught.value)
+        assert all(name in message for name in ("torch", "xgboost", "sklearn"))
