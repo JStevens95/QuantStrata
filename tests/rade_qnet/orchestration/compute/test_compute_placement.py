@@ -17,10 +17,10 @@ from __future__ import annotations
 import pytest
 
 from src.rade_qnet.core.spec.jobs import PlacementSpec
-from src.rade_qnet.orchestration.compute import policy
+from src.rade_qnet.orchestration.compute import placement as chooser
 from src.rade_qnet.orchestration.compute.gpus import GpuExecutor
 from src.rade_qnet.orchestration.compute.local import LocalExecutor
-from src.rade_qnet.orchestration.compute.policy import available_memory_gb, choose_placement
+from src.rade_qnet.orchestration.compute.placement import available_memory_gb, choose_placement
 from src.rade_qnet.orchestration.compute.processes import ProcessExecutor
 
 
@@ -37,9 +37,9 @@ def machine(monkeypatch):
 
     def configure(*, cores=8, devices=(), memory_gb=64.0):
         """Pretend the policy is running on this hardware."""
-        monkeypatch.setattr(policy.os, "cpu_count", lambda: cores)
-        monkeypatch.setattr(policy, "visible_device_ids", lambda: devices)
-        monkeypatch.setattr(policy, "available_memory_gb", lambda: memory_gb)
+        monkeypatch.setattr(chooser.os, "cpu_count", lambda: cores)
+        monkeypatch.setattr(chooser, "visible_device_ids", lambda: devices)
+        monkeypatch.setattr(chooser, "available_memory_gb", lambda: memory_gb)
 
     return configure
 
@@ -149,7 +149,7 @@ class TestWorkerCounts:
         """
         machine(cores=256)
         placement = choose_placement(PlacementSpec(), n_jobs=256)
-        assert placement.executor.workers == policy._MAX_AUTOMATIC_WORKERS
+        assert placement.executor.workers == chooser._MAX_AUTOMATIC_WORKERS
 
 
 class TestMemoryCapping:
@@ -231,7 +231,7 @@ class TestReadingTheMachine:
 
     def test_the_machine_description_is_renderable(self):
         """It goes into a log line and a manifest, so it must always exist."""
-        assert "core(s)" in policy.describe_machine()
+        assert "core(s)" in chooser.describe_machine()
 
     def test_unknown_memory_still_describes_the_machine(self, machine):
         """
@@ -241,7 +241,7 @@ class TestReadingTheMachine:
         at, so it has to survive the policy not knowing something.
         """
         machine(cores=8, memory_gb=None)
-        assert "memory unknown" in policy.describe_machine()
+        assert "memory unknown" in chooser.describe_machine()
 
 
 class TestTheReasonIsRecorded:

@@ -40,8 +40,8 @@ from src.rade_qnet.core.runtime.errors import BundleError, SpecError, StageError
 from src.rade_qnet.core.spec.run import parse_run_spec
 from src.rade_qnet.engines.torch import TorchEngine
 from src.rade_qnet.orchestration.pipelines.reinforce import ReinforcePipeline
-from src.rade_qnet.orchestration.pipelines.reload import load_bundle
 from src.rade_qnet.orchestration.pipelines.train import TrainPipeline
+from src.rade_qnet.orchestration.stages.reload import load_bundle
 from src.rade_qnet.storage.bundle import (
     load_lineage,
     load_policy_signature,

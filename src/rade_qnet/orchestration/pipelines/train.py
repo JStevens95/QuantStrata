@@ -64,7 +64,7 @@ from ...core.runtime.pipeline import Pipeline
 from ...core.runtime.seeding import seed_everything
 from ...engines.base import Engine, ModelHandle
 from ...storage.bundle import write_bundle
-from .scoring import (
+from ..stages.scoring import (
     TRAIN_SPLIT,
     feature_matrix,
     score_splits,

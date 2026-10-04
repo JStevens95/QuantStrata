@@ -41,7 +41,7 @@ from ...core.runtime.context import RunContext
 from ...core.runtime.hashing import abbreviate_digest, digest_spec
 from ...core.runtime.logging import get_logger
 from ..compute.base import WorkItem
-from ..compute.policy import Placement, choose_placement
+from ..compute.placement import Placement, choose_placement
 from .manifest import JobRecord, JobSetManifest
 from .unit import JobPayload, run_job
 

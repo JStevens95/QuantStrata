@@ -10,9 +10,9 @@ from src.rade_qnet.models.hybrid_gnn_rnn.pipelines.train import HybridTrainPipel
 from src.rade_qnet.models.hybrid_gnn_rnn.pipelines.tune import HybridTunePipeline
 from src.rade_qnet.models.hybrid_gnn_rnn.register import HybridGnnRnnModel
 from src.rade_qnet.orchestration.pipelines.evaluate import EvaluatePipeline
-from src.rade_qnet.orchestration.pipelines.resolve import LIFECYCLES, pipeline_for
 from src.rade_qnet.orchestration.pipelines.train import TrainPipeline
 from src.rade_qnet.orchestration.pipelines.tune import TunePipeline
+from src.rade_qnet.orchestration.stages.resolve import LIFECYCLES, pipeline_for
 
 
 class Base:

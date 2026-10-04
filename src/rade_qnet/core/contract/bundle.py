@@ -234,7 +234,7 @@ class ModelBundle:
         thing the field exists for.
 
         Readers that only make sense for one paradigm check which they have
-        and refuse the other by name; see ``orchestration.pipelines.reload``.
+        and refuse the other by name; see ``orchestration.stages.reload``.
     spec
         The run specification that produced this bundle.
     lineage

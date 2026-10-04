@@ -35,8 +35,8 @@ from src.rade_qnet.core.runtime.errors import ContractError, StageError
 from src.rade_qnet.core.spec.data import ScalingSpec, TabularSourceSpec, TransformsSpec
 from src.rade_qnet.orchestration.pipelines.evaluate import EvaluatePipeline
 from src.rade_qnet.orchestration.pipelines.infer import InferPipeline
-from src.rade_qnet.orchestration.pipelines.scoring import scoring_source
 from src.rade_qnet.orchestration.pipelines.train import TrainPipeline
+from src.rade_qnet.orchestration.stages.scoring import scoring_source
 from src.rade_qnet.storage.bundle import load_lineage, open_bundle
 from src.rade_qnet.storage.catalog import InMemoryCatalog
 from src.rade_qnet.testkit.fixtures import isolated_registries, make_run_context

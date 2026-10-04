@@ -61,8 +61,8 @@ from typing import TYPE_CHECKING
 from pydantic import ValidationError
 
 from ....core.runtime.errors import ContractError, SpecError
-from ....orchestration.pipelines.search import expand
 from ....orchestration.pipelines.tune import TunePipeline
+from ....orchestration.stages.search import expand
 from ..spec import HybridModelSpec
 
 if TYPE_CHECKING:

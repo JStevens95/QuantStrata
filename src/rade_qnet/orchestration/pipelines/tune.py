@@ -44,7 +44,7 @@ from ...core.runtime.errors import ComponentError, ContractError, SpecError
 from ...core.runtime.logging import get_logger
 from ...core.runtime.pipeline import Pipeline
 from ...core.spec.run import SupervisedRunSpec
-from .search import expand, propose
+from ..stages.search import expand, propose
 from .train import TrainPipeline
 
 if TYPE_CHECKING:

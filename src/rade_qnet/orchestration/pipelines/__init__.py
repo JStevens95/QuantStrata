@@ -16,6 +16,14 @@ works:
 4. **Override ``run()``.**  Reserved for genuinely different sequences; the
    conformance suite still applies.
 
+One file, one lifecycle
+-----------------------
+Every module here defines exactly one ``Pipeline`` subclass and nothing else,
+so listing this directory lists what the framework can be asked to do.  The
+steps those pipelines share live next door in
+:mod:`rade_qnet.orchestration.stages`; they used to live here, which made the
+folder's name a half-truth.
+
 Modules
 -------
 ``train.py``

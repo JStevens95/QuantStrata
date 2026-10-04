@@ -26,7 +26,7 @@ Modules
     One worker per visible device, each pinned by device-visibility
     environment variable before the training library is imported -- the only
     point at which such pinning reliably takes effect.
-``policy.py``
+``placement.py``
     Chooses an executor and worker count from the hardware actually present
     and the size of the job set, so placement need not be hand-tuned, and
     records why it chose what it did.
@@ -45,7 +45,7 @@ from __future__ import annotations
 from .base import Executor, ResultSummary, WorkFailure, WorkItem, WorkResult, execute_item
 from .gpus import GpuExecutor, visible_device_ids
 from .local import LocalExecutor
-from .policy import Placement, choose_placement, describe_machine
+from .placement import Placement, choose_placement, describe_machine
 from .processes import THREAD_VARIABLES, ProcessExecutor, configure_worker
 
 __all__ = [

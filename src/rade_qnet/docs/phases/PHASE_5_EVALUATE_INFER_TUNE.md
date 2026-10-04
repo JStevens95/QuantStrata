@@ -63,7 +63,7 @@ stated three ways:
 | `analysis.visuals.evaluation` | Predicted versus actual, residuals, error by bucket, baseline comparison |
 | `analysis.visuals.tuning` | Trial history, parameter importance, parallel coordinates |
 | `models/hybrid_gnn_rnn/pipelines/{eval,tune}.py` | Flagship overrides. No `infer.py`: see §8.3 |
-| `orchestration.pipelines.resolve` | Reads a model's override declaration. See §8.6 |
+| `orchestration.stages.resolve` | Reads a model's override declaration. See §8.6 |
 | `api` (extended) | `evaluate`, `infer`, `tune` |
 
 ---
@@ -385,7 +385,7 @@ This is the worst shape a defect can take. The feature exists. Its tests pass.
 A user following the documentation gets the base pipeline, no error, and a
 flagship model quietly missing its graph diagnostics.
 
-`orchestration.pipelines.resolve.pipeline_for` is the reader, and it is
+`orchestration.stages.resolve.pipeline_for` is the reader, and it is
 deliberately one function so there is one place the lookup can be wrong. It
 refuses two things the declaration alone could not: an override that is not a
 subclass of the pipeline it replaces — because `api.evaluate` promised its
@@ -422,5 +422,5 @@ be wrong in the one case — a failed write — where it is read most carefully.
 | Phase 5 | `Inductive` stays declaration-only; the mechanism is deferred | §8.3 |
 | Phase 5 | `core.spec.tune` added, having been in no phase | §8.4 |
 | Phase 5 | Exactness gate inherits Phase 4's pinning preconditions | §8.5 |
-| Phase 5 | `orchestration.pipelines.resolve` added; model overrides were dead | §8.6 |
+| Phase 5 | `orchestration.stages.resolve` added; model overrides were dead | §8.6 |
 | Phase 5 | `TrainingResult` gains `bundle_directory` | §8.7 |

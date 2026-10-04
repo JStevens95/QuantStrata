@@ -23,6 +23,18 @@ Instead the per-job figure is an input --
 machine's total is read only where the platform offers it for free. A user
 who knows their job's footprint gets the cap; one who does not is no worse
 off than with no policy at all.
+
+On the name
+-----------
+This module was ``policy.py`` until the reinforcement-learning work gave the
+framework a second, entirely unrelated meaning of that word -- a policy is
+now also the thing an agent learns, in
+:mod:`rade_qnet.core.authoring.policy`. Two files of the same name holding
+unrelated concepts is a trap for anyone navigating by filename, and this is
+the one that already had a better word available: the spec block is
+``placement``, the returned type is :class:`Placement`, and the function has
+always been ``choose_placement``. The file was the only thing still called
+the other thing.
 """
 
 from __future__ import annotations

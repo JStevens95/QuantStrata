@@ -27,7 +27,7 @@ Why order is the whole contract
 lets a number be traced back to a scenario and an instrument. The order here
 is the order the source yields, and nothing sorts, shuffles or regroups. A
 training split's source may well be shuffled — that is its business — which
-is why scoring uses :func:`~rade_qnet.orchestration.pipelines.scoring.
+is why scoring uses :func:`~rade_qnet.orchestration.stages.scoring.
 scoring_source` to obtain a stable view first. This module does not try to
 fix that, because a module that silently reordered its input would make the
 stable-order machinery above it untestable.

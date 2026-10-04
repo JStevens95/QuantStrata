@@ -49,7 +49,7 @@ that everything else is measured against.
 | `orchestration.compute.local` | `LocalExecutor` — sequential, in-process, the reference |
 | `orchestration.compute.processes` | `ProcessExecutor` — spawn pool with per-worker thread budgets |
 | `orchestration.compute.gpus` | `GpuExecutor` — one worker per device, visibility pinned pre-import |
-| `orchestration.compute.policy` | `choose_placement` — executor and worker count from hardware and set size |
+| `orchestration.compute.placement` | `choose_placement` — executor and worker count from hardware and set size |
 | `orchestration.jobs.unit` | `run_job(payload)` — module-level and picklable; `JobPayload`, `JobOutcome` |
 | `orchestration.jobs.manifest` | `JobRecord`, `JobSetManifest` — per-job status, metrics, version, wall time, reason |
 | `orchestration.jobs.set` | `JobSetRunner` — expand, merge, dispatch, aggregate |

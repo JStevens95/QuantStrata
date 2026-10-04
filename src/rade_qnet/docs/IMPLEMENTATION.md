@@ -337,7 +337,7 @@ source reconstruction from saved lineage, target inversion before metrics, and
 a tuning loop that builds the data once and reuses it across trials.
 
 Also `analysis.metrics.drift`, the evaluation and tuning visuals, and
-`orchestration.pipelines.resolve` — which reads a model's pipeline override
+`orchestration.stages.resolve` — which reads a model's pipeline override
 declaration, a thing nothing had done since the declaration was introduced in
 Phase 3. See the phase charter's §8.6; every override was reachable only by
 constructing it by hand, so the examples worked and `api` silently did not.

@@ -47,8 +47,8 @@ from ...core.runtime.context import RunContext
 from ...core.runtime.errors import SpecError
 from ...core.runtime.logging import get_logger
 from ...storage.catalog import JsonlCatalog
-from ..pipelines.resolve import pipeline_for
 from ..pipelines.train import TrainPipeline
+from ..stages.resolve import pipeline_for
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

@@ -10,8 +10,8 @@ from src.rade_qnet.models.hybrid_gnn_rnn.pipelines.tune import (
     HybridTunePipeline,
     is_buildable,
 )
-from src.rade_qnet.orchestration.pipelines.search import expand
 from src.rade_qnet.orchestration.pipelines.tune import TunePipeline
+from src.rade_qnet.orchestration.stages.search import expand
 
 from ..test_register import FIXTURE, run_spec
 

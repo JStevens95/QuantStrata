@@ -22,8 +22,8 @@ import pytest
 
 from src.rade_qnet.core.runtime.errors import ContractError, SpecError, StageError
 from src.rade_qnet.core.spec.tune import parse_tune_spec
-from src.rade_qnet.orchestration.pipelines.search import expand, propose
 from src.rade_qnet.orchestration.pipelines.tune import TunePipeline
+from src.rade_qnet.orchestration.stages.search import expand, propose
 from src.rade_qnet.testkit.fixtures import isolated_registries, make_run_context
 
 from .support import (

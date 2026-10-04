@@ -50,13 +50,13 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ....orchestration.pipelines.evaluate import EvaluatePipeline
-from ....orchestration.pipelines.scoring import collect_targets, scoring_source
+from ....orchestration.stages.scoring import collect_targets, scoring_source
 
 if TYPE_CHECKING:
     from ....core.contract.data import DataBundle
     from ....core.contract.result import EvalResult, EvaluationResult
     from ....core.runtime.handles import ModelHandle
-    from ....orchestration.pipelines.reload import LoadedBundle
+    from ....orchestration.stages.reload import LoadedBundle
 
 __all__ = ["HybridEvalPipeline", "breakdown_notes", "per_target_errors"]
 

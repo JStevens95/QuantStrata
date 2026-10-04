@@ -42,8 +42,8 @@ from ...core.runtime.errors import ContractError
 from ...core.runtime.logging import get_logger
 from ...core.runtime.pipeline import Pipeline
 from ...engines.base import Engine
-from .reload import load_bundle
-from .scoring import EVALUATED_SPLITS, score_splits, static_inputs
+from ..stages.reload import load_bundle
+from ..stages.scoring import EVALUATED_SPLITS, score_splits, static_inputs
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -52,7 +52,7 @@ if TYPE_CHECKING:
     from ...core.runtime.context import RunContext
     from ...core.spec.data import SourceSpec
     from ...engines.base import ModelHandle
-    from .reload import LoadedBundle
+    from ..stages.reload import LoadedBundle
 
 __all__ = ["EvaluatePipeline"]
 

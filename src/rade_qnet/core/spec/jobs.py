@@ -75,7 +75,7 @@ __all__ = [
 ]
 
 #: Where jobs run. ``auto`` defers to
-#: :func:`rade_qnet.orchestration.compute.policy.choose_placement`.
+#: :func:`rade_qnet.orchestration.compute.placement.choose_placement`.
 ExecutorName = Literal["auto", "local", "processes", "gpus"]
 
 #: Worker start methods that exist only on POSIX platforms.
