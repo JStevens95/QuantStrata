@@ -1,13 +1,13 @@
 """
-Emit the ``rade_qnet`` source tree as markdown, for transport through a proxy
-that passes nothing but ``.md``.
+Emit the ``rade_qnet`` source and test trees as markdown, for transport
+through a proxy that passes nothing but ``.md``.
 
 The problem this solves
 -----------------------
 A locked-down machine can fetch documentation and nothing else. ``git clone``,
 a release zip and PyPI are all unavailable, so the only way the code can cross
 is as prose. That constraint is what this script answers: one markdown
-document per source directory, each file inside it fenced verbatim, plus an
+document per directory, each file inside it fenced verbatim, plus an
 index carrying a SHA-256 for every file so the far side can prove the paste
 landed intact rather than discovering it three days later in a stack trace.
 
@@ -15,9 +15,35 @@ Why one document per directory
 ------------------------------
 Per *top-level package* would put 304 KB of ``core`` into a single page, which
 GitHub truncates in the rendered view and which is miserable to scroll. Per
-*file* would mean 164 documents to navigate. Per directory lands at 37
-documents, the largest around 140 KB, and it matches how someone rebuilding
-the tree actually works: make a directory, fill it, move on.
+*file* would mean several hundred documents to navigate. Per directory keeps
+the largest around 140 KB, and it matches how someone rebuilding the tree
+actually works: make a directory, fill it, move on.
+
+Why the tests travel too
+------------------------
+Source alone crosses as something nobody can trust. The suite is what turns a
+pasted tree into a verified one: it is the difference between "the files
+appear to be there" and "this behaves the way it did on the machine it left".
+The far side runs it once and knows, rather than finding out during the first
+real run.
+
+The two trees share every mechanism and differ only in a document-name prefix,
+so ``tests/rade_qnet/core/spec`` becomes ``tests__core__spec.md`` beside the
+``core__spec.md`` it exercises. Source document names are unchanged by the
+addition.
+
+Why the fence is measured rather than fixed
+--------------------------------------------
+A file containing a code fence of its own would close its own block early and
+silently truncate. The source tree happens to contain none; the test tree
+contains one, in ``test_documentation.py``, which greps ``ARCHITECTURE.md``
+for a fenced YAML block and so necessarily spells one out.
+
+Rather than pick a longer fence globally and hope, each file is given the
+shortest fence that cannot occur inside it -- one backtick longer than its
+longest run, never fewer than three. Files with no backticks keep the ordinary
+three, so the common case is unchanged, and a future file that embeds a fence
+needs no intervention at all.
 
 Why the output is verified rather than trusted
 ----------------------------------------------
@@ -40,23 +66,101 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 #: Repository root, derived from this file's location so the script works from
 #: any working directory.
 ROOT = Path(__file__).resolve().parent.parent
 
-#: The tree being exported.
-SOURCE = ROOT / "src" / "rade_qnet"
-
 #: Where the documents land.
 OUTPUT = ROOT / "port" / "rade_qnet"
+
+
+@dataclass(frozen=True, slots=True)
+class Tree:
+    """
+    One directory tree exported as a set of documents.
+
+    Parameters
+    ----------
+    source
+        The directory to walk.
+    prefix
+        Path components prepended to every document name, keeping the two
+        trees' documents distinguishable in one flat output directory.
+        Empty for the source tree, so its document names are unchanged by
+        the test tree's arrival.
+    label
+        How the tree is described in the index.
+    blurb
+        A sentence for the index explaining what the tree is for and what
+        the reader should do with it.
+    """
+
+    source: Path
+    prefix: tuple[str, ...]
+    label: str
+    blurb: str
+    suffixes: frozenset[str] = frozenset({".py"})
+
+
+#: The package itself.
+SOURCE_TREE = Tree(
+    source=ROOT / "src" / "rade_qnet",
+    prefix=(),
+    label="Source",
+    blurb=(
+        "The package. Work down the list in order: a parent directory "
+        "always appears before its children, so the tree is importable at "
+        "every step."
+    ),
+)
+
+#: The prose. Carried rather than fetched separately -- see the module
+#: docstring for why being inside the manifest is the point.
+DOCS_TREE = Tree(
+    source=ROOT / "src" / "rade_qnet" / "docs",
+    prefix=("docs",),
+    label="Documentation",
+    blurb=(
+        "The prose, including `ARCHITECTURE.md`. These are already markdown "
+        "and could be fetched directly, but they are carried here so they "
+        "land in the manifest: a truncated paste then shows up as a digest "
+        "mismatch rather than as a puzzling test failure. Four tests read "
+        "these files and check the examples in them still parse, so the "
+        "suite needs them present at these exact paths."
+    ),
+    suffixes=frozenset({".md"}),
+)
+
+#: The suite that proves the package arrived intact.
+TESTS_TREE = Tree(
+    source=ROOT / "tests" / "rade_qnet",
+    prefix=("tests",),
+    label="Tests",
+    blurb=(
+        "The suite. Rebuild it after the source and run "
+        "`pytest tests/rade_qnet` -- that run is what turns a pasted tree "
+        "into a verified one. Each document's name mirrors the source "
+        "document it exercises: `tests__core__spec.md` tests `core__spec.md`."
+    ),
+)
+
+#: Every tree, in the order the far side should rebuild them.
+TREES = (SOURCE_TREE, DOCS_TREE, TESTS_TREE)
 
 #: Directories never exported: caches, and the documentation tree itself.
 #: ``docs/`` is already markdown, so it crosses the proxy unchanged and
 #: duplicating its 7,498 lines here would only create a second copy to drift.
 SKIP_DIRECTORIES = frozenset({"__pycache__", ".ruff_cache", "docs"})
+
+#: Fence language for each exported suffix. ``markdown`` inside a markdown
+#: fence is legal and renders as plain text, which is what a reader copying
+#: a document back out actually wants.
+LANGUAGES = {".py": "python", ".md": "markdown"}
 
 #: Non-Python files that are exported anyway, mapped to their fence language.
 EXTRA_FILES = {"ruff.toml": "toml"}
@@ -71,10 +175,38 @@ ROOT_FILES = {"pyproject.toml": "toml"}
 #: it describes the tree every other document fills in.
 ROOT_DOCUMENT = "_repository.md"
 
-#: The fence used for every code block. Three backticks give GitHub a copy
-#: button and syntax highlighting. Safe only while no exported file contains a
-#: fence of its own, which :func:`collect` asserts rather than assumes.
+#: The shortest fence used for any code block. Three backticks give GitHub a
+#: copy button and syntax highlighting; :func:`fence_for` lengthens it for the
+#: rare file that spells out a fence of its own.
 FENCE = "```"
+
+#: A line that is nothing but a run of three or more backticks, optionally
+#: followed by a language tag. Used by :func:`parse_document` to find block
+#: boundaries without knowing in advance how long a given file's fence is.
+_FENCE_LINE = re.compile(r"^(`{3,})([^`]*)$")
+
+
+def fence_for(data: bytes) -> str:
+    """
+    Return the shortest fence that cannot appear inside some bytes.
+
+    One backtick longer than the file's longest run, floored at three. That
+    makes the closing delimiter unambiguous by construction rather than by
+    inspection: no line of the file can match it, so the block cannot close
+    early no matter what the file contains.
+
+    Parameters
+    ----------
+    data
+        The file's bytes.
+
+    Returns
+    -------
+    str
+        A run of backticks.
+    """
+    runs = (len(run) for run in re.findall(r"`+", data.decode()))
+    return "`" * max(len(FENCE), max(runs, default=0) + 1)
 
 
 def relative(path: Path) -> str:
@@ -120,12 +252,17 @@ def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()[:16]
 
 
-def exported_directories() -> list[Path]:
+def exported_directories(tree: Tree) -> list[Path]:
     """
-    Return every directory that directly contains an exported file.
+    Return every directory in a tree that directly contains an exported file.
 
     Sorted so that a parent sorts before its children, which is the order
     someone rebuilding the tree wants to work in.
+
+    Parameters
+    ----------
+    tree
+        The tree to walk.
 
     Returns
     -------
@@ -133,12 +270,12 @@ def exported_directories() -> list[Path]:
         Directories, each holding at least one file to export.
     """
     found: set[Path] = set()
-    for path in SOURCE.rglob("*"):
+    for path in tree.source.rglob("*"):
         if not path.is_file():
             continue
-        if any(part in SKIP_DIRECTORIES for part in path.relative_to(SOURCE).parts):
+        if any(part in SKIP_DIRECTORIES for part in path.relative_to(tree.source).parts):
             continue
-        if path.suffix == ".py" or path.name in EXTRA_FILES:
+        if path.suffix in tree.suffixes or path.name in EXTRA_FILES:
             found.add(path.parent)
     return sorted(found)
 
@@ -181,16 +318,11 @@ def _checked_bytes(path: Path) -> bytes:
     Raises
     ------
     SystemExit
-        If the file contains a code fence, which would close its own block
-        early, or lacks a final newline, which a fenced block always adds.
+        If the file lacks a final newline, which a fenced block always adds.
+        A file containing a fence of its own is *not* refused: it is given a
+        longer fence by :func:`fence_for`.
     """
     data = path.read_bytes()
-    if FENCE.encode() in data:
-        raise SystemExit(
-            f"{relative(path)} contains a {FENCE!r} fence, which would "
-            f"close its own code block. Switch FENCE to a longer run of "
-            f"backticks before exporting."
-        )
     if data and not data.endswith(b"\n"):
         # A fenced block always restores a final newline, so a file
         # without one cannot round-trip. Refusing is better than
@@ -224,32 +356,35 @@ def collect(directory: Path) -> list[tuple[Path, bytes, str]]:
     Raises
     ------
     SystemExit
-        If any file contains a code fence, which would terminate its own
-        block early and silently truncate the exported source.
+        If any file lacks a final newline.
     """
     files: list[tuple[Path, bytes, str]] = []
     for path in sorted(directory.iterdir()):
         if not path.is_file():
             continue
-        language = "python" if path.suffix == ".py" else EXTRA_FILES.get(path.name)
+        language = LANGUAGES.get(path.suffix) or EXTRA_FILES.get(path.name)
         if language is None:
             continue
         files.append((path, _checked_bytes(path), language))
     return sorted(files, key=lambda item: (item[0].name != "__init__.py", item[0].name))
 
 
-def document_name(directory: Path) -> str:
+def document_name(directory: Path, tree: Tree) -> str:
     """
     Return the markdown filename for a directory.
 
     ``core/spec`` becomes ``core__spec.md``: flat, so every document sits in
     one place and the index is a single list, but with the hierarchy still
-    legible in the name.
+    legible in the name. The tree's prefix joins on the front by the same
+    rule, so the matching test document is ``tests__core__spec.md`` -- which
+    means the two sort together in a directory listing.
 
     Parameters
     ----------
     directory
         A directory from :func:`exported_directories`.
+    tree
+        The tree it came from.
 
     Returns
     -------
@@ -258,7 +393,7 @@ def document_name(directory: Path) -> str:
     """
     if directory == ROOT:
         return ROOT_DOCUMENT
-    parts = directory.relative_to(SOURCE).parts
+    parts = (*tree.prefix, *directory.relative_to(tree.source).parts)
     return ("__".join(parts) if parts else "_root") + ".md"
 
 
@@ -333,36 +468,37 @@ def render_document(directory: Path, files: list[tuple[Path, bytes, str]]) -> st
         body = text.split("\n")
         if body[-1] == "":
             body.pop()
+        fence = fence_for(data)
         lines += [
             f"{len(data)} bytes · SHA-256 `{digest(data)}`",
             "",
-            f"{FENCE}{language}",
+            f"{fence}{language}",
             *body,
-            FENCE,
+            fence,
             "",
         ]
 
     return "\n".join(lines) + "\n"
 
 
-def render_index(documents: list[tuple[Path, list[tuple[Path, bytes, str]]]]) -> str:
+def render_index(documents: list[tuple[Tree, Path, list[tuple[Path, bytes, str]]]]) -> str:
     """
     Render the index: what to fetch, in what order, and how to check it.
 
     Parameters
     ----------
     documents
-        Every directory and its files, in creation order.
+        Every tree, directory and its files, in creation order.
 
     Returns
     -------
     str
         The index document.
     """
-    total_files = sum(len(files) for _, files in documents)
-    total_bytes = sum(len(data) for _, files in documents for _, data, _ in files)
+    total_files = sum(len(files) for _, _, files in documents)
+    total_bytes = sum(len(data) for _, _, files in documents for _, data, _ in files)
     total_lines = sum(
-        data.decode().count("\n") for _, files in documents for _, data, _ in files
+        data.decode().count("\n") for _, _, files in documents for _, data, _ in files
     )
 
     lines = [
@@ -374,39 +510,87 @@ def render_index(documents: list[tuple[Path, list[tuple[Path, bytes, str]]]]) ->
         ),
         "",
         (
-            "Each document below covers one directory. Work down the "
-            "list in order: a parent directory always appears before its "
-            "children, so the tree is importable at every step."
+            "Each document below covers one directory: create the "
+            "directory, then create each file in it from the block that "
+            "carries it. Rebuild the source tree first, then the tests."
         ),
         "",
-        "## What is not here",
+        "## What is not here, and what to expect because of it",
         "",
         (
-            "`src/rade_qnet/docs/` is already markdown, so it crosses the "
-            "proxy unchanged — fetch those files directly rather than "
-            "through this set. `pyproject.toml` is included, as the first "
-            "document, so the rebuilt tree installs with "
-            "`pip install -e .`. The test suite, fixtures and examples are "
-            "excluded by scope; the golden parity fixtures under "
-            "`tests/fixtures/rade_qnet/` are binary `.npy` files and "
-            "cannot travel as text at all."
+            "Everything needed to install and run is carried, including "
+            "`pyproject.toml` (the first document, so the rebuilt tree "
+            "installs with `pip install -e .`) and the documentation."
         ),
         "",
-        "## Directories, in creation order",
+        (
+            "**The golden parity fixtures do not travel.** "
+            "`tests/fixtures/rade_qnet/` holds `.npy` and `.npz` arrays — "
+            "binary, and so impossible to carry as text. They guard "
+            "numerical parity against a captured reference, so if that "
+            "matters on the far side the arrays have to cross by some "
+            "other route."
+        ),
         "",
-        "| # | Document | Directory | Files | Bytes |",
-        "| --- | --- | --- | ---: | ---: |",
+        (
+            "Most tests that need them skip cleanly. **Twenty-six do not** "
+            "— they fail or error on the missing file instead. That is a "
+            "gap in those tests rather than in this port, but it means a "
+            "correct paste is *not* all-green. Run the suite and compare "
+            "against the expected result below; anything else means "
+            "something did not land."
+        ),
+        "",
+        f"{FENCE}",
+        "pytest tests/rade_qnet",
+        "  -> 7 failed, 3072 passed, 70 skipped, 19 errors",
+        FENCE,
+        "",
+        (
+            "**Do not copy across a subset of the fixtures.** The nine "
+            "`.json` files among them are text and look portable, but "
+            "supplying those without the arrays is worse than supplying "
+            "none: the loader then finds the directory, the tests stop "
+            "skipping, and the failure count rises to 22. It is all of "
+            "them or none."
+        ),
+        "",
+        "## A note on fence lengths",
+        "",
+        (
+            "Almost every block below is fenced with three backticks. A "
+            "file that spells out a fence of its own gets four, so that it "
+            "cannot close its own block early. Copy whatever sits *between* "
+            "the fence lines and the length never matters."
+        ),
+        "",
     ]
-    for index, (directory, files) in enumerate(documents, start=1):
-        name = document_name(directory)
-        size = sum(len(data) for _, data, _ in files)
-        lines.append(
-            f"| {index} | [`{name}`]({name}) | `{relative(directory)}` | "
-            f"{len(files)} | {size:,} |"
-        )
+
+    position = 0
+    for tree in TREES:
+        group = [(d, files) for t, d, files in documents if t is tree]
+        if not group:
+            continue
+        count = sum(len(files) for _, files in group)
+        size = sum(len(data) for _, files in group for _, data, _ in files)
+        lines += [
+            f"## {tree.label}: {len(group)} documents, {count} files, {size:,} bytes",
+            "",
+            tree.blurb,
+            "",
+            "| # | Document | Directory | Files | Bytes |",
+            "| --- | --- | --- | ---: | ---: |",
+        ]
+        for directory, files in group:
+            position += 1
+            name = document_name(directory, tree)
+            lines.append(
+                f"| {position} | [`{name}`]({name}) | `{relative(directory)}` | "
+                f"{len(files)} | {sum(len(d) for _, d, _ in files):,} |"
+            )
+        lines.append("")
 
     lines += [
-        "",
         "## Verifying the result",
         "",
         (
@@ -427,7 +611,7 @@ def render_index(documents: list[tuple[Path, list[tuple[Path, bytes, str]]]]) ->
         f"{FENCE}",
         "\n".join(
             f"{digest(data)}  {relative(path)}"
-            for _, files in documents
+            for _, _, files in documents
             for path, data, _ in files
         ),
         FENCE,
@@ -493,16 +677,27 @@ def parse_document(text: str) -> dict[str, bytes]:
     recovered: dict[str, bytes] = {}
     current: str | None = None
     buffer: list[str] | None = None
+    opened: str = FENCE
 
     for line in text.splitlines():
-        if line.startswith("## ") and "`" in line:
+        delimiter = _FENCE_LINE.match(line)
+        # Inside a block every line is content, including one that looks
+        # like a heading. Carrying the documentation made that distinction
+        # load-bearing: ARCHITECTURE.md has `## ` headings of its own, and
+        # reading them as file paths silently truncated it.
+        if buffer is None and line.startswith("## ") and "`" in line:
             current = line.split("`")[1]
             # An empty file never opens a block, so record it now; a later
             # fence for the same heading simply overwrites this.
             recovered[current] = b""
-        elif line.startswith(FENCE) and buffer is None and current is not None:
+        elif delimiter and buffer is None and current is not None:
+            # Remember the exact opening run. Each file is fenced with one
+            # backtick more than its longest internal run, so only a line
+            # this long or longer can be the close -- and a shorter run
+            # inside the file is content, to be copied through untouched.
+            opened = delimiter.group(1)
             buffer = []
-        elif line.startswith(FENCE) and buffer is not None:
+        elif delimiter and buffer is not None and len(delimiter.group(1)) >= len(opened):
             recovered[current] = ("\n".join(buffer) + "\n").encode()
             buffer = None
         elif buffer is not None:
@@ -511,14 +706,14 @@ def parse_document(text: str) -> dict[str, bytes]:
     return recovered
 
 
-def verify(documents: list[tuple[Path, list[tuple[Path, bytes, str]]]]) -> int:
+def verify(documents: list[tuple[Tree, Path, list[tuple[Path, bytes, str]]]]) -> int:
     """
     Re-read every written document and compare it against the source.
 
     Parameters
     ----------
     documents
-        Every directory and its files.
+        Every tree, directory and its files.
 
     Returns
     -------
@@ -526,8 +721,8 @@ def verify(documents: list[tuple[Path, list[tuple[Path, bytes, str]]]]) -> int:
         The number of files that failed to round-trip.
     """
     failures = 0
-    for directory, files in documents:
-        path = OUTPUT / document_name(directory)
+    for tree, directory, files in documents:
+        path = OUTPUT / document_name(directory, tree)
         recovered = parse_document(path.read_text())
         for source_path, data, _ in files:
             key = relative(source_path)
@@ -554,28 +749,29 @@ def main() -> int:
     )
     arguments = parser.parse_args()
 
-    documents = [(ROOT, collect_root_files())]
-    documents += [(d, collect(d)) for d in exported_directories()]
-    documents = [(d, files) for d, files in documents if files]
+    documents = [(SOURCE_TREE, ROOT, collect_root_files())]
+    for tree in TREES:
+        documents += [(tree, d, collect(d)) for d in exported_directories(tree)]
+    documents = [(tree, d, files) for tree, d, files in documents if files]
 
     if not arguments.verify:
         OUTPUT.mkdir(parents=True, exist_ok=True)
         # A directory deleted from the source must disappear from the port
         # too; otherwise the far side faithfully rebuilds a package that no
         # longer exists, and nothing reports it.
-        expected = {document_name(directory) for directory, _ in documents} | {"INDEX.md"}
+        expected = {document_name(d, tree) for tree, d, _ in documents} | {"INDEX.md"}
         for stale in sorted(OUTPUT.glob("*.md")):
             if stale.name not in expected:
                 print(f"removing stale document {stale.name}")
                 stale.unlink()
-        for directory, files in documents:
-            (OUTPUT / document_name(directory)).write_text(
+        for tree, directory, files in documents:
+            (OUTPUT / document_name(directory, tree)).write_text(
                 render_document(directory, files)
             )
         (OUTPUT / "INDEX.md").write_text(render_index(documents))
 
     failures = verify(documents)
-    total = sum(len(files) for _, files in documents)
+    total = sum(len(files) for _, _, files in documents)
     if failures:
         print(f"\n{failures} of {total} files did not round-trip")
         return 1

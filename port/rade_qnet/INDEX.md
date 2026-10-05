@@ -1,14 +1,31 @@
 # Porting `rade_qnet` through a markdown-only proxy
 
-40 documents, 178 files, 51,087 lines, 1,820,630 bytes.
+81 documents, 364 files, 98,780 lines, 3,702,676 bytes.
 
-Each document below covers one directory. Work down the list in order: a parent directory always appears before its children, so the tree is importable at every step.
+Each document below covers one directory: create the directory, then create each file in it from the block that carries it. Rebuild the source tree first, then the tests.
 
-## What is not here
+## What is not here, and what to expect because of it
 
-`src/rade_qnet/docs/` is already markdown, so it crosses the proxy unchanged — fetch those files directly rather than through this set. `pyproject.toml` is included, as the first document, so the rebuilt tree installs with `pip install -e .`. The test suite, fixtures and examples are excluded by scope; the golden parity fixtures under `tests/fixtures/rade_qnet/` are binary `.npy` files and cannot travel as text at all.
+Everything needed to install and run is carried, including `pyproject.toml` (the first document, so the rebuilt tree installs with `pip install -e .`) and the documentation.
 
-## Directories, in creation order
+**The golden parity fixtures do not travel.** `tests/fixtures/rade_qnet/` holds `.npy` and `.npz` arrays — binary, and so impossible to carry as text. They guard numerical parity against a captured reference, so if that matters on the far side the arrays have to cross by some other route.
+
+Most tests that need them skip cleanly. **Twenty-six do not** — they fail or error on the missing file instead. That is a gap in those tests rather than in this port, but it means a correct paste is *not* all-green. Run the suite and compare against the expected result below; anything else means something did not land.
+
+```
+pytest tests/rade_qnet
+  -> 7 failed, 3072 passed, 70 skipped, 19 errors
+```
+
+**Do not copy across a subset of the fixtures.** The nine `.json` files among them are text and look portable, but supplying those without the arrays is worse than supplying none: the loader then finds the directory, the tests stop skipping, and the failure count rises to 22. It is all of them or none.
+
+## A note on fence lengths
+
+Almost every block below is fenced with three backticks. A file that spells out a fence of its own gets four, so that it cannot close its own block early. Copy whatever sits *between* the fence lines and the length never matters.
+
+## Source: 40 documents, 178 files, 1,820,630 bytes
+
+The package. Work down the list in order: a parent directory always appears before its children, so the tree is importable at every step.
 
 | # | Document | Directory | Files | Bytes |
 | --- | --- | --- | ---: | ---: |
@@ -52,6 +69,61 @@ Each document below covers one directory. Work down the list in order: a parent 
 | 38 | [`storage.md`](storage.md) | `src/rade_qnet/storage` | 4 | 36,396 |
 | 39 | [`storage__runs.md`](storage__runs.md) | `src/rade_qnet/storage/runs` | 4 | 56,728 |
 | 40 | [`testkit.md`](testkit.md) | `src/rade_qnet/testkit` | 4 | 126,775 |
+
+## Documentation: 2 documents, 14 files, 389,291 bytes
+
+The prose, including `ARCHITECTURE.md`. These are already markdown and could be fetched directly, but they are carried here so they land in the manifest: a truncated paste then shows up as a digest mismatch rather than as a puzzling test failure. Four tests read these files and check the examples in them still parse, so the suite needs them present at these exact paths.
+
+| # | Document | Directory | Files | Bytes |
+| --- | --- | --- | ---: | ---: |
+| 41 | [`docs.md`](docs.md) | `src/rade_qnet/docs` | 6 | 179,171 |
+| 42 | [`docs__phases.md`](docs__phases.md) | `src/rade_qnet/docs/phases` | 8 | 210,120 |
+
+## Tests: 39 documents, 172 files, 1,492,755 bytes
+
+The suite. Rebuild it after the source and run `pytest tests/rade_qnet` -- that run is what turns a pasted tree into a verified one. Each document's name mirrors the source document it exercises: `tests__core__spec.md` tests `core__spec.md`.
+
+| # | Document | Directory | Files | Bytes |
+| --- | --- | --- | ---: | ---: |
+| 43 | [`tests.md`](tests.md) | `tests/rade_qnet` | 7 | 75,009 |
+| 44 | [`tests__analysis.md`](tests__analysis.md) | `tests/rade_qnet/analysis` | 1 | 368 |
+| 45 | [`tests__analysis__metrics.md`](tests__analysis__metrics.md) | `tests/rade_qnet/analysis/metrics` | 4 | 37,693 |
+| 46 | [`tests__analysis__reports.md`](tests__analysis__reports.md) | `tests/rade_qnet/analysis/reports` | 6 | 56,538 |
+| 47 | [`tests__analysis__visuals.md`](tests__analysis__visuals.md) | `tests/rade_qnet/analysis/visuals` | 9 | 79,935 |
+| 48 | [`tests__core.md`](tests__core.md) | `tests/rade_qnet/core` | 1 | 359 |
+| 49 | [`tests__core__authoring.md`](tests__core__authoring.md) | `tests/rade_qnet/core/authoring` | 5 | 34,192 |
+| 50 | [`tests__core__contract.md`](tests__core__contract.md) | `tests/rade_qnet/core/contract` | 8 | 71,377 |
+| 51 | [`tests__core__lifecycle.md`](tests__core__lifecycle.md) | `tests/rade_qnet/core/lifecycle` | 7 | 47,210 |
+| 52 | [`tests__core__provenance.md`](tests__core__provenance.md) | `tests/rade_qnet/core/provenance` | 4 | 25,253 |
+| 53 | [`tests__core__spec.md`](tests__core__spec.md) | `tests/rade_qnet/core/spec` | 8 | 70,869 |
+| 54 | [`tests__engines.md`](tests__engines.md) | `tests/rade_qnet/engines` | 4 | 28,041 |
+| 55 | [`tests__engines__sklearn.md`](tests__engines__sklearn.md) | `tests/rade_qnet/engines/sklearn` | 2 | 10,768 |
+| 56 | [`tests__engines__torch.md`](tests__engines__torch.md) | `tests/rade_qnet/engines/torch` | 4 | 41,380 |
+| 57 | [`tests__engines__torch__hardware.md`](tests__engines__torch__hardware.md) | `tests/rade_qnet/engines/torch/hardware` | 4 | 26,967 |
+| 58 | [`tests__engines__torch__learners.md`](tests__engines__torch__learners.md) | `tests/rade_qnet/engines/torch/learners` | 3 | 25,229 |
+| 59 | [`tests__engines__torch__training.md`](tests__engines__torch__training.md) | `tests/rade_qnet/engines/torch/training` | 5 | 66,874 |
+| 60 | [`tests__engines__xgboost.md`](tests__engines__xgboost.md) | `tests/rade_qnet/engines/xgboost` | 2 | 16,521 |
+| 61 | [`tests__models.md`](tests__models.md) | `tests/rade_qnet/models` | 3 | 39,386 |
+| 62 | [`tests__models__hybrid_gnn_rnn.md`](tests__models__hybrid_gnn_rnn.md) | `tests/rade_qnet/models/hybrid_gnn_rnn` | 9 | 76,879 |
+| 63 | [`tests__models__hybrid_gnn_rnn__features.md`](tests__models__hybrid_gnn_rnn__features.md) | `tests/rade_qnet/models/hybrid_gnn_rnn/features` | 5 | 38,729 |
+| 64 | [`tests__models__hybrid_gnn_rnn__layers.md`](tests__models__hybrid_gnn_rnn__layers.md) | `tests/rade_qnet/models/hybrid_gnn_rnn/layers` | 7 | 42,782 |
+| 65 | [`tests__models__hybrid_gnn_rnn__pipelines.md`](tests__models__hybrid_gnn_rnn__pipelines.md) | `tests/rade_qnet/models/hybrid_gnn_rnn/pipelines` | 4 | 21,283 |
+| 66 | [`tests__models__lstm_tabular.md`](tests__models__lstm_tabular.md) | `tests/rade_qnet/models/lstm_tabular` | 2 | 4,180 |
+| 67 | [`tests__models__ridge.md`](tests__models__ridge.md) | `tests/rade_qnet/models/ridge` | 3 | 6,141 |
+| 68 | [`tests__models__xgb_tabular.md`](tests__models__xgb_tabular.md) | `tests/rade_qnet/models/xgb_tabular` | 2 | 3,332 |
+| 69 | [`tests__orchestration.md`](tests__orchestration.md) | `tests/rade_qnet/orchestration` | 2 | 15,861 |
+| 70 | [`tests__orchestration__compute.md`](tests__orchestration__compute.md) | `tests/rade_qnet/orchestration/compute` | 4 | 34,688 |
+| 71 | [`tests__orchestration__jobs.md`](tests__orchestration__jobs.md) | `tests/rade_qnet/orchestration/jobs` | 8 | 75,579 |
+| 72 | [`tests__orchestration__pipelines.md`](tests__orchestration__pipelines.md) | `tests/rade_qnet/orchestration/pipelines` | 7 | 117,649 |
+| 73 | [`tests__orchestration__stages.md`](tests__orchestration__stages.md) | `tests/rade_qnet/orchestration/stages` | 2 | 5,469 |
+| 74 | [`tests__sources.md`](tests__sources.md) | `tests/rade_qnet/sources` | 1 | 356 |
+| 75 | [`tests__sources__batching.md`](tests__sources__batching.md) | `tests/rade_qnet/sources/batching` | 3 | 31,712 |
+| 76 | [`tests__sources__dataset.md`](tests__sources__dataset.md) | `tests/rade_qnet/sources/dataset` | 5 | 51,674 |
+| 77 | [`tests__sources__dataset__transforms.md`](tests__sources__dataset__transforms.md) | `tests/rade_qnet/sources/dataset/transforms` | 6 | 49,484 |
+| 78 | [`tests__sources__environment.md`](tests__sources__environment.md) | `tests/rade_qnet/sources/environment` | 2 | 6,385 |
+| 79 | [`tests__storage.md`](tests__storage.md) | `tests/rade_qnet/storage` | 4 | 36,849 |
+| 80 | [`tests__storage__runs.md`](tests__storage__runs.md) | `tests/rade_qnet/storage/runs` | 4 | 44,979 |
+| 81 | [`tests__testkit.md`](tests__testkit.md) | `tests/rade_qnet/testkit` | 5 | 74,775 |
 
 ## Verifying the result
 
@@ -270,5 +342,191 @@ be147ade92895e66  src/rade_qnet/testkit/__init__.py
 f34d858b31058be2  src/rade_qnet/testkit/conformance.py
 a10dd886a237dbfa  src/rade_qnet/testkit/fixtures.py
 366dcea95f2cd3ac  src/rade_qnet/testkit/parity.py
+7abe69d46e761658  src/rade_qnet/docs/ARCHITECTURE.md
+ec30f7f0c0938f7a  src/rade_qnet/docs/CODING_STANDARDS.md
+3d856f8f56c6f0ee  src/rade_qnet/docs/GUIDE.md
+457874a795d914f9  src/rade_qnet/docs/IMPLEMENTATION.md
+a82b8b93fd0d7a64  src/rade_qnet/docs/MODEL_IMPLEMENTATION.md
+26205bc095821e81  src/rade_qnet/docs/README.md
+f83b21a468bc96b2  src/rade_qnet/docs/phases/PHASE_0_BASELINE.md
+fa59c7242c850390  src/rade_qnet/docs/phases/PHASE_1_CORE.md
+5a4d2dcc551f2911  src/rade_qnet/docs/phases/PHASE_2_TORCH_ENGINE.md
+5c38c8ee1e87f928  src/rade_qnet/docs/phases/PHASE_3_HYBRID_GNN_RNN.md
+dda53aadcb5305e0  src/rade_qnet/docs/phases/PHASE_4_JOB_SETS.md
+f75ec71330030c3b  src/rade_qnet/docs/phases/PHASE_5_EVALUATE_INFER_TUNE.md
+a8c4ca3da3c99b0c  src/rade_qnet/docs/phases/PHASE_6_ADDITIONAL_ENGINES.md
+24dfc1d96d0e9ffe  src/rade_qnet/docs/phases/PHASE_7_REINFORCEMENT_LEARNING.md
+9b77412d766c78e0  tests/rade_qnet/__init__.py
+9552f767b1faaf66  tests/rade_qnet/conftest.py
+4f63ed66941eacb9  tests/rade_qnet/ruff.toml
+1a5abd1e0ce7b27a  tests/rade_qnet/test_api.py
+82debfd68b1f8421  tests/rade_qnet/test_documentation.py
+dbbe2e645c40c432  tests/rade_qnet/test_extensibility.py
+36449874bb76d417  tests/rade_qnet/test_scaffold.py
+8d2d3c04dfdfe110  tests/rade_qnet/analysis/__init__.py
+815690298ea5fb56  tests/rade_qnet/analysis/metrics/__init__.py
+894875d5d4e44445  tests/rade_qnet/analysis/metrics/test_metrics_drift.py
+1ce48491f16e5376  tests/rade_qnet/analysis/metrics/test_metrics_quality.py
+fb38f3bc008c07b8  tests/rade_qnet/analysis/metrics/test_metrics_regression.py
+243b3f95c99bd0f3  tests/rade_qnet/analysis/reports/__init__.py
+131b98b13897f88f  tests/rade_qnet/analysis/reports/test_reports_base.py
+9b12b9557f8e4ea2  tests/rade_qnet/analysis/reports/test_reports_baselines.py
+95fe830b23029c76  tests/rade_qnet/analysis/reports/test_reports_curves.py
+c4848a2f442042b8  tests/rade_qnet/analysis/reports/test_reports_quality.py
+f2f29c7816c8684e  tests/rade_qnet/analysis/reports/test_reports_summary.py
+abc60d222b39299f  tests/rade_qnet/analysis/visuals/__init__.py
+7a56dedb933736a8  tests/rade_qnet/analysis/visuals/test_visuals_data.py
+ccfa5fe9d0da520e  tests/rade_qnet/analysis/visuals/test_visuals_evaluation.py
+692334725d62e0f8  tests/rade_qnet/analysis/visuals/test_visuals_export.py
+715c04c3860dc524  tests/rade_qnet/analysis/visuals/test_visuals_figures.py
+f128864e10da8635  tests/rade_qnet/analysis/visuals/test_visuals_jobset.py
+072bcbbeaf080d05  tests/rade_qnet/analysis/visuals/test_visuals_style.py
+df167c0059d128ce  tests/rade_qnet/analysis/visuals/test_visuals_training.py
+52554c0b2f02024a  tests/rade_qnet/analysis/visuals/test_visuals_tuning.py
+a33185e148d60465  tests/rade_qnet/core/__init__.py
+5fa0437358e278ef  tests/rade_qnet/core/authoring/__init__.py
+0a7e4938fcbfb1b8  tests/rade_qnet/core/authoring/test_authoring_capabilities.py
+deb2cc813fc5215f  tests/rade_qnet/core/authoring/test_authoring_definition.py
+fe80eb7d05705468  tests/rade_qnet/core/authoring/test_authoring_policy.py
+996747fa07aa4b1c  tests/rade_qnet/core/authoring/test_authoring_supervised.py
+455461a7d762debd  tests/rade_qnet/core/contract/__init__.py
+e7f0fc8dc09c7503  tests/rade_qnet/core/contract/test_contract_bundle.py
+73b19d1e89316134  tests/rade_qnet/core/contract/test_contract_data.py
+6017b8f7ead178ed  tests/rade_qnet/core/contract/test_contract_requirement.py
+7a2525781c1cdef6  tests/rade_qnet/core/contract/test_contract_result.py
+2ac93fb372973aef  tests/rade_qnet/core/contract/test_contract_signature.py
+d6c4f0f4a3b93cb1  tests/rade_qnet/core/contract/test_contract_source.py
+85aeb1274d4d54a1  tests/rade_qnet/core/contract/test_contract_state.py
+41150f68fedf6616  tests/rade_qnet/core/lifecycle/__init__.py
+7e93e52fcab13c55  tests/rade_qnet/core/lifecycle/test_lifecycle_components.py
+c187dac84db6bf6d  tests/rade_qnet/core/lifecycle/test_lifecycle_context.py
+58c2af643b46fd7a  tests/rade_qnet/core/lifecycle/test_lifecycle_errors.py
+7732a3679d7e16f5  tests/rade_qnet/core/lifecycle/test_lifecycle_hooks.py
+d07c5906200a2d10  tests/rade_qnet/core/lifecycle/test_lifecycle_pipeline.py
+801deef65d258f62  tests/rade_qnet/core/lifecycle/test_lifecycle_registry.py
+17f398962e74a13b  tests/rade_qnet/core/provenance/__init__.py
+550397124d3379c4  tests/rade_qnet/core/provenance/test_provenance_hashing.py
+0beb7c90ec33c592  tests/rade_qnet/core/provenance/test_provenance_logging.py
+164ef7aa60f3bcac  tests/rade_qnet/core/provenance/test_provenance_seeding.py
+4cf0eee3c800d080  tests/rade_qnet/core/spec/__init__.py
+cf59fa4befee87a3  tests/rade_qnet/core/spec/test_spec_data.py
+7beadfe09ad37b73  tests/rade_qnet/core/spec/test_spec_hardware.py
+73e15a3dde448b19  tests/rade_qnet/core/spec/test_spec_jobs.py
+4f2d2383798d852e  tests/rade_qnet/core/spec/test_spec_merge.py
+6abb6cbdee9201df  tests/rade_qnet/core/spec/test_spec_reports.py
+950ffd0f989e98d5  tests/rade_qnet/core/spec/test_spec_run.py
+0f30bc07b387cda5  tests/rade_qnet/core/spec/test_spec_training.py
+17c5d2fc92ec9189  tests/rade_qnet/engines/__init__.py
+ccec6580fbb253cf  tests/rade_qnet/engines/test_engine_layout.py
+99dda0aeda3cf4ad  tests/rade_qnet/engines/test_engines_base.py
+69e2fdf28f2f1d6e  tests/rade_qnet/engines/test_engines_loaders.py
+b0a1ae83d8b2a9fc  tests/rade_qnet/engines/sklearn/__init__.py
+182cdf432d2207de  tests/rade_qnet/engines/sklearn/test_sklearn_engine.py
+ce84b941ee165fc1  tests/rade_qnet/engines/torch/__init__.py
+9f1f7da522b13c93  tests/rade_qnet/engines/torch/test_torch_engine.py
+0dcf87126c969172  tests/rade_qnet/engines/torch/test_torch_loaders.py
+cc197e973028ec2a  tests/rade_qnet/engines/torch/test_torch_materialise.py
+7860806c8e2de23b  tests/rade_qnet/engines/torch/hardware/__init__.py
+47f5af4fd3eae9b5  tests/rade_qnet/engines/torch/hardware/test_hardware_determinism.py
+2ce882982db68491  tests/rade_qnet/engines/torch/hardware/test_hardware_devices.py
+217493ce9169d482  tests/rade_qnet/engines/torch/hardware/test_hardware_distributed.py
+347c5ed4a780e803  tests/rade_qnet/engines/torch/learners/__init__.py
+65cfc15b18ea7679  tests/rade_qnet/engines/torch/learners/test_learners_random.py
+4304123ce66061d2  tests/rade_qnet/engines/torch/learners/test_learners_supervised.py
+ea056fce628eee7f  tests/rade_qnet/engines/torch/training/__init__.py
+97c783702a4278fc  tests/rade_qnet/engines/torch/training/test_training_callbacks.py
+07ea0986a0ceb441  tests/rade_qnet/engines/torch/training/test_training_checkpoint.py
+eee06920985be093  tests/rade_qnet/engines/torch/training/test_training_loops.py
+ad6de8c53529ae7d  tests/rade_qnet/engines/torch/training/test_training_losses.py
+d35aed8beca12275  tests/rade_qnet/engines/xgboost/__init__.py
+7cfb06ea22f62526  tests/rade_qnet/engines/xgboost/test_xgboost_engine.py
+e11173949276a7e1  tests/rade_qnet/models/__init__.py
+3a1a074e153fe65b  tests/rade_qnet/models/test_model_layout.py
+804c5e8b4c66f0c6  tests/rade_qnet/models/test_reference_models.py
+5383ca55a0c3650b  tests/rade_qnet/models/hybrid_gnn_rnn/__init__.py
+33266791ef4ea6e6  tests/rade_qnet/models/hybrid_gnn_rnn/test_data.py
+c57796835c402eda  tests/rade_qnet/models/hybrid_gnn_rnn/test_model.py
+daef5e3ddff87425  tests/rade_qnet/models/hybrid_gnn_rnn/test_parity.py
+9342b6e363699dd7  tests/rade_qnet/models/hybrid_gnn_rnn/test_register.py
+294a0163bea578b4  tests/rade_qnet/models/hybrid_gnn_rnn/test_reports.py
+2e526e1e4d6ddd1f  tests/rade_qnet/models/hybrid_gnn_rnn/test_state.py
+fb508cf76c889e00  tests/rade_qnet/models/hybrid_gnn_rnn/test_universe.py
+899e3486d7ebd733  tests/rade_qnet/models/hybrid_gnn_rnn/test_visuals.py
+7cd332b12fc0f4a5  tests/rade_qnet/models/hybrid_gnn_rnn/features/__init__.py
+c03a6d739771af29  tests/rade_qnet/models/hybrid_gnn_rnn/features/conftest.py
+0b76004077b2312f  tests/rade_qnet/models/hybrid_gnn_rnn/features/test_basis.py
+1d82585a0612a1bf  tests/rade_qnet/models/hybrid_gnn_rnn/features/test_encoder.py
+a4dd3f259a1f2a62  tests/rade_qnet/models/hybrid_gnn_rnn/features/test_graph.py
+74ed9a32e29b7cd6  tests/rade_qnet/models/hybrid_gnn_rnn/layers/__init__.py
+22199b76430ed4c2  tests/rade_qnet/models/hybrid_gnn_rnn/layers/conftest.py
+e37200c730a5a76c  tests/rade_qnet/models/hybrid_gnn_rnn/layers/test_attention.py
+f62954d39045e6fb  tests/rade_qnet/models/hybrid_gnn_rnn/layers/test_fusion.py
+db86619a1b40adb7  tests/rade_qnet/models/hybrid_gnn_rnn/layers/test_gnn.py
+1447669b64965f56  tests/rade_qnet/models/hybrid_gnn_rnn/layers/test_projection.py
+b3fb84a31c2521dc  tests/rade_qnet/models/hybrid_gnn_rnn/layers/test_rnn.py
+460b7d1c67ae53f9  tests/rade_qnet/models/hybrid_gnn_rnn/pipelines/__init__.py
+387ee1e438d8a501  tests/rade_qnet/models/hybrid_gnn_rnn/pipelines/test_pipelines_eval.py
+4c34861fc5eedc96  tests/rade_qnet/models/hybrid_gnn_rnn/pipelines/test_pipelines_train.py
+e1f2bf7610d37101  tests/rade_qnet/models/hybrid_gnn_rnn/pipelines/test_pipelines_tune.py
+e19dbdeabb5b7af6  tests/rade_qnet/models/lstm_tabular/__init__.py
+d020a24094b900d1  tests/rade_qnet/models/lstm_tabular/test_model.py
+f92a7a31ce5f7c72  tests/rade_qnet/models/ridge/__init__.py
+b4bbdc31a30aaafd  tests/rade_qnet/models/ridge/test_model.py
+ce59e428145e17ed  tests/rade_qnet/models/ridge/test_register.py
+dfae360f563b4a2f  tests/rade_qnet/models/xgb_tabular/__init__.py
+bd478f1286a8a145  tests/rade_qnet/models/xgb_tabular/test_model.py
+af8945dcb1b57f28  tests/rade_qnet/orchestration/__init__.py
+0e78199808bff149  tests/rade_qnet/orchestration/test_orchestration_serving.py
+31dd72a61b33b7be  tests/rade_qnet/orchestration/compute/__init__.py
+61decdea64072ade  tests/rade_qnet/orchestration/compute/test_compute_executors.py
+1200246b161141ec  tests/rade_qnet/orchestration/compute/test_compute_placement.py
+84a957b1c982a938  tests/rade_qnet/orchestration/compute/workers.py
+db64606cfe41ff84  tests/rade_qnet/orchestration/jobs/__init__.py
+57bc8a00c87d9c9f  tests/rade_qnet/orchestration/jobs/support.py
+1bb24859e5431a8f  tests/rade_qnet/orchestration/jobs/test_jobs_fanout.py
+caf6e448ee6e970d  tests/rade_qnet/orchestration/jobs/test_jobs_groups.py
+98dc6b714ca46aec  tests/rade_qnet/orchestration/jobs/test_jobs_manifest.py
+60545903949860a3  tests/rade_qnet/orchestration/jobs/test_jobs_parity.py
+e62c9a827ce52b21  tests/rade_qnet/orchestration/jobs/test_jobs_set.py
+e3cb40ca51ccddfe  tests/rade_qnet/orchestration/jobs/test_jobs_unit.py
+d46d1a478e03562f  tests/rade_qnet/orchestration/pipelines/__init__.py
+f560486697b8c17f  tests/rade_qnet/orchestration/pipelines/support.py
+cd32177ccc2ce794  tests/rade_qnet/orchestration/pipelines/test_pipelines_evaluate.py
+28ac163fb7ba64a5  tests/rade_qnet/orchestration/pipelines/test_pipelines_infer.py
+f94d426ee710e0c8  tests/rade_qnet/orchestration/pipelines/test_pipelines_reinforce.py
+e037ad1947a9cd5b  tests/rade_qnet/orchestration/pipelines/test_pipelines_train.py
+554c80819471773d  tests/rade_qnet/orchestration/pipelines/test_pipelines_tune.py
+861fa175ff9e24b5  tests/rade_qnet/orchestration/stages/__init__.py
+9dd2fb4dcaea65dd  tests/rade_qnet/orchestration/stages/test_stages_resolve.py
+edc2c57fa62a87d4  tests/rade_qnet/sources/__init__.py
+75d38714d92fee51  tests/rade_qnet/sources/batching/__init__.py
+cf9c39982bb47805  tests/rade_qnet/sources/batching/test_batching_dataset.py
+c78fa44a1e733357  tests/rade_qnet/sources/batching/test_batching_rollout.py
+aca25b3ce8fb419d  tests/rade_qnet/sources/dataset/__init__.py
+219df6062c0637eb  tests/rade_qnet/sources/dataset/test_dataset_cache.py
+6a34cddc7ef22200  tests/rade_qnet/sources/dataset/test_dataset_module.py
+34d44469c31c40c1  tests/rade_qnet/sources/dataset/test_dataset_splits.py
+4645567f20904486  tests/rade_qnet/sources/dataset/test_dataset_tables.py
+2d244a830faebd42  tests/rade_qnet/sources/dataset/transforms/__init__.py
+12a48b6a3e946c2a  tests/rade_qnet/sources/dataset/transforms/test_transforms_composite.py
+12982d53c655169c  tests/rade_qnet/sources/dataset/transforms/test_transforms_encoding.py
+a4c587d5962eeb86  tests/rade_qnet/sources/dataset/transforms/test_transforms_reduction.py
+65d7e3db21ea29f0  tests/rade_qnet/sources/dataset/transforms/test_transforms_scaling.py
+8dbf39b6809d2186  tests/rade_qnet/sources/dataset/transforms/test_transforms_sequence.py
+ff225df9a8ee5c59  tests/rade_qnet/sources/environment/__init__.py
+92c969f3d0c70188  tests/rade_qnet/sources/environment/test_environment_protocol.py
+3ccdb89a57a83475  tests/rade_qnet/storage/__init__.py
+235c3977d0ba70ca  tests/rade_qnet/storage/test_storage_bundle.py
+d2ca71c71c19d047  tests/rade_qnet/storage/test_storage_locking.py
+b655369174dc00c0  tests/rade_qnet/storage/test_storage_manifest.py
+3c6b979e4a3d6f08  tests/rade_qnet/storage/runs/__init__.py
+973463f5d4c635b2  tests/rade_qnet/storage/runs/test_runs_catalog.py
+25025909f204c9e9  tests/rade_qnet/storage/runs/test_runs_registry.py
+259a9fe4ee5c9963  tests/rade_qnet/storage/runs/test_runs_tracker.py
+4dd05188c31c1115  tests/rade_qnet/testkit/__init__.py
+e2871cbd5e4fa5f0  tests/rade_qnet/testkit/test_testkit_conformance.py
+aa867e4786c01c80  tests/rade_qnet/testkit/test_testkit_fixtures.py
+640a0603e61fb4ec  tests/rade_qnet/testkit/test_testkit_golden_fixture.py
+081eb6c29a54e0ff  tests/rade_qnet/testkit/test_testkit_parity.py
 ```
 
