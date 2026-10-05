@@ -1,6 +1,6 @@
 # Porting `rade_qnet` through a markdown-only proxy
 
-80 documents, 364 files, 99,202 lines, 3,724,345 bytes.
+80 documents, 364 files, 99,460 lines, 3,741,009 bytes.
 
 Each document below covers one directory: create the directory, then create each file in it from the block that carries it. Rebuild the source tree first, then the tests.
 
@@ -102,13 +102,13 @@ The package. Work down the list in order: a parent directory always appears befo
 | 38 | [`storage__runs.md`](storage__runs.md) | `tranql/models/rade/rade_qnet/rade_qnet/storage/runs` | 4 | 56,728 |
 | 39 | [`testkit.md`](testkit.md) | `tranql/models/rade/rade_qnet/rade_qnet/testkit` | 4 | 127,481 |
 
-## Documentation: 2 documents, 14 files, 390,757 bytes
+## Documentation: 2 documents, 14 files, 407,421 bytes
 
 The prose, including `ARCHITECTURE.md`. These are already markdown and could be fetched directly, but they are carried here so they land in the manifest: a truncated paste then shows up as a digest mismatch rather than as a puzzling test failure. Four tests read these files and check the examples in them still parse, so the suite needs them present at these exact paths.
 
 | # | Document | Directory | Files | Bytes |
 | --- | --- | --- | ---: | ---: |
-| 40 | [`docs.md`](docs.md) | `tranql/models/rade/rade_qnet/rade_qnet/docs` | 6 | 180,422 |
+| 40 | [`docs.md`](docs.md) | `tranql/models/rade/rade_qnet/rade_qnet/docs` | 6 | 197,086 |
 | 41 | [`docs__phases.md`](docs__phases.md) | `tranql/models/rade/rade_qnet/rade_qnet/docs/phases` | 8 | 210,335 |
 
 ## Tests: 39 documents, 173 files, 1,517,113 bytes
@@ -373,7 +373,7 @@ be147ade92895e66  tranql/models/rade/rade_qnet/rade_qnet/testkit/__init__.py
 f34d858b31058be2  tranql/models/rade/rade_qnet/rade_qnet/testkit/conformance.py
 a10dd886a237dbfa  tranql/models/rade/rade_qnet/rade_qnet/testkit/fixtures.py
 8ce5f0502f170513  tranql/models/rade/rade_qnet/rade_qnet/testkit/parity.py
-fe7f964400db00b9  tranql/models/rade/rade_qnet/rade_qnet/docs/ARCHITECTURE.md
+a3fb518abd400722  tranql/models/rade/rade_qnet/rade_qnet/docs/ARCHITECTURE.md
 36ccc834b3a6e610  tranql/models/rade/rade_qnet/rade_qnet/docs/CODING_STANDARDS.md
 c82a3b4e2f97e0a3  tranql/models/rade/rade_qnet/rade_qnet/docs/GUIDE.md
 ab00d7895cb5df61  tranql/models/rade/rade_qnet/rade_qnet/docs/IMPLEMENTATION.md

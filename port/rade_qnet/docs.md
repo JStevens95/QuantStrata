@@ -4,7 +4,7 @@
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
-| 1 | `ARCHITECTURE.md` | 1243 | 56163 | `fe7f964400db00b9` |
+| 1 | `ARCHITECTURE.md` | 1501 | 72827 | `a3fb518abd400722` |
 | 2 | `CODING_STANDARDS.md` | 394 | 16492 | `36ccc834b3a6e610` |
 | 3 | `GUIDE.md` | 1149 | 45270 | `c82a3b4e2f97e0a3` |
 | 4 | `IMPLEMENTATION.md` | 445 | 22286 | `ab00d7895cb5df61` |
@@ -15,7 +15,7 @@
 
 ## 1. `tranql/models/rade/rade_qnet/rade_qnet/docs/ARCHITECTURE.md`
 
-56163 bytes · SHA-256 `fe7f964400db00b9`
+72827 bytes · SHA-256 `a3fb518abd400722`
 
 ````markdown
 # rade_qnet — Architecture
@@ -23,9 +23,19 @@
 A model-independent framework for machine learning and reinforcement learning
 in quantitative finance.
 
-> **Status.** The architecture below is agreed and locked. The code is being
-> built against it in phases — see [`IMPLEMENTATION.md`](IMPLEMENTATION.md).
-> Package charter docstrings state which phase delivers each module.
+> **Status.** Phases S to 6 are delivered: supervised training, evaluation,
+> inference and tuning on three engines, job sets, and refactor parity for the
+> flagship. Phase 7, reinforcement learning, has its scaffold delivered -- the
+> interactive path runs end to end with a control learner that performs no
+> update -- and no algorithm yet. See [`IMPLEMENTATION.md`](IMPLEMENTATION.md).
+>
+> **Reading the planned parts.** This document describes what exists, and
+> marks what does not. Anything not yet built is labelled **⬜ Planned**,
+> drawn with a dashed grey outline in diagrams, and listed with what it needs
+> in [§15](#15-roadmap-what-is-planned-and-what-it-needs). Nothing marked
+> planned exists as an importable module: an empty base class would answer
+> `isinstance` checks and imports for a capability the framework cannot
+> deliver, which is worse than its absence.
 
 ---
 
@@ -45,6 +55,7 @@ in quantitative finance.
 12. [Using the framework](#12-using-the-framework)
 13. [Design decisions and the defects they fix](#13-design-decisions-and-the-defects-they-fix)
 14. [Glossary](#14-glossary)
+15. [Roadmap: what is planned, and what it needs](#15-roadmap-what-is-planned-and-what-it-needs)
 
 ---
 
@@ -73,8 +84,9 @@ supplies three things:
 
 The flagship model, a hybrid graph-temporal network for P&L replication, is
 deliberately the hardest case the framework has to serve. If the abstractions
-hold for it, they will hold for most things. The `baselines` package exists to
-check the opposite end: a ridge regression must still cost one short file.
+hold for it, they will hold for most things. The reference models check the
+opposite end: `ridge`, `xgb_tabular` and `lstm_tabular` sit beside the flagship
+in `models/`, and a ridge regression must still cost a few short files.
 
 ---
 
@@ -133,7 +145,7 @@ the packages below it and never from the packages above.
 flowchart TD
     MODELS["<b>models</b><br/>the model library, and the only home of business vocabulary<br/><i>hybrid_gnn_rnn · ridge · xgb_tabular · lstm_tabular</i>"]
     ORCH["<b>orchestration</b><br/>pipelines · stages · jobs · compute"]
-    ENGINES["<b>engines</b><br/>torch · xgboost · sklearn"]
+    ENGINES["<b>engines</b><br/>torch · xgboost · sklearn<br/><i>⬜ planned: jax</i>"]
     SOURCES["<b>sources</b><br/>dataset · environment · batching"]
     STORAGE["<b>storage</b><br/>bundle · manifest · runs"]
     ANALYSIS["<b>analysis</b><br/>metrics · visuals · reports"]
@@ -196,8 +208,8 @@ it and is responsible for getting them onto disk safely.
 
 ## 4. The vocabulary: `core`
 
-`core` defines what things are called and what shape they have. Four
-sub-packages, four distinct jobs.
+`core` defines what things are called and what shape they have. Five
+sub-packages, five distinct jobs.
 
 ```mermaid
 flowchart LR
@@ -215,8 +227,8 @@ flowchart LR
     LIFECYCLE -->|records through| PROVENANCE
 ```
 
-Five sub-packages, and the two that look alike are the ones to be clear
-about. `spec` is what a YAML file may say; `contract` is what the code
+The two that look alike are the ones to be clear about. `spec` is what a
+YAML file may say; `contract` is what the code
 promises between stages. `authoring` is the only one a model author has to
 read. `lifecycle` and `provenance` were one package called `runtime`, and
 they split on *who opens the file*: someone extending the framework reads
@@ -238,19 +250,38 @@ reporting five failed alternatives:
 
 ```mermaid
 flowchart TD
-    RS["RunSpec"]
+    RS["RunSpec<br/><i>discriminated on task</i>"]
     RS -->|"task = supervised"| SUP["SupervisedRunSpec"]
     RS -->|"task = reinforcement"| RL["ReinforcementRunSpec"]
+    RS -.->|"task = offline"| OFF["⬜ OfflineRunSpec<br/><i>planned</i>"]
+    RS -.->|"task = unsupervised"| UNS["⬜ UnsupervisedRunSpec<br/><i>planned</i>"]
 
-    SUP --> SRC["SourceSpec<br/><i>discriminated on kind</i>"]
+    SUP --> SRC["SourceSpec<br/><i>discriminated on kind:<br/>tabular · model</i>"]
     SUP --> TR["TrainingSpec<br/><i>discriminated on engine</i>"]
-    SUP --> HW["HardwareSpec"]
-    SUP --> RP["ReportsSpec"]
+    SRC --> SPL["SplitSpec<br/><i>chronological · purged_kfold ·<br/>grouped · explicit</i>"]
 
-    TR -->|"engine = torch"| TT["TorchTrainSpec"]
-    TR -->|"engine = xgboost"| XT["XGBTrainSpec"]
-    TR -->|"engine = sklearn"| ST["SklearnTrainSpec"]
+    TR -->|"engine = torch"| TT["TorchTrainingSpec"]
+    TR -->|"engine = xgboost"| XT["XGBoostTrainingSpec"]
+    TR -->|"engine = sklearn"| ST["SklearnTrainingSpec"]
+    TR -.->|"engine = jax"| JT["⬜ JaxTrainingSpec<br/><i>planned</i>"]
+
+    RL --> ENV["environment<br/><i>a component, by name</i>"]
+    RL --> RT["RlTrainingSpec<br/><i>learner: random · dqn ·<br/>ppo · sac · pathwise</i>"]
+
+    classDef planned fill:#fafafa,stroke:#9e9e9e,stroke-dasharray: 5 5,color:#757575
+    class OFF,UNS,JT planned
 ```
+
+Every run spec, whatever its task, also carries a `HardwareSpec`, a
+`ReportsSpec`, a seed, an output root and tags; they are left off the diagram
+because they never vary by branch.
+
+`RlTrainingSpec.learner` already names four algorithms that are not built.
+The names are reserved so a configuration written today stays valid, and
+selecting one is refused when the run resolves its learner -- `no learner
+named 'dqn'; available: random, supervised` -- rather than at some later
+point. The two dashed tasks are new discriminator values, which is why adding
+a paradigm is a new branch here and not a change to the existing two.
 
 One separation is worth calling out. `HardwareSpec` answers *how does a single
 job use its machine* — device, precision, compilation, distribution,
@@ -271,30 +302,43 @@ Contracts are generic over the engine where it matters:
 ```mermaid
 classDiagram
     class DataBundle~T~ {
-        +dict[str, T] splits
-        +FittedState state
+        +Mapping[str, T] splits
         +InputSignature signature
+        +FittedState state
         +DataLineage lineage
+        +tuple[str] entity_ids
     }
     class TensorBatchData {
-        +dict static
-        +DataLoader loader
+        +Iterable[Batch] loader
+        +Mapping static
+        +int n_samples
+        +int n_batches
     }
     class FittedState {
         <<abstract>>
-        +save(path)
-        +load(path)
-        +inverse_transform_targets(y)
+        +save(directory)
+        +load(directory)
+        +inverse_transform_targets(predictions)
+        +describe()
     }
     class InputSignature {
         +dict[str, TensorSpec] static
         +dict[str, TensorSpec] dynamic
         +TensorSpec target
     }
-    DataBundle~T~ ..> TensorBatchData : T for every engine
+    class PolicySignature {
+        +SpaceSpec observation
+        +SpaceSpec action
+    }
+    DataBundle~T~ ..> TensorBatchData : T for the torch engine
     DataBundle~T~ --> FittedState
     DataBundle~T~ --> InputSignature
 ```
+
+`T` is whatever the engine consumes: `TensorBatchData` for Torch, plain
+feature and target arrays for XGBoost and scikit-learn. `PolicySignature` is
+the interactive counterpart of `InputSignature` -- an observation space and an
+action space, and no target, which is why §6 needs two learner protocols.
 
 Two of these deserve emphasis.
 
@@ -316,7 +360,14 @@ prediction back into the original target units.
 ### 4.3 Capabilities — what a model offers
 
 The base class demands very little: build a model object from a spec and a
-signature. That minimum is what keeps a simple model to a single file.
+signature. That minimum is what keeps a simple model small.
+
+There is one base per paradigm, both under `ModelDefinition` in
+`core/authoring`: `SupervisedModel` (a `PredictorDefinition`, which maps
+inputs to a target) and `PolicyModel` (a `PolicyDefinition`, which maps an
+observation to an action). A third paradigm is a third base beside them --
+see [§15](#15-roadmap-what-is-planned-and-what-it-needs) -- and touches
+neither of these.
 
 Everything beyond it is an **opt-in capability** — a narrow protocol a model
 *may* implement. The framework checks with a runtime `isinstance` test, so a
@@ -331,7 +382,7 @@ breaks an existing model.
 | `Routable` | "I can be a member of a job set." | Records which targets this member covers. |
 | `Inductive` | "I can predict for entities I never saw." | Enables the unseen-entity inference path. |
 
-### 4.4 Runtime — how a run executes
+### 4.4 Lifecycle — how a run executes
 
 Every stage goes through `Pipeline.step()`. That single choke point is where
 the framework's observability comes from:
@@ -340,39 +391,45 @@ the framework's observability comes from:
 sequenceDiagram
     participant P as Pipeline.run()
     participant S as step()
-    participant C as step cache
     participant H as hooks
     participant F as stage function
 
-    P->>S: step("build_source", fn)
-    S->>H: on_step_start
-    S->>C: lookup(spec hash + stage)
-    alt cached
-        C-->>S: cached result
-    else not cached
-        S->>F: execute
-        alt success
-            F-->>S: result
-            S->>C: store
-        else failure
-            F-->>S: exception
-            S->>H: on_step_error
-            S-->>P: raise StageError("build_source")
-        end
+    P->>H: on_run_start(run_id, spec_digest)
+    P->>S: step("build_data", fn)
+    S->>H: on_stage_start("build_data")
+    S->>F: execute
+    alt success
+        F-->>S: result
+        S->>H: on_stage_end("build_data", seconds)
+        S-->>P: result
+    else failure
+        F-->>S: exception
+        S->>H: on_stage_error("build_data", error)
+        S-->>P: raise StageError("build_data")
     end
-    S->>H: on_step_end(duration, result)
-    S-->>P: result
+    P->>H: on_run_end(run_id, succeeded)
 ```
 
-A failure therefore always names the stage it occurred in. A hook can observe
-any stage without a pipeline change. And an expensive data build can be served
-from cache, which is what makes a hyper-parameter search spend its time on
-training rather than on rebuilding the same dataset forty times.
+A failure therefore always names the stage it occurred in, and a hook can
+observe any stage -- plus epochs, metrics and written artifacts, through
+`on_epoch_end`, `on_metrics` and `on_artifact` -- without a pipeline change.
 
-Also in `runtime`: the component registry (`@model`, `@engine`, `@learner`,
-`@report`), which resolves a *name* in a spec to a class. Names rather than
-importable dotted paths, so moving a class does not invalidate every saved
-spec that referenced it.
+There is deliberately no general step cache. An early outline put one here;
+it was replaced by two narrower mechanisms, because a cache keyed on "spec
+hash plus stage" cannot tell when the *code* that produced an entry has
+changed. `sources.dataset.cache.DatasetCache` caches a prepared dataset on
+disk, keyed on the source spec, the raw input's fingerprint and the framework
+version, so a fix to the splitter invalidates every entry built by the old
+one. And the tune pipeline holds one prepared dataset for the whole search, so
+forty trials read the data once. Why, in detail:
+[Phase 5 §8.1](phases/PHASE_5_EVALUATE_INFER_TUNE.md).
+
+`core.lifecycle` also holds the component registry (`@model`, `@engine`,
+`@learner`, `@report`), which resolves a *name* in a spec to a class. Names
+rather than importable dotted paths, so moving a class does not invalidate
+every saved spec that referenced it. `core.provenance` holds the other half of
+running: seeding, hashing and structured logging, which is what a run can
+later prove about itself.
 
 ---
 
@@ -380,34 +437,43 @@ spec that referenced it.
 
 ```mermaid
 flowchart TD
-    SPEC[["RunSpec"]]
+    SPEC[["SupervisedRunSpec"]]
 
-    S1["<b>resolve</b><br/>look up model, engine, reports by name"]
-    S2["<b>build_source</b><br/>run the data module"]
-    S3["<b>build_model</b><br/>instantiate from spec + signature"]
-    S4["<b>materialise</b><br/>one dummy forward; fix lazy shapes"]
-    S5["<b>prepare_hardware</b><br/>device, precision, compile, distribute"]
-    S6["<b>fit</b><br/>engine loop driving a learner"]
-    S7["<b>evaluate</b><br/>score held-out splits"]
-    S8["<b>package</b><br/>assemble the bundle"]
-    S9["<b>report</b><br/>figures, curves, summary, baselines"]
-    S10["<b>register</b><br/>write bundle, update catalog"]
+    S1["<b>resolve</b><br/>look up engine and reports by name"]
+    S2["<b>resolve_seed</b><br/>derive and apply the run's seed"]
+    S3["<b>build_data</b><br/>run the data module, or read the cache"]
+    S4["<b>declare_signature</b><br/>check REQUIRES against the build"]
+    S5["<b>build_model</b><br/>instantiate from spec + signature"]
+    S6["<b>materialise</b><br/>one dummy forward; fix lazy shapes"]
+    S7["<b>prepare_hardware</b><br/>device, precision, compile, distribute"]
+    S8["<b>fit</b><br/>engine loop driving a learner"]
+    S9["<b>evaluate</b><br/>score held-out splits, in original units"]
+    S10["<b>persist</b><br/>write the bundle atomically, update the catalog"]
+    S11["<b>report</b><br/>figures, curves, summary, baselines"]
 
-    SPEC --> S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7 --> S8 --> S9 --> S10
-    S10 --> OUT[["ModelBundle"]]
+    SPEC --> S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7 --> S8 --> S9 --> S10 --> S11
+    S11 --> OUT[["TrainingResult<br/><i>with the bundle's directory</i>"]]
 
-    S2 -. "DataBundle[T]" .-> S3
-    S3 -. "model object" .-> S4
-    S4 -. "ModelHandle" .-> S5
-    S6 -. "FitOutcome" .-> S7
-    S7 -. "EvalResult" .-> S8
+    S3 -. "DataBundle[T]" .-> S4
+    S4 -. "InputSignature" .-> S5
+    S7 -. "ModelHandle" .-> S8
+    S8 -. "FitOutcome" .-> S9
+    S9 -. "EvalResult per split" .-> S10
+    S10 -. "SavedBundle" .-> S11
 
     style SPEC fill:#e3f2fd,stroke:#1565c0
     style OUT fill:#e8f5e9,stroke:#2e7d32
     style S4 fill:#fff8e1,stroke:#f9a825
+    style S6 fill:#fff8e1,stroke:#f9a825
 ```
 
-Two stages are easy to overlook and both exist because of real failures.
+Three stages are easy to overlook and all exist because of real failures.
+
+**`declare_signature` checks the model can use the data before the model
+exists.** The build declares what it produced; the model's `REQUIRES` names
+what it consumes and at which ranks. A mismatch fails here, naming the input,
+instead of training on whichever tensor happened to arrive first -- see §11,
+*The input contract*.
 
 **`materialise` runs before `prepare_hardware`.** A model with lazily-shaped
 parameters has no parameters at all until it has seen one batch. Wrapping it
@@ -415,36 +481,46 @@ for distributed training, handing it to an optimiser, or checkpointing it
 before that point produces either an empty parameter group or a crash deep
 inside the distributed library. The order here is not incidental.
 
-**`register` is last, and nothing before it writes to the store.** A failed run
-leaves no half-registered bundle.
+**`persist` is the only stage that writes to the store, and `report` follows
+it.** A run that fails before `persist` leaves no half-registered bundle. A
+report reads a finished bundle, so it cannot run earlier, and because a report
+never fails a run -- unless `reports.fail_fast` asks it to -- running it last
+means a figure that will not render can never cost a trained model.
 
-The evaluate, infer and tune pipelines share the vocabulary and the step runner:
+The evaluate, infer and tune pipelines share the vocabulary and the step
+runner. There are five pipelines in all, in `orchestration/pipelines/`; the
+fifth, `reinforce`, is in §6.
 
 ```mermaid
 flowchart LR
     subgraph EV["evaluate"]
         direction TB
-        E1["load_bundle"] --> E2["rebuild_source<br/><i>from saved lineage</i>"] --> E3["predict"] --> E4["invert_targets"] --> E5["metrics"] --> E6["report"]
+        E1["load<br/><i>verify the manifest</i>"] --> E2["rebuild_data<br/><i>from saved lineage</i>"] --> E3["restore<br/><i>model + weights</i>"] --> E4["score<br/><i>predict · invert · metrics</i>"] --> E5["report"]
     end
     subgraph IN["infer"]
         direction TB
-        I1["load_bundle"] --> I2["prepare_inputs"] --> I3["predict"] --> I4["invert_targets"] --> I5["emit<br/><i>with provenance</i>"]
+        I1["load"] --> I2["prepare_inputs"] --> I3["restore"] --> I4["predict"] --> I5["invert"] --> I6["attribute<br/><i>ids and provenance</i>"]
     end
     subgraph TU["tune"]
         direction TB
-        U1["build_source<br/><i>once, cached</i>"] --> U2["propose_trial"] --> U3["short train"] --> U4["score"]
-        U4 -->|"more trials"| U2
-        U4 -->|"done"| U5["select best"] --> U6["refit<br/><i>optional</i>"]
+        U1["resolve"] --> U2["propose<br/><i>every trial, up front</i>"] --> U3["build_data<br/><i>once, held for the search</i>"] --> U4["run_trials<br/><i>failures recorded</i>"] --> U5["select<br/><i>on validation</i>"] --> U6["refit<br/><i>optional</i>"]
     end
     style E4 fill:#fff8e1,stroke:#f9a825
-    style I4 fill:#fff8e1,stroke:#f9a825
-    style U1 fill:#e8f5e9,stroke:#2e7d32
+    style I5 fill:#fff8e1,stroke:#f9a825
+    style U3 fill:#e8f5e9,stroke:#2e7d32
 ```
 
-`invert_targets` is a required stage, not an optional nicety. A mean absolute
+Inverting the target transform is never optional. In `infer` it is its own
+stage, `invert`; in `evaluate` and in training it happens inside scoring, in
+`orchestration.stages.scoring`, before any metric is computed. A mean absolute
 error reported in standardised space is not a quantity anyone can act on, so
 predictions are returned to original units *before* `analysis.metrics` is
 reached. Every number a user reads is in the units they think it is in.
+
+The shared stages live in `orchestration/stages/`: `resolve` (names to
+components), `reload` (a saved bundle back to a working model or policy),
+`scoring` and `search`. A pipeline is the sequence; a stage module is the
+work, so two pipelines that both need to reopen a bundle do it the same way.
 
 ### Two fitting axes, two leakage rules
 
@@ -482,8 +558,8 @@ Supervised learning and reinforcement learning differ far less than their
 tooling suggests. Both consume a stream of batches. They disagree only about
 where the batches come from.
 
-`BatchSource` makes that the *only* difference. Five implementations, one
-protocol, one training loop:
+`BatchSource` makes that the *only* difference. One protocol, one training
+loop, and five ways of feeding it -- two built, three **⬜ planned**:
 
 ```mermaid
 flowchart TD
@@ -496,9 +572,9 @@ flowchart TD
 
     DS["<b>DatasetSource</b><br/>iterate a split"]
     RO["<b>RolloutSource</b><br/>collect on-policy experience"]
-    RP["<b>ReplaySource</b><br/>buffer and sample"]
-    OF["<b>OfflineSource</b><br/>serve stored transitions"]
-    SS["<b>SimulationSource</b><br/>draw paths, graph intact"]
+    RP["<b>⬜ ReplaySource</b><br/>buffer and sample<br/><i>planned</i>"]
+    OF["<b>⬜ OfflineSource</b><br/>serve stored transitions<br/><i>planned — first</i>"]
+    SS["<b>⬜ SimulationSource</b><br/>draw paths, graph intact<br/><i>planned</i>"]
 
     D --> DS
     E --> RO
@@ -523,14 +599,39 @@ flowchart TD
 
     LEARNER --> L1["supervised"]
     PLEARNER --> L0["random<br/><i>the control</i>"]
-    PLEARNER --> L2["dqn"]
-    PLEARNER --> L3["ppo"]
-    PLEARNER --> L4["sac"]
-    PLEARNER --> L5["pathwise"]
+    PLEARNER --> L2["⬜ dqn<br/><i>planned — first</i>"]
+    PLEARNER --> L3["⬜ ppo"]
+    PLEARNER --> L4["⬜ sac"]
+    PLEARNER --> L5["⬜ pathwise"]
 
     style BS fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
     style EP fill:#e8f5e9,stroke:#2e7d32
     style ST fill:#e8f5e9,stroke:#2e7d32
+    classDef planned fill:#fafafa,stroke:#9e9e9e,stroke-dasharray: 5 5,color:#757575
+    class RP,OF,SS,R,SIM,L2,L3,L4,L5 planned
+```
+
+What runs today: `DatasetSource` under `fit_epochs` for every supervised
+model, and `RolloutSource` under `fit_steps` driving `random`, a learner that
+acts from the policy's output and performs no update. `random` is the control
+an algorithm must beat, and it is what proves the interactive path -- the
+`reinforce` pipeline, policy bundles, `api.agent` -- works end to end before
+any algorithm is trusted with it. The dashed half is the roadmap in
+[§15](#15-roadmap-what-is-planned-and-what-it-needs).
+
+> ⬜ **Planned: which driver serves stored transitions.** The diagram routes
+> `OfflineSource` to `fit_epochs`, because a fixed set of transitions is finite
+> and a pass over it means something. But `fit_epochs` drives a `Learner`, and
+> a transition has no target -- it needs a `PolicyLearner.update`. That
+> tension is resolved when `OfflineSource` is built, not by guessing now; the
+> constraint it must satisfy is that neither driver grows a branch for the
+> other's case.
+
+The interactive pipeline mirrors the supervised one stage for stage:
+
+```mermaid
+flowchart LR
+    R1["resolve"] --> R2["resolve_seed"] --> R3["build_environment"] --> R4["declare_signature<br/><i>observation and action spaces</i>"] --> R5["build_policy"] --> R6["materialise"] --> R7["prepare_hardware"] --> R8["collect<br/><i>wrap the environment as a source</i>"] --> R9["fit"] --> R10["persist"] --> R11["report"]
 ```
 
 The loop decides *when* to step, validate, checkpoint and stop. The learner
@@ -598,19 +699,35 @@ training library. It answers a fixed set of questions for its library:
 
 ```mermaid
 flowchart LR
-    subgraph IFACE["Engine interface"]
+    subgraph IFACE["Engine protocol"]
         direction TB
-        Q1["build(spec, signature)"]
+        Q1["capabilities()"]
         Q2["materialise(model, signature)"]
-        Q3["fit(model, source, spec)"]
-        Q4["checkpoint(model) / restore(bytes)"]
-        Q5["predict(model, source)"]
-        Q6["capabilities()"]
+        Q3["prepare(model, hardware, training, static) → ModelHandle"]
+        Q4["fit(handle, sources by split, training) → FitOutcome"]
+        Q5["predict(handle, source)"]
+        Q6["save_weights(handle, path) /<br/>load_weights(model, path)"]
+    end
+    subgraph IIFACE["InteractiveEngine protocol"]
+        direction TB
+        P1["materialise_policy(policy, signature)"]
+        P2["fit_policy(handle, source, training) → FitOutcome"]
     end
     IFACE --> TORCH["<b>torch</b><br/>multi-epoch gradient loops<br/>learners · AMP · DDP · compile"]
+    IIFACE --> TORCH
     IFACE --> XGB["<b>xgboost</b><br/>one-shot fit<br/>native early stopping"]
     IFACE --> SK["<b>sklearn</b><br/>one-shot fit<br/>joblib persistence"]
+    IFACE -.-> JAX["<b>⬜ jax</b><br/><i>planned</i>"]
+    classDef planned fill:#fafafa,stroke:#9e9e9e,stroke-dasharray: 5 5,color:#757575
+    class JAX planned
 ```
+
+An engine does not build models: the model definition does, from the spec and
+the signature, which is what lets the same `build_model` serve a model whose
+engine is chosen in configuration. The engine takes the built object from
+there. `InteractiveEngine` is a separate protocol rather than optional methods
+on `Engine`, so an engine that cannot train a policy is not forced to carry
+two methods that raise; only Torch implements it.
 
 The XGBoost engine is the honesty test. Trees fit in a single call with no loop
 at all. If the engine contract can only accommodate a model that trains over
@@ -620,7 +737,10 @@ artifacts — including a boosting history reported through the same `FitOutcome
 a neural network produces.
 
 Because the pipelines talk only to this interface, adding a backend is a new
-sub-package and one registration line. It is not a change to any pipeline.
+sub-package, a new member of the `TrainingSpec` union, and one registration
+line. It is not a change to any pipeline. A JAX engine is planned on exactly
+those terms; TensorFlow is not, for the reasons in
+[§15](#15-roadmap-what-is-planned-and-what-it-needs).
 
 ---
 
@@ -686,10 +806,13 @@ comparing artifacts.
 | `local` | Sequential, in-process | The reference implementation every other executor must reproduce, and the only sane way to debug |
 | `processes` | CPU parallel | Spawn start method, with per-worker thread budgets so N workers do not each claim every core |
 | `gpus` | One worker per device | Device visibility pinned *before* the training library is imported — the only point at which pinning reliably takes effect |
-| `cluster` | Later | — |
+| `cluster` | **⬜ Planned** | Jobs across machines. The executor interface needs no change; what it needs is a shared output root and the catalog's single writer kept on one host |
 
-`policy.py` picks a sensible executor and worker count from the hardware
-actually present and the size of the job set, so placement need not be
+`executor: auto`, the default, is resolved by
+`orchestration/compute/placement.py`: it picks an executor and worker count
+from the hardware actually present and the size of the job set -- `gpus` when
+devices are visible and the job set wants them, `processes` otherwise, `local`
+for a single job -- capped at sixteen workers, so placement need not be
 hand-tuned to get reasonable throughput.
 
 ---
@@ -703,14 +826,14 @@ target transforms without consulting the original run.
 
 ```mermaid
 flowchart TD
-    subgraph BUNDLE["bundles/&lt;model&gt;/&lt;job&gt;/v7/"]
+    subgraph BUNDLE["&lt;output_root&gt;/&lt;model&gt;/&lt;job&gt;/v7/"]
         direction TB
         M["manifest.json<br/><i>schema, files, sha256 each</i>"]
-        W["weights.safetensors<br/><i>state_dict, not a pickled module</i>"]
+        W["weights.bin<br/><i>written by the engine, in its own format</i>"]
         FS["fitted_state/<br/><i>scalers, basis, encoder, graph</i>"]
         SP["spec.json<br/><i>exact round-trip</i>"]
-        SG["signature.json<br/><i>static + dynamic + target</i>"]
-        ME["metrics.json"]
+        SG["signature.json<br/><i>static + dynamic + target,<br/>or observation + action</i>"]
+        ME["result.json<br/><i>fit outcome and metrics</i>"]
         LN["lineage.json<br/><i>source fingerprint, split indices,<br/>spec hash, code version</i>"]
     end
     BUNDLE --> CAT[("catalog<br/><i>single writer</i>")]
@@ -731,7 +854,12 @@ predictions.
 **`state_dict`, not pickled modules.** A pickled `nn.Module` embeds the import
 path of your class. Rename the class and every saved model becomes
 unloadable — which is precisely the situation a refactor creates. It also means
-loading a model executes arbitrary code from the file.
+loading a model executes arbitrary code from the file. So the Torch engine
+writes the `state_dict` alone and reads it back with `weights_only=True`, and
+XGBoost writes its own raw booster format. The one exception is scikit-learn,
+whose only supported persistence is `joblib` -- a pickle. A scikit-learn bundle
+should therefore be loaded only from a store you trust, and its manifest hash
+is what tells you the file is the one that was written.
 
 **One catalog writer.** A catalog updated by eight worker processes through
 read-modify-write loses entries. Not often. Just often enough that nobody
@@ -797,6 +925,12 @@ Every model is a **package** under `rade_qnet/models/`, and every package has th
 same five files whatever its size. Capability is added by *adding* files,
 never by moving or renaming them.
 
+Three of the five are universal. The other two say what the model learns
+from, and so differ by paradigm: a supervised model has `model.py` and
+`data.py`; a policy has `policy.py` and `environment.py`. A package with
+neither pair, or both, fails the layout test, which is also where a third
+paradigm's pair would be added (§15).
+
 > The full procedure -- tier classification, per-file contracts, flowcharts,
 > the sign-off checklist and the failure-mode table -- is
 > [`MODEL_IMPLEMENTATION.md`](MODEL_IMPLEMENTATION.md). This section states
@@ -808,9 +942,11 @@ never by moving or renaming them.
 models/<name>/
 ├── __init__.py     ALWAYS   the charter, and `from .register import …`
 ├── spec.py         ALWAYS   what can be configured
-├── model.py        ALWAYS   what is computed      (imports no framework wiring)
-├── data.py         ALWAYS   REQUIRES, and where the data comes from
 ├── register.py     ALWAYS   how it plugs in       (contains no mathematics)
+├── model.py        SUPERVISED  what is computed   (imports no framework wiring)
+├── data.py         SUPERVISED  REQUIRES, and where the data comes from
+├── policy.py       POLICY   observation to action  (in place of model.py)
+├── environment.py  POLICY   what it acts in        (in place of data.py)
 ├── state.py        TIER 2   the FittedState subclass
 ├── layers/         TIER 3   one architectural block per file
 ├── features/       TIER 3   model-specific feature construction
@@ -1030,7 +1166,7 @@ defaults:                       # a run-specification fragment, shared by every 
     device: cpu
     precision: fp32
     threads_per_worker: 1       # pinned, so placement cannot change the numbers
-  reports: {enabled: [summary, curves, quality, graph_structure]}
+  reports: {enabled: [summary, curves, quality, hybrid_graph]}
 
 jobs:                           # per-job overrides, including complexity
   - id: FX__G10
@@ -1066,11 +1202,16 @@ left unset, the budget is whatever each host decided. See
 
 ### Evaluate, tune, infer
 
+A bundle is addressed by its directory, `<output_root>/<model>/<job>/v<n>`;
+`api.registry(output_root)` finds one by tag, best metric or alias instead.
+
 ```python
-api.evaluate(bundle="hybrid_gnn_rnn/FX__G10/v7", split="test")
+bundle = "artifacts/eod/hybrid_gnn_rnn/FX__G10/v7"
+
+api.evaluate(bundle)                              # train, validation, test; original units
+api.evaluate(bundle, source=newer, splits=("test",))   # re-score on newer data
 api.tune("configs/hybrid_tune.yaml")              # data built once, reused per trial
-api.infer("hybrid_gnn_rnn/FX__G10/v7", source=batch)
-api.act("hedger/USD/v3", observation)             # reinforcement-learning path
+api.infer(bundle, split="test")                   # or source=<a SourceSpec> for new data
 ```
 
 ### Serving: one shot, or held open
@@ -1081,11 +1222,11 @@ the artefact that produced the numbers. For a service answering requests it is
 unusable, so there is a held form of each:
 
 ```python
-predictor = api.load("hybrid_gnn_rnn/FX__G10/v7")   # supervised
-predictor.predict(source=batch)
+predictor = api.load(bundle)                        # supervised
+predictor.predict(split="test")
 
-hedger = api.agent("hedger/USD/v3")                 # reinforcement learning
-hedger.act(observation)
+hedger = api.agent(policy_bundle)                   # reinforcement learning
+hedger.act(observation)                             # one-shot form: api.act(policy_bundle, observation)
 ```
 
 Two types rather than one with a flag. A predictor is handed a dataset and
@@ -1125,14 +1266,11 @@ action depends on the policy's output and the action space, never on the
 exploration schedule or the optimiser's state, so a correct implementation
 never needed an instance anyway.
 
-Or from the command line:
-
-```bash
-rade-qnet train      configs/hybrid_eurusd.yaml
-rade-qnet train-set  configs/hybrid_portfolio.yaml --executor processes --workers 8
-rade-qnet evaluate   hybrid_gnn_rnn/FX__G10/v7 --split test
-rade-qnet tune       configs/hybrid_tune.yaml --trials 50
-```
+> ⬜ **Planned: a command line.** There is no `rade-qnet` executable yet;
+> every entry point is a function in `rade_qnet.api`. When it arrives it is a
+> thin `argparse` layer over those functions -- `train`, `train-set`,
+> `evaluate`, `tune` -- adding no behaviour of its own, so that nothing can
+> be done from a shell that cannot be done, and tested, from Python.
 
 ### Add your own model
 
@@ -1173,7 +1311,7 @@ survived.
 | 7 | Tune passed unknown fields to a frozen training config | `TypeError` (latent — masked by a model override) | Typed trial-override merge with validation |
 | 8 | Global deterministic algorithms forced inside a swallowed `try`/`except` | Unpredictable performance; failures invisible | `determinism: off \| warn \| strict`, explicit and per-run |
 | 9 | Basis selection fitted on the full scaled history | Selection leakage from validation and test | `basis.fit_on: train \| all`, defaulting to `train` |
-| 10 | Registry pickled whole modules, loaded with `weights_only=False` | Refactor-fragile; executes arbitrary code on load | `state_dict` / safetensors with a hashed manifest |
+| 10 | Registry pickled whole modules, loaded with `weights_only=False` | Refactor-fragile; executes arbitrary code on load | Engines write weights in their own non-pickle format -- a Torch `state_dict` read with `weights_only=True`, XGBoost's raw booster -- under a hashed manifest. scikit-learn's `joblib` is the stated exception (§9) |
 | 11 | Config loader `setattr`s every key it is handed onto the target object | Any misspelled setting is silently ignored. Found via `use_baseline_norm` in the config against `use_baseline_weight_norm` on the layer — a feature that had never once been switched on | Specs are Pydantic models that reject unknown fields, so the same typo is a startup error naming the field |
 | 12 | Components register as an import side effect, with nothing recording which import | Under a process pool the worker resolves a name only if the *entry point* happened to import the model, because spawn re-imports `__main__`. The same job set works from one script and fails with "no model named ..." from another | `RegistryEntry.defining_module` records the module; `JobPayload.registration_modules` carries it; the worker replays the imports. Resolved in the parent, so an unknown name fails where the error can list the alternatives |
 | 13 | Thread budget set only by environment variable, before a worker imports its libraries | Works for a worker (fresh interpreter), silently does nothing for the launching process (already imported). The number of threads fixes the order of a reduction, so the same job scored differently sequentially than pooled — seventh significant figure, reproducible | `HardwareSpec.threads_per_worker` is applied in-process by `apply_thread_budget`, so the budget travels in the specification and holds wherever the job lands |
@@ -1227,6 +1365,9 @@ Full detail: [`phases/PHASE_0_BASELINE.md`](phases/PHASE_0_BASELINE.md).
 | **Capability** | A narrow protocol a model may optionally implement to unlock behaviour. |
 | **Engine** | The adapter for one training library. The only code that imports it. |
 | **Learner** | An update rule — what one optimisation step means. |
+| **`PolicyLearner`** | The interactive learner protocol: `act` on an observation, `update` from a transition. |
+| **Paradigm** | What a training step consumes: inputs and a target (supervised), transitions (reinforcement). A paradigm is a `task` value, a model base and a pipeline. |
+| **Control learner** | `random`: acts, never updates. The baseline an algorithm must beat, and the proof the interactive path works. |
 | **Loop driver** | `fit_epochs` or `fit_steps` — when to step, validate, checkpoint, stop. |
 | **`BatchSource`** | The single protocol every training loop consumes. |
 | **`DataBundle`** | Splits, fitted state, input signature and lineage, from a data module. |
@@ -1243,7 +1384,124 @@ Full detail: [`phases/PHASE_0_BASELINE.md`](phases/PHASE_0_BASELINE.md).
 | **Report** | A declarative, never-load-bearing writer of run artifacts. |
 | **Visual** | A pure function returning a figure. Writes nothing. |
 | **Conformance** | The executable check that a model satisfies the framework's contracts. |
+| **`Predictor` / `Agent`** | Held serving handles: a loaded supervised bundle, or a loaded policy. |
+| **⬜ Planned** | Designed and placed, not built. Never an importable module. See §15. |
 | **Parity** | The executable check that a refactored model reproduces a golden fixture. |
+
+---
+
+## 15. Roadmap: what is planned, and what it needs
+
+Each item below is a placeholder in the only form this framework allows: a
+place in the design, the seam it plugs into, and the condition for calling it
+done. None of it exists as code. The rule behind that is the one stated in
+§6 for `DifferentiableEnvironment` and paid for in §12 with `act_greedily`: an
+importable class with nothing behind it satisfies every `isinstance` check
+and every import while delivering nothing, which is worse than an honest
+absence. When an item is built, its entry here is deleted and the sections
+above stop marking it.
+
+### Paradigms: what is covered, and what is not
+
+Supervised, unsupervised and reinforcement learning are *paradigms* -- they
+differ in what one training step consumes. Q-learning and deep Q-learning are
+not paradigms; they are *learners* within reinforcement learning, and need no
+structural change at all.
+
+| Asked for | Status | What it takes |
+| --- | --- | --- |
+| Supervised learning | ✅ Built | -- |
+| Self-supervised learning | ✅ Covered | No new paradigm: supervised learning whose `data.py` manufactures its own target, such as the next value of a series |
+| Semi-supervised learning | ✅ Covered | No new paradigm: supervised learning with a loss that tolerates masked targets, a tier 3 `CustomStep` |
+| Reinforcement learning, online | ✅ Scaffold | Pipeline, policy bundles, serving and the control learner run; no algorithm yet |
+| Q-learning / DQN | ⬜ Planned | One learner, `@learner("dqn")`. The name is already reserved in `RlTrainingSpec` |
+| PPO, SAC | ⬜ Planned | One learner each, names reserved |
+| Offline reinforcement learning | ⬜ Planned, next | A new task, source and pipeline -- below |
+| Pathwise (differentiable) control | ⬜ Planned | A learner plus the `DifferentiableEnvironment` protocol (§6) |
+| Unsupervised learning | ⬜ Planned | A new paradigm -- below |
+
+### Offline reinforcement learning — next
+
+The case that matters most for a bank: learn a policy from logged decisions,
+because letting an agent explore in a live market is not an option.
+
+- **Spec.** ⬜ `OfflineRunSpec`, `task: offline`. Names the behaviour policy
+  that produced the log, and an effective-sample-size threshold.
+- **Source.** ⬜ `OfflineSource` in `sources/batching/`, serving transitions
+  `(observation, action, reward, next_observation, done)` from Parquet or CSV
+  through the existing `sources/dataset/tables.py` readers, so a transition
+  file gets the same fingerprinting and caching as a supervised table.
+- **Pipeline.** ⬜ `orchestration/pipelines/offline.py`, a sibling of
+  `reinforce.py`, with no `build_environment` or `collect` stage.
+- **Evaluation.** Off-policy estimates are only as good as the overlap between
+  the behaviour policy and the learned one. The pipeline records the behaviour
+  policy and **refuses to report a score** when the effective sample size
+  falls below the threshold, rather than reporting a number nobody should act
+  on. The same refusal rule as `Agent.act` (§12).
+- **Done when.** A DQN trained offline on a logged file is persisted, served
+  through `api.agent`, and its evaluation refuses on a deliberately drifted
+  log.
+
+### DQN — first algorithm
+
+- ⬜ `engines/torch/learners/dqn.py`, registered as `dqn`, implementing
+  `PolicyLearner` and the static `act_greedily` that `Agent.act` looks for.
+- ⬜ `ReplaySource`, for the online form: a bounded buffer filled by rollouts
+  and sampled uniformly.
+- **Done when.** It beats `random` on a reference environment by a margin
+  fixed in advance, and a served DQN policy returns the same action for the
+  same observation every time.
+
+### The rest of Phase 7
+
+- ⬜ `ppo` and `sac` learners.
+- ⬜ `pathwise` learner, `DifferentiableEnvironment`, `SimulationSource` and
+  `engines.torch.risk` (the risk measures it back-propagates through).
+- ⬜ `analysis.metrics.episode` and `analysis.visuals.episodes`: returns,
+  episode lengths and action distributions, pure like every other metric.
+- ⬜ A hedging model. Planned in [Phase 7](phases/PHASE_7_REINFORCEMENT_LEARNING.md)
+  as `domains.hedging`; since §3 removed the `domains` layer, it lands as an
+  ordinary package, `models/hedger/`, with its environment in its own
+  `environment.py`.
+
+### Unsupervised learning
+
+The one genuinely missing paradigm: no target at all, so neither learner
+protocol fits, and "inference" means *transform* -- assign a cluster, project
+onto factors, score an anomaly -- rather than predict.
+
+| Seam | Addition |
+| --- | --- |
+| Spec | ⬜ `UnsupervisedRunSpec`, `task: unsupervised` |
+| Authoring | ⬜ A `TransformerDefinition` base beside `PredictorDefinition` and `PolicyDefinition` |
+| Contract | `InputSignature` with no target, which needs an unsupervised branch in its validator |
+| Pipeline | ⬜ `orchestration/pipelines/fit_transform.py` |
+| Metrics | ⬜ Measures needing no ground truth: silhouette, reconstruction error, explained variance, stability across seeds |
+| Models | ⬜ e.g. `models/pca_factors/`, `models/regime_clusters/` |
+
+**Done when** a PCA factor model trains, persists, reloads and transforms new
+data through `api`, and `test_model_layout.py` accepts its file set as a third
+paradigm.
+
+### Engines
+
+- ⬜ **JAX**, later: `engines/jax/`, a `JaxTrainingSpec` in the `TrainingSpec`
+  union, and the shared engine conformance suite. Worth it for pathwise
+  control and for sensitivities computed by differentiating through a pricer.
+- **TensorFlow: not planned.** What it would add over Torch -- mainly a
+  serving and TPU path -- is now available from Torch through ONNX export,
+  and a second deep-learning engine doubles the conformance surface for no new
+  capability. Revisit only if a consumer can accept nothing but a TensorFlow
+  artefact.
+
+### Infrastructure
+
+- ⬜ `cluster` executor (§8.2).
+- ⬜ Command line over `rade_qnet.api` (§12).
+- ⬜ `CAPABILITIES.md`, a generated table of which paradigm, engine and
+  learner combinations exist, with `test_paradigm_seams.py` failing whenever
+  that table and the registry disagree -- so this roadmap cannot claim
+  something is built when it is not, or the reverse.
 
 ---
 
