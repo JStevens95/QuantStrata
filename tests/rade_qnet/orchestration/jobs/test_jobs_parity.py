@@ -195,6 +195,7 @@ def manifests(tmp_path_factory):
     )
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestPlacementDoesNotChangeResults:
     """The gate."""
 

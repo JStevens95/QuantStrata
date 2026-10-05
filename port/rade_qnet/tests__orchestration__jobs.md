@@ -9,7 +9,7 @@
 | 3 | `test_jobs_fanout.py` | 279 | 9557 | `1bb24859e5431a8f` |
 | 4 | `test_jobs_groups.py` | 330 | 11800 | `caf6e448ee6e970d` |
 | 5 | `test_jobs_manifest.py` | 354 | 11521 | `98dc6b714ca46aec` |
-| 6 | `test_jobs_parity.py` | 345 | 12518 | `60545903949860a3` |
+| 6 | `test_jobs_parity.py` | 346 | 12562 | `8f27a74433523325` |
 | 7 | `test_jobs_set.py` | 379 | 13317 | `e62c9a827ce52b21` |
 | 8 | `test_jobs_unit.py` | 265 | 9702 | `e3cb40ca51ccddfe` |
 
@@ -1241,7 +1241,7 @@ class TestWritingAndReading:
 
 ## 6. `tests/rade_qnet/orchestration/jobs/test_jobs_parity.py`
 
-12518 bytes · SHA-256 `60545903949860a3`
+12562 bytes · SHA-256 `8f27a74433523325`
 
 ```python
 """
@@ -1441,6 +1441,7 @@ def manifests(tmp_path_factory):
     )
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestPlacementDoesNotChangeResults:
     """The gate."""
 

@@ -142,6 +142,7 @@ class TestTheFrameworkStaysGeneral:
         assert not offenders, "orchestration names an engine:\n" + "\n".join(offenders)
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestWhatTheFixtureCanAndCannotShow:
     """
     A finding about the Phase 0 fixture, pinned so it is not forgotten.

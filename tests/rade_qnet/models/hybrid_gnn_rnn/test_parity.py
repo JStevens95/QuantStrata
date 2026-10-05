@@ -168,6 +168,7 @@ def first_batches(sources) -> dict[str, dict[str, np.ndarray]]:
     return collected
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestLevel2Tensors:
     """The batches the loader produces, compared exactly."""
 
@@ -234,6 +235,7 @@ class TestLevel2Tensors:
             assert source.n_samples == len(expected[split]), split
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestLevel4TrainingCurve:
     """Several epochs of training, compared at a widened tolerance."""
 

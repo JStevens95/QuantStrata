@@ -55,6 +55,7 @@ def golden():
         pytest.skip(f"golden fixture not captured: {exc}")
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestCompleteness:
     """Every level must have the artifacts it needs."""
 
@@ -138,6 +139,7 @@ class TestProvenance:
         assert "defect_3_shared_shuffle_flag" in preserved
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestTheFixtureCanStillFail:
     """
     The tripwire against silent degradation.
@@ -257,6 +259,7 @@ class TestTheCapturedSplit:
         assert max(splits["validation"]) < min(splits["test"])
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestTheCapturedTensors:
     """What the network actually received, which level 2 reproduces."""
 

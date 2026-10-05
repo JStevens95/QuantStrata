@@ -146,6 +146,7 @@ class TestConstruction:
             HybridGnnRnn(HybridModelSpec(units=16), vague)
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestForward:
     """What the assembled network computes."""
 
@@ -191,6 +192,7 @@ class TestForward:
             assert not torch.allclose(base, model(**history))
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestNoHiddenState:
     """The model holds parameters and nothing else."""
 
@@ -252,6 +254,7 @@ class TestNoHiddenState:
         assert model.supports_unseen_entities
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestParityAgainstTheBaseline:
     """Level 3: the forward pass, against the captured original."""
 

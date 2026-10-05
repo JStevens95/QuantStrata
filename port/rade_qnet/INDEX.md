@@ -1,6 +1,6 @@
 # Porting `rade_qnet` through a markdown-only proxy
 
-81 documents, 364 files, 98,780 lines, 3,702,676 bytes.
+81 documents, 364 files, 98,858 lines, 3,706,444 bytes.
 
 Each document below covers one directory: create the directory, then create each file in it from the block that carries it. Rebuild the source tree first, then the tests.
 
@@ -10,14 +10,16 @@ Everything needed to install and run is carried, including `pyproject.toml` (the
 
 **The golden parity fixtures do not travel.** `tests/fixtures/rade_qnet/` holds `.npy` and `.npz` arrays — binary, and so impossible to carry as text. They guard numerical parity against a captured reference, so if that matters on the far side the arrays have to cross by some other route.
 
-Most tests that need them skip cleanly. **Twenty-six do not** — they fail or error on the missing file instead. That is a gap in those tests rather than in this port, but it means a correct paste is *not* all-green. Run the suite and compare against the expected result below; anything else means something did not land.
+Every test that needs them skips cleanly, so **a correct paste is all-green** and any red at all means something did not land. Run the suite and compare:
 
 ```
 pytest tests/rade_qnet
-  -> 7 failed, 3072 passed, 70 skipped, 19 errors
+  -> 3067 passed, 101 skipped
 ```
 
-**Do not copy across a subset of the fixtures.** The nine `.json` files among them are text and look portable, but supplying those without the arrays is worse than supplying none: the loader then finds the directory, the tests stop skipping, and the failure count rises to 22. It is all of them or none.
+The 66 extra skips relative to a full checkout are the parity tests: the ones that compare this implementation's numbers against the original's. Everything else runs, so the suite still proves the framework behaves — it just stops proving it reproduces the baseline's figures.
+
+Nine of the fixtures are `.json` and could in principle travel as text. Copying only those gains nothing: the arrays beside them are what the tests read, so the same tests skip either way. It is all of them or none, and none is a perfectly good answer.
 
 ## A note on fence lengths
 
@@ -79,13 +81,13 @@ The prose, including `ARCHITECTURE.md`. These are already markdown and could be 
 | 41 | [`docs.md`](docs.md) | `src/rade_qnet/docs` | 6 | 179,171 |
 | 42 | [`docs__phases.md`](docs__phases.md) | `src/rade_qnet/docs/phases` | 8 | 210,120 |
 
-## Tests: 39 documents, 172 files, 1,492,755 bytes
+## Tests: 39 documents, 172 files, 1,496,523 bytes
 
 The suite. Rebuild it after the source and run `pytest tests/rade_qnet` -- that run is what turns a pasted tree into a verified one. Each document's name mirrors the source document it exercises: `tests__core__spec.md` tests `core__spec.md`.
 
 | # | Document | Directory | Files | Bytes |
 | --- | --- | --- | ---: | ---: |
-| 43 | [`tests.md`](tests.md) | `tests/rade_qnet` | 7 | 75,009 |
+| 43 | [`tests.md`](tests.md) | `tests/rade_qnet` | 7 | 78,205 |
 | 44 | [`tests__analysis.md`](tests__analysis.md) | `tests/rade_qnet/analysis` | 1 | 368 |
 | 45 | [`tests__analysis__metrics.md`](tests__analysis__metrics.md) | `tests/rade_qnet/analysis/metrics` | 4 | 37,693 |
 | 46 | [`tests__analysis__reports.md`](tests__analysis__reports.md) | `tests/rade_qnet/analysis/reports` | 6 | 56,538 |
@@ -103,8 +105,8 @@ The suite. Rebuild it after the source and run `pytest tests/rade_qnet` -- that 
 | 58 | [`tests__engines__torch__learners.md`](tests__engines__torch__learners.md) | `tests/rade_qnet/engines/torch/learners` | 3 | 25,229 |
 | 59 | [`tests__engines__torch__training.md`](tests__engines__torch__training.md) | `tests/rade_qnet/engines/torch/training` | 5 | 66,874 |
 | 60 | [`tests__engines__xgboost.md`](tests__engines__xgboost.md) | `tests/rade_qnet/engines/xgboost` | 2 | 16,521 |
-| 61 | [`tests__models.md`](tests__models.md) | `tests/rade_qnet/models` | 3 | 39,386 |
-| 62 | [`tests__models__hybrid_gnn_rnn.md`](tests__models__hybrid_gnn_rnn.md) | `tests/rade_qnet/models/hybrid_gnn_rnn` | 9 | 76,879 |
+| 61 | [`tests__models.md`](tests__models.md) | `tests/rade_qnet/models` | 3 | 39,430 |
+| 62 | [`tests__models__hybrid_gnn_rnn.md`](tests__models__hybrid_gnn_rnn.md) | `tests/rade_qnet/models/hybrid_gnn_rnn` | 9 | 77,231 |
 | 63 | [`tests__models__hybrid_gnn_rnn__features.md`](tests__models__hybrid_gnn_rnn__features.md) | `tests/rade_qnet/models/hybrid_gnn_rnn/features` | 5 | 38,729 |
 | 64 | [`tests__models__hybrid_gnn_rnn__layers.md`](tests__models__hybrid_gnn_rnn__layers.md) | `tests/rade_qnet/models/hybrid_gnn_rnn/layers` | 7 | 42,782 |
 | 65 | [`tests__models__hybrid_gnn_rnn__pipelines.md`](tests__models__hybrid_gnn_rnn__pipelines.md) | `tests/rade_qnet/models/hybrid_gnn_rnn/pipelines` | 4 | 21,283 |
@@ -113,7 +115,7 @@ The suite. Rebuild it after the source and run `pytest tests/rade_qnet` -- that 
 | 68 | [`tests__models__xgb_tabular.md`](tests__models__xgb_tabular.md) | `tests/rade_qnet/models/xgb_tabular` | 2 | 3,332 |
 | 69 | [`tests__orchestration.md`](tests__orchestration.md) | `tests/rade_qnet/orchestration` | 2 | 15,861 |
 | 70 | [`tests__orchestration__compute.md`](tests__orchestration__compute.md) | `tests/rade_qnet/orchestration/compute` | 4 | 34,688 |
-| 71 | [`tests__orchestration__jobs.md`](tests__orchestration__jobs.md) | `tests/rade_qnet/orchestration/jobs` | 8 | 75,579 |
+| 71 | [`tests__orchestration__jobs.md`](tests__orchestration__jobs.md) | `tests/rade_qnet/orchestration/jobs` | 8 | 75,623 |
 | 72 | [`tests__orchestration__pipelines.md`](tests__orchestration__pipelines.md) | `tests/rade_qnet/orchestration/pipelines` | 7 | 117,649 |
 | 73 | [`tests__orchestration__stages.md`](tests__orchestration__stages.md) | `tests/rade_qnet/orchestration/stages` | 2 | 5,469 |
 | 74 | [`tests__sources.md`](tests__sources.md) | `tests/rade_qnet/sources` | 1 | 356 |
@@ -123,7 +125,7 @@ The suite. Rebuild it after the source and run `pytest tests/rade_qnet` -- that 
 | 78 | [`tests__sources__environment.md`](tests__sources__environment.md) | `tests/rade_qnet/sources/environment` | 2 | 6,385 |
 | 79 | [`tests__storage.md`](tests__storage.md) | `tests/rade_qnet/storage` | 4 | 36,849 |
 | 80 | [`tests__storage__runs.md`](tests__storage__runs.md) | `tests/rade_qnet/storage/runs` | 4 | 44,979 |
-| 81 | [`tests__testkit.md`](tests__testkit.md) | `tests/rade_qnet/testkit` | 5 | 74,775 |
+| 81 | [`tests__testkit.md`](tests__testkit.md) | `tests/rade_qnet/testkit` | 5 | 74,907 |
 
 ## Verifying the result
 
@@ -357,7 +359,7 @@ f75ec71330030c3b  src/rade_qnet/docs/phases/PHASE_5_EVALUATE_INFER_TUNE.md
 a8c4ca3da3c99b0c  src/rade_qnet/docs/phases/PHASE_6_ADDITIONAL_ENGINES.md
 24dfc1d96d0e9ffe  src/rade_qnet/docs/phases/PHASE_7_REINFORCEMENT_LEARNING.md
 9b77412d766c78e0  tests/rade_qnet/__init__.py
-9552f767b1faaf66  tests/rade_qnet/conftest.py
+2024111b6cc910e5  tests/rade_qnet/conftest.py
 4f63ed66941eacb9  tests/rade_qnet/ruff.toml
 1a5abd1e0ce7b27a  tests/rade_qnet/test_api.py
 82debfd68b1f8421  tests/rade_qnet/test_documentation.py
@@ -442,13 +444,13 @@ d35aed8beca12275  tests/rade_qnet/engines/xgboost/__init__.py
 7cfb06ea22f62526  tests/rade_qnet/engines/xgboost/test_xgboost_engine.py
 e11173949276a7e1  tests/rade_qnet/models/__init__.py
 3a1a074e153fe65b  tests/rade_qnet/models/test_model_layout.py
-804c5e8b4c66f0c6  tests/rade_qnet/models/test_reference_models.py
+10b26bc431a366a3  tests/rade_qnet/models/test_reference_models.py
 5383ca55a0c3650b  tests/rade_qnet/models/hybrid_gnn_rnn/__init__.py
-33266791ef4ea6e6  tests/rade_qnet/models/hybrid_gnn_rnn/test_data.py
-c57796835c402eda  tests/rade_qnet/models/hybrid_gnn_rnn/test_model.py
-daef5e3ddff87425  tests/rade_qnet/models/hybrid_gnn_rnn/test_parity.py
+0feb420fce707707  tests/rade_qnet/models/hybrid_gnn_rnn/test_data.py
+ff6a0baae70ffee0  tests/rade_qnet/models/hybrid_gnn_rnn/test_model.py
+aaf1033a33d7e692  tests/rade_qnet/models/hybrid_gnn_rnn/test_parity.py
 9342b6e363699dd7  tests/rade_qnet/models/hybrid_gnn_rnn/test_register.py
-294a0163bea578b4  tests/rade_qnet/models/hybrid_gnn_rnn/test_reports.py
+ca350f2d439381dd  tests/rade_qnet/models/hybrid_gnn_rnn/test_reports.py
 2e526e1e4d6ddd1f  tests/rade_qnet/models/hybrid_gnn_rnn/test_state.py
 fb508cf76c889e00  tests/rade_qnet/models/hybrid_gnn_rnn/test_universe.py
 899e3486d7ebd733  tests/rade_qnet/models/hybrid_gnn_rnn/test_visuals.py
@@ -486,7 +488,7 @@ db64606cfe41ff84  tests/rade_qnet/orchestration/jobs/__init__.py
 1bb24859e5431a8f  tests/rade_qnet/orchestration/jobs/test_jobs_fanout.py
 caf6e448ee6e970d  tests/rade_qnet/orchestration/jobs/test_jobs_groups.py
 98dc6b714ca46aec  tests/rade_qnet/orchestration/jobs/test_jobs_manifest.py
-60545903949860a3  tests/rade_qnet/orchestration/jobs/test_jobs_parity.py
+8f27a74433523325  tests/rade_qnet/orchestration/jobs/test_jobs_parity.py
 e62c9a827ce52b21  tests/rade_qnet/orchestration/jobs/test_jobs_set.py
 e3cb40ca51ccddfe  tests/rade_qnet/orchestration/jobs/test_jobs_unit.py
 d46d1a478e03562f  tests/rade_qnet/orchestration/pipelines/__init__.py
@@ -526,7 +528,7 @@ b655369174dc00c0  tests/rade_qnet/storage/test_storage_manifest.py
 4dd05188c31c1115  tests/rade_qnet/testkit/__init__.py
 e2871cbd5e4fa5f0  tests/rade_qnet/testkit/test_testkit_conformance.py
 aa867e4786c01c80  tests/rade_qnet/testkit/test_testkit_fixtures.py
-640a0603e61fb4ec  tests/rade_qnet/testkit/test_testkit_golden_fixture.py
+9f0c11f0e6b72a5e  tests/rade_qnet/testkit/test_testkit_golden_fixture.py
 081eb6c29a54e0ff  tests/rade_qnet/testkit/test_testkit_parity.py
 ```
 

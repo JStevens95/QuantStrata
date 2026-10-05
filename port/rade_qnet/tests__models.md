@@ -6,7 +6,7 @@
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 17 | 838 | `e11173949276a7e1` |
 | 2 | `test_model_layout.py` | 525 | 22614 | `3a1a074e153fe65b` |
-| 3 | `test_reference_models.py` | 395 | 15934 | `804c5e8b4c66f0c6` |
+| 3 | `test_reference_models.py` | 396 | 15978 | `10b26bc431a366a3` |
 
 ---
 
@@ -572,7 +572,7 @@ class TestSimpleModelsStayCheap:
 
 ## 3. `tests/rade_qnet/models/test_reference_models.py`
 
-15934 bytes · SHA-256 `804c5e8b4c66f0c6`
+15978 bytes · SHA-256 `10b26bc431a366a3`
 
 ```python
 """
@@ -719,6 +719,7 @@ class TestTheFrameworkStaysGeneral:
         assert not offenders, "orchestration names an engine:\n" + "\n".join(offenders)
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestWhatTheFixtureCanAndCannotShow:
     """
     A finding about the Phase 0 fixture, pinned so it is not forgotten.

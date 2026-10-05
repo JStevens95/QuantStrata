@@ -7,7 +7,7 @@
 | 1 | `__init__.py` | 21 | 892 | `4dd05188c31c1115` |
 | 2 | `test_testkit_conformance.py` | 685 | 23601 | `e2871cbd5e4fa5f0` |
 | 3 | `test_testkit_fixtures.py` | 419 | 16382 | `aa867e4786c01c80` |
-| 4 | `test_testkit_golden_fixture.py` | 301 | 12563 | `640a0603e61fb4ec` |
+| 4 | `test_testkit_golden_fixture.py` | 304 | 12695 | `9f0c11f0e6b72a5e` |
 | 5 | `test_testkit_parity.py` | 537 | 21337 | `081eb6c29a54e0ff` |
 
 ---
@@ -1166,7 +1166,7 @@ class TestRecordingHook:
 
 ## 4. `tests/rade_qnet/testkit/test_testkit_golden_fixture.py`
 
-12563 bytes · SHA-256 `640a0603e61fb4ec`
+12695 bytes · SHA-256 `9f0c11f0e6b72a5e`
 
 ```python
 """
@@ -1226,6 +1226,7 @@ def golden():
         pytest.skip(f"golden fixture not captured: {exc}")
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestCompleteness:
     """Every level must have the artifacts it needs."""
 
@@ -1309,6 +1310,7 @@ class TestProvenance:
         assert "defect_3_shared_shuffle_flag" in preserved
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestTheFixtureCanStillFail:
     """
     The tripwire against silent degradation.
@@ -1428,6 +1430,7 @@ class TestTheCapturedSplit:
         assert max(splits["validation"]) < min(splits["test"])
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestTheCapturedTensors:
     """What the network actually received, which level 2 reproduces."""
 

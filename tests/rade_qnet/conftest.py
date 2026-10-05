@@ -31,6 +31,24 @@ from src.rade_qnet.core.provenance.logging import ROOT_LOGGER_NAME
 # [0] is tests/rade_qnet, [1] is tests, [2] is the repository root.
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
+#: The captured baseline the parity tests compare against.
+_GOLDEN_ROOT = _REPOSITORY_ROOT / "tests" / "fixtures" / "rade_qnet" / "golden"
+
+#: Artifacts whose presence stands for the whole capture.
+#:
+#: One from each half of it, chosen to catch the two ways the fixture goes
+#: missing.  ``manifest.json`` is absent when nothing was ever captured.
+#: ``elementary_pnl.npy`` is absent when only the text files arrived -- which
+#: happens when the tree crossed a markdown-only proxy, since the arrays
+#: cannot travel that way and the JSON beside them can.
+#:
+#: A presence check, not an integrity check: the manifest's digests are what
+#: prove a fixture is the one it claims to be.
+_GOLDEN_ARTIFACTS = (
+    _GOLDEN_ROOT / "hybrid_gnn_rnn" / "manifest.json",
+    _GOLDEN_ROOT / "hybrid_gnn_rnn" / "input" / "elementary_pnl.npy",
+)
+
 
 @pytest.fixture(autouse=True)
 def _restore_framework_logging() -> Iterator[None]:
@@ -63,6 +81,53 @@ def _restore_framework_logging() -> Iterator[None]:
         logger.setLevel(level)
         logger.propagate = propagate
         logger.handlers[:] = handlers
+
+
+@pytest.fixture(scope="session")
+def requires_golden() -> None:
+    """
+    Skip the requesting tests when the captured baseline is not present.
+
+    Requested with ``@pytest.mark.usefixtures("requires_golden")`` on a test
+    class, rather than by a module-level marker. The distinction matters:
+    the classes that replay the baseline sit in files alongside classes that
+    do not, and in one case the ratio is two tests to nineteen. Skipping a
+    whole module to protect two tests would quietly stop running seventeen
+    that work perfectly well without any fixture at all.
+
+    Why skip rather than fail. The capture is a one-off step that a fresh
+    clone has not run, and the arrays cannot cross a markdown-only proxy, so
+    their absence is an ordinary condition rather than a defect. A suite that
+    reports red for a missing optional input teaches people to ignore red.
+
+    What is lost when this skips is worth stating plainly: these are the
+    tests that compare this implementation's numbers against the original's.
+    Everything else still runs, so the suite proves the framework behaves --
+    it just stops proving it produces the same figures as the baseline.
+
+    This also gates the tests that check the capture is *complete*, which
+    reads like a contradiction and is not. The two answer different
+    questions, and the order matters. This fixture asks whether a capture is
+    present at all; the completeness tests then ask whether the one that is
+    present has every artifact it should. Gating them means a half-copied
+    tree -- the text files without the arrays -- is reported as "no fixture"
+    rather than as a dozen failures, while a genuine capture missing one
+    file still fails loudly, which is what those tests are for.
+
+    Raises
+    ------
+    Skipped
+        If any artifact in :data:`_GOLDEN_ARTIFACTS` is missing, naming the
+        first one and how to produce it.
+    """
+    for artifact in _GOLDEN_ARTIFACTS:
+        if not artifact.is_file():
+            pytest.skip(
+                f"golden fixture not captured: {artifact} is missing. "
+                f"Capture it with examples/rade_qnet/phase0_capture_baseline.py, "
+                f"and note that a partial copy is worse than none -- the text "
+                f"files alone stop these tests skipping without letting them pass"
+            )
 
 
 @pytest.fixture(scope="session")

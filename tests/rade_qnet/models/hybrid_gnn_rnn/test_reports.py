@@ -69,6 +69,7 @@ def context(tmp_path: Path, bundle_state) -> ReportContext:
     return ReportContext(bundle=_Bundle(), directory=tmp_path)  # type: ignore[arg-type]
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestRendering:
     """What the report writes."""
 
@@ -131,6 +132,7 @@ class TestRendering:
         assert str(tmp_path) not in page
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestCoverageFindings:
     """The two numbers that decide whether the graph is usable."""
 

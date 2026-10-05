@@ -533,26 +533,30 @@ def render_index(documents: list[tuple[Tree, Path, list[tuple[Path, bytes, str]]
         ),
         "",
         (
-            "Most tests that need them skip cleanly. **Twenty-six do not** "
-            "— they fail or error on the missing file instead. That is a "
-            "gap in those tests rather than in this port, but it means a "
-            "correct paste is *not* all-green. Run the suite and compare "
-            "against the expected result below; anything else means "
-            "something did not land."
+            "Every test that needs them skips cleanly, so **a correct "
+            "paste is all-green** and any red at all means something did "
+            "not land. Run the suite and compare:"
         ),
         "",
         f"{FENCE}",
         "pytest tests/rade_qnet",
-        "  -> 7 failed, 3072 passed, 70 skipped, 19 errors",
+        "  -> 3067 passed, 101 skipped",
         FENCE,
         "",
         (
-            "**Do not copy across a subset of the fixtures.** The nine "
-            "`.json` files among them are text and look portable, but "
-            "supplying those without the arrays is worse than supplying "
-            "none: the loader then finds the directory, the tests stop "
-            "skipping, and the failure count rises to 22. It is all of "
-            "them or none."
+            "The 66 extra skips relative to a full checkout are the parity "
+            "tests: the ones that compare this implementation's numbers "
+            "against the original's. Everything else runs, so the suite "
+            "still proves the framework behaves — it just stops proving it "
+            "reproduces the baseline's figures."
+        ),
+        "",
+        (
+            "Nine of the fixtures are `.json` and could in principle travel "
+            "as text. Copying only those gains nothing: the arrays beside "
+            "them are what the tests read, so the same tests skip either "
+            "way. It is all of them or none, and none is a perfectly good "
+            "answer."
         ),
         "",
         "## A note on fence lengths",

@@ -5,11 +5,11 @@
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 1 | 51 | `5383ca55a0c3650b` |
-| 2 | `test_data.py` | 485 | 19640 | `33266791ef4ea6e6` |
-| 3 | `test_model.py` | 292 | 11524 | `c57796835c402eda` |
-| 4 | `test_parity.py` | 348 | 13176 | `daef5e3ddff87425` |
+| 2 | `test_data.py` | 486 | 19684 | `0feb420fce707707` |
+| 3 | `test_model.py` | 295 | 11656 | `ff6a0baae70ffee0` |
+| 4 | `test_parity.py` | 350 | 13264 | `aaf1033a33d7e692` |
 | 5 | `test_register.py` | 157 | 5749 | `9342b6e363699dd7` |
-| 6 | `test_reports.py` | 184 | 6851 | `294a0163bea578b4` |
+| 6 | `test_reports.py` | 186 | 6939 | `ca350f2d439381dd` |
 | 7 | `test_state.py` | 247 | 10322 | `2e526e1e4d6ddd1f` |
 | 8 | `test_universe.py` | 137 | 4858 | `fb508cf76c889e00` |
 | 9 | `test_visuals.py` | 148 | 4708 | `899e3486d7ebd733` |
@@ -28,7 +28,7 @@
 
 ## 2. `tests/rade_qnet/models/hybrid_gnn_rnn/test_data.py`
 
-19640 bytes · SHA-256 `33266791ef4ea6e6`
+19684 bytes · SHA-256 `0feb420fce707707`
 
 ```python
 """
@@ -419,6 +419,7 @@ class TestStatelessness:
         assert np.array_equal(results[0][1], results[1][1])
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestParityAgainstTheBaseline:
     """
     Level 1: the fitted state, compared against the recorded baseline.
@@ -522,7 +523,7 @@ class TestParityAgainstTheBaseline:
 
 ## 3. `tests/rade_qnet/models/hybrid_gnn_rnn/test_model.py`
 
-11524 bytes · SHA-256 `c57796835c402eda`
+11656 bytes · SHA-256 `ff6a0baae70ffee0`
 
 ```python
 """
@@ -673,6 +674,7 @@ class TestConstruction:
             HybridGnnRnn(HybridModelSpec(units=16), vague)
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestForward:
     """What the assembled network computes."""
 
@@ -718,6 +720,7 @@ class TestForward:
             assert not torch.allclose(base, model(**history))
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestNoHiddenState:
     """The model holds parameters and nothing else."""
 
@@ -779,6 +782,7 @@ class TestNoHiddenState:
         assert model.supports_unseen_entities
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestParityAgainstTheBaseline:
     """Level 3: the forward pass, against the captured original."""
 
@@ -823,7 +827,7 @@ class TestParityAgainstTheBaseline:
 
 ## 4. `tests/rade_qnet/models/hybrid_gnn_rnn/test_parity.py`
 
-13176 bytes · SHA-256 `daef5e3ddff87425`
+13264 bytes · SHA-256 `aaf1033a33d7e692`
 
 ```python
 """
@@ -996,6 +1000,7 @@ def first_batches(sources) -> dict[str, dict[str, np.ndarray]]:
     return collected
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestLevel2Tensors:
     """The batches the loader produces, compared exactly."""
 
@@ -1062,6 +1067,7 @@ class TestLevel2Tensors:
             assert source.n_samples == len(expected[split]), split
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestLevel4TrainingCurve:
     """Several epochs of training, compared at a widened tolerance."""
 
@@ -1346,7 +1352,7 @@ class TestDefinition:
 
 ## 6. `tests/rade_qnet/models/hybrid_gnn_rnn/test_reports.py`
 
-6851 bytes · SHA-256 `294a0163bea578b4`
+6939 bytes · SHA-256 `ca350f2d439381dd`
 
 ```python
 """Tests for the graph diagnostics report."""
@@ -1420,6 +1426,7 @@ def context(tmp_path: Path, bundle_state) -> ReportContext:
     return ReportContext(bundle=_Bundle(), directory=tmp_path)  # type: ignore[arg-type]
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestRendering:
     """What the report writes."""
 
@@ -1482,6 +1489,7 @@ class TestRendering:
         assert str(tmp_path) not in page
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestCoverageFindings:
     """The two numbers that decide whether the graph is usable."""
 

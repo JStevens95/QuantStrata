@@ -386,6 +386,7 @@ class TestStatelessness:
         assert np.array_equal(results[0][1], results[1][1])
 
 
+@pytest.mark.usefixtures("requires_golden")
 class TestParityAgainstTheBaseline:
     """
     Level 1: the fitted state, compared against the recorded baseline.
