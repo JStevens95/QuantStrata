@@ -33,6 +33,8 @@ from src.rade_qnet.core.lifecycle.components import (
 from src.rade_qnet.core.lifecycle.errors import ComponentError
 from src.rade_qnet.testkit.fixtures import isolated_registries
 
+from ...locations import PACKAGE_NAME
+
 
 @pytest.fixture(autouse=True)
 def _isolate():
@@ -156,7 +158,9 @@ class TestModuleRegistries:
         # Hoisting it to the module top would make the registration happen at
         # collection time, so the test would pass without demonstrating
         # anything about when registration occurs.
-        from src.rade_qnet.analysis.reports.summary import SummaryReport  # noqa: PLC0415
+        from src.rade_qnet.analysis.reports.summary import (  # noqa: PLC0415
+            SummaryReport,
+        )
 
         assert get_report("summary") is SummaryReport
 
@@ -200,7 +204,7 @@ class TestReplayingRegistrationsInAWorker:
         """
         module = tmp_path / "rade_qnet_probe_round_trip.py"
         module.write_text(
-            "from src.rade_qnet.core.lifecycle.components import REPORTS\n"
+            f"from {PACKAGE_NAME}.core.lifecycle.components import REPORTS\n"
             "class Probe:\n"
             "    pass\n"
             "REPORTS.register('round_trip', Probe)\n"
@@ -255,7 +259,7 @@ class TestReplayingRegistrationsInAWorker:
         """
         module = tmp_path / "rade_qnet_probe_registration.py"
         module.write_text(
-            "from src.rade_qnet.core.lifecycle.components import REPORTS\n"
+            f"from {PACKAGE_NAME}.core.lifecycle.components import REPORTS\n"
             "class Probe:\n"
             "    pass\n"
             "REPORTS.register('probe', Probe)\n"
@@ -276,7 +280,7 @@ class TestReplayingRegistrationsInAWorker:
         """
         module = tmp_path / "rade_qnet_probe_repeat.py"
         module.write_text(
-            "from src.rade_qnet.core.lifecycle.components import REPORTS\n"
+            f"from {PACKAGE_NAME}.core.lifecycle.components import REPORTS\n"
             "class Probe:\n"
             "    pass\n"
             "REPORTS.register('repeat', Probe)\n"

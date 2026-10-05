@@ -148,7 +148,9 @@ class TestTrainingOneModel:
         it in an instance test raises rather than returning `False` -- a
         mistake no passing test would reveal by accident.
         """
-        from src.rade_qnet.core.spec.run import parse_run_spec  # noqa: PLC0415
+        from src.rade_qnet.core.spec.run import (  # noqa: PLC0415
+            parse_run_spec,
+        )
 
         spec = parse_run_spec(run_payload(dataset, tmp_path / "out"))
 

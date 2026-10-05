@@ -162,7 +162,9 @@ def make_spec(dataset, **overrides):
     SupervisedRunSpec
         The spec.
     """
-    from src.rade_qnet.core.spec.run import SupervisedRunSpec  # noqa: PLC0415
+    from src.rade_qnet.core.spec.run import (  # noqa: PLC0415
+        SupervisedRunSpec,
+    )
 
     fields = {
         "model": "synthetic_tabular",

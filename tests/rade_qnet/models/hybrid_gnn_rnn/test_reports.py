@@ -20,7 +20,9 @@ from src.rade_qnet.models.hybrid_gnn_rnn.features.graph import SparseGraphState
 from src.rade_qnet.models.hybrid_gnn_rnn.reports import GRAPH_FILENAME, HybridGraphReport
 from src.rade_qnet.testkit.fixtures import StandardisingState
 
-FIXTURE = Path("tests/fixtures/rade_qnet/golden/hybrid_gnn_rnn/input")
+from ...locations import GOLDEN_ROOT
+
+FIXTURE = GOLDEN_ROOT / "hybrid_gnn_rnn" / "input"
 
 #: Window length. Short, because this report never looks at a window.
 SEQUENCE_LENGTH = 4

@@ -46,6 +46,8 @@ import pytest
 from src.rade_qnet.core.lifecycle.components import LEARNERS, MODELS, REPORTS
 from src.rade_qnet.testkit.fixtures import isolated_registries
 
+from ..locations import PACKAGE_ROOT, module_name
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
@@ -112,7 +114,7 @@ WIRING_MODULES = ("core.lifecycle.components", "core.spec.run", "core.spec.train
 #: moving is not a budget.
 TIER_1_BUDGET = 55
 
-MODELS_ROOT = Path("src/rade_qnet/models")
+MODELS_ROOT = PACKAGE_ROOT / "models"
 
 
 def model_packages() -> list[Path]:
@@ -276,7 +278,7 @@ class TestTheRequiredFilesExist:
             f"{sorted(POLICY_FILES)}. A model package declares what it learns by "
             f"which pair it carries: a supervised model has model.py and data.py, "
             f"an agent has policy.py and environment.py. Copy the template from "
-            f"src/rade_qnet/models/ridge/"
+            f"{MODELS_ROOT / 'ridge'}/"
         )
         assert len(paradigm) == 1, (
             f"{package.name} carries both paradigms' files. A package learns one "
@@ -458,7 +460,7 @@ class TestTheSplitIsReal:
         a user's first import does.
         """
         declared = registered_names(package / "register.py")[0]
-        prefix = f"src.rade_qnet.models.{package.name}"
+        prefix = module_name(f"models.{package.name}")
         cached = {
             name: module
             for name, module in sys.modules.items()

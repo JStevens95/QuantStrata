@@ -14,8 +14,6 @@ fails the first real run that imports only what it needs.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from src.rade_qnet.core.lifecycle.components import (
@@ -36,9 +34,10 @@ from src.rade_qnet.models.hybrid_gnn_rnn.spec import HybridDataSpec, HybridModel
 from src.rade_qnet.models.hybrid_gnn_rnn.state import HybridState
 from src.rade_qnet.orchestration.pipelines.train import TrainPipeline
 
+from ...locations import GOLDEN_ROOT
 from .test_model import signature
 
-FIXTURE = Path("tests/fixtures/rade_qnet/golden/hybrid_gnn_rnn/input")
+FIXTURE = GOLDEN_ROOT / "hybrid_gnn_rnn" / "input"
 
 
 def run_spec(**report_overrides: object):

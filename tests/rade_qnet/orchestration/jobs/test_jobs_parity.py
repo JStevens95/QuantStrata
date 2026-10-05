@@ -60,8 +60,10 @@ from src.rade_qnet.orchestration.compute.local import LocalExecutor
 from src.rade_qnet.orchestration.compute.processes import ProcessExecutor
 from src.rade_qnet.orchestration.jobs.set import JobSetRunner
 
+from ...locations import GOLDEN_ROOT
+
 #: The Phase 0 capture's input, which the flagship model's data module reads.
-FIXTURE = Path("tests/fixtures/rade_qnet/golden/hybrid_gnn_rnn/input")
+FIXTURE = GOLDEN_ROOT / "hybrid_gnn_rnn" / "input"
 
 #: Fields of a job record that placement must not change. Listed rather than
 #: compared wholesale so that adding a field to `JobRecord` is a decision
@@ -321,7 +323,9 @@ class TestTheExclusionsAreDeliberate:
         whole point of naming the lists rather than comparing records
         wholesale.
         """
-        from src.rade_qnet.orchestration.jobs.manifest import JobRecord  # noqa: PLC0415
+        from src.rade_qnet.orchestration.jobs.manifest import (  # noqa: PLC0415
+            JobRecord,
+        )
 
         assert set(JobRecord.model_fields) == set(COMPARED_FIELDS) | set(EXCLUDED_FIELDS)
 

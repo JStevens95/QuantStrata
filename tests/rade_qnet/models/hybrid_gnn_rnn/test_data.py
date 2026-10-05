@@ -28,7 +28,9 @@ from src.rade_qnet.core.spec.data import (
 from src.rade_qnet.models.hybrid_gnn_rnn.data import HybridDataModule, _merge_attributes
 from src.rade_qnet.testkit.parity import compare_state, load_golden
 
-FIXTURE = Path(__file__).resolve().parents[3] / "fixtures" / "rade_qnet" / "golden"
+from ...locations import GOLDEN_ROOT
+
+FIXTURE = GOLDEN_ROOT
 HYBRID_FIXTURE = FIXTURE / "hybrid_gnn_rnn"
 
 SEQUENCE_LENGTH = 4
@@ -462,7 +464,7 @@ class TestParityAgainstTheBaseline:
                     "target_ids": list(state.universe.target_ids),
                 },
             },
-            load_golden("hybrid_gnn_rnn"),
+            load_golden("hybrid_gnn_rnn", root=GOLDEN_ROOT),
         )
         assert report.passed, str(report)
 

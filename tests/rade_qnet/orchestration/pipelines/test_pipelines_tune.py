@@ -601,7 +601,10 @@ class TestTheResultContract:
 
     def test_a_best_trial_that_is_not_present_is_refused(self):
         """Rather than returning the first trial as though it had won."""
-        from src.rade_qnet.core.contract.result import TrialRecord, TuningResult  # noqa: PLC0415
+        from src.rade_qnet.core.contract.result import (  # noqa: PLC0415
+            TrialRecord,
+            TuningResult,
+        )
 
         result = TuningResult(trials=(TrialRecord(trial=0),), best_trial=7)
 

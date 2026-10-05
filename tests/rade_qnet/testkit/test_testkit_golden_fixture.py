@@ -29,6 +29,8 @@ import pytest
 
 from src.rade_qnet.testkit.parity import load_golden
 
+from ..locations import GOLDEN_ROOT
+
 #: Size ceiling, as a definition-of-done item. A fixture that grows past this
 #: stops being committed, and a parity suite nobody can run locally is a
 #: parity suite nobody runs.
@@ -50,7 +52,7 @@ def golden():
         The loaded fixture.
     """
     try:
-        return load_golden("hybrid_gnn_rnn")
+        return load_golden("hybrid_gnn_rnn", root=GOLDEN_ROOT)
     except Exception as exc:
         pytest.skip(f"golden fixture not captured: {exc}")
 

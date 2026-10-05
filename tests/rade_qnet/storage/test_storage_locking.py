@@ -24,12 +24,13 @@ import os
 import subprocess
 import sys
 import time
-from pathlib import Path
 
 import pytest
 
 from src.rade_qnet.core.lifecycle.errors import BundleError
 from src.rade_qnet.storage.locking import exclusive_lock, retry_until_acquired
+
+from ..locations import IMPORT_ROOT, PACKAGE_NAME
 
 
 class TestTheRetryLoop:
@@ -234,7 +235,7 @@ import sys, time
 from pathlib import Path
 
 sys.path.insert(0, {root!r})
-from src.rade_qnet.storage.locking import exclusive_lock
+from {package}.storage.locking import exclusive_lock
 
 with exclusive_lock(Path({lock!r})):
     print("held", flush=True)
@@ -260,8 +261,8 @@ class TestMutualExclusion:
         of the lock working.
         """
         lock = tmp_path / "catalog.lock"
-        root = str(Path(__file__).resolve().parents[3])
-        script = _CHILD.format(root=root, lock=str(lock), hold=_HOLD_SECONDS)
+        root = str(IMPORT_ROOT)
+        script = _CHILD.format(package=PACKAGE_NAME, root=root, lock=str(lock), hold=_HOLD_SECONDS)
 
         child = subprocess.Popen(
             [sys.executable, "-c", script],

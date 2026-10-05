@@ -54,6 +54,14 @@ _CONTEXT_VARIABLES: Final = {"run_id": RUN_ID, "job_id": JOB_ID, "stage": STAGE}
 #: touching their own loggers.
 ROOT_LOGGER_NAME: Final = "rade_qnet"
 
+#: The name this package was actually imported under: ``src.rade_qnet`` from
+#: the repository, ``rade_qnet`` when installed, or a deeper name such as
+#: ``tranql.models.rade.rade_qnet.rade_qnet`` where it is vendored into a
+#: larger tree. Read off this module's own ``__name__`` rather than assumed,
+#: because the package's internal imports are all relative and so it can be
+#: mounted anywhere -- and the logger names must not depend on where.
+_IMPORTED_AS: Final = __name__.removesuffix(".core.provenance.logging")
+
 _LOG_FORMAT: Final = "%(asctime)s %(levelname)-7s [%(rade_qnet_context)s] %(name)s: %(message)s"
 _TIME_FORMAT: Final = "%Y-%m-%d %H:%M:%S"
 
@@ -108,9 +116,14 @@ def get_logger(name: str) -> logging.Logger:
     """
     if name == ROOT_LOGGER_NAME or name.startswith(f"{ROOT_LOGGER_NAME}."):
         return logging.getLogger(name)
-    # Strip the repository's import prefix so `src.rade_qnet.core.spec.run` and
-    # `rade_qnet.core.spec.run` produce the same logger name. The package is
-    # importable under both paths, and a log stream should not reveal which.
+    # Replace whatever the package was imported as with the root name, so
+    # `src.rade_qnet.core.spec.run`, `rade_qnet.core.spec.run` and a vendored
+    # `tranql....rade_qnet.core.spec.run` all log as `rade_qnet.core.spec.run`.
+    # A logging configuration written against `rade_qnet.core` must keep
+    # matching wherever the package is mounted, and a log stream should not
+    # reveal which mount produced it.
+    if name.startswith(f"{_IMPORTED_AS}."):
+        return logging.getLogger(f"{ROOT_LOGGER_NAME}.{name.removeprefix(f'{_IMPORTED_AS}.')}")
     trimmed = name.removeprefix("src.")
     if trimmed.startswith(f"{ROOT_LOGGER_NAME}."):
         return logging.getLogger(trimmed)

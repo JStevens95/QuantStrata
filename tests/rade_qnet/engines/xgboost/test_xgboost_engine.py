@@ -55,6 +55,8 @@ from src.rade_qnet.testkit.fixtures import (
     make_signature,
 )
 
+from ...locations import PACKAGE_ROOT, module_name
+
 N_FEATURES = 4
 N_SAMPLES = 128
 
@@ -185,7 +187,7 @@ class TestTheOpenMpWorkaround:
         loader actually cares about, since the first import is the one that
         decides which image owns the process.
         """
-        assert "src.rade_qnet.engines.xgboost" in sys.modules
+        assert module_name("engines.xgboost") in sys.modules
         assert "torch" in sys.modules
 
     def test_the_guard_is_still_in_the_source(self) -> None:
@@ -196,7 +198,7 @@ class TestTheOpenMpWorkaround:
         no visible reason and never referenced. The comment above it says
         so, and this test is the second line of defence.
         """
-        source = Path("src/rade_qnet/engines/xgboost/__init__.py").read_text()
+        source = (PACKAGE_ROOT / "engines" / "xgboost" / "__init__.py").read_text()
         assert 'find_spec("torch")' in source
         assert source.index("import torch") < source.index("from .engine")
 

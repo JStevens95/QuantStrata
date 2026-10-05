@@ -38,6 +38,8 @@ from src.rade_qnet.core.lifecycle.errors import StageError
 from src.rade_qnet.core.spec.jobs import parse_job_set_spec
 from src.rade_qnet.models.lstm_tabular.register import LstmTabularModel
 
+from ..locations import GOLDEN_ROOT, PACKAGE_ROOT, module_name
+
 if TYPE_CHECKING:
     pass
 
@@ -54,7 +56,7 @@ needs_xgboost = pytest.mark.skipif(
 #: is designed to detect.
 ENGINE_NAMES = ("torch", "sklearn", "xgboost", "lightgbm")
 
-ORCHESTRATION = Path("src/rade_qnet/orchestration")
+ORCHESTRATION = PACKAGE_ROOT / "orchestration"
 
 
 @pytest.fixture
@@ -169,7 +171,7 @@ class TestWhatTheFixtureCanAndCannotShow:
         between the flagship and the baselines has become worth running.
         Treat a failure here as good news and go read §8.6.
         """
-        directory = Path("tests/fixtures/rade_qnet/golden/hybrid_gnn_rnn/input")
+        directory = GOLDEN_ROOT / "hybrid_gnn_rnn" / "input"
         if not directory.exists():  # pragma: no cover - depends on the checkout
             pytest.skip("the Phase 0 golden fixture is not present")
 
@@ -210,7 +212,7 @@ class TestEachBaselineRuns:
         comparison made from the report is then about something that was
         never saved.
         """
-        __import__(f"src.rade_qnet.models.{name}")
+        __import__(module_name(f"models.{name}"))
 
         result = train(
             specification(dataset, name, engine, **settings),
@@ -241,7 +243,7 @@ class TestEachBaselineRuns:
         reporting a thing only gradient engines get, which would quietly
         make the one-shot engines second-class.
         """
-        __import__(f"src.rade_qnet.models.{name}")
+        __import__(module_name(f"models.{name}"))
 
         run = specification(dataset, name, engine, **settings)
         run["reports"] = {"enabled": ["baselines", "curves", "quality", "summary"]}
@@ -260,7 +262,7 @@ class TestEachBaselineRuns:
         process, and a one-shot engine's handle, history and bundle all
         have to survive that boundary the same way a network's do.
         """
-        __import__("src.rade_qnet.models.ridge")
+        __import__(module_name("models.ridge"))
 
         manifest = train_jobs(
             parse_job_set_spec(
@@ -289,7 +291,7 @@ class TestEachBaselineRuns:
         pruning and intermediate reporting both need epochs. A search over
         an engine that has none must still run -- it just cannot prune.
         """
-        __import__("src.rade_qnet.models.ridge")
+        __import__(module_name("models.ridge"))
 
         base = specification(dataset, "ridge", "sklearn")
         result = tune(
@@ -324,7 +326,7 @@ class TestEachBaselineRuns:
         within the range a wiring fault would also produce -- which would
         make a passing test mean nothing.
         """
-        __import__("src.rade_qnet.models.ridge")
+        __import__(module_name("models.ridge"))
 
         run = specification(dataset, "ridge", "sklearn")
         run["model"]["params"] = {"alpha": 0.01}
@@ -349,7 +351,7 @@ class TestTheInputContractIsEnforcedByThePipeline:
         to have the check silently skipped for every model that declares
         no constraints -- which is most of them.
         """
-        __import__("src.rade_qnet.models.ridge")
+        __import__(module_name("models.ridge"))
 
         result = train(specification(dataset, "ridge", "sklearn"), output_root=tmp_path)
         assert result.bundle_directory is not None

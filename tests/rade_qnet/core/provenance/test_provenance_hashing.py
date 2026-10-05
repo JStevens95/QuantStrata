@@ -30,6 +30,8 @@ from src.rade_qnet.core.provenance.hashing import (
 )
 from src.rade_qnet.core.spec.run import parse_run_spec
 
+from ...locations import IMPORT_ROOT, PACKAGE_NAME
+
 
 class TestCanonicalJson:
     """Canonicalisation makes equal payloads produce equal text."""
@@ -191,7 +193,7 @@ class TestArrayDigests:
 class TestStability:
     """The property that rules out Python's salted hash()."""
 
-    def test_digest_survives_a_fresh_interpreter(self, repository_root):
+    def test_digest_survives_a_fresh_interpreter(self):
         """
         The same payload digests identically in a separate process.
 
@@ -200,8 +202,8 @@ class TestStability:
         bundle provenance are both unreliable across runs.
         """
         program = (
-            f"import sys; sys.path.insert(0, {str(repository_root)!r});"
-            "from src.rade_qnet.core.provenance.hashing import digest_payload;"
+            f"import sys; sys.path.insert(0, {str(IMPORT_ROOT)!r});"
+            f"from {PACKAGE_NAME}.core.provenance.hashing import digest_payload;"
             "print(digest_payload({'model': 'demo', 'seed': 3, 'nested': {'a': [1, 2]}}))"
         )
         completed = subprocess.run(

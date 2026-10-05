@@ -13,8 +13,12 @@ The suite is run from the repository root::
 
 Running it that way puts the repository root on ``sys.path``, which is what
 makes the ``src.rade_qnet`` import path resolve.  The package itself uses
-relative imports internally, so it is equally importable as ``rade_qnet`` from an
-installed distribution; the tests simply follow the repository's convention.
+relative imports internally, so it is equally importable under any name.
+
+The fixtures below do not assume that layout.  Every location comes from
+:mod:`.locations`, which derives it from the imported package -- so the same
+suite runs unchanged where the package imports under a deeper name, with the
+tests in a sibling directory.
 """
 
 from __future__ import annotations
@@ -27,12 +31,7 @@ import pytest
 
 from src.rade_qnet.core.provenance.logging import ROOT_LOGGER_NAME
 
-# Resolved once at import time.  ``parents`` indexes from this file outwards:
-# [0] is tests/rade_qnet, [1] is tests, [2] is the repository root.
-_REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-
-#: The captured baseline the parity tests compare against.
-_GOLDEN_ROOT = _REPOSITORY_ROOT / "tests" / "fixtures" / "rade_qnet" / "golden"
+from .locations import GOLDEN_ROOT, IMPORT_ROOT, PACKAGE_ROOT, TEST_ROOT
 
 #: Artifacts whose presence stands for the whole capture.
 #:
@@ -45,8 +44,8 @@ _GOLDEN_ROOT = _REPOSITORY_ROOT / "tests" / "fixtures" / "rade_qnet" / "golden"
 #: A presence check, not an integrity check: the manifest's digests are what
 #: prove a fixture is the one it claims to be.
 _GOLDEN_ARTIFACTS = (
-    _GOLDEN_ROOT / "hybrid_gnn_rnn" / "manifest.json",
-    _GOLDEN_ROOT / "hybrid_gnn_rnn" / "input" / "elementary_pnl.npy",
+    GOLDEN_ROOT / "hybrid_gnn_rnn" / "manifest.json",
+    GOLDEN_ROOT / "hybrid_gnn_rnn" / "input" / "elementary_pnl.npy",
 )
 
 
@@ -125,22 +124,27 @@ def requires_golden() -> None:
             pytest.skip(
                 f"golden fixture not captured: {artifact} is missing. "
                 f"Capture it with examples/rade_qnet/phase0_capture_baseline.py, "
+                f"or point RADE_QNET_GOLDEN_ROOT at an existing capture, "
                 f"and note that a partial copy is worse than none -- the text "
                 f"files alone stop these tests skipping without letting them pass"
             )
 
 
 @pytest.fixture(scope="session")
-def repository_root() -> Path:
+def import_root() -> Path:
     """
-    Return the absolute path to the repository root.
+    Return the directory that must be on ``sys.path`` to import the package.
+
+    The repository root here; the directory holding the top-level package
+    wherever the package imports under a deeper name. What a subprocess needs
+    on its path to import the package by name.
 
     Returns
     -------
     Path
-        Directory containing ``src`` and ``tests``.
+        See :data:`.locations.IMPORT_ROOT`.
     """
-    return _REPOSITORY_ROOT
+    return IMPORT_ROOT
 
 
 @pytest.fixture(scope="session")
@@ -151,9 +155,9 @@ def package_root() -> Path:
     Returns
     -------
     Path
-        The ``src/rade_qnet`` directory.
+        The directory holding ``core``, ``engines`` and the rest.
     """
-    return _REPOSITORY_ROOT / "src" / "rade_qnet"
+    return PACKAGE_ROOT
 
 
 @pytest.fixture(scope="session")
@@ -164,9 +168,9 @@ def test_root() -> Path:
     Returns
     -------
     Path
-        The ``tests/rade_qnet`` directory.
+        The directory holding this ``conftest.py``.
     """
-    return _REPOSITORY_ROOT / "tests" / "rade_qnet"
+    return TEST_ROOT
 
 
 @pytest.fixture

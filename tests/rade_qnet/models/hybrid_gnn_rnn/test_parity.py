@@ -35,7 +35,6 @@ optimiser and loss, same losses.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -55,9 +54,11 @@ from src.rade_qnet.models.hybrid_gnn_rnn.spec import HybridModelSpec
 from src.rade_qnet.sources.batching.dataset import sources_for
 from src.rade_qnet.testkit.parity import compare_curve, compare_tensors, load_golden
 
+from ...locations import GOLDEN_ROOT
+
 #: The golden fixture captured from the original implementation.
 FIXTURE_NAME = "hybrid_gnn_rnn"
-FIXTURE = Path("tests/fixtures/rade_qnet/golden") / FIXTURE_NAME
+FIXTURE = GOLDEN_ROOT / FIXTURE_NAME
 
 #: The capture's settings, which the replay must match exactly. Named
 #: rather than inlined so that a mismatch reads as a changed constant
@@ -193,7 +194,7 @@ class TestLevel2Tensors:
         _, sources = replay
         report = compare_tensors(
             first_batches(sources),
-            load_golden(FIXTURE_NAME),
+            load_golden(FIXTURE_NAME, root=GOLDEN_ROOT),
             allow_missing=("elementary_indices",),
         )
         assert report.passed, report.summary()
@@ -293,7 +294,7 @@ class TestLevel4TrainingCurve:
                     )
                 )
 
-        report = compare_curve(curve, load_golden(FIXTURE_NAME))
+        report = compare_curve(curve, load_golden(FIXTURE_NAME, root=GOLDEN_ROOT))
         assert report.passed, report.summary()
 
 

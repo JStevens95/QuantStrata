@@ -19,15 +19,16 @@ to verify explanatory text would be a test nobody could keep passing.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 import pytest
 import yaml
 
 from src.rade_qnet.core.spec.jobs import parse_job_set_spec
 
+from .locations import PACKAGE_ROOT
+
 #: The document under test.
-ARCHITECTURE = Path("src/rade_qnet/docs/ARCHITECTURE.md")
+ARCHITECTURE = PACKAGE_ROOT / "docs" / "ARCHITECTURE.md"
 
 #: The example's filename, used to find its block rather than relying on
 #: the block's position -- which changes whenever a section is added above.

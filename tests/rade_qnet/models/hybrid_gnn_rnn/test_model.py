@@ -19,6 +19,8 @@ from src.rade_qnet.models.hybrid_gnn_rnn.model import HybridGnnRnn
 from src.rade_qnet.models.hybrid_gnn_rnn.spec import HybridModelSpec
 from src.rade_qnet.testkit.parity import compare_forward, load_golden
 
+from ...locations import GOLDEN_ROOT
+
 #: The golden fixture captured from the original implementation.
 FIXTURE = "hybrid_gnn_rnn"
 
@@ -54,7 +56,7 @@ def signature(
 @pytest.fixture
 def batch() -> dict[str, torch.Tensor]:
     """Return the captured training batch, keyed for the forward pass."""
-    golden = load_golden(FIXTURE)
+    golden = load_golden(FIXTURE, root=GOLDEN_ROOT)
     arrays = golden.arrays("level2_tensors/train_batch_000.npz")
     renamed = {"adjacency_dense_shape": "adjacency_shape"}
     # `elementary_indices` is dropped, not renamed. The original passed it
@@ -267,7 +269,7 @@ class TestParityAgainstTheBaseline:
         would build a model that cannot load its own predecessor's
         checkpoint, and the failure would surface only on reload.
         """
-        golden = load_golden(FIXTURE)
+        golden = load_golden(FIXTURE, root=GOLDEN_ROOT)
         expected = torch.load(golden.directory / "level3_forward/state_dict.pt", weights_only=True)
         produced = {name: tuple(t.shape) for name, t in model.state_dict().items()}
         assert produced == {name: tuple(t.shape) for name, t in expected.items()}
@@ -283,7 +285,7 @@ class TestParityAgainstTheBaseline:
         that way -- dropout active would make the comparison a record of
         the global random state rather than of the model.
         """
-        golden = load_golden(FIXTURE)
+        golden = load_golden(FIXTURE, root=GOLDEN_ROOT)
         model.load_state_dict(
             torch.load(golden.directory / "level3_forward/state_dict.pt", weights_only=True)
         )

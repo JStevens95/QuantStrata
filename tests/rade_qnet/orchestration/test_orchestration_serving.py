@@ -47,6 +47,7 @@ from src.rade_qnet.testkit.fixtures import (
     make_run_context,
 )
 
+from ..locations import module_name
 from .pipelines.support import (
     SyntheticSupervisedModel,
     make_spec,
@@ -191,7 +192,7 @@ class TestWhatIsAndIsNotReused:
             message = "the bundle was reopened"
             raise AssertionError(message)
 
-        monkeypatch.setattr("src.rade_qnet.orchestration.pipelines.infer.load_bundle", refuse)
+        monkeypatch.setattr(module_name("orchestration.pipelines.infer.load_bundle"), refuse)
         predictor.predict()
         predictor.predict()
 

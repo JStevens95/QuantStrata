@@ -40,6 +40,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from ..locations import PACKAGE_ROOT
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
@@ -102,7 +104,7 @@ HARDWARE_MODULES = frozenset(
 #: sklearn to reach it.
 FRAMEWORK_MODULES = frozenset({"__init__.py", "base.py", "loaders.py"})
 
-ENGINES_ROOT = Path(__file__).resolve().parents[3] / "src" / "rade_qnet" / "engines"
+ENGINES_ROOT = PACKAGE_ROOT / "engines"
 
 
 def engine_packages() -> Iterator[Path]:

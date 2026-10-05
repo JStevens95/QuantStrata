@@ -470,7 +470,9 @@ class TestPredictionsAreUnchanged:
         reduce to the same mean absolute error. Comparing the vectors
         themselves is the stronger statement.
         """
-        from src.rade_qnet.orchestration.stages.scoring import scoring_source  # noqa: PLC0415
+        from src.rade_qnet.orchestration.stages.scoring import (  # noqa: PLC0415
+            scoring_source,
+        )
 
         _, directory = trained
 

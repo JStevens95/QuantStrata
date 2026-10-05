@@ -25,13 +25,13 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from src import rade_qnet
 from src.rade_qnet.core.spec.base import Spec
 
-# The package under test, located through the imported module rather than by
-# walking relative paths, so these tests keep working if the suite is invoked
-# from somewhere unexpected.
-PACKAGE_ROOT = Path(rade_qnet.__file__).resolve().parent
+from .locations import PACKAGE_NAME, PACKAGE_ROOT
+
+# The package under test, under whatever name it was imported as.
+rade_qnet = importlib.import_module(PACKAGE_NAME)
+
 TEST_ROOT = Path(__file__).resolve().parent
 
 # The top-level packages that make up the framework, in dependency order.
@@ -276,9 +276,10 @@ def _layer_of(dotted_name: str) -> str | None:
     """
     Return the framework layer a dotted name belongs to, if any.
 
-    Both ``rade_qnet.core.spec`` and the repository-prefixed
-    ``src.rade_qnet.core.spec`` resolve to ``"core"``, so the answer does not
-    depend on how the package was imported.  A name that is not inside
+    Both ``rade_qnet.core.spec`` and the same module under the name the
+    package was actually imported as -- ``src.rade_qnet.core.spec`` here, or
+    something deeper where it is vendored -- resolve to ``"core"``, so the
+    answer does not depend on how the package was imported.  A name that is not inside
     ``rade_qnet``, or that is a top-level module such as ``rade_qnet.api``, has no
     layer.
 
@@ -293,8 +294,9 @@ def _layer_of(dotted_name: str) -> str | None:
         The layer name, or ``None`` if the name sits outside the layered tree.
     """
     parts = dotted_name.split(".")
-    if parts[:2] == ["src", "rade_qnet"]:
-        parts = parts[1:]
+    prefix = PACKAGE_NAME.split(".")
+    if parts[: len(prefix)] == prefix:
+        parts = ["rade_qnet", *parts[len(prefix) :]]
     if parts[0] != "rade_qnet" or len(parts) < 2:
         return None
     return parts[1] if parts[1] in ALLOWED_DEPENDENCIES else None
@@ -332,7 +334,7 @@ def _import_every_spec_module() -> None:
         # importing the containing package would not necessarily import the
         # module that defines the specs.
         parts = (*relative.parts[:-1], relative.stem)
-        importlib.import_module(".".join(("src", "rade_qnet", *parts)))
+        importlib.import_module(".".join((PACKAGE_NAME, *parts)))
 
 
 def _all_spec_types() -> list[type[Spec]]:
@@ -540,7 +542,7 @@ class TestDependencyLayering:
                 for imported in _imported_modules(source_file)
                 if (distribution := _distribution_of(imported)) not in sys.stdlib_module_names
                 and distribution not in CORE_PERMITTED_THIRD_PARTY
-                and distribution not in {"rade_qnet", "src"}
+                and distribution not in {"rade_qnet", PACKAGE_NAME.split(".")[0]}
             }
         )
         assert not forbidden, (

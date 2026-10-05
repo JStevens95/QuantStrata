@@ -29,6 +29,7 @@ import pytest
 
 from src.rade_qnet.core.lifecycle.errors import ContractError
 from src.rade_qnet.testkit.parity import (
+    GOLDEN_ROOT_VARIABLE,
     Comparison,
     ParityReport,
     compare_arrays,
@@ -263,6 +264,27 @@ class TestLoadGolden:
         """
         with pytest.raises(ContractError, match="no golden fixture"):
             load_golden("absent", root=tmp_path)
+
+    def test_the_environment_variable_names_the_root(self, tmp_path, monkeypatch):
+        """
+        ``RADE_QNET_GOLDEN_ROOT`` points the loader at a capture kept elsewhere.
+
+        The default location encodes this repository's layout, which is
+        wrong wherever the package is vendored into a larger tree. Without
+        the variable, a deployment holding a perfectly good capture would
+        see every parity test skip and could not tell why.
+        """
+        (tmp_path / "elsewhere").mkdir()
+        (tmp_path / "elsewhere" / "manifest.json").write_text("{}", encoding="utf-8")
+        monkeypatch.setenv(GOLDEN_ROOT_VARIABLE, str(tmp_path))
+        assert load_golden("elsewhere").directory == tmp_path / "elsewhere"
+
+    def test_an_explicit_root_beats_the_environment(self, tmp_path, monkeypatch):
+        """Passing ``root`` is the more specific instruction, so it wins."""
+        (tmp_path / "chosen").mkdir()
+        (tmp_path / "chosen" / "manifest.json").write_text("{}", encoding="utf-8")
+        monkeypatch.setenv(GOLDEN_ROOT_VARIABLE, str(tmp_path / "ignored"))
+        assert load_golden("chosen", root=tmp_path).directory == tmp_path / "chosen"
 
     def test_a_fixture_without_a_manifest_is_refused(self, tmp_path):
         """

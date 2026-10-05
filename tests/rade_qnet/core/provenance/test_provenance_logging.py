@@ -16,6 +16,7 @@ import logging
 
 import pytest
 
+from src.rade_qnet.core.provenance import logging as logging_module
 from src.rade_qnet.core.provenance.logging import (
     ROOT_LOGGER_NAME,
     apply_context_payload,
@@ -25,6 +26,8 @@ from src.rade_qnet.core.provenance.logging import (
     current_context,
     get_logger,
 )
+
+from ...locations import module_name
 
 
 @pytest.fixture(autouse=True)
@@ -46,16 +49,31 @@ class TestLoggerNaming:
         """One root means an application can configure the framework alone."""
         assert get_logger("rade_qnet.core.lifecycle.pipeline").name.startswith(ROOT_LOGGER_NAME)
 
-    def test_the_src_prefix_is_stripped(self):
+    def test_the_import_prefix_is_stripped(self):
         """
-        A module imported as ``src.rade_qnet...`` still logs as ``rade_qnet...``.
+        A module imported under the package's full name logs as ``rade_qnet...``.
 
-        The repository imports through ``src``, an installed distribution does
-        not. Without stripping, the same module logs under two different names
+        The repository imports through ``src``, a deployment may import
+        through a deeper name, and an installed distribution through neither.
+        Without stripping, the same module logs under different names
         depending on how it was imported, and a log filter configured for one
-        silently misses the other.
+        silently misses the others.
         """
-        assert get_logger("src.rade_qnet.storage.bundle").name == "rade_qnet.storage.bundle"
+        assert get_logger(module_name("storage.bundle")).name == "rade_qnet.storage.bundle"
+
+    def test_a_vendored_mount_logs_under_the_same_names(self, monkeypatch):
+        """
+        A deeply nested import name collapses to the framework root too.
+
+        Simulated by telling the module it was imported under a vendored
+        name, since the suite itself can only be imported one way at a
+        time. The failure this guards against is quiet: logging still
+        works, but every logger is named ``rade_qnet.tranql.models...`` and a
+        configuration written for ``rade_qnet.storage`` matches nothing.
+        """
+        vendored = "tranql.models.rade.rade_qnet.rade_qnet"
+        monkeypatch.setattr(logging_module, "_IMPORTED_AS", vendored)
+        assert get_logger(f"{vendored}.storage.bundle").name == "rade_qnet.storage.bundle"
 
 
 class TestConfiguration:
