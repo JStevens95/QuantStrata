@@ -1,4 +1,4 @@
-# `src/rade_qnet/testkit`
+# `tranql/models/rade/rade_qnet/rade_qnet/testkit`
 
 4 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -7,11 +7,11 @@
 | 1 | `__init__.py` | 42 | 2099 | `be147ade92895e66` |
 | 2 | `conformance.py` | 1189 | 40460 | `f34d858b31058be2` |
 | 3 | `fixtures.py` | 1494 | 47524 | `a10dd886a237dbfa` |
-| 4 | `parity.py` | 1009 | 36692 | `366dcea95f2cd3ac` |
+| 4 | `parity.py` | 1022 | 37398 | `8ce5f0502f170513` |
 
 ---
 
-## 1. `src/rade_qnet/testkit/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/testkit/__init__.py`
 
 2099 bytes · SHA-256 `be147ade92895e66`
 
@@ -62,7 +62,7 @@ __all__: tuple[str, ...] = ()
 
 ---
 
-## 2. `src/rade_qnet/testkit/conformance.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/testkit/conformance.py`
 
 40460 bytes · SHA-256 `f34d858b31058be2`
 
@@ -1260,7 +1260,7 @@ def _mean_squared_error(predictions: NDArray[np.floating], targets: NDArray[np.f
 
 ---
 
-## 3. `src/rade_qnet/testkit/fixtures.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/testkit/fixtures.py`
 
 47524 bytes · SHA-256 `a10dd886a237dbfa`
 
@@ -2763,9 +2763,9 @@ class SyntheticEnvironment:
 
 ---
 
-## 4. `src/rade_qnet/testkit/parity.py`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/testkit/parity.py`
 
-36692 bytes · SHA-256 `366dcea95f2cd3ac`
+37398 bytes · SHA-256 `8ce5f0502f170513`
 
 ```python
 """
@@ -2823,6 +2823,7 @@ therefore compares the basis as a sequence, and
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -2850,10 +2851,20 @@ __all__ = [
     "load_golden",
 ]
 
-#: Where fixtures live, relative to the repository root. Resolved from this
-#: file rather than from the working directory, so a test passes regardless of
-#: where pytest was invoked from.
-_FIXTURE_ROOT = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "rade_qnet" / "golden"
+#: The directory this module was imported relative to: one level up per dot in
+#: its dotted name, so ``tranql.models.rade.rade_qnet.rade_qnet.testkit.parity`` and a vendored
+#: ``tranql.models.rade.rade_qnet.rade_qnet.testkit.parity`` both land on the
+#: root of the tree holding them, wherever pytest was invoked from.
+_IMPORT_ROOT = Path(__file__).resolve().parents[__name__.count(".")]
+
+#: Where fixtures live by default. Only a fallback: a deployment that keeps
+#: them elsewhere sets :data:`GOLDEN_ROOT_VARIABLE`, or passes ``root``.
+_FIXTURE_ROOT = _IMPORT_ROOT / "tests" / "fixtures" / "rade_qnet" / "golden"
+
+#: Environment variable naming the fixture root. Read on every call rather
+#: than once at import, so a test suite can point it somewhere for one session
+#: without the order of imports deciding whether that took effect.
+GOLDEN_ROOT_VARIABLE = "RADE_QNET_GOLDEN_ROOT"
 
 #: Tolerances per level, as justified in the module docstring. Named constants
 #: rather than defaults scattered across call sites, so that loosening one is
@@ -3125,8 +3136,9 @@ def load_golden(name: str, *, root: Path | None = None) -> GoldenFixture:
     name
         Fixture directory name, such as ``hybrid_gnn_rnn``.
     root
-        Override the fixture root. Only for testing this module against a
-        temporary fixture; production callers pass the name alone.
+        The fixture root. ``None`` reads :data:`GOLDEN_ROOT_VARIABLE` from the
+        environment, falling back to the repository's own location when that
+        is unset.
 
     Returns
     -------
@@ -3139,7 +3151,8 @@ def load_golden(name: str, *, root: Path | None = None) -> GoldenFixture:
         If the directory or its manifest is missing, naming the path looked
         at. A fixture that is simply absent must not read as a pass.
     """
-    directory = (root or _FIXTURE_ROOT) / name
+    default = Path(os.environ.get(GOLDEN_ROOT_VARIABLE, _FIXTURE_ROOT))
+    directory = (root or default) / name
     if not directory.is_dir():
         raise ContractError(
             f"no golden fixture named {name!r} at {directory}. Capture one with "

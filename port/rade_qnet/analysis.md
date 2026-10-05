@@ -1,4 +1,4 @@
-# `src/rade_qnet/analysis`
+# `tranql/models/rade/rade_qnet/rade_qnet/analysis`
 
 1 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -8,7 +8,7 @@
 
 ---
 
-## 1. `src/rade_qnet/analysis/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/analysis/__init__.py`
 
 955 bytes · SHA-256 `c610c7393d3bee5b`
 

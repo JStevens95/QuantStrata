@@ -1,15 +1,15 @@
-# `tests/rade_qnet/models/xgb_tabular`
+# `tranql/models/rade/rade_qnet/tests/models/xgb_tabular`
 
 2 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 1 | 48 | `dfae360f563b4a2f` |
-| 2 | `test_model.py` | 83 | 3284 | `bd478f1286a8a145` |
+| 2 | `test_model.py` | 83 | 3334 | `4ca20b5de78e0b35` |
 
 ---
 
-## 1. `tests/rade_qnet/models/xgb_tabular/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/models/xgb_tabular/__init__.py`
 
 48 bytes · SHA-256 `dfae360f563b4a2f`
 
@@ -19,9 +19,9 @@
 
 ---
 
-## 2. `tests/rade_qnet/models/xgb_tabular/test_model.py`
+## 2. `tranql/models/rade/rade_qnet/tests/models/xgb_tabular/test_model.py`
 
-3284 bytes · SHA-256 `bd478f1286a8a145`
+3334 bytes · SHA-256 `4ca20b5de78e0b35`
 
 ```python
 """
@@ -41,7 +41,7 @@ import importlib.util
 import pytest
 from pydantic import ValidationError
 
-from src.rade_qnet.models.xgb_tabular.spec import XgbTabularSpec
+from tranql.models.rade.rade_qnet.rade_qnet.models.xgb_tabular.spec import XgbTabularSpec
 
 if importlib.util.find_spec("xgboost") is None:  # pragma: no cover
     pytest.skip("xgboost is not installed", allow_module_level=True)
@@ -50,7 +50,7 @@ if importlib.util.find_spec("xgboost") is None:  # pragma: no cover
 # library, because importing the package is what forces Torch's OpenMP
 # runtime to load first. See PHASE_6 §8.2: the reverse order deadlocks with
 # no error at all, which is why this is not a plain top-level import.
-from src.rade_qnet.models.xgb_tabular.model import build
+from tranql.models.rade.rade_qnet.rade_qnet.models.xgb_tabular.model import build
 
 
 class TestTheModelDeclaresNoSettingsOfItsOwn:

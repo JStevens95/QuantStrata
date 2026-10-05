@@ -1,4 +1,4 @@
-# `src/rade_qnet/sources/dataset/transforms`
+# `tranql/models/rade/rade_qnet/rade_qnet/sources/dataset/transforms`
 
 6 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -13,7 +13,7 @@
 
 ---
 
-## 1. `src/rade_qnet/sources/dataset/transforms/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/sources/dataset/transforms/__init__.py`
 
 1514 bytes · SHA-256 `6d3de29fb11b2a0c`
 
@@ -55,7 +55,7 @@ __all__: tuple[str, ...] = ()
 
 ---
 
-## 2. `src/rade_qnet/sources/dataset/transforms/composite.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/sources/dataset/transforms/composite.py`
 
 11553 bytes · SHA-256 `f47510e9282e3cc7`
 
@@ -395,7 +395,7 @@ class DatasetState(CompositeState):
 
 ---
 
-## 3. `src/rade_qnet/sources/dataset/transforms/encoding.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/sources/dataset/transforms/encoding.py`
 
 13222 bytes · SHA-256 `904b518e82471413`
 
@@ -772,7 +772,7 @@ class EncodingState(FittedState):
 
 ---
 
-## 4. `src/rade_qnet/sources/dataset/transforms/reduction.py`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/sources/dataset/transforms/reduction.py`
 
 18021 bytes · SHA-256 `b938b45b7953e380`
 
@@ -1273,7 +1273,7 @@ def _arrays_equal(
 
 ---
 
-## 5. `src/rade_qnet/sources/dataset/transforms/scaling.py`
+## 5. `tranql/models/rade/rade_qnet/rade_qnet/sources/dataset/transforms/scaling.py`
 
 15935 bytes · SHA-256 `a1932b200ec1be9d`
 
@@ -1728,7 +1728,7 @@ def _replace_degenerate(scale: NDArray[np.floating]) -> tuple[NDArray[np.float64
 
 ---
 
-## 6. `src/rade_qnet/sources/dataset/transforms/sequence.py`
+## 6. `tranql/models/rade/rade_qnet/rade_qnet/sources/dataset/transforms/sequence.py`
 
 9184 bytes · SHA-256 `f6955b509b3329f8`
 

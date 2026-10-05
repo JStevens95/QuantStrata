@@ -1,17 +1,17 @@
-# `tests/rade_qnet/orchestration/compute`
+# `tranql/models/rade/rade_qnet/tests/orchestration/compute`
 
 4 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 17 | 833 | `31dd72a61b33b7be` |
-| 2 | `test_compute_executors.py` | 483 | 19108 | `61decdea64072ade` |
-| 3 | `test_compute_placement.py` | 282 | 11369 | `1200246b161141ec` |
-| 4 | `workers.py` | 149 | 3378 | `84a957b1c982a938` |
+| 2 | `test_compute_executors.py` | 486 | 19221 | `0d8b5b6ec5992161` |
+| 3 | `test_compute_placement.py` | 285 | 11532 | `fe7229d72769ca53` |
+| 4 | `workers.py` | 149 | 3403 | `84d601ed094a99f4` |
 
 ---
 
-## 1. `tests/rade_qnet/orchestration/compute/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/orchestration/compute/__init__.py`
 
 833 bytes · SHA-256 `31dd72a61b33b7be`
 
@@ -37,9 +37,9 @@ place a real model runs under a real pool is parity level 5, which runs once.
 
 ---
 
-## 2. `tests/rade_qnet/orchestration/compute/test_compute_executors.py`
+## 2. `tranql/models/rade/rade_qnet/tests/orchestration/compute/test_compute_executors.py`
 
-19108 bytes · SHA-256 `61decdea64072ade`
+19221 bytes · SHA-256 `0d8b5b6ec5992161`
 
 ```python
 """
@@ -61,7 +61,7 @@ import os
 
 import pytest
 
-from src.rade_qnet.orchestration.compute.base import (
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.compute.base import (
     Executor,
     ResultSummary,
     WorkFailure,
@@ -69,9 +69,12 @@ from src.rade_qnet.orchestration.compute.base import (
     WorkResult,
     execute_item,
 )
-from src.rade_qnet.orchestration.compute.gpus import GpuExecutor, visible_device_ids
-from src.rade_qnet.orchestration.compute.local import LocalExecutor
-from src.rade_qnet.orchestration.compute.processes import (
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.compute.gpus import (
+    GpuExecutor,
+    visible_device_ids,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.compute.local import LocalExecutor
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.compute.processes import (
     CUDA_VISIBILITY_VARIABLE,
     THREAD_VARIABLES,
     ProcessExecutor,
@@ -529,9 +532,9 @@ class TestSummarising:
 
 ---
 
-## 3. `tests/rade_qnet/orchestration/compute/test_compute_placement.py`
+## 3. `tranql/models/rade/rade_qnet/tests/orchestration/compute/test_compute_placement.py`
 
-11369 bytes · SHA-256 `1200246b161141ec`
+11532 bytes · SHA-256 `fe7229d72769ca53`
 
 ```python
 """
@@ -552,12 +555,15 @@ from __future__ import annotations
 
 import pytest
 
-from src.rade_qnet.core.spec.jobs import PlacementSpec
-from src.rade_qnet.orchestration.compute import placement as chooser
-from src.rade_qnet.orchestration.compute.gpus import GpuExecutor
-from src.rade_qnet.orchestration.compute.local import LocalExecutor
-from src.rade_qnet.orchestration.compute.placement import available_memory_gb, choose_placement
-from src.rade_qnet.orchestration.compute.processes import ProcessExecutor
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.jobs import PlacementSpec
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.compute import placement as chooser
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.compute.gpus import GpuExecutor
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.compute.local import LocalExecutor
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.compute.placement import (
+    available_memory_gb,
+    choose_placement,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.compute.processes import ProcessExecutor
 
 
 @pytest.fixture
@@ -820,9 +826,9 @@ class TestTheReasonIsRecorded:
 
 ---
 
-## 4. `tests/rade_qnet/orchestration/compute/workers.py`
+## 4. `tranql/models/rade/rade_qnet/tests/orchestration/compute/workers.py`
 
-3378 bytes · SHA-256 `84a957b1c982a938`
+3403 bytes · SHA-256 `84d601ed094a99f4`
 
 ```python
 """
@@ -846,7 +852,7 @@ from __future__ import annotations
 
 import os
 
-from src.rade_qnet.orchestration.compute.processes import THREAD_VARIABLES
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.compute.processes import THREAD_VARIABLES
 
 
 def double(value: int) -> int:

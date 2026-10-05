@@ -1,20 +1,20 @@
-# `tests/rade_qnet/orchestration/pipelines`
+# `tranql/models/rade/rade_qnet/tests/orchestration/pipelines`
 
 7 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 29 | 1330 | `d46d1a478e03562f` |
-| 2 | `support.py` | 157 | 5523 | `f560486697b8c17f` |
-| 3 | `test_pipelines_evaluate.py` | 496 | 18437 | `cd32177ccc2ce794` |
-| 4 | `test_pipelines_infer.py` | 403 | 15068 | `28ac163fb7ba64a5` |
-| 5 | `test_pipelines_reinforce.py` | 407 | 14249 | `f94d426ee710e0c8` |
-| 6 | `test_pipelines_train.py` | 1056 | 40914 | `e037ad1947a9cd5b` |
-| 7 | `test_pipelines_tune.py` | 609 | 22128 | `554c80819471773d` |
+| 2 | `support.py` | 159 | 5707 | `14b9f51c1df34a8e` |
+| 3 | `test_pipelines_evaluate.py` | 509 | 18759 | `28d1e9e79950a7e1` |
+| 4 | `test_pipelines_infer.py` | 410 | 15348 | `be43cdcafbbe59a0` |
+| 5 | `test_pipelines_reinforce.py` | 415 | 14584 | `b78854a4531fbd00` |
+| 6 | `test_pipelines_train.py` | 1067 | 41370 | `09056bdfc76bb41e` |
+| 7 | `test_pipelines_tune.py` | 619 | 22345 | `e67eee2015ed3f2e` |
 
 ---
 
-## 1. `tests/rade_qnet/orchestration/pipelines/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/orchestration/pipelines/__init__.py`
 
 1330 bytes · SHA-256 `d46d1a478e03562f`
 
@@ -52,9 +52,9 @@ Planned modules
 
 ---
 
-## 2. `tests/rade_qnet/orchestration/pipelines/support.py`
+## 2. `tranql/models/rade/rade_qnet/tests/orchestration/pipelines/support.py`
 
-5523 bytes · SHA-256 `f560486697b8c17f`
+5707 bytes · SHA-256 `14b9f51c1df34a8e`
 
 ```python
 """
@@ -84,13 +84,15 @@ import csv
 
 import numpy as np
 
-from src.rade_qnet.core.authoring.supervised import SupervisedModel
-from src.rade_qnet.core.lifecycle.components import engine as register_engine
-from src.rade_qnet.core.lifecycle.components import model as register_model
-from src.rade_qnet.core.spec.data import TabularSourceSpec
-from src.rade_qnet.core.spec.run import SupervisedRunSpec
-from src.rade_qnet.sources.dataset.tabular import TabularDataModule
-from src.rade_qnet.testkit.fixtures import LinearModel, SyntheticEngine
+from tranql.models.rade.rade_qnet.rade_qnet.core.authoring.supervised import SupervisedModel
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import (
+    engine as register_engine,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import model as register_model
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.data import TabularSourceSpec
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.run import SupervisedRunSpec
+from tranql.models.rade.rade_qnet.rade_qnet.sources.dataset.tabular import TabularDataModule
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import LinearModel, SyntheticEngine
 
 __all__ = [
     "ENGINE_TAG",
@@ -218,9 +220,9 @@ def make_spec(dataset, **overrides) -> SupervisedRunSpec:
 
 ---
 
-## 3. `tests/rade_qnet/orchestration/pipelines/test_pipelines_evaluate.py`
+## 3. `tranql/models/rade/rade_qnet/tests/orchestration/pipelines/test_pipelines_evaluate.py`
 
-18437 bytes · SHA-256 `cd32177ccc2ce794`
+18759 bytes · SHA-256 `28d1e9e79950a7e1`
 
 ```python
 """
@@ -250,15 +252,26 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.contract.result import EvaluationResult
-from src.rade_qnet.core.lifecycle.components import MODELS
-from src.rade_qnet.core.lifecycle.errors import StageError
-from src.rade_qnet.core.spec.data import ScalingSpec, TabularSourceSpec, TransformsSpec
-from src.rade_qnet.orchestration.pipelines.evaluate import EvaluatePipeline
-from src.rade_qnet.orchestration.pipelines.train import TrainPipeline
-from src.rade_qnet.storage.bundle import load_lineage, load_spec, open_bundle
-from src.rade_qnet.storage.runs.catalog import InMemoryCatalog
-from src.rade_qnet.testkit.fixtures import isolated_registries, make_run_context
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.result import EvaluationResult
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import MODELS
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import StageError
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.data import (
+    ScalingSpec,
+    TabularSourceSpec,
+    TransformsSpec,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.pipelines.evaluate import EvaluatePipeline
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.pipelines.train import TrainPipeline
+from tranql.models.rade.rade_qnet.rade_qnet.storage.bundle import (
+    load_lineage,
+    load_spec,
+    open_bundle,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.storage.runs.catalog import InMemoryCatalog
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import (
+    isolated_registries,
+    make_run_context,
+)
 
 from .support import (
     MODEL_NAME,
@@ -695,7 +708,9 @@ class TestPredictionsAreUnchanged:
         reduce to the same mean absolute error. Comparing the vectors
         themselves is the stronger statement.
         """
-        from src.rade_qnet.orchestration.stages.scoring import scoring_source  # noqa: PLC0415
+        from tranql.models.rade.rade_qnet.rade_qnet.orchestration.stages.scoring import (  # noqa: PLC0415
+            scoring_source,
+        )
 
         _, directory = trained
 
@@ -723,9 +738,9 @@ class TestPredictionsAreUnchanged:
 
 ---
 
-## 4. `tests/rade_qnet/orchestration/pipelines/test_pipelines_infer.py`
+## 4. `tranql/models/rade/rade_qnet/tests/orchestration/pipelines/test_pipelines_infer.py`
 
-15068 bytes · SHA-256 `28ac163fb7ba64a5`
+15348 bytes · SHA-256 `be43cdcafbbe59a0`
 
 ```python
 """
@@ -760,16 +775,23 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.contract.result import Predictions
-from src.rade_qnet.core.lifecycle.errors import ContractError, StageError
-from src.rade_qnet.core.spec.data import ScalingSpec, TabularSourceSpec, TransformsSpec
-from src.rade_qnet.orchestration.pipelines.evaluate import EvaluatePipeline
-from src.rade_qnet.orchestration.pipelines.infer import InferPipeline
-from src.rade_qnet.orchestration.pipelines.train import TrainPipeline
-from src.rade_qnet.orchestration.stages.scoring import scoring_source
-from src.rade_qnet.storage.bundle import load_lineage, open_bundle
-from src.rade_qnet.storage.runs.catalog import InMemoryCatalog
-from src.rade_qnet.testkit.fixtures import isolated_registries, make_run_context
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.result import Predictions
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError, StageError
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.data import (
+    ScalingSpec,
+    TabularSourceSpec,
+    TransformsSpec,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.pipelines.evaluate import EvaluatePipeline
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.pipelines.infer import InferPipeline
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.pipelines.train import TrainPipeline
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.stages.scoring import scoring_source
+from tranql.models.rade.rade_qnet.rade_qnet.storage.bundle import load_lineage, open_bundle
+from tranql.models.rade.rade_qnet.rade_qnet.storage.runs.catalog import InMemoryCatalog
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import (
+    isolated_registries,
+    make_run_context,
+)
 
 from .support import (
     SyntheticSupervisedModel,
@@ -1135,9 +1157,9 @@ class TestUnseenEntities:
 
 ---
 
-## 5. `tests/rade_qnet/orchestration/pipelines/test_pipelines_reinforce.py`
+## 5. `tranql/models/rade/rade_qnet/tests/orchestration/pipelines/test_pipelines_reinforce.py`
 
-14249 bytes · SHA-256 `f94d426ee710e0c8`
+14584 bytes · SHA-256 `b78854a4531fbd00`
 
 ```python
 """
@@ -1174,24 +1196,32 @@ from pathlib import Path
 import pytest
 import torch
 
-from src.rade_qnet import api
-from src.rade_qnet.core.authoring.policy import PolicyModel
-from src.rade_qnet.core.lifecycle.components import engine as register_engine
-from src.rade_qnet.core.lifecycle.components import model as register_model
-from src.rade_qnet.core.lifecycle.errors import BundleError, SpecError, StageError
-from src.rade_qnet.core.spec.run import parse_run_spec
-from src.rade_qnet.engines.torch import TorchEngine
-from src.rade_qnet.orchestration.pipelines.reinforce import ReinforcePipeline
-from src.rade_qnet.orchestration.pipelines.train import TrainPipeline
-from src.rade_qnet.orchestration.stages.reload import load_bundle
-from src.rade_qnet.storage.bundle import (
+from tranql.models.rade.rade_qnet.rade_qnet import api
+from tranql.models.rade.rade_qnet.rade_qnet.core.authoring.policy import PolicyModel
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import (
+    engine as register_engine,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import model as register_model
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import (
+    BundleError,
+    SpecError,
+    StageError,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.run import parse_run_spec
+from tranql.models.rade.rade_qnet.rade_qnet.engines.torch import TorchEngine
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.pipelines.reinforce import (
+    ReinforcePipeline,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.pipelines.train import TrainPipeline
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.stages.reload import load_bundle
+from tranql.models.rade.rade_qnet.rade_qnet.storage.bundle import (
     load_lineage,
     load_policy_signature,
     load_signature,
     load_spec,
     open_bundle,
 )
-from src.rade_qnet.testkit.fixtures import (
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import (
     SyntheticEngine,
     SyntheticEnvironment,
     isolated_registries,
@@ -1551,9 +1581,9 @@ class TestWhatIsRefused:
 
 ---
 
-## 6. `tests/rade_qnet/orchestration/pipelines/test_pipelines_train.py`
+## 6. `tranql/models/rade/rade_qnet/tests/orchestration/pipelines/test_pipelines_train.py`
 
-40914 bytes · SHA-256 `e037ad1947a9cd5b`
+41370 bytes · SHA-256 `09056bdfc76bb41e`
 
 ```python
 """
@@ -1593,25 +1623,34 @@ import pytest
 # `isolated_registries` snapshots the registries rather than emptying them, so
 # a report is available inside the isolated context only if its module was
 # imported before the context opened.
-from src.rade_qnet.analysis.reports import curves, quality, summary  # noqa: F401
-from src.rade_qnet.analysis.reports.base import Report, report
-from src.rade_qnet.core.authoring.supervised import SupervisedModel
-from src.rade_qnet.core.contract.bundle import ModelBundle
-from src.rade_qnet.core.contract.data import DataBundle, TensorBatchData
-from src.rade_qnet.core.lifecycle.components import ENGINES
-from src.rade_qnet.core.lifecycle.components import engine as register_engine
-from src.rade_qnet.core.lifecycle.errors import StageError
-from src.rade_qnet.core.spec.data import (
+from tranql.models.rade.rade_qnet.rade_qnet.analysis.reports import (  # noqa: F401
+    curves,
+    quality,
+    summary,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.analysis.reports.base import Report, report
+from tranql.models.rade.rade_qnet.rade_qnet.core.authoring.supervised import SupervisedModel
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.bundle import ModelBundle
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.data import DataBundle, TensorBatchData
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import ENGINES
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import (
+    engine as register_engine,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import StageError
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.data import (
     ScalingSpec,
     TabularSourceSpec,
     TransformsSpec,
 )
-from src.rade_qnet.orchestration.pipelines.train import TrainPipeline
-from src.rade_qnet.orchestration.stages.scoring import scoring_source, source_for
-from src.rade_qnet.sources.dataset.tabular import TabularDataModule
-from src.rade_qnet.storage.bundle import load_signature, open_bundle
-from src.rade_qnet.storage.runs.catalog import InMemoryCatalog
-from src.rade_qnet.testkit.fixtures import (
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.pipelines.train import TrainPipeline
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.stages.scoring import (
+    scoring_source,
+    source_for,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.sources.dataset.tabular import TabularDataModule
+from tranql.models.rade.rade_qnet.rade_qnet.storage.bundle import load_signature, open_bundle
+from tranql.models.rade.rade_qnet.rade_qnet.storage.runs.catalog import InMemoryCatalog
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import (
     LinearModel,
     RecordingHook,
     SyntheticEngine,
@@ -1720,7 +1759,9 @@ def make_spec(dataset, **overrides):
     SupervisedRunSpec
         The spec.
     """
-    from src.rade_qnet.core.spec.run import SupervisedRunSpec  # noqa: PLC0415
+    from tranql.models.rade.rade_qnet.rade_qnet.core.spec.run import (  # noqa: PLC0415
+        SupervisedRunSpec,
+    )
 
     fields = {
         "model": "synthetic_tabular",
@@ -2616,9 +2657,9 @@ def _execute_and_persist(pipeline) -> ModelBundle:
 
 ---
 
-## 7. `tests/rade_qnet/orchestration/pipelines/test_pipelines_tune.py`
+## 7. `tranql/models/rade/rade_qnet/tests/orchestration/pipelines/test_pipelines_tune.py`
 
-22128 bytes · SHA-256 `554c80819471773d`
+22345 bytes · SHA-256 `e67eee2015ed3f2e`
 
 ```python
 """
@@ -2643,11 +2684,18 @@ from __future__ import annotations
 
 import pytest
 
-from src.rade_qnet.core.lifecycle.errors import ContractError, SpecError, StageError
-from src.rade_qnet.core.spec.tune import parse_tune_spec
-from src.rade_qnet.orchestration.pipelines.tune import TunePipeline
-from src.rade_qnet.orchestration.stages.search import expand, propose
-from src.rade_qnet.testkit.fixtures import isolated_registries, make_run_context
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import (
+    ContractError,
+    SpecError,
+    StageError,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.tune import parse_tune_spec
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.pipelines.tune import TunePipeline
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.stages.search import expand, propose
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import (
+    isolated_registries,
+    make_run_context,
+)
 
 from .support import (
     ENGINE_TAG,
@@ -3224,7 +3272,10 @@ class TestTheResultContract:
 
     def test_a_best_trial_that_is_not_present_is_refused(self):
         """Rather than returning the first trial as though it had won."""
-        from src.rade_qnet.core.contract.result import TrialRecord, TuningResult  # noqa: PLC0415
+        from tranql.models.rade.rade_qnet.rade_qnet.core.contract.result import (  # noqa: PLC0415
+            TrialRecord,
+            TuningResult,
+        )
 
         result = TuningResult(trials=(TrialRecord(trial=0),), best_trial=7)
 

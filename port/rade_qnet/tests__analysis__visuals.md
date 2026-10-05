@@ -1,22 +1,22 @@
-# `tests/rade_qnet/analysis/visuals`
+# `tranql/models/rade/rade_qnet/tests/analysis/visuals`
 
 9 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 34 | 1461 | `abc60d222b39299f` |
-| 2 | `test_visuals_data.py` | 278 | 11024 | `7a56dedb933736a8` |
-| 3 | `test_visuals_evaluation.py` | 271 | 9331 | `ccfa5fe9d0da520e` |
-| 4 | `test_visuals_export.py` | 174 | 6309 | `692334725d62e0f8` |
-| 5 | `test_visuals_figures.py` | 324 | 12357 | `715c04c3860dc524` |
-| 6 | `test_visuals_jobset.py` | 289 | 9538 | `f128864e10da8635` |
-| 7 | `test_visuals_style.py` | 185 | 6592 | `072bcbbeaf080d05` |
-| 8 | `test_visuals_training.py` | 337 | 11903 | `df167c0059d128ce` |
-| 9 | `test_visuals_tuning.py` | 301 | 11420 | `52554c0b2f02024a` |
+| 2 | `test_visuals_data.py` | 278 | 11049 | `39ac02c601c05b1d` |
+| 3 | `test_visuals_evaluation.py` | 271 | 9381 | `592ab8e77ae80b3c` |
+| 4 | `test_visuals_export.py` | 177 | 6372 | `b8cb0504d089af21` |
+| 5 | `test_visuals_figures.py` | 324 | 12407 | `f79683c084efecd0` |
+| 6 | `test_visuals_jobset.py` | 289 | 9588 | `eacbb8c9dba02b37` |
+| 7 | `test_visuals_style.py` | 189 | 6659 | `e8b0a271d7788be6` |
+| 8 | `test_visuals_training.py` | 337 | 11978 | `c2fbaac2f558c796` |
+| 9 | `test_visuals_tuning.py` | 301 | 11470 | `f49e426812e3f11f` |
 
 ---
 
-## 1. `tests/rade_qnet/analysis/visuals/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/analysis/visuals/__init__.py`
 
 1461 bytes · SHA-256 `abc60d222b39299f`
 
@@ -59,9 +59,9 @@ Planned modules
 
 ---
 
-## 2. `tests/rade_qnet/analysis/visuals/test_visuals_data.py`
+## 2. `tranql/models/rade/rade_qnet/tests/analysis/visuals/test_visuals_data.py`
 
-11024 bytes · SHA-256 `7a56dedb933736a8`
+11049 bytes · SHA-256 `39ac02c601c05b1d`
 
 ```python
 """
@@ -93,7 +93,7 @@ import pytest
 from matplotlib import pyplot
 from matplotlib.figure import Figure
 
-from src.rade_qnet.analysis.visuals.data import (
+from tranql.models.rade.rade_qnet.rade_qnet.analysis.visuals.data import (
     feature_correlation_figure,
     missingness_figure,
     split_layout_figure,
@@ -346,9 +346,9 @@ class TestFeatureCorrelation:
 
 ---
 
-## 3. `tests/rade_qnet/analysis/visuals/test_visuals_evaluation.py`
+## 3. `tranql/models/rade/rade_qnet/tests/analysis/visuals/test_visuals_evaluation.py`
 
-9331 bytes · SHA-256 `ccfa5fe9d0da520e`
+9381 bytes · SHA-256 `592ab8e77ae80b3c`
 
 ```python
 """
@@ -371,12 +371,12 @@ import numpy as np
 import pytest
 from matplotlib.figure import Figure
 
-from src.rade_qnet.analysis.visuals.evaluation import (
+from tranql.models.rade.rade_qnet.rade_qnet.analysis.visuals.evaluation import (
     drift_figure,
     error_by_bucket_figure,
     residual_against_prediction_figure,
 )
-from src.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
 
 
 def bar_heights(figure: Figure) -> list[float]:
@@ -626,9 +626,9 @@ class TestDrift:
 
 ---
 
-## 4. `tests/rade_qnet/analysis/visuals/test_visuals_export.py`
+## 4. `tranql/models/rade/rade_qnet/tests/analysis/visuals/test_visuals_export.py`
 
-6309 bytes · SHA-256 `692334725d62e0f8`
+6372 bytes · SHA-256 `b8cb0504d089af21`
 
 ```python
 """
@@ -651,8 +651,11 @@ import numpy as np
 import pytest
 from matplotlib.figure import Figure
 
-from src.rade_qnet.analysis.visuals.export import SUPPORTED_FORMATS, save_figure
-from src.rade_qnet.core.lifecycle.errors import SpecError
+from tranql.models.rade.rade_qnet.rade_qnet.analysis.visuals.export import (
+    SUPPORTED_FORMATS,
+    save_figure,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import SpecError
 
 
 @pytest.fixture
@@ -809,9 +812,9 @@ class TestResolution:
 
 ---
 
-## 5. `tests/rade_qnet/analysis/visuals/test_visuals_figures.py`
+## 5. `tranql/models/rade/rade_qnet/tests/analysis/visuals/test_visuals_figures.py`
 
-12357 bytes · SHA-256 `715c04c3860dc524`
+12407 bytes · SHA-256 `f79683c084efecd0`
 
 ```python
 """
@@ -833,13 +836,13 @@ import numpy as np
 import pytest
 from matplotlib.figure import Figure
 
-from src.rade_qnet.analysis.visuals.figures import (
+from tranql.models.rade.rade_qnet.rade_qnet.analysis.visuals.figures import (
     metric_comparison_figure,
     prediction_scatter_figure,
     residual_histogram_figure,
     training_curve_figure,
 )
-from src.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
 
 #: Each factory, pre-bound to a valid minimal call, so the shared-contract
 #: tests below can be written once rather than four times.
@@ -1142,9 +1145,9 @@ class TestMetricComparison:
 
 ---
 
-## 6. `tests/rade_qnet/analysis/visuals/test_visuals_jobset.py`
+## 6. `tranql/models/rade/rade_qnet/tests/analysis/visuals/test_visuals_jobset.py`
 
-9538 bytes · SHA-256 `f128864e10da8635`
+9588 bytes · SHA-256 `eacbb8c9dba02b37`
 
 ```python
 """
@@ -1165,13 +1168,13 @@ from __future__ import annotations
 import pytest
 from matplotlib.figure import Figure
 
-from src.rade_qnet.analysis.visuals.jobset import (
+from tranql.models.rade.rade_qnet.rade_qnet.analysis.visuals.jobset import (
     job_status_figure,
     metric_dispersion_figure,
     metric_ranking_figure,
     wall_time_figure,
 )
-from src.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
 
 #: Three jobs with clearly separated scores, so an ordering mistake cannot
 #: hide behind near-ties.
@@ -1440,9 +1443,9 @@ def figure_has_vertical_line(figure: Figure, position: float) -> bool:
 
 ---
 
-## 7. `tests/rade_qnet/analysis/visuals/test_visuals_style.py`
+## 7. `tranql/models/rade/rade_qnet/tests/analysis/visuals/test_visuals_style.py`
 
-6592 bytes · SHA-256 `072bcbbeaf080d05`
+6659 bytes · SHA-256 `e8b0a271d7788be6`
 
 ```python
 """
@@ -1469,8 +1472,12 @@ import matplotlib as mpl
 import pytest
 from matplotlib.figure import Figure
 
-from src.rade_qnet.analysis import visuals
-from src.rade_qnet.analysis.visuals.style import PALETTE, RC_PARAMS, figure_style
+from tranql.models.rade.rade_qnet.rade_qnet.analysis import visuals
+from tranql.models.rade.rade_qnet.rade_qnet.analysis.visuals.style import (
+    PALETTE,
+    RC_PARAMS,
+    figure_style,
+)
 
 
 class TestTheStyleIsTemporary:
@@ -1634,9 +1641,9 @@ class TestNoPyplot:
 
 ---
 
-## 8. `tests/rade_qnet/analysis/visuals/test_visuals_training.py`
+## 8. `tranql/models/rade/rade_qnet/tests/analysis/visuals/test_visuals_training.py`
 
-11903 bytes · SHA-256 `df167c0059d128ce`
+11978 bytes · SHA-256 `c2fbaac2f558c796`
 
 ```python
 """
@@ -1662,14 +1669,14 @@ import numpy as np
 import pytest
 from matplotlib.figure import Figure
 
-from src.rade_qnet.analysis.visuals.training import (
+from tranql.models.rade.rade_qnet.rade_qnet.analysis.visuals.training import (
     epoch_timing_figure,
     gradient_norm_figure,
     learning_rate_figure,
     training_diagnostics_figure,
 )
-from src.rade_qnet.core.contract.result import EpochRecord, FitOutcome
-from src.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.result import EpochRecord, FitOutcome
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
 
 
 def outcome(
@@ -1980,9 +1987,9 @@ class TestTrainingDiagnosticsFigure:
 
 ---
 
-## 9. `tests/rade_qnet/analysis/visuals/test_visuals_tuning.py`
+## 9. `tranql/models/rade/rade_qnet/tests/analysis/visuals/test_visuals_tuning.py`
 
-11420 bytes · SHA-256 `52554c0b2f02024a`
+11470 bytes · SHA-256 `f49e426812e3f11f`
 
 ```python
 """
@@ -2001,12 +2008,12 @@ import numpy as np
 import pytest
 from matplotlib.figure import Figure
 
-from src.rade_qnet.analysis.visuals.tuning import (
+from tranql.models.rade.rade_qnet.rade_qnet.analysis.visuals.tuning import (
     parallel_coordinates_figure,
     parameter_importance_figure,
     trial_history_figure,
 )
-from src.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
 
 #: Enough trials to clear the minimum the influence chart insists on, and
 #: few enough to read in a failure message.

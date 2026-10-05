@@ -1,4 +1,4 @@
-# `src/rade_qnet/models/hybrid_gnn_rnn/features`
+# `tranql/models/rade/rade_qnet/rade_qnet/models/hybrid_gnn_rnn/features`
 
 4 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -11,7 +11,7 @@
 
 ---
 
-## 1. `src/rade_qnet/models/hybrid_gnn_rnn/features/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/models/hybrid_gnn_rnn/features/__init__.py`
 
 813 bytes · SHA-256 `011ecbecf59e5538`
 
@@ -40,7 +40,7 @@ __all__: tuple[str, ...] = ()
 
 ---
 
-## 2. `src/rade_qnet/models/hybrid_gnn_rnn/features/basis.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/models/hybrid_gnn_rnn/features/basis.py`
 
 11453 bytes · SHA-256 `f0991d6c6cf24d24`
 
@@ -342,7 +342,7 @@ def _pivoted_columns(
 
 ---
 
-## 3. `src/rade_qnet/models/hybrid_gnn_rnn/features/encoder.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/models/hybrid_gnn_rnn/features/encoder.py`
 
 22116 bytes · SHA-256 `b1f1f4ff533ab65f`
 
@@ -976,7 +976,7 @@ def _distinct_labels(column: Sequence[Any]) -> set[str]:
 
 ---
 
-## 4. `src/rade_qnet/models/hybrid_gnn_rnn/features/graph.py`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/models/hybrid_gnn_rnn/features/graph.py`
 
 20648 bytes · SHA-256 `53720982a6bf987e`
 

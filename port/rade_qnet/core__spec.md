@@ -1,4 +1,4 @@
-# `src/rade_qnet/core/spec`
+# `tranql/models/rade/rade_qnet/rade_qnet/core/spec`
 
 10 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -17,7 +17,7 @@
 
 ---
 
-## 1. `src/rade_qnet/core/spec/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/core/spec/__init__.py`
 
 2597 bytes · SHA-256 `8d034c0a484bd379`
 
@@ -79,7 +79,7 @@ __all__: tuple[str, ...] = ()
 
 ---
 
-## 2. `src/rade_qnet/core/spec/base.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/core/spec/base.py`
 
 3191 bytes · SHA-256 `0b868e88f5dd798a`
 
@@ -164,7 +164,7 @@ class Spec(BaseModel):
 
 ---
 
-## 3. `src/rade_qnet/core/spec/data.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/core/spec/data.py`
 
 15053 bytes · SHA-256 `7ed9e6228f3c4454`
 
@@ -633,7 +633,7 @@ SourceSpec = Annotated[TabularSourceSpec | ModelSourceSpec, Field(discriminator=
 
 ---
 
-## 4. `src/rade_qnet/core/spec/hardware.py`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/core/spec/hardware.py`
 
 4577 bytes · SHA-256 `4386834de64e33d2`
 
@@ -753,7 +753,7 @@ class HardwareSpec(Spec):
 
 ---
 
-## 5. `src/rade_qnet/core/spec/jobs.py`
+## 5. `tranql/models/rade/rade_qnet/rade_qnet/core/spec/jobs.py`
 
 22150 bytes · SHA-256 `d4cb787f098fb7e0`
 
@@ -1345,7 +1345,7 @@ def dump_job_set_spec(spec: JobSetSpec, path: Path | str) -> Path:
 
 ---
 
-## 6. `src/rade_qnet/core/spec/merge.py`
+## 6. `tranql/models/rade/rade_qnet/rade_qnet/core/spec/merge.py`
 
 7103 bytes · SHA-256 `89eeb600e0a48ae8`
 
@@ -1536,7 +1536,7 @@ def _copied(value: Any) -> Any:  # noqa: ANN401 -- merges arbitrary YAML payload
 
 ---
 
-## 7. `src/rade_qnet/core/spec/reports.py`
+## 7. `tranql/models/rade/rade_qnet/rade_qnet/core/spec/reports.py`
 
 2490 bytes · SHA-256 `c34d4853629d6b2d`
 
@@ -1621,7 +1621,7 @@ class ReportsSpec(Spec):
 
 ---
 
-## 8. `src/rade_qnet/core/spec/run.py`
+## 8. `tranql/models/rade/rade_qnet/rade_qnet/core/spec/run.py`
 
 12866 bytes · SHA-256 `dd12485b60f37568`
 
@@ -2013,7 +2013,7 @@ def dump_run_spec(spec: RunSpec, path: Path | str) -> Path:
 
 ---
 
-## 9. `src/rade_qnet/core/spec/training.py`
+## 9. `tranql/models/rade/rade_qnet/rade_qnet/core/spec/training.py`
 
 12531 bytes · SHA-256 `d652ff166c195ee9`
 
@@ -2365,7 +2365,7 @@ class RlTrainingSpec(Spec):
 
 ---
 
-## 10. `src/rade_qnet/core/spec/tune.py`
+## 10. `tranql/models/rade/rade_qnet/rade_qnet/core/spec/tune.py`
 
 17453 bytes · SHA-256 `c8be6dcfed974aa9`
 

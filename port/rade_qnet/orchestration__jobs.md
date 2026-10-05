@@ -1,4 +1,4 @@
-# `src/rade_qnet/orchestration/jobs`
+# `tranql/models/rade/rade_qnet/rade_qnet/orchestration/jobs`
 
 6 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -13,7 +13,7 @@
 
 ---
 
-## 1. `src/rade_qnet/orchestration/jobs/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/orchestration/jobs/__init__.py`
 
 2610 bytes · SHA-256 `38c0c4fe2f3800a8`
 
@@ -86,7 +86,7 @@ __all__ = [
 
 ---
 
-## 2. `src/rade_qnet/orchestration/jobs/fanout.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/orchestration/jobs/fanout.py`
 
 6081 bytes · SHA-256 `9455837cb8ba0832`
 
@@ -260,7 +260,7 @@ def job_set_for_groups(
 
 ---
 
-## 3. `src/rade_qnet/orchestration/jobs/groups.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/orchestration/jobs/groups.py`
 
 13850 bytes · SHA-256 `40c05ee56911e539`
 
@@ -710,7 +710,7 @@ def _stat(path: Path) -> dict[str, int]:
 
 ---
 
-## 4. `src/rade_qnet/orchestration/jobs/manifest.py`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/orchestration/jobs/manifest.py`
 
 12737 bytes · SHA-256 `80e4c231e0368046`
 
@@ -1126,7 +1126,7 @@ def _relative(path: Path | None, root: Path) -> str | None:
 
 ---
 
-## 5. `src/rade_qnet/orchestration/jobs/set.py`
+## 5. `tranql/models/rade/rade_qnet/rade_qnet/orchestration/jobs/set.py`
 
 11673 bytes · SHA-256 `6482b8dd9fd29aa8`
 
@@ -1471,7 +1471,7 @@ class JobSetRunner:
 
 ---
 
-## 6. `src/rade_qnet/orchestration/jobs/unit.py`
+## 6. `tranql/models/rade/rade_qnet/rade_qnet/orchestration/jobs/unit.py`
 
 11502 bytes · SHA-256 `4b4447c3711fbf4c`
 

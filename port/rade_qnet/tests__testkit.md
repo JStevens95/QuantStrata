@@ -1,18 +1,18 @@
-# `tests/rade_qnet/testkit`
+# `tranql/models/rade/rade_qnet/tests/testkit`
 
 5 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 21 | 892 | `4dd05188c31c1115` |
-| 2 | `test_testkit_conformance.py` | 685 | 23601 | `e2871cbd5e4fa5f0` |
-| 3 | `test_testkit_fixtures.py` | 419 | 16382 | `aa867e4786c01c80` |
-| 4 | `test_testkit_golden_fixture.py` | 304 | 12695 | `9f0c11f0e6b72a5e` |
-| 5 | `test_testkit_parity.py` | 537 | 21337 | `081eb6c29a54e0ff` |
+| 2 | `test_testkit_conformance.py` | 688 | 23739 | `87652ac5eefc6681` |
+| 3 | `test_testkit_fixtures.py` | 423 | 16724 | `d1dffce957e4dd7c` |
+| 4 | `test_testkit_golden_fixture.py` | 306 | 12775 | `645ba597e80df7a6` |
+| 5 | `test_testkit_parity.py` | 559 | 22592 | `fc8b37eef922fcfc` |
 
 ---
 
-## 1. `tests/rade_qnet/testkit/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/testkit/__init__.py`
 
 892 bytes · SHA-256 `4dd05188c31c1115`
 
@@ -42,9 +42,9 @@ Planned modules
 
 ---
 
-## 2. `tests/rade_qnet/testkit/test_testkit_conformance.py`
+## 2. `tranql/models/rade/rade_qnet/tests/testkit/test_testkit_conformance.py`
 
-23601 bytes · SHA-256 `e2871cbd5e4fa5f0`
+23739 bytes · SHA-256 `87652ac5eefc6681`
 
 ```python
 """
@@ -71,10 +71,13 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.contract.data import DataLineage, SplitIndices
-from src.rade_qnet.core.contract.signature import TensorSpec
-from src.rade_qnet.core.contract.state import FittedState, IdentityFittedState
-from src.rade_qnet.testkit.conformance import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.data import DataLineage, SplitIndices
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.signature import TensorSpec
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.state import (
+    FittedState,
+    IdentityFittedState,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.conformance import (
     UNBOUNDED_PROBE_BATCHES,
     ConformanceReport,
     check_data_bundle,
@@ -82,7 +85,7 @@ from src.rade_qnet.testkit.conformance import (
     check_model_capabilities,
     check_source,
 )
-from src.rade_qnet.testkit.fixtures import (
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import (
     StandardisingState,
     SyntheticTensorSource,
     make_lineage,
@@ -736,9 +739,9 @@ class TestAgreementWithTheContracts:
 
 ---
 
-## 3. `tests/rade_qnet/testkit/test_testkit_fixtures.py`
+## 3. `tranql/models/rade/rade_qnet/tests/testkit/test_testkit_fixtures.py`
 
-16382 bytes · SHA-256 `aa867e4786c01c80`
+16724 bytes · SHA-256 `d1dffce957e4dd7c`
 
 ```python
 """
@@ -761,19 +764,23 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.contract.bundle import ModelBundle
-from src.rade_qnet.core.contract.data import DataBundle, TensorBatchData
-from src.rade_qnet.core.contract.result import TrainingResult
-from src.rade_qnet.core.contract.signature import InputSignature
-from src.rade_qnet.core.contract.source import BatchSource
-from src.rade_qnet.core.contract.state import FittedState
-from src.rade_qnet.core.lifecycle.components import MODELS, REPORTS
-from src.rade_qnet.core.lifecycle.context import RunContext
-from src.rade_qnet.core.lifecycle.hooks import PipelineHook
-from src.rade_qnet.core.provenance.hashing import digest_spec
-from src.rade_qnet.core.spec.run import SupervisedRunSpec
-from src.rade_qnet.testkit.conformance import check_data_bundle, check_fitted_state, check_source
-from src.rade_qnet.testkit.fixtures import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.bundle import ModelBundle
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.data import DataBundle, TensorBatchData
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.result import TrainingResult
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.signature import InputSignature
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.source import BatchSource
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.state import FittedState
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import MODELS, REPORTS
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.context import RunContext
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.hooks import PipelineHook
+from tranql.models.rade.rade_qnet.rade_qnet.core.provenance.hashing import digest_spec
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.run import SupervisedRunSpec
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.conformance import (
+    check_data_bundle,
+    check_fitted_state,
+    check_source,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import (
     PLACEHOLDER_DIGEST,
     RecordingHook,
     StandardisingState,
@@ -1164,9 +1171,9 @@ class TestRecordingHook:
 
 ---
 
-## 4. `tests/rade_qnet/testkit/test_testkit_golden_fixture.py`
+## 4. `tranql/models/rade/rade_qnet/tests/testkit/test_testkit_golden_fixture.py`
 
-12695 bytes · SHA-256 `9f0c11f0e6b72a5e`
+12775 bytes · SHA-256 `645ba597e80df7a6`
 
 ```python
 """
@@ -1198,7 +1205,9 @@ import json
 import numpy as np
 import pytest
 
-from src.rade_qnet.testkit.parity import load_golden
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.parity import load_golden
+
+from ..locations import GOLDEN_ROOT
 
 #: Size ceiling, as a definition-of-done item. A fixture that grows past this
 #: stops being committed, and a parity suite nobody can run locally is a
@@ -1221,7 +1230,7 @@ def golden():
         The loaded fixture.
     """
     try:
-        return load_golden("hybrid_gnn_rnn")
+        return load_golden("hybrid_gnn_rnn", root=GOLDEN_ROOT)
     except Exception as exc:
         pytest.skip(f"golden fixture not captured: {exc}")
 
@@ -1477,9 +1486,9 @@ class TestTheCapturedTensors:
 
 ---
 
-## 5. `tests/rade_qnet/testkit/test_testkit_parity.py`
+## 5. `tranql/models/rade/rade_qnet/tests/testkit/test_testkit_parity.py`
 
-21337 bytes · SHA-256 `081eb6c29a54e0ff`
+22592 bytes · SHA-256 `fc8b37eef922fcfc`
 
 ```python
 """
@@ -1511,8 +1520,9 @@ import json
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.lifecycle.errors import ContractError
-from src.rade_qnet.testkit.parity import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.parity import (
+    GOLDEN_ROOT_VARIABLE,
     Comparison,
     ParityReport,
     compare_arrays,
@@ -1747,6 +1757,27 @@ class TestLoadGolden:
         """
         with pytest.raises(ContractError, match="no golden fixture"):
             load_golden("absent", root=tmp_path)
+
+    def test_the_environment_variable_names_the_root(self, tmp_path, monkeypatch):
+        """
+        ``RADE_QNET_GOLDEN_ROOT`` points the loader at a capture kept elsewhere.
+
+        The default location encodes this repository's layout, which is
+        wrong wherever the package is vendored into a larger tree. Without
+        the variable, a deployment holding a perfectly good capture would
+        see every parity test skip and could not tell why.
+        """
+        (tmp_path / "elsewhere").mkdir()
+        (tmp_path / "elsewhere" / "manifest.json").write_text("{}", encoding="utf-8")
+        monkeypatch.setenv(GOLDEN_ROOT_VARIABLE, str(tmp_path))
+        assert load_golden("elsewhere").directory == tmp_path / "elsewhere"
+
+    def test_an_explicit_root_beats_the_environment(self, tmp_path, monkeypatch):
+        """Passing ``root`` is the more specific instruction, so it wins."""
+        (tmp_path / "chosen").mkdir()
+        (tmp_path / "chosen" / "manifest.json").write_text("{}", encoding="utf-8")
+        monkeypatch.setenv(GOLDEN_ROOT_VARIABLE, str(tmp_path / "ignored"))
+        assert load_golden("chosen", root=tmp_path).directory == tmp_path / "chosen"
 
     def test_a_fixture_without_a_manifest_is_refused(self, tmp_path):
         """

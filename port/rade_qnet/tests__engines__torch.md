@@ -1,17 +1,17 @@
-# `tests/rade_qnet/engines/torch`
+# `tranql/models/rade/rade_qnet/tests/engines/torch`
 
 4 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 44 | 1965 | `ce84b941ee165fc1` |
-| 2 | `test_torch_engine.py` | 517 | 19434 | `9f1f7da522b13c93` |
-| 3 | `test_torch_loaders.py` | 237 | 9037 | `0dcf87126c969172` |
-| 4 | `test_torch_materialise.py` | 292 | 10944 | `cc197e973028ec2a` |
+| 2 | `test_torch_engine.py` | 520 | 19622 | `f3327525ec28b6c7` |
+| 3 | `test_torch_loaders.py` | 244 | 9192 | `caf4130a6e746d13` |
+| 4 | `test_torch_materialise.py` | 295 | 11057 | `f7fbb31f07001372` |
 
 ---
 
-## 1. `tests/rade_qnet/engines/torch/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/engines/torch/__init__.py`
 
 1965 bytes · SHA-256 `ce84b941ee165fc1`
 
@@ -64,9 +64,9 @@ Planned modules
 
 ---
 
-## 2. `tests/rade_qnet/engines/torch/test_torch_engine.py`
+## 2. `tranql/models/rade/rade_qnet/tests/engines/torch/test_torch_engine.py`
 
-19434 bytes · SHA-256 `9f1f7da522b13c93`
+19622 bytes · SHA-256 `f3327525ec28b6c7`
 
 ```python
 """
@@ -99,17 +99,20 @@ import pytest
 import torch
 from torch import nn
 
-from src.rade_qnet.core.lifecycle.errors import EngineError
-from src.rade_qnet.core.provenance.seeding import seed_everything
-from src.rade_qnet.core.spec.hardware import HardwareSpec
-from src.rade_qnet.core.spec.training import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import EngineError
+from tranql.models.rade.rade_qnet.rade_qnet.core.provenance.seeding import seed_everything
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.hardware import HardwareSpec
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.training import (
     CheckpointSpec,
     EarlyStoppingSpec,
     TorchTrainingSpec,
 )
-from src.rade_qnet.engines.torch.engine import TorchEngine
-from src.rade_qnet.testkit.conformance import check_engine
-from src.rade_qnet.testkit.fixtures import SyntheticTensorSource, make_signature
+from tranql.models.rade.rade_qnet.rade_qnet.engines.torch.engine import TorchEngine
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.conformance import check_engine
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import (
+    SyntheticTensorSource,
+    make_signature,
+)
 
 
 class Net(nn.Module):
@@ -590,9 +593,9 @@ class TestReproducibility:
 
 ---
 
-## 3. `tests/rade_qnet/engines/torch/test_torch_loaders.py`
+## 3. `tranql/models/rade/rade_qnet/tests/engines/torch/test_torch_loaders.py`
 
-9037 bytes · SHA-256 `0dcf87126c969172`
+9192 bytes · SHA-256 `caf4130a6e746d13`
 
 ```python
 """
@@ -621,11 +624,18 @@ import numpy as np
 import pytest
 import torch
 
-from src.rade_qnet.core.contract.data import TARGET_KEY
-from src.rade_qnet.core.contract.signature import InputSignature, TensorSpec
-from src.rade_qnet.core.lifecycle.errors import ContractError
-from src.rade_qnet.engines.torch.loaders import StaticInputs, to_device_batches, to_tensor
-from src.rade_qnet.testkit.fixtures import SyntheticTensorSource
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.data import TARGET_KEY
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.signature import (
+    InputSignature,
+    TensorSpec,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.engines.torch.loaders import (
+    StaticInputs,
+    to_device_batches,
+    to_tensor,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import SyntheticTensorSource
 
 CPU = torch.device("cpu")
 
@@ -836,9 +846,9 @@ class TestStaticInputsHelper:
 
 ---
 
-## 4. `tests/rade_qnet/engines/torch/test_torch_materialise.py`
+## 4. `tranql/models/rade/rade_qnet/tests/engines/torch/test_torch_materialise.py`
 
-10944 bytes · SHA-256 `cc197e973028ec2a`
+11057 bytes · SHA-256 `f7fbb31f07001372`
 
 ```python
 """
@@ -872,16 +882,19 @@ import pytest
 import torch
 from torch import nn
 
-from src.rade_qnet.core.contract.signature import InputSignature, TensorSpec
-from src.rade_qnet.core.lifecycle.errors import EngineError
-from src.rade_qnet.engines.torch.materialise import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.signature import (
+    InputSignature,
+    TensorSpec,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import EngineError
+from tranql.models.rade.rade_qnet.rade_qnet.engines.torch.materialise import (
     count_parameters,
     dummy_batch,
     has_lazy_parameters,
     materialise,
     torch_dtype,
 )
-from src.rade_qnet.testkit.fixtures import make_signature
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import make_signature
 
 
 class LazyNet(nn.Module):

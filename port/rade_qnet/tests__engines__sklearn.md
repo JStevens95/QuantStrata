@@ -1,15 +1,15 @@
-# `tests/rade_qnet/engines/sklearn`
+# `tranql/models/rade/rade_qnet/tests/engines/sklearn`
 
 2 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 10 | 304 | `b0a1ae83d8b2a9fc` |
-| 2 | `test_sklearn_engine.py` | 274 | 10464 | `182cdf432d2207de` |
+| 2 | `test_sklearn_engine.py` | 277 | 10652 | `d92376e80569861b` |
 
 ---
 
-## 1. `tests/rade_qnet/engines/sklearn/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/engines/sklearn/__init__.py`
 
 304 bytes · SHA-256 `b0a1ae83d8b2a9fc`
 
@@ -28,9 +28,9 @@ Planned modules
 
 ---
 
-## 2. `tests/rade_qnet/engines/sklearn/test_sklearn_engine.py`
+## 2. `tranql/models/rade/rade_qnet/tests/engines/sklearn/test_sklearn_engine.py`
 
-10464 bytes · SHA-256 `182cdf432d2207de`
+10652 bytes · SHA-256 `d92376e80569861b`
 
 ```python
 """
@@ -59,13 +59,16 @@ import numpy as np
 import pytest
 from sklearn.linear_model import Lasso, Ridge
 
-from src.rade_qnet.core.lifecycle.components import get_engine
-from src.rade_qnet.core.lifecycle.errors import EngineError
-from src.rade_qnet.core.spec.hardware import HardwareSpec
-from src.rade_qnet.core.spec.training import SklearnTrainingSpec
-from src.rade_qnet.engines.sklearn import SklearnEngine
-from src.rade_qnet.testkit.conformance import check_engine
-from src.rade_qnet.testkit.fixtures import SyntheticTensorSource, make_signature
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import get_engine
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import EngineError
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.hardware import HardwareSpec
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.training import SklearnTrainingSpec
+from tranql.models.rade.rade_qnet.rade_qnet.engines.sklearn import SklearnEngine
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.conformance import check_engine
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import (
+    SyntheticTensorSource,
+    make_signature,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path

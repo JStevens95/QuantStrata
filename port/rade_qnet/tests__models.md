@@ -1,18 +1,18 @@
-# `tests/rade_qnet/models`
+# `tranql/models/rade/rade_qnet/tests/models`
 
 3 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
-| 1 | `__init__.py` | 17 | 838 | `e11173949276a7e1` |
-| 2 | `test_model_layout.py` | 525 | 22614 | `3a1a074e153fe65b` |
-| 3 | `test_reference_models.py` | 396 | 15978 | `10b26bc431a366a3` |
+| 1 | `__init__.py` | 17 | 863 | `aec3631b58e0e12c` |
+| 2 | `test_model_layout.py` | 531 | 22723 | `99514716aeae0118` |
+| 3 | `test_reference_models.py` | 398 | 16130 | `f4a8bac2488f354c` |
 
 ---
 
-## 1. `tests/rade_qnet/models/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/models/__init__.py`
 
-838 bytes · SHA-256 `e11173949276a7e1`
+863 bytes · SHA-256 `aec3631b58e0e12c`
 
 ```python
 """
@@ -30,15 +30,15 @@ mirroring rule in ``test_scaffold.py`` is extended to cover it.
 What a model suite must contain is not left to taste. Every model is run
 through ``rade_qnet.testkit.conformance``, and a model refactored from an
 existing implementation is additionally held to the parity levels in
-``src/rade_qnet/docs/phases/PHASE_0_BASELINE.md``.
+``tranql/models/rade/rade_qnet/rade_qnet/docs/phases/PHASE_0_BASELINE.md``.
 """
 ```
 
 ---
 
-## 2. `tests/rade_qnet/models/test_model_layout.py`
+## 2. `tranql/models/rade/rade_qnet/tests/models/test_model_layout.py`
 
-22614 bytes · SHA-256 `3a1a074e153fe65b`
+22723 bytes · SHA-256 `99514716aeae0118`
 
 ```python
 """
@@ -86,8 +86,14 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from src.rade_qnet.core.lifecycle.components import LEARNERS, MODELS, REPORTS
-from src.rade_qnet.testkit.fixtures import isolated_registries
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import (
+    LEARNERS,
+    MODELS,
+    REPORTS,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import isolated_registries
+
+from ..locations import PACKAGE_ROOT, module_name
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -155,7 +161,7 @@ WIRING_MODULES = ("core.lifecycle.components", "core.spec.run", "core.spec.train
 #: moving is not a budget.
 TIER_1_BUDGET = 55
 
-MODELS_ROOT = Path("src/rade_qnet/models")
+MODELS_ROOT = PACKAGE_ROOT / "models"
 
 
 def model_packages() -> list[Path]:
@@ -319,7 +325,7 @@ class TestTheRequiredFilesExist:
             f"{sorted(POLICY_FILES)}. A model package declares what it learns by "
             f"which pair it carries: a supervised model has model.py and data.py, "
             f"an agent has policy.py and environment.py. Copy the template from "
-            f"src/rade_qnet/models/ridge/"
+            f"{MODELS_ROOT / 'ridge'}/"
         )
         assert len(paradigm) == 1, (
             f"{package.name} carries both paradigms' files. A package learns one "
@@ -501,7 +507,7 @@ class TestTheSplitIsReal:
         a user's first import does.
         """
         declared = registered_names(package / "register.py")[0]
-        prefix = f"src.rade_qnet.models.{package.name}"
+        prefix = module_name(f"models.{package.name}")
         cached = {
             name: module
             for name, module in sys.modules.items()
@@ -570,9 +576,9 @@ class TestSimpleModelsStayCheap:
 
 ---
 
-## 3. `tests/rade_qnet/models/test_reference_models.py`
+## 3. `tranql/models/rade/rade_qnet/tests/models/test_reference_models.py`
 
-15978 bytes · SHA-256 `10b26bc431a366a3`
+16130 bytes · SHA-256 `f4a8bac2488f354c`
 
 ```python
 """
@@ -610,10 +616,12 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
-from src.rade_qnet.api import evaluate, infer, train, train_jobs, tune
-from src.rade_qnet.core.lifecycle.errors import StageError
-from src.rade_qnet.core.spec.jobs import parse_job_set_spec
-from src.rade_qnet.models.lstm_tabular.register import LstmTabularModel
+from tranql.models.rade.rade_qnet.rade_qnet.api import evaluate, infer, train, train_jobs, tune
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import StageError
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.jobs import parse_job_set_spec
+from tranql.models.rade.rade_qnet.rade_qnet.models.lstm_tabular.register import LstmTabularModel
+
+from ..locations import GOLDEN_ROOT, PACKAGE_ROOT, module_name
 
 if TYPE_CHECKING:
     pass
@@ -631,7 +639,7 @@ needs_xgboost = pytest.mark.skipif(
 #: is designed to detect.
 ENGINE_NAMES = ("torch", "sklearn", "xgboost", "lightgbm")
 
-ORCHESTRATION = Path("src/rade_qnet/orchestration")
+ORCHESTRATION = PACKAGE_ROOT / "orchestration"
 
 
 @pytest.fixture
@@ -746,7 +754,7 @@ class TestWhatTheFixtureCanAndCannotShow:
         between the flagship and the baselines has become worth running.
         Treat a failure here as good news and go read §8.6.
         """
-        directory = Path("tests/fixtures/rade_qnet/golden/hybrid_gnn_rnn/input")
+        directory = GOLDEN_ROOT / "hybrid_gnn_rnn" / "input"
         if not directory.exists():  # pragma: no cover - depends on the checkout
             pytest.skip("the Phase 0 golden fixture is not present")
 
@@ -787,7 +795,7 @@ class TestEachBaselineRuns:
         comparison made from the report is then about something that was
         never saved.
         """
-        __import__(f"src.rade_qnet.models.{name}")
+        __import__(module_name(f"models.{name}"))
 
         result = train(
             specification(dataset, name, engine, **settings),
@@ -818,7 +826,7 @@ class TestEachBaselineRuns:
         reporting a thing only gradient engines get, which would quietly
         make the one-shot engines second-class.
         """
-        __import__(f"src.rade_qnet.models.{name}")
+        __import__(module_name(f"models.{name}"))
 
         run = specification(dataset, name, engine, **settings)
         run["reports"] = {"enabled": ["baselines", "curves", "quality", "summary"]}
@@ -837,7 +845,7 @@ class TestEachBaselineRuns:
         process, and a one-shot engine's handle, history and bundle all
         have to survive that boundary the same way a network's do.
         """
-        __import__("src.rade_qnet.models.ridge")
+        __import__(module_name("models.ridge"))
 
         manifest = train_jobs(
             parse_job_set_spec(
@@ -866,7 +874,7 @@ class TestEachBaselineRuns:
         pruning and intermediate reporting both need epochs. A search over
         an engine that has none must still run -- it just cannot prune.
         """
-        __import__("src.rade_qnet.models.ridge")
+        __import__(module_name("models.ridge"))
 
         base = specification(dataset, "ridge", "sklearn")
         result = tune(
@@ -901,7 +909,7 @@ class TestEachBaselineRuns:
         within the range a wiring fault would also produce -- which would
         make a passing test mean nothing.
         """
-        __import__("src.rade_qnet.models.ridge")
+        __import__(module_name("models.ridge"))
 
         run = specification(dataset, "ridge", "sklearn")
         run["model"]["params"] = {"alpha": 0.01}
@@ -912,7 +920,7 @@ class TestTheInputContractIsEnforcedByThePipeline:
     """
     The declaration is only worth having because a run checks it.
 
-    The unit tests in ``tests/rade_qnet/core/contract`` prove the contract
+    The unit tests in ``tranql/models/rade/rade_qnet/tests/core/contract`` prove the contract
     type rejects what it should. These prove the pipeline asks it, which
     is the half that makes the difference between a declaration and a
     guarantee.
@@ -926,7 +934,7 @@ class TestTheInputContractIsEnforcedByThePipeline:
         to have the check silently skipped for every model that declares
         no constraints -- which is most of them.
         """
-        __import__("src.rade_qnet.models.ridge")
+        __import__(module_name("models.ridge"))
 
         result = train(specification(dataset, "ridge", "sklearn"), output_root=tmp_path)
         assert result.bundle_directory is not None

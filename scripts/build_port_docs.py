@@ -54,20 +54,52 @@ document it just wrote and compares the recovered bytes against the source.
 If that check ever fails the script exits non-zero and writes nothing further,
 because a port document that is subtly wrong is worse than no port document.
 
+Why the layout is rewritten on the way out
+------------------------------------------
+Here the package imports as ``src.rade_qnet`` and its suite lives in
+``tests/rade_qnet``. On the far side it is vendored into a larger repository
+as ``tranql.models.rade.rade_qnet.rade_qnet``, with the suite beside it as
+``tranql.models.rade.rade_qnet.tests``. Exporting the repository's spelling
+would leave five hundred imports for someone to correct by hand inside a paste,
+which is exactly where a typo goes unnoticed.
+
+So the export takes a :class:`Layout` and writes every file as it must read in
+that layout: headings name the target paths, imports name the target package,
+the test tree's ruff configuration extends the package's from wherever it now
+sits, and isort treats the host's top-level package as first-party.
+
+The package itself imports only relatively, so the rewrite touches the tests
+and the prose rather than the code; that is what makes it mechanical rather
+than clever. A longer package name does lengthen import lines, though, and an
+import that no longer fits must be re-wrapped or ``ruff format --check`` fails
+on arrival. Rather than imitate the formatter, the rewritten tree is written to
+a scratch directory and ruff is run over it there -- the same configuration,
+discovered the same way it will be on the far side -- and the export refuses to
+proceed if anything is left for ruff to report.
+
+``pyproject.toml`` travels only in the repository layout. In a vendored layout
+the host repository already has one, and pasting ours over it would be far
+worse than useless; the dependencies are listed in the index instead.
+
 Usage
 -----
 ::
 
-    python scripts/build_port_docs.py            # write and verify
+    python scripts/build_port_docs.py            # write and verify, work layout
     python scripts/build_port_docs.py --verify   # verify an existing set
+    python scripts/build_port_docs.py --package src.rade_qnet --tests tests.rade_qnet
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import posixpath
 import re
+import subprocess
 import sys
+import tempfile
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -142,8 +174,8 @@ TESTS_TREE = Tree(
     prefix=("tests",),
     label="Tests",
     blurb=(
-        "The suite. Rebuild it after the source and run "
-        "`pytest tests/rade_qnet` -- that run is what turns a pasted tree "
+        "The suite. Rebuild it after the source and run it as shown "
+        "above -- that run is what turns a pasted tree "
         "into a verified one. Each document's name mirrors the source "
         "document it exercises: `tests__core__spec.md` tests `core__spec.md`."
     ),
@@ -151,6 +183,271 @@ TESTS_TREE = Tree(
 
 #: Every tree, in the order the far side should rebuild them.
 TREES = (SOURCE_TREE, DOCS_TREE, TESTS_TREE)
+
+#: The package and test-tree locations this repository uses, as paths. Every
+#: target path and every rewrite is expressed relative to these two.
+REPOSITORY_PACKAGE = "src/rade_qnet"
+REPOSITORY_TESTS = "tests/rade_qnet"
+
+#: The test tree's ruff configuration, and the line in it that points at the
+#: package's. Matched exactly so that a change to either fails the export
+#: loudly rather than leaving the far side with a dangling ``extend``.
+_TESTS_RUFF = f"{REPOSITORY_TESTS}/ruff.toml"
+_EXTEND_LINE = f'extend = "../../{REPOSITORY_PACKAGE}/ruff.toml"'
+
+#: The package's ruff configuration, and its isort first-party declaration.
+_PACKAGE_RUFF = f"{REPOSITORY_PACKAGE}/ruff.toml"
+_FIRST_PARTY_LINE = 'known-first-party = ["rade_qnet", "src"]'
+
+
+@dataclass(frozen=True, slots=True)
+class Layout:
+    """
+    Where the package and its tests are imported from on the far side.
+
+    Parameters
+    ----------
+    package
+        The package's dotted import name, e.g. ``src.rade_qnet``.
+    tests
+        The test tree's dotted import name, e.g. ``tests.rade_qnet``.
+
+    Both are taken as import names rather than paths because that is how the
+    far side describes its own layout, and because every directory on the way
+    down must then be a package -- a constraint a path would hide.
+    """
+
+    package: str
+    tests: str
+
+    def __post_init__(self) -> None:
+        """Refuse a name that could not be imported, before anything is written."""
+        for name in (self.package, self.tests):
+            if not all(part.isidentifier() for part in name.split(".")):
+                raise SystemExit(f"{name!r} is not a dotted import name")
+        if self.package == self.tests:
+            raise SystemExit("the package and its tests cannot share a location")
+
+    @property
+    def package_dir(self) -> str:
+        """The package's directory, relative to the far side's root."""
+        return self.package.replace(".", "/")
+
+    @property
+    def tests_dir(self) -> str:
+        """The test tree's directory, relative to the far side's root."""
+        return self.tests.replace(".", "/")
+
+    @property
+    def is_repository(self) -> bool:
+        """Whether this is the layout the files already have, needing no rewrite."""
+        return (self.package_dir, self.tests_dir) == (
+            REPOSITORY_PACKAGE,
+            REPOSITORY_TESTS,
+        )
+
+    def where(self, path: Path) -> str:
+        """
+        Return the path a repository file takes on the far side.
+
+        Parameters
+        ----------
+        path
+            Any path inside the repository.
+
+        Returns
+        -------
+        str
+            A POSIX-style path relative to the far side's root.
+        """
+        return self._moved(relative(path))
+
+    def _moved(self, here: str) -> str:
+        """
+        Return where a repository-relative path lands in this layout.
+
+        Parameters
+        ----------
+        here
+            A POSIX-style path relative to the repository root.
+
+        Returns
+        -------
+        str
+            The same path relative to the far side's root.
+        """
+        for old, new in (
+            (REPOSITORY_PACKAGE, self.package_dir),
+            (REPOSITORY_TESTS, self.tests_dir),
+        ):
+            if here == old or here.startswith(f"{old}/"):
+                return new + here[len(old) :]
+        return here
+
+    def _relink(self, here: str, text: str) -> str:
+        """
+        Recompute every relative markdown link in a document for this layout.
+
+        A link is a path from the document to its target, and the two can
+        move by different amounts -- the docs move with the package, the
+        test tree's configuration with the tests -- so a link cannot be
+        rewritten as text. It is resolved where it stands, both ends are
+        moved, and the path between them is measured again.
+
+        Parameters
+        ----------
+        here
+            The document's repository-relative path.
+        text
+            Its contents.
+
+        Returns
+        -------
+        str
+            The contents with every relative link pointing where it did.
+        """
+        origin = posixpath.dirname(here)
+        moved_origin = posixpath.dirname(self._moved(here))
+
+        def relink(match: re.Match[str]) -> str:
+            target = posixpath.normpath(posixpath.join(origin, match["path"]))
+            moved = posixpath.relpath(self._moved(target), moved_origin)
+            return f"]({moved}{match['anchor'] or ''})"
+
+        return _RELATIVE_LINK.sub(relink, text)
+
+    def rewrite(self, path: Path, data: bytes) -> bytes:
+        """
+        Return a file's contents as they must read in this layout.
+
+        Structured settings are replaced exactly and must be found; free text
+        -- imports, docstrings, prose -- is replaced wherever a location is
+        spelled out. The two are kept apart because a setting that silently
+        failed to match would ship a broken configuration, whereas prose that
+        mentions no location simply needs no change.
+
+        Parameters
+        ----------
+        path
+            The file's location in the repository.
+        data
+            Its contents there.
+
+        Returns
+        -------
+        bytes
+            Its contents in this layout. Unchanged for the repository layout.
+
+        Raises
+        ------
+        SystemExit
+            If a setting that must be rewritten is no longer where expected.
+        """
+        if self.is_repository:
+            return data
+        text = data.decode()
+        here = relative(path)
+        if here == _TESTS_RUFF:
+            # Exact, and before the prose pass, which would otherwise rewrite
+            # the `src/rade_qnet` inside it into a path that does not exist.
+            target = posixpath.relpath(self.package_dir, self.tests_dir)
+            text = _replace_setting(
+                here, text, _EXTEND_LINE, f'extend = "{target}/ruff.toml"'
+            )
+        if path.suffix == ".md":
+            text = self._relink(here, text)
+        if here == _PACKAGE_RUFF:
+            host = self.package.split(".")[0]
+            text = _replace_setting(
+                here,
+                text,
+                _FIRST_PARTY_LINE,
+                f'known-first-party = ["rade_qnet", "{host}"]',
+            )
+        replacements = (
+            (_DOTTED_PACKAGE, self.package),
+            (_DOTTED_TESTS, self.tests),
+            (_SLASHED_PACKAGE, self.package_dir),
+            (_SLASHED_TESTS, self.tests_dir),
+        )
+        for pattern, replacement in replacements:
+            text = pattern.sub(replacement, text)
+        if path.suffix == ".py" and (leak := _REPOSITORY_IMPORT.search(text)):
+            raise SystemExit(
+                f"{here} still imports through the repository's `src` after "
+                f"rewriting ({leak.group().strip()!r}), which cannot work in "
+                f"{self.package}. Spell it `src.rade_qnet...` so the rewrite "
+                f"finds it, or resolve it through the test tree's locations."
+            )
+        return text.encode()
+
+
+#: Free-text spellings of the two locations. The lookbehinds stop a match in
+#: the middle of a longer name or path -- ``mysrc.rade_qnet``, or the
+#: ``../../src/rade_qnet`` that :meth:`Layout.rewrite` handles exactly.
+_DOTTED_PACKAGE = re.compile(r"(?<![\w.])src\.rade_qnet\b")
+_DOTTED_TESTS = re.compile(r"(?<![\w.])tests\.rade_qnet\b")
+_SLASHED_PACKAGE = re.compile(r"(?<![\w./])src/rade_qnet\b")
+_SLASHED_TESTS = re.compile(r"(?<![\w./])tests/rade_qnet\b")
+
+#: A markdown link to a relative path, split into the path and any anchor.
+#: Only links starting ``./`` or ``../`` are relative in the sense that can
+#: break; a bare name points beside its document, and both move together.
+_RELATIVE_LINK = re.compile(r"\]\((?P<path>\.{1,2}/[^)#\s]*)(?P<anchor>#[^)\s]*)?\)")
+
+#: An import statement naming the repository's ``src`` package, in any of
+#: the forms the free-text patterns cannot reach -- ``from src import
+#: rade_qnet`` above all. Checked after rewriting, as the last line of defence.
+_REPOSITORY_IMPORT = re.compile(r"^\s*(?:from|import)\s+src\b.*$", re.MULTILINE)
+
+#: The layout the files already have.
+REPOSITORY_LAYOUT = Layout(package="src.rade_qnet", tests="tests.rade_qnet")
+
+#: The layout the port is written for by default: the package vendored into
+#: ``tranql``, with its suite as a sibling directory.
+WORK_LAYOUT = Layout(
+    package="tranql.models.rade.rade_qnet.rade_qnet",
+    tests="tranql.models.rade.rade_qnet.tests",
+)
+
+#: The suite's result on the far side, where the binary parity fixtures are
+#: absent and every test needing them skips. Measured, not derived: re-run the
+#: suite without fixtures and update this whenever tests are added.
+EXPECTED_RESULT = "3070 passed, 101 skipped"
+
+
+def _replace_setting(where: str, text: str, old: str, new: str) -> str:
+    """
+    Replace one configuration line that must be present exactly once.
+
+    Parameters
+    ----------
+    where
+        The file's repository path, for the error message.
+    text
+        Its contents.
+    old
+        The line as it reads in the repository.
+    new
+        The line as it must read in the target layout.
+
+    Returns
+    -------
+    str
+        The contents with the line replaced.
+
+    Raises
+    ------
+    SystemExit
+        If the line is absent or ambiguous.
+    """
+    if text.count(old) != 1:
+        raise SystemExit(
+            f"{where} no longer contains {old!r} exactly once; update the "
+            f"rewrite in {Path(__file__).name} to match before exporting."
+        )
+    return text.replace(old, new)
+
 
 #: Directories never exported: caches, and the documentation tree itself.
 #: ``docs/`` is already markdown, so it crosses the proxy unchanged and
@@ -273,7 +570,9 @@ def exported_directories(tree: Tree) -> list[Path]:
     for path in tree.source.rglob("*"):
         if not path.is_file():
             continue
-        if any(part in SKIP_DIRECTORIES for part in path.relative_to(tree.source).parts):
+        if any(
+            part in SKIP_DIRECTORIES for part in path.relative_to(tree.source).parts
+        ):
             continue
         if path.suffix in tree.suffixes or path.name in EXTRA_FILES:
             found.add(path.parent)
@@ -369,6 +668,103 @@ def collect(directory: Path) -> list[tuple[Path, bytes, str]]:
     return sorted(files, key=lambda item: (item[0].name != "__init__.py", item[0].name))
 
 
+def apply_layout(
+    documents: list[tuple[Tree, Path, list[tuple[Path, bytes, str]]]], layout: Layout
+) -> list[tuple[Tree, Path, list[tuple[Path, bytes, str]]]]:
+    """
+    Rewrite every collected file for a layout, then let ruff tidy the result.
+
+    Parameters
+    ----------
+    documents
+        Every tree, directory and its files, as collected.
+    layout
+        The far side's layout.
+
+    Returns
+    -------
+    list of tuple
+        The same documents, each file's contents as it must read there.
+    """
+    if layout.is_repository:
+        return documents
+    rewritten = [
+        (
+            tree,
+            directory,
+            [(path, layout.rewrite(path, data), lang) for path, data, lang in files],
+        )
+        for tree, directory, files in documents
+    ]
+    tidied = tidy(
+        {
+            layout.where(path): data
+            for _, _, files in rewritten
+            for path, data, _ in files
+        }
+    )
+    return [
+        (
+            tree,
+            directory,
+            [(path, tidied[layout.where(path)], lang) for path, _, lang in files],
+        )
+        for tree, directory, files in rewritten
+    ]
+
+
+def tidy(files: dict[str, bytes]) -> dict[str, bytes]:
+    """
+    Sort imports and format a rewritten tree exactly as ruff would there.
+
+    The tree is materialised in a scratch directory at its target paths, so
+    ruff discovers the rewritten configuration files the way it will on the
+    far side rather than this repository's. Only import sorting is fixed --
+    the one rule a longer package name can break -- and then the whole tree
+    is checked, so anything else wrong stops the export here instead of
+    surfacing as a lint failure after a three-hour paste.
+
+    Parameters
+    ----------
+    files
+        Target path to rewritten contents, for every exported file.
+
+    Returns
+    -------
+    dict
+        The same mapping, Python files sorted and formatted.
+
+    Raises
+    ------
+    SystemExit
+        If ruff is unavailable, or reports anything it cannot fix.
+    """
+    with tempfile.TemporaryDirectory() as scratch:
+        root = Path(scratch)
+        for name, data in files.items():
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / name).write_bytes(data)
+        ruff = [sys.executable, "-m", "ruff"]
+        steps = (
+            [*ruff, "check", "--select", "I", "--fix", "--exit-zero", "--quiet", "."],
+            [*ruff, "format", "--quiet", "."],
+            [*ruff, "check", "--quiet", "--output-format=concise", "."],
+            [*ruff, "format", "--check", "--quiet", "."],
+        )
+        for step in steps:
+            try:
+                result = subprocess.run(
+                    step, cwd=root, capture_output=True, text=True, check=False
+                )
+            except OSError as error:
+                raise SystemExit(f"ruff could not be run: {error}") from error
+            if result.returncode:
+                raise SystemExit(
+                    f"ruff rejected the rewritten tree:\n{result.stdout}{result.stderr}"
+                )
+        return {name: (root / name).read_bytes() for name in files}
+
+
 def document_name(directory: Path, tree: Tree) -> str:
     """
     Return the markdown filename for a directory.
@@ -397,7 +793,9 @@ def document_name(directory: Path, tree: Tree) -> str:
     return ("__".join(parts) if parts else "_root") + ".md"
 
 
-def render_document(directory: Path, files: list[tuple[Path, bytes, str]]) -> str:
+def render_document(
+    directory: Path, files: list[tuple[Path, bytes, str]], layout: Layout
+) -> str:
     """
     Render one directory as a markdown document.
 
@@ -412,13 +810,15 @@ def render_document(directory: Path, files: list[tuple[Path, bytes, str]]) -> st
         The directory being documented.
     files
         Its files, from :func:`collect`.
+    layout
+        The far side's layout, which decides the paths the headings name.
 
     Returns
     -------
     str
         The document.
     """
-    where = relative(directory)
+    where = layout.where(directory)
     lines = [
         f"# `{where}`",
         "",
@@ -433,8 +833,7 @@ def render_document(directory: Path, files: list[tuple[Path, bytes, str]]) -> st
     for index, (path, data, _) in enumerate(files, start=1):
         count = data.decode().count("\n")
         lines.append(
-            f"| {index} | `{path.name}` | {count} | {len(data)} | "
-            f"`{digest(data)}` |"
+            f"| {index} | `{path.name}` | {count} | {len(data)} | `{digest(data)}` |"
         )
     lines.append("")
 
@@ -443,7 +842,7 @@ def render_document(directory: Path, files: list[tuple[Path, bytes, str]]) -> st
         lines += [
             "---",
             "",
-            f"## {index}. `{relative(path)}`",
+            f"## {index}. `{layout.where(path)}`",
             "",
         ]
         if not data:
@@ -481,7 +880,9 @@ def render_document(directory: Path, files: list[tuple[Path, bytes, str]]) -> st
     return "\n".join(lines) + "\n"
 
 
-def render_index(documents: list[tuple[Tree, Path, list[tuple[Path, bytes, str]]]]) -> str:
+def render_index(
+    documents: list[tuple[Tree, Path, list[tuple[Path, bytes, str]]]], layout: Layout
+) -> str:
     """
     Render the index: what to fetch, in what order, and how to check it.
 
@@ -489,6 +890,8 @@ def render_index(documents: list[tuple[Tree, Path, list[tuple[Path, bytes, str]]
     ----------
     documents
         Every tree, directory and its files, in creation order.
+    layout
+        The far side's layout, which decides every path and command shown.
 
     Returns
     -------
@@ -515,32 +918,32 @@ def render_index(documents: list[tuple[Tree, Path, list[tuple[Path, bytes, str]]
             "carries it. Rebuild the source tree first, then the tests."
         ),
         "",
+        *_layout_section(layout),
         "## What is not here, and what to expect because of it",
         "",
-        (
-            "Everything needed to install and run is carried, including "
-            "`pyproject.toml` (the first document, so the rebuilt tree "
-            "installs with `pip install -e .`) and the documentation."
-        ),
-        "",
+        *_installation_paragraphs(layout),
         (
             "**The golden parity fixtures do not travel.** "
             "`tests/fixtures/rade_qnet/` holds `.npy` and `.npz` arrays — "
             "binary, and so impossible to carry as text. They guard "
             "numerical parity against a captured reference, so if that "
             "matters on the far side the arrays have to cross by some "
-            "other route."
+            "other route. The suite looks for them under "
+            "`tests/fixtures/rade_qnet/golden` at the root the package is "
+            "imported from; to keep them anywhere else, point the "
+            "`RADE_QNET_GOLDEN_ROOT` environment variable at the directory "
+            "holding `hybrid_gnn_rnn/`."
         ),
         "",
         (
             "Every test that needs them skips cleanly, so **a correct "
             "paste is all-green** and any red at all means something did "
-            "not land. Run the suite and compare:"
+            "not land. From the repository root, run the suite and compare:"
         ),
         "",
         f"{FENCE}",
-        "pytest tests/rade_qnet",
-        "  -> 3067 passed, 101 skipped",
+        f"pytest {layout.tests_dir}",
+        f"  -> {EXPECTED_RESULT}",
         FENCE,
         "",
         (
@@ -589,7 +992,7 @@ def render_index(documents: list[tuple[Tree, Path, list[tuple[Path, bytes, str]]
             position += 1
             name = document_name(directory, tree)
             lines.append(
-                f"| {position} | [`{name}`]({name}) | `{relative(directory)}` | "
+                f"| {position} | [`{name}`]({name}) | `{layout.where(directory)}` | "
                 f"{len(files)} | {sum(len(d) for _, d, _ in files):,} |"
             )
         lines.append("")
@@ -614,7 +1017,7 @@ def render_index(documents: list[tuple[Tree, Path, list[tuple[Path, bytes, str]]
         "",
         f"{FENCE}",
         "\n".join(
-            f"{digest(data)}  {relative(path)}"
+            f"{digest(data)}  {layout.where(path)}"
             for _, _, files in documents
             for path, data, _ in files
         ),
@@ -622,6 +1025,112 @@ def render_index(documents: list[tuple[Tree, Path, list[tuple[Path, bytes, str]]
         "",
     ]
     return "\n".join(lines) + "\n"
+
+
+def _layout_section(layout: Layout) -> list[str]:
+    """
+    Return the index paragraphs describing where the tree lands.
+
+    Parameters
+    ----------
+    layout
+        The far side's layout.
+
+    Returns
+    -------
+    list of str
+        Markdown lines; empty for the repository layout, which needs no
+        explanation.
+    """
+    if layout.is_repository:
+        return []
+    parents = layout.package_dir.split("/")[:-1]
+    packages = [
+        "/".join(parents[: depth + 1]) + "/__init__.py" for depth in range(len(parents))
+    ]
+    return [
+        "## Where it lands",
+        "",
+        (
+            f"This export is written for a vendored layout: the package "
+            f"imports as `{layout.package}` and its suite as "
+            f"`{layout.tests}`. Every heading below already names its file's "
+            f"path in that layout, and every import already uses that name, "
+            f"so nothing needs editing after the paste."
+        ),
+        "",
+        (
+            "The directories above the package must already be packages, "
+            "which in an existing repository they normally are. If any of "
+            "these is missing, create it empty:"
+        ),
+        "",
+        *(f"- `{name}`" for name in packages),
+        "",
+        (
+            "Run every command from the repository root -- the directory "
+            f"holding `{parents[0]}/` -- since the suite imports the package "
+            "by its full name."
+        ),
+        "",
+    ]
+
+
+def _installation_paragraphs(layout: Layout) -> list[str]:
+    """
+    Return the index paragraphs on installation and dependencies.
+
+    Parameters
+    ----------
+    layout
+        The far side's layout.
+
+    Returns
+    -------
+    list of str
+        Markdown lines.
+    """
+    if layout.is_repository:
+        return [
+            (
+                "Everything needed to install and run is carried, including "
+                "`pyproject.toml` (the first document, so the rebuilt tree "
+                "installs with `pip install -e .`) and the documentation."
+            ),
+            "",
+        ]
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    lines = [
+        (
+            "**`pyproject.toml` does not travel**, because the host "
+            "repository has its own and pasting this one over it would "
+            "break it. What it would have contributed is the interpreter "
+            "and dependency floor, so make sure the host environment has:"
+        ),
+        "",
+        f"- Python `{project['requires-python']}`",
+        *(f"- `{requirement}`" for requirement in project["dependencies"]),
+        "",
+    ]
+    optional = project.get("optional-dependencies", {})
+    if optional:
+        lines += [
+            (
+                "And, for the engines and sources that need them -- tests "
+                "of anything absent skip rather than fail:"
+            ),
+            "",
+            *(
+                f"- `{requirement}` ({group})"
+                for group, requirements in optional.items()
+                for requirement in requirements
+                # An extra naming the project itself only aggregates the
+                # others, which are already listed.
+                if not requirement.startswith(project["name"])
+            ),
+            "",
+        ]
+    return lines
 
 
 #: The verification script, embedded in the index so the far side can run it
@@ -701,7 +1210,9 @@ def parse_document(text: str) -> dict[str, bytes]:
             # inside the file is content, to be copied through untouched.
             opened = delimiter.group(1)
             buffer = []
-        elif delimiter and buffer is not None and len(delimiter.group(1)) >= len(opened):
+        elif (
+            delimiter and buffer is not None and len(delimiter.group(1)) >= len(opened)
+        ):
             recovered[current] = ("\n".join(buffer) + "\n").encode()
             buffer = None
         elif buffer is not None:
@@ -710,14 +1221,18 @@ def parse_document(text: str) -> dict[str, bytes]:
     return recovered
 
 
-def verify(documents: list[tuple[Tree, Path, list[tuple[Path, bytes, str]]]]) -> int:
+def verify(
+    documents: list[tuple[Tree, Path, list[tuple[Path, bytes, str]]]], layout: Layout
+) -> int:
     """
-    Re-read every written document and compare it against the source.
+    Re-read every written document and compare it against what was exported.
 
     Parameters
     ----------
     documents
-        Every tree, directory and its files.
+        Every tree, directory and its files, already rewritten for ``layout``.
+    layout
+        The layout the documents were written for.
 
     Returns
     -------
@@ -729,7 +1244,7 @@ def verify(documents: list[tuple[Tree, Path, list[tuple[Path, bytes, str]]]]) ->
         path = OUTPUT / document_name(directory, tree)
         recovered = parse_document(path.read_text())
         for source_path, data, _ in files:
-            key = relative(source_path)
+            key = layout.where(source_path)
             if recovered.get(key) != data:
                 print(f"ROUND-TRIP FAILED  {key}")
                 failures += 1
@@ -751,12 +1266,29 @@ def main() -> int:
         action="store_true",
         help="check the existing documents without rewriting them",
     )
+    parser.add_argument(
+        "--package",
+        default=WORK_LAYOUT.package,
+        help=f"the package's dotted import name on the far side (default: {WORK_LAYOUT.package})",
+    )
+    parser.add_argument(
+        "--tests",
+        default=WORK_LAYOUT.tests,
+        help=f"the suite's dotted import name on the far side (default: {WORK_LAYOUT.tests})",
+    )
     arguments = parser.parse_args()
+    layout = Layout(package=arguments.package, tests=arguments.tests)
 
-    documents = [(SOURCE_TREE, ROOT, collect_root_files())]
+    # The repository's own pyproject.toml only makes sense in the
+    # repository's own layout; anywhere else it would replace the host's.
+    documents = (
+        [(SOURCE_TREE, ROOT, collect_root_files())] if layout.is_repository else []
+    )
     for tree in TREES:
         documents += [(tree, d, collect(d)) for d in exported_directories(tree)]
-    documents = [(tree, d, files) for tree, d, files in documents if files]
+    documents = apply_layout(
+        [(tree, d, files) for tree, d, files in documents if files], layout
+    )
 
     if not arguments.verify:
         OUTPUT.mkdir(parents=True, exist_ok=True)
@@ -770,17 +1302,19 @@ def main() -> int:
                 stale.unlink()
         for tree, directory, files in documents:
             (OUTPUT / document_name(directory, tree)).write_text(
-                render_document(directory, files)
+                render_document(directory, files, layout)
             )
-        (OUTPUT / "INDEX.md").write_text(render_index(documents))
+        (OUTPUT / "INDEX.md").write_text(render_index(documents, layout))
 
-    failures = verify(documents)
+    failures = verify(documents, layout)
     total = sum(len(files) for _, _, files in documents)
     if failures:
         print(f"\n{failures} of {total} files did not round-trip")
         return 1
 
-    print(f"{len(documents)} documents, {total} files, all round-trip exactly")
+    print(
+        f"{len(documents)} documents, {total} files for {layout.package}, all round-trip exactly"
+    )
     return 0
 
 

@@ -1,4 +1,4 @@
-# `src/rade_qnet/storage/runs`
+# `tranql/models/rade/rade_qnet/rade_qnet/storage/runs`
 
 4 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -6,12 +6,12 @@
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 46 | 2214 | `48dcf2a1299e07de` |
 | 2 | `catalog.py` | 664 | 22127 | `9c922f96d5c8cd98` |
-| 3 | `registry.py` | 806 | 26765 | `2a91c5e65bf839b9` |
+| 3 | `registry.py` | 806 | 26765 | `8dcf796a1a0050c8` |
 | 4 | `tracker.py` | 186 | 5622 | `d7c5799fb1f03913` |
 
 ---
 
-## 1. `src/rade_qnet/storage/runs/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/storage/runs/__init__.py`
 
 2214 bytes · SHA-256 `48dcf2a1299e07de`
 
@@ -66,7 +66,7 @@ __all__: tuple[str, ...] = ()
 
 ---
 
-## 2. `src/rade_qnet/storage/runs/catalog.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/storage/runs/catalog.py`
 
 22127 bytes · SHA-256 `9c922f96d5c8cd98`
 
@@ -739,9 +739,9 @@ class InMemoryCatalog:
 
 ---
 
-## 3. `src/rade_qnet/storage/runs/registry.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/storage/runs/registry.py`
 
-26765 bytes · SHA-256 `2a91c5e65bf839b9`
+26765 bytes · SHA-256 `8dcf796a1a0050c8`
 
 ```python
 """
@@ -810,8 +810,8 @@ from typing import TYPE_CHECKING, Literal
 
 from ...core.lifecycle.errors import BundleError, SpecError
 from ...core.provenance.logging import get_logger
-from .catalog import CatalogEntry, JsonlCatalog
 from ..locking import exclusive_lock
+from .catalog import CatalogEntry, JsonlCatalog
 
 if TYPE_CHECKING:
     from ...core.contract.bundle import Manifest
@@ -1554,7 +1554,7 @@ def _scope_name(model: str, job: str | None) -> str:
 
 ---
 
-## 4. `src/rade_qnet/storage/runs/tracker.py`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/storage/runs/tracker.py`
 
 5622 bytes · SHA-256 `d7c5799fb1f03913`
 

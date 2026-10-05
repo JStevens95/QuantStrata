@@ -1,23 +1,23 @@
-# `src/rade_qnet/docs/phases`
+# `tranql/models/rade/rade_qnet/rade_qnet/docs/phases`
 
 8 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
-| 1 | `PHASE_0_BASELINE.md` | 353 | 20448 | `f83b21a468bc96b2` |
-| 2 | `PHASE_1_CORE.md` | 650 | 40634 | `fa59c7242c850390` |
-| 3 | `PHASE_2_TORCH_ENGINE.md` | 495 | 28273 | `5a4d2dcc551f2911` |
-| 4 | `PHASE_3_HYBRID_GNN_RNN.md` | 473 | 25823 | `5c38c8ee1e87f928` |
+| 1 | `PHASE_0_BASELINE.md` | 353 | 20467 | `3abb766333e3b5af` |
+| 2 | `PHASE_1_CORE.md` | 650 | 40716 | `3f25eee14d83e7ea` |
+| 3 | `PHASE_2_TORCH_ENGINE.md` | 495 | 28330 | `5b736cdce98c30c9` |
+| 4 | `PHASE_3_HYBRID_GNN_RNN.md` | 473 | 25861 | `daeb3bc283ff45e1` |
 | 5 | `PHASE_4_JOB_SETS.md` | 523 | 27412 | `dda53aadcb5305e0` |
 | 6 | `PHASE_5_EVALUATE_INFER_TUNE.md` | 426 | 22063 | `f75ec71330030c3b` |
-| 7 | `PHASE_6_ADDITIONAL_ENGINES.md` | 519 | 27391 | `a8c4ca3da3c99b0c` |
+| 7 | `PHASE_6_ADDITIONAL_ENGINES.md` | 519 | 27410 | `d56f0aa8d78b857a` |
 | 8 | `PHASE_7_REINFORCEMENT_LEARNING.md` | 316 | 18076 | `24dfc1d96d0e9ffe` |
 
 ---
 
-## 1. `src/rade_qnet/docs/phases/PHASE_0_BASELINE.md`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/docs/phases/PHASE_0_BASELINE.md`
 
-20448 bytes · SHA-256 `f83b21a468bc96b2`
+20467 bytes · SHA-256 `3abb766333e3b5af`
 
 ````markdown
 # Phase 0 — Baseline
@@ -281,7 +281,7 @@ confirm it is genuinely unused.
 
 ## 5. Tests
 
-`tests/rade_qnet/testkit/test_testkit_parity.py`
+`tranql/models/rade/rade_qnet/tests/testkit/test_testkit_parity.py`
 
 The harness that decides whether the refactor is correct has to be correct
 itself. A parity suite that passes everything is worse than none, because it
@@ -377,9 +377,9 @@ document.*
 
 ---
 
-## 2. `src/rade_qnet/docs/phases/PHASE_1_CORE.md`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/docs/phases/PHASE_1_CORE.md`
 
-40634 bytes · SHA-256 `fa59c7242c850390`
+40716 bytes · SHA-256 `3f25eee14d83e7ea`
 
 ````markdown
 # Phase 1 — Core
@@ -758,7 +758,7 @@ its consumer exists. Four are worth extra scrutiny during review:
 
 ## 4. Tests
 
-Mirroring `tests/rade_qnet/core/`, `storage/`, `analysis/`, `testkit/`. The
+Mirroring `tranql/models/rade/rade_qnet/tests/core/`, `storage/`, `analysis/`, `testkit/`. The
 planned module list is in each test package's `__init__.py`. The tests that
 matter most:
 
@@ -911,8 +911,8 @@ passing and is marked as such.
       spec, hash it, write a bundle with fitted state, reload it, verify the
       manifest. It also shows a corrupted bundle being refused and the summary
       report rendering from the bundle alone.
-- [x] `ruff check` and `ruff format --check` clean over `src/rade_qnet`,
-      `tests/rade_qnet` and `examples/rade_qnet`; full suite green.
+- [x] `ruff check` and `ruff format --check` clean over `tranql/models/rade/rade_qnet/rade_qnet`,
+      `tranql/models/rade/rade_qnet/tests` and `examples/rade_qnet`; full suite green.
 
 ---
 
@@ -958,7 +958,7 @@ stops being useful as a plan.
 | **`object`, not `Any`, for engine-native model, environment and payload types.**                                                                                                          | Both are unconstrained, but `object` makes an attribute access a type error at the point where `core` would be reaching into something it must not understand. `Any` would silently permit it.                                                                          |
 | **`EarlyStoppingSpec.enabled` defaults to `False`, not `True`.**                                                                                                                          | Two reasons. A run should train the epoch budget it was configured with, and early stopping silently changes which weights you end up with. And the default `monitor` is a validation metric, so defaulting to enabled makes a bare spec invalid for any run without a validation split. |
 | **`examples/rade_qnet/ruff.toml` added.**                                                                                                                                                   | Examples sat under the repository root config, where `print` is not checked. An example is the first code a new user copies, so it is held to the framework standard with `T201` relaxed — and only `T201`.                                                             |
-| **Autouse `_restore_framework_logging` fixture in `tests/rade_qnet/conftest.py`.**                                                                                                          | `configure_logging` sets `propagate = False`, which is right for an application and poisons `caplog` for every later test. Without the fixture, a test asserting that something was logged passes alone and fails only when ordered after a test that configures logging. |
+| **Autouse `_restore_framework_logging` fixture in `tranql/models/rade/rade_qnet/tests/conftest.py`.**                                                                                                          | `configure_logging` sets `propagate = False`, which is right for an application and poisons `caplog` for every later test. Without the fixture, a test asserting that something was logged passes alone and fails only when ordered after a test that configures logging. |
 
 
 ### 7.2 Defects found and fixed during implementation
@@ -1036,9 +1036,9 @@ Three details are worth recording:
 
 ---
 
-## 3. `src/rade_qnet/docs/phases/PHASE_2_TORCH_ENGINE.md`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/docs/phases/PHASE_2_TORCH_ENGINE.md`
 
-28273 bytes · SHA-256 `5a4d2dcc551f2911`
+28330 bytes · SHA-256 `5b736cdce98c30c9`
 
 ````markdown
 # Phase 2 — Torch engine
@@ -1312,8 +1312,8 @@ new training script.
 
 ## 5. Tests
 
-Modules listed in the `__init__.py` of `tests/rade_qnet/sources/dataset/`,
-`tests/rade_qnet/sources/batching/` and `tests/rade_qnet/engines/torch/`. The ones
+Modules listed in the `__init__.py` of `tranql/models/rade/rade_qnet/tests/sources/dataset/`,
+`tranql/models/rade/rade_qnet/tests/sources/batching/` and `tranql/models/rade/rade_qnet/tests/engines/torch/`. The ones
 that matter most:
 
 ### Splits — the highest-value tests in the suite
@@ -1540,9 +1540,9 @@ Three flagship needs are *not* satisfied yet, and should not be:
 
 ---
 
-## 4. `src/rade_qnet/docs/phases/PHASE_3_HYBRID_GNN_RNN.md`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/docs/phases/PHASE_3_HYBRID_GNN_RNN.md`
 
-25823 bytes · SHA-256 `5c38c8ee1e87f928`
+25861 bytes · SHA-256 `daeb3bc283ff45e1`
 
 ````markdown
 # Phase 3 — Flagship
@@ -1809,7 +1809,7 @@ with one special case in it.
 
 Model-specific suites were deferred while the framework was proven
 model-independently. They arrive here, under
-`tests/rade_qnet/models/hybrid_gnn_rnn/`, mirroring the source layout. The
+`tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/`, mirroring the source layout. The
 mirroring rule in `test_scaffold.py` is extended to cover them in this phase.
 
 ### Layers — in isolation
@@ -1883,7 +1883,7 @@ Beyond the universal criteria in
       flagged.
 - [x] `pipelines/train.py` is a tier 2 override (reports only). No step is
       overridden, and `test_the_stage_sequence_is_untouched` asserts it.
-- [x] `tests/rade_qnet/models/hybrid_gnn_rnn/` mirrors the source layout, and
+- [x] `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/` mirrors the source layout, and
       `test_scaffold.py`'s mirroring rule is extended to cover it via
       `DELIVERED_TEST_SUBTREES`.
 - [x] `examples/rade_qnet/phase3_train_hybrid_single_member.py` trains one member
@@ -2022,7 +2022,7 @@ mechanism with its own tests, not a special case for this model.
 
 ---
 
-## 5. `src/rade_qnet/docs/phases/PHASE_4_JOB_SETS.md`
+## 5. `tranql/models/rade/rade_qnet/rade_qnet/docs/phases/PHASE_4_JOB_SETS.md`
 
 27412 bytes · SHA-256 `dda53aadcb5305e0`
 
@@ -2554,7 +2554,7 @@ environment belongs to the model that trains in it.
 
 ---
 
-## 6. `src/rade_qnet/docs/phases/PHASE_5_EVALUATE_INFER_TUNE.md`
+## 6. `tranql/models/rade/rade_qnet/rade_qnet/docs/phases/PHASE_5_EVALUATE_INFER_TUNE.md`
 
 22063 bytes · SHA-256 `f75ec71330030c3b`
 
@@ -2989,9 +2989,9 @@ be wrong in the one case — a failed write — where it is read most carefully.
 
 ---
 
-## 7. `src/rade_qnet/docs/phases/PHASE_6_ADDITIONAL_ENGINES.md`
+## 7. `tranql/models/rade/rade_qnet/rade_qnet/docs/phases/PHASE_6_ADDITIONAL_ENGINES.md`
 
-27391 bytes · SHA-256 `a8c4ca3da3c99b0c`
+27410 bytes · SHA-256 `d56f0aa8d78b857a`
 
 ````markdown
 # Phase 6 — More engines
@@ -3396,7 +3396,7 @@ Whichever image loads first owns the process. Import order decides it and
 *only* import order does — call order is irrelevant, and the libraries can be
 used in either sequence once both are loaded correctly.
 
-**How it was found.** `tests/rade_qnet/models` hung. Each test passed
+**How it was found.** `tranql/models/rade/rade_qnet/tests/models` hung. Each test passed
 in about three seconds alone. Bisecting the order gave it away: the engine
 suites run `sklearn`, `torch`, `xgboost` alphabetically and had been passing
 for exactly that reason, while the baselines run ridge, then trees, then the
@@ -3517,7 +3517,7 @@ number nobody should believe.
 
 ---
 
-## 8. `src/rade_qnet/docs/phases/PHASE_7_REINFORCEMENT_LEARNING.md`
+## 8. `tranql/models/rade/rade_qnet/rade_qnet/docs/phases/PHASE_7_REINFORCEMENT_LEARNING.md`
 
 18076 bytes · SHA-256 `24dfc1d96d0e9ffe`
 

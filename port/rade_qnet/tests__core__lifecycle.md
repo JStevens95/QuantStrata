@@ -1,20 +1,20 @@
-# `tests/rade_qnet/core/lifecycle`
+# `tranql/models/rade/rade_qnet/tests/core/lifecycle`
 
 7 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 33 | 1441 | `41150f68fedf6616` |
-| 2 | `test_lifecycle_components.py` | 299 | 10383 | `7e93e52fcab13c55` |
-| 3 | `test_lifecycle_context.py` | 309 | 11010 | `c187dac84db6bf6d` |
-| 4 | `test_lifecycle_errors.py` | 105 | 3905 | `58c2af643b46fd7a` |
-| 5 | `test_lifecycle_hooks.py` | 115 | 4449 | `7732a3679d7e16f5` |
-| 6 | `test_lifecycle_pipeline.py` | 327 | 11275 | `d07c5906200a2d10` |
-| 7 | `test_lifecycle_registry.py` | 127 | 4747 | `801deef65d258f62` |
+| 2 | `test_lifecycle_components.py` | 303 | 10553 | `4a55edbca998f486` |
+| 3 | `test_lifecycle_context.py` | 316 | 11190 | `1274a89bf84228fd` |
+| 4 | `test_lifecycle_errors.py` | 105 | 3930 | `6f08e3310be93c4a` |
+| 5 | `test_lifecycle_hooks.py` | 115 | 4474 | `56a3f611e6cd74c6` |
+| 6 | `test_lifecycle_pipeline.py` | 330 | 11438 | `d872d49afa6b1807` |
+| 7 | `test_lifecycle_registry.py` | 127 | 4822 | `169401fc2259d15c` |
 
 ---
 
-## 1. `tests/rade_qnet/core/lifecycle/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/core/lifecycle/__init__.py`
 
 1441 bytes · SHA-256 `41150f68fedf6616`
 
@@ -56,9 +56,9 @@ Planned modules
 
 ---
 
-## 2. `tests/rade_qnet/core/lifecycle/test_lifecycle_components.py`
+## 2. `tranql/models/rade/rade_qnet/tests/core/lifecycle/test_lifecycle_components.py`
 
-10383 bytes · SHA-256 `7e93e52fcab13c55`
+10553 bytes · SHA-256 `4a55edbca998f486`
 
 ```python
 """
@@ -76,7 +76,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.rade_qnet.core.lifecycle.components import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import (
     ENGINES,
     LEARNERS,
     MODELS,
@@ -93,8 +93,10 @@ from src.rade_qnet.core.lifecycle.components import (
     registration_modules,
     report,
 )
-from src.rade_qnet.core.lifecycle.errors import ComponentError
-from src.rade_qnet.testkit.fixtures import isolated_registries
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ComponentError
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import isolated_registries
+
+from ...locations import PACKAGE_NAME
 
 
 @pytest.fixture(autouse=True)
@@ -219,7 +221,9 @@ class TestModuleRegistries:
         # Hoisting it to the module top would make the registration happen at
         # collection time, so the test would pass without demonstrating
         # anything about when registration occurs.
-        from src.rade_qnet.analysis.reports.summary import SummaryReport  # noqa: PLC0415
+        from tranql.models.rade.rade_qnet.rade_qnet.analysis.reports.summary import (  # noqa: PLC0415
+            SummaryReport,
+        )
 
         assert get_report("summary") is SummaryReport
 
@@ -263,7 +267,7 @@ class TestReplayingRegistrationsInAWorker:
         """
         module = tmp_path / "rade_qnet_probe_round_trip.py"
         module.write_text(
-            "from src.rade_qnet.core.lifecycle.components import REPORTS\n"
+            f"from {PACKAGE_NAME}.core.lifecycle.components import REPORTS\n"
             "class Probe:\n"
             "    pass\n"
             "REPORTS.register('round_trip', Probe)\n"
@@ -318,7 +322,7 @@ class TestReplayingRegistrationsInAWorker:
         """
         module = tmp_path / "rade_qnet_probe_registration.py"
         module.write_text(
-            "from src.rade_qnet.core.lifecycle.components import REPORTS\n"
+            f"from {PACKAGE_NAME}.core.lifecycle.components import REPORTS\n"
             "class Probe:\n"
             "    pass\n"
             "REPORTS.register('probe', Probe)\n"
@@ -339,7 +343,7 @@ class TestReplayingRegistrationsInAWorker:
         """
         module = tmp_path / "rade_qnet_probe_repeat.py"
         module.write_text(
-            "from src.rade_qnet.core.lifecycle.components import REPORTS\n"
+            f"from {PACKAGE_NAME}.core.lifecycle.components import REPORTS\n"
             "class Probe:\n"
             "    pass\n"
             "REPORTS.register('repeat', Probe)\n"
@@ -364,9 +368,9 @@ class TestReplayingRegistrationsInAWorker:
 
 ---
 
-## 3. `tests/rade_qnet/core/lifecycle/test_lifecycle_context.py`
+## 3. `tranql/models/rade/rade_qnet/tests/core/lifecycle/test_lifecycle_context.py`
 
-11010 bytes · SHA-256 `c187dac84db6bf6d`
+11190 bytes · SHA-256 `1274a89bf84228fd`
 
 ```python
 """
@@ -392,12 +396,19 @@ from pathlib import Path
 
 import pytest
 
-from src.rade_qnet.core.lifecycle.context import Catalog, RunContext, Tracker
-from src.rade_qnet.core.lifecycle.hooks import PipelineHook
-from src.rade_qnet.core.provenance.logging import configure_logging, current_context
-from src.rade_qnet.storage.runs.catalog import InMemoryCatalog
-from src.rade_qnet.storage.runs.tracker import NullTracker
-from src.rade_qnet.testkit.fixtures import RecordingHook
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.context import (
+    Catalog,
+    RunContext,
+    Tracker,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.hooks import PipelineHook
+from tranql.models.rade.rade_qnet.rade_qnet.core.provenance.logging import (
+    configure_logging,
+    current_context,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.storage.runs.catalog import InMemoryCatalog
+from tranql.models.rade.rade_qnet.rade_qnet.storage.runs.tracker import NullTracker
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import RecordingHook
 
 
 @pytest.fixture
@@ -682,9 +693,9 @@ class TestDescribe:
 
 ---
 
-## 4. `tests/rade_qnet/core/lifecycle/test_lifecycle_errors.py`
+## 4. `tranql/models/rade/rade_qnet/tests/core/lifecycle/test_lifecycle_errors.py`
 
-3905 bytes · SHA-256 `58c2af643b46fd7a`
+3930 bytes · SHA-256 `6f08e3310be93c4a`
 
 ```python
 """
@@ -701,7 +712,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.rade_qnet.core.lifecycle.errors import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import (
     BundleError,
     CapabilityError,
     ComponentError,
@@ -796,9 +807,9 @@ class TestMessages:
 
 ---
 
-## 5. `tests/rade_qnet/core/lifecycle/test_lifecycle_hooks.py`
+## 5. `tranql/models/rade/rade_qnet/tests/core/lifecycle/test_lifecycle_hooks.py`
 
-4449 bytes · SHA-256 `7732a3679d7e16f5`
+4474 bytes · SHA-256 `56a3f611e6cd74c6`
 
 ```python
 """
@@ -817,7 +828,7 @@ import inspect
 
 import pytest
 
-from src.rade_qnet.core.lifecycle.hooks import PipelineHook
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.hooks import PipelineHook
 
 #: Every hook point, with arguments that satisfy its signature. Kept as data so
 #: a newly added hook point is a one-line change here rather than a new test.
@@ -920,9 +931,9 @@ class TestSignatures:
 
 ---
 
-## 6. `tests/rade_qnet/core/lifecycle/test_lifecycle_pipeline.py`
+## 6. `tranql/models/rade/rade_qnet/tests/core/lifecycle/test_lifecycle_pipeline.py`
 
-11275 bytes · SHA-256 `d07c5906200a2d10`
+11438 bytes · SHA-256 `d872d49afa6b1807`
 
 ```python
 """
@@ -942,12 +953,15 @@ import logging
 
 import pytest
 
-from src.rade_qnet.core.lifecycle.context import RunContext
-from src.rade_qnet.core.lifecycle.errors import StageError
-from src.rade_qnet.core.lifecycle.hooks import PipelineHook
-from src.rade_qnet.core.lifecycle.pipeline import Pipeline
-from src.rade_qnet.core.provenance.logging import configure_logging, current_context
-from src.rade_qnet.testkit.fixtures import RecordingHook
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.context import RunContext
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import StageError
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.hooks import PipelineHook
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.pipeline import Pipeline
+from tranql.models.rade.rade_qnet.rade_qnet.core.provenance.logging import (
+    configure_logging,
+    current_context,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import RecordingHook
 
 
 class DemoPipeline(Pipeline[str]):
@@ -1256,9 +1270,9 @@ class TestStageDeclaration:
 
 ---
 
-## 7. `tests/rade_qnet/core/lifecycle/test_lifecycle_registry.py`
+## 7. `tranql/models/rade/rade_qnet/tests/core/lifecycle/test_lifecycle_registry.py`
 
-4747 bytes · SHA-256 `801deef65d258f62`
+4822 bytes · SHA-256 `169401fc2259d15c`
 
 ```python
 """
@@ -1275,11 +1289,11 @@ from __future__ import annotations
 
 import pytest
 
-from src.rade_qnet.core.lifecycle.components import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import (
     Registry,
 )
-from src.rade_qnet.core.lifecycle.errors import ComponentError
-from src.rade_qnet.testkit.fixtures import isolated_registries
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ComponentError
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import isolated_registries
 
 
 @pytest.fixture(autouse=True)

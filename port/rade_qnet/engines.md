@@ -1,18 +1,18 @@
-# `src/rade_qnet/engines`
+# `tranql/models/rade/rade_qnet/rade_qnet/engines`
 
 3 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
-| 1 | `__init__.py` | 87 | 4117 | `93c9685349d6ad01` |
+| 1 | `__init__.py` | 87 | 4136 | `bfa72bb67acebe57` |
 | 2 | `base.py` | 575 | 22899 | `373cda51c8e5f5b2` |
 | 3 | `loaders.py` | 336 | 12755 | `1e5d33305a6210f6` |
 
 ---
 
-## 1. `src/rade_qnet/engines/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/engines/__init__.py`
 
-4117 bytes · SHA-256 `93c9685349d6ad01`
+4136 bytes · SHA-256 `bfa72bb67acebe57`
 
 ```python
 """
@@ -50,7 +50,7 @@ engine name.  ``test_extensibility.py`` covers the refusal explicitly.
 One vocabulary, however large the engine
 -----------------------------------------
 Every engine package draws its filenames from one closed set, enforced by
-``tests/rade_qnet/engines/test_engine_layout.py`` exactly as the model layout
+``tranql/models/rade/rade_qnet/tests/engines/test_engine_layout.py`` exactly as the model layout
 test governs ``models``.  ``engine.py`` is required; ``materialise.py``,
 ``loaders.py`` and ``predictor.py`` are the other three verbs; ``training/``,
 ``learners/`` and ``hardware/`` are the parts of *fit* large enough to need
@@ -106,7 +106,7 @@ __all__: tuple[str, ...] = ()
 
 ---
 
-## 2. `src/rade_qnet/engines/base.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/engines/base.py`
 
 22899 bytes · SHA-256 `373cda51c8e5f5b2`
 
@@ -690,7 +690,7 @@ class InteractiveEngine(Protocol):
 
 ---
 
-## 3. `src/rade_qnet/engines/loaders.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/engines/loaders.py`
 
 12755 bytes · SHA-256 `1e5d33305a6210f6`
 

@@ -1,10 +1,10 @@
-# `src/rade_qnet/engines/torch`
+# `tranql/models/rade/rade_qnet/rade_qnet/engines/torch`
 
 5 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
-| 1 | `__init__.py` | 85 | 3959 | `67bf31fb1ffd7356` |
+| 1 | `__init__.py` | 85 | 3978 | `5bbf3471bf2e365e` |
 | 2 | `engine.py` | 892 | 30935 | `7f8c07ab11295508` |
 | 3 | `loaders.py` | 288 | 10187 | `3da70099294e818b` |
 | 4 | `materialise.py` | 464 | 16380 | `6947dc425a1e454a` |
@@ -12,9 +12,9 @@
 
 ---
 
-## 1. `src/rade_qnet/engines/torch/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/engines/torch/__init__.py`
 
-3959 bytes · SHA-256 `67bf31fb1ffd7356`
+3978 bytes · SHA-256 `5bbf3471bf2e365e`
 
 ```python
 """
@@ -63,7 +63,7 @@ The four modules above are the four verbs an engine performs -- build, feed,
 fit, predict -- and the three sub-packages are the parts of *fit* that are
 large enough to have their own vocabulary.  That shape is the engine template:
 ``engine.py`` is required and every other name is drawn from this list, which
-``tests/rade_qnet/engines/test_engine_layout.py`` enforces.  The progression
+``tranql/models/rade/rade_qnet/tests/engines/test_engine_layout.py`` enforces.  The progression
 across the three engines is itself informative -- xgboost is one file because
 it fits in a single call and owns no loop, sklearn adds nothing but shares the
 hoisted ``engines/loaders.py``, and only PyTorch needs all of it.
@@ -106,7 +106,7 @@ __all__ = ["RandomLearner", "SupervisedLearner", "TorchEngine", "seed_torch"]
 
 ---
 
-## 2. `src/rade_qnet/engines/torch/engine.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/engines/torch/engine.py`
 
 30935 bytes · SHA-256 `7f8c07ab11295508`
 
@@ -1007,7 +1007,7 @@ def _policy_signature_of(source: BatchSource) -> PolicySignature:
 
 ---
 
-## 3. `src/rade_qnet/engines/torch/loaders.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/engines/torch/loaders.py`
 
 10187 bytes · SHA-256 `3da70099294e818b`
 
@@ -1304,7 +1304,7 @@ def to_device_batches(
 
 ---
 
-## 4. `src/rade_qnet/engines/torch/materialise.py`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/engines/torch/materialise.py`
 
 16380 bytes · SHA-256 `6947dc425a1e454a`
 
@@ -1777,7 +1777,7 @@ def _dummy_observation(
 
 ---
 
-## 5. `src/rade_qnet/engines/torch/predictor.py`
+## 5. `tranql/models/rade/rade_qnet/rade_qnet/engines/torch/predictor.py`
 
 6469 bytes · SHA-256 `d3bbea51d11a2eef`
 

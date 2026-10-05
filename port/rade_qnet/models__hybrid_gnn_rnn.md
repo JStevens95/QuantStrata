@@ -1,4 +1,4 @@
-# `src/rade_qnet/models/hybrid_gnn_rnn`
+# `tranql/models/rade/rade_qnet/rade_qnet/models/hybrid_gnn_rnn`
 
 8 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -15,7 +15,7 @@
 
 ---
 
-## 1. `src/rade_qnet/models/hybrid_gnn_rnn/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/models/hybrid_gnn_rnn/__init__.py`
 
 2656 bytes · SHA-256 `d99cf28ec67f4ec0`
 
@@ -90,7 +90,7 @@ __all__ = ["HybridGnnRnnModel"]
 
 ---
 
-## 2. `src/rade_qnet/models/hybrid_gnn_rnn/data.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/models/hybrid_gnn_rnn/data.py`
 
 25497 bytes · SHA-256 `73f29f102ea6daaa`
 
@@ -785,7 +785,7 @@ def _merge_attributes(
 
 ---
 
-## 3. `src/rade_qnet/models/hybrid_gnn_rnn/model.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/models/hybrid_gnn_rnn/model.py`
 
 13189 bytes · SHA-256 `7d269cda90d695c5`
 
@@ -1154,7 +1154,7 @@ def _width(signature: InputSignature, name: str, *, axis: int, static: bool) -> 
 
 ---
 
-## 4. `src/rade_qnet/models/hybrid_gnn_rnn/register.py`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/models/hybrid_gnn_rnn/register.py`
 
 5610 bytes · SHA-256 `589cfb05e6a8b23e`
 
@@ -1306,7 +1306,7 @@ class HybridGnnRnnModel(SupervisedModel):
 
 ---
 
-## 5. `src/rade_qnet/models/hybrid_gnn_rnn/reports.py`
+## 5. `tranql/models/rade/rade_qnet/rade_qnet/models/hybrid_gnn_rnn/reports.py`
 
 11958 bytes · SHA-256 `5308b7d914f3b947`
 
@@ -1655,7 +1655,7 @@ class HybridGraphReport(Report):
 
 ---
 
-## 6. `src/rade_qnet/models/hybrid_gnn_rnn/spec.py`
+## 6. `tranql/models/rade/rade_qnet/rade_qnet/models/hybrid_gnn_rnn/spec.py`
 
 17434 bytes · SHA-256 `a177505b14867755`
 
@@ -2057,7 +2057,7 @@ _MISSING = object()
 
 ---
 
-## 7. `src/rade_qnet/models/hybrid_gnn_rnn/state.py`
+## 7. `tranql/models/rade/rade_qnet/rade_qnet/models/hybrid_gnn_rnn/state.py`
 
 16887 bytes · SHA-256 `3cfb158385bbfb3f`
 
@@ -2532,7 +2532,7 @@ class HybridState(FittedState):
 
 ---
 
-## 8. `src/rade_qnet/models/hybrid_gnn_rnn/visuals.py`
+## 8. `tranql/models/rade/rade_qnet/rade_qnet/models/hybrid_gnn_rnn/visuals.py`
 
 8717 bytes · SHA-256 `c033d0fcfc405089`
 

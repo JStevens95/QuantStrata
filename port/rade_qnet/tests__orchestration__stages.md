@@ -1,15 +1,15 @@
-# `tests/rade_qnet/orchestration/stages`
+# `tranql/models/rade/rade_qnet/tests/orchestration/stages`
 
 2 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 1 | 48 | `861fa175ff9e24b5` |
-| 2 | `test_stages_resolve.py` | 141 | 5421 | `9dd2fb4dcaea65dd` |
+| 2 | `test_stages_resolve.py` | 150 | 5686 | `18687c4a9a7abf6c` |
 
 ---
 
-## 1. `tests/rade_qnet/orchestration/stages/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/orchestration/stages/__init__.py`
 
 48 bytes · SHA-256 `861fa175ff9e24b5`
 
@@ -19,9 +19,9 @@
 
 ---
 
-## 2. `tests/rade_qnet/orchestration/stages/test_stages_resolve.py`
+## 2. `tranql/models/rade/rade_qnet/tests/orchestration/stages/test_stages_resolve.py`
 
-5421 bytes · SHA-256 `9dd2fb4dcaea65dd`
+5686 bytes · SHA-256 `18687c4a9a7abf6c`
 
 ```python
 """Tests for the model pipeline-override resolver."""
@@ -30,15 +30,24 @@ from __future__ import annotations
 
 import pytest
 
-from src.rade_qnet.core.lifecycle.errors import ComponentError
-from src.rade_qnet.models.hybrid_gnn_rnn.pipelines.eval import HybridEvalPipeline
-from src.rade_qnet.models.hybrid_gnn_rnn.pipelines.train import HybridTrainPipeline
-from src.rade_qnet.models.hybrid_gnn_rnn.pipelines.tune import HybridTunePipeline
-from src.rade_qnet.models.hybrid_gnn_rnn.register import HybridGnnRnnModel
-from src.rade_qnet.orchestration.pipelines.evaluate import EvaluatePipeline
-from src.rade_qnet.orchestration.pipelines.train import TrainPipeline
-from src.rade_qnet.orchestration.pipelines.tune import TunePipeline
-from src.rade_qnet.orchestration.stages.resolve import LIFECYCLES, pipeline_for
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ComponentError
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.pipelines.eval import (
+    HybridEvalPipeline,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.pipelines.train import (
+    HybridTrainPipeline,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.pipelines.tune import (
+    HybridTunePipeline,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.register import HybridGnnRnnModel
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.pipelines.evaluate import EvaluatePipeline
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.pipelines.train import TrainPipeline
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.pipelines.tune import TunePipeline
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.stages.resolve import (
+    LIFECYCLES,
+    pipeline_for,
+)
 
 
 class Base:

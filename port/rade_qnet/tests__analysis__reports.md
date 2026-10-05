@@ -1,19 +1,19 @@
-# `tests/rade_qnet/analysis/reports`
+# `tranql/models/rade/rade_qnet/tests/analysis/reports`
 
 6 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 23 | 845 | `243b3f95c99bd0f3` |
-| 2 | `test_reports_base.py` | 280 | 9518 | `131b98b13897f88f` |
-| 3 | `test_reports_baselines.py` | 326 | 11384 | `9b12b9557f8e4ea2` |
-| 4 | `test_reports_curves.py` | 329 | 10916 | `95fe830b23029c76` |
-| 5 | `test_reports_quality.py` | 277 | 10426 | `c4848a2f442042b8` |
-| 6 | `test_reports_summary.py` | 394 | 13449 | `f2f29c7816c8684e` |
+| 2 | `test_reports_base.py` | 287 | 9598 | `2c6e7e5b832b2fd4` |
+| 3 | `test_reports_baselines.py` | 332 | 11535 | `c478eeeac9f13769` |
+| 4 | `test_reports_curves.py` | 339 | 11084 | `dd09c9423042765a` |
+| 5 | `test_reports_quality.py` | 280 | 10539 | `85cf623cb6e1442c` |
+| 6 | `test_reports_summary.py` | 404 | 13617 | `9e74c6fb255b8c37` |
 
 ---
 
-## 1. `tests/rade_qnet/analysis/reports/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/analysis/reports/__init__.py`
 
 845 bytes · SHA-256 `243b3f95c99bd0f3`
 
@@ -45,9 +45,9 @@ Planned modules
 
 ---
 
-## 2. `tests/rade_qnet/analysis/reports/test_reports_base.py`
+## 2. `tranql/models/rade/rade_qnet/tests/analysis/reports/test_reports_base.py`
 
-9518 bytes · SHA-256 `131b98b13897f88f`
+9598 bytes · SHA-256 `2c6e7e5b832b2fd4`
 
 ```python
 """
@@ -72,8 +72,15 @@ from pathlib import Path
 
 import pytest
 
-from src.rade_qnet.analysis.reports.base import Report, ReportContext, ReportOutcome
-from src.rade_qnet.testkit.fixtures import make_model_bundle, make_run_context
+from tranql.models.rade.rade_qnet.rade_qnet.analysis.reports.base import (
+    Report,
+    ReportContext,
+    ReportOutcome,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import (
+    make_model_bundle,
+    make_run_context,
+)
 
 
 class WritingReport(Report):
@@ -334,9 +341,9 @@ class TestArtifactPublication:
 
 ---
 
-## 3. `tests/rade_qnet/analysis/reports/test_reports_baselines.py`
+## 3. `tranql/models/rade/rade_qnet/tests/analysis/reports/test_reports_baselines.py`
 
-11384 bytes · SHA-256 `9b12b9557f8e4ea2`
+11535 bytes · SHA-256 `c478eeeac9f13769`
 
 ```python
 """
@@ -361,11 +368,17 @@ report is never load-bearing.
 
 from __future__ import annotations
 
-from src.rade_qnet.analysis.reports.base import ReportContext
-from src.rade_qnet.analysis.reports.baselines import BASELINES_FILENAME, BaselinesReport
-from src.rade_qnet.core.contract.result import EvalResult, TrainingResult
-from src.rade_qnet.core.lifecycle.components import get_report
-from src.rade_qnet.testkit.fixtures import make_model_bundle, make_training_result
+from tranql.models.rade.rade_qnet.rade_qnet.analysis.reports.base import ReportContext
+from tranql.models.rade.rade_qnet.rade_qnet.analysis.reports.baselines import (
+    BASELINES_FILENAME,
+    BaselinesReport,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.result import EvalResult, TrainingResult
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import get_report
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import (
+    make_model_bundle,
+    make_training_result,
+)
 
 
 def render(
@@ -669,9 +682,9 @@ class TestDegenerateRuns:
 
 ---
 
-## 4. `tests/rade_qnet/analysis/reports/test_reports_curves.py`
+## 4. `tranql/models/rade/rade_qnet/tests/analysis/reports/test_reports_curves.py`
 
-10916 bytes · SHA-256 `95fe830b23029c76`
+11084 bytes · SHA-256 `dd09c9423042765a`
 
 ```python
 """
@@ -698,11 +711,21 @@ from __future__ import annotations
 
 import csv
 
-from src.rade_qnet.analysis.reports.base import ReportContext
-from src.rade_qnet.analysis.reports.curves import HISTORY_FILENAME, CurvesReport
-from src.rade_qnet.core.contract.result import EpochRecord, FitOutcome, TrainingResult
-from src.rade_qnet.core.lifecycle.components import get_report
-from src.rade_qnet.testkit.fixtures import make_model_bundle, make_training_result
+from tranql.models.rade.rade_qnet.rade_qnet.analysis.reports.base import ReportContext
+from tranql.models.rade.rade_qnet.rade_qnet.analysis.reports.curves import (
+    HISTORY_FILENAME,
+    CurvesReport,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.result import (
+    EpochRecord,
+    FitOutcome,
+    TrainingResult,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import get_report
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import (
+    make_model_bundle,
+    make_training_result,
+)
 
 
 def make_fit(
@@ -1007,9 +1030,9 @@ class TestDegenerateRuns:
 
 ---
 
-## 5. `tests/rade_qnet/analysis/reports/test_reports_quality.py`
+## 5. `tranql/models/rade/rade_qnet/tests/analysis/reports/test_reports_quality.py`
 
-10426 bytes · SHA-256 `c4848a2f442042b8`
+10539 bytes · SHA-256 `85cf623cb6e1442c`
 
 ```python
 """
@@ -1037,10 +1060,13 @@ moment it was needed.
 
 from __future__ import annotations
 
-from src.rade_qnet.analysis.reports.base import ReportContext
-from src.rade_qnet.analysis.reports.quality import QUALITY_FILENAME, QualityReport
-from src.rade_qnet.core.lifecycle.components import get_report
-from src.rade_qnet.testkit.fixtures import make_lineage, make_model_bundle
+from tranql.models.rade.rade_qnet.rade_qnet.analysis.reports.base import ReportContext
+from tranql.models.rade.rade_qnet.rade_qnet.analysis.reports.quality import (
+    QUALITY_FILENAME,
+    QualityReport,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import get_report
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import make_lineage, make_model_bundle
 
 
 def render(tmp_path, *, lineage=None, bundle=None) -> tuple[str | None, object]:
@@ -1293,9 +1319,9 @@ class TestDegenerateRuns:
 
 ---
 
-## 6. `tests/rade_qnet/analysis/reports/test_reports_summary.py`
+## 6. `tranql/models/rade/rade_qnet/tests/analysis/reports/test_reports_summary.py`
 
-13449 bytes · SHA-256 `f2f29c7816c8684e`
+13617 bytes · SHA-256 `9e74c6fb255b8c37`
 
 ```python
 """
@@ -1323,11 +1349,21 @@ from dataclasses import replace
 
 import pytest
 
-from src.rade_qnet.analysis.reports.base import ReportContext
-from src.rade_qnet.analysis.reports.summary import SUMMARY_FILENAME, SummaryReport
-from src.rade_qnet.core.contract.result import EvalResult, FitOutcome, TrainingResult
-from src.rade_qnet.core.lifecycle.components import get_report
-from src.rade_qnet.testkit.fixtures import make_model_bundle, make_training_result
+from tranql.models.rade.rade_qnet.rade_qnet.analysis.reports.base import ReportContext
+from tranql.models.rade.rade_qnet.rade_qnet.analysis.reports.summary import (
+    SUMMARY_FILENAME,
+    SummaryReport,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.result import (
+    EvalResult,
+    FitOutcome,
+    TrainingResult,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import get_report
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import (
+    make_model_bundle,
+    make_training_result,
+)
 
 
 def _render(tmp_path, bundle=None, **context_fields):

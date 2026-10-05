@@ -1,4 +1,4 @@
-# `src/rade_qnet/models/ridge`
+# `tranql/models/rade/rade_qnet/rade_qnet/models/ridge`
 
 5 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -12,7 +12,7 @@
 
 ---
 
-## 1. `src/rade_qnet/models/ridge/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/models/ridge/__init__.py`
 
 1382 bytes · SHA-256 `8e878ba14afd847c`
 
@@ -61,7 +61,7 @@ __all__ = ["RidgeModel", "RidgeSpec"]
 
 ---
 
-## 2. `src/rade_qnet/models/ridge/data.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/models/ridge/data.py`
 
 2474 bytes · SHA-256 `04a97203d1724ccf`
 
@@ -140,7 +140,7 @@ def data_module(spec: SupervisedRunSpec) -> TabularDataModule:
 
 ---
 
-## 3. `src/rade_qnet/models/ridge/model.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/models/ridge/model.py`
 
 1769 bytes · SHA-256 `86653e260ade081f`
 
@@ -202,7 +202,7 @@ def build(settings: RidgeSpec) -> Ridge:
 
 ---
 
-## 4. `src/rade_qnet/models/ridge/register.py`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/models/ridge/register.py`
 
 3614 bytes · SHA-256 `5ec21b14fc34eabe`
 
@@ -317,7 +317,7 @@ class RidgeModel(SupervisedModel):
 
 ---
 
-## 5. `src/rade_qnet/models/ridge/spec.py`
+## 5. `tranql/models/rade/rade_qnet/rade_qnet/models/ridge/spec.py`
 
 1532 bytes · SHA-256 `968365b42f941d08`
 

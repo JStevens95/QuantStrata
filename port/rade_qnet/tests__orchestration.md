@@ -1,15 +1,15 @@
-# `tests/rade_qnet/orchestration`
+# `tranql/models/rade/rade_qnet/tests/orchestration`
 
 2 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 8 | 365 | `af8945dcb1b57f28` |
-| 2 | `test_orchestration_serving.py` | 449 | 15496 | `0e78199808bff149` |
+| 2 | `test_orchestration_serving.py` | 452 | 15890 | `8a62bccf4e4bc4f8` |
 
 ---
 
-## 1. `tests/rade_qnet/orchestration/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/orchestration/__init__.py`
 
 365 bytes · SHA-256 `af8945dcb1b57f28`
 
@@ -26,9 +26,9 @@ compare. Several tests here do exactly that.
 
 ---
 
-## 2. `tests/rade_qnet/orchestration/test_orchestration_serving.py`
+## 2. `tranql/models/rade/rade_qnet/tests/orchestration/test_orchestration_serving.py`
 
-15496 bytes · SHA-256 `0e78199808bff149`
+15890 bytes · SHA-256 `8a62bccf4e4bc4f8`
 
 ```python
 """
@@ -61,25 +61,28 @@ import numpy as np
 import pytest
 import torch
 
-from src.rade_qnet import api
-from src.rade_qnet.core.authoring.policy import PolicyModel
-from src.rade_qnet.core.contract.result import Predictions
-from src.rade_qnet.core.lifecycle.components import ComponentError
-from src.rade_qnet.core.lifecycle.components import engine as register_engine
-from src.rade_qnet.core.lifecycle.components import model as register_model
-from src.rade_qnet.core.lifecycle.errors import BundleError, ContractError
-from src.rade_qnet.engines.torch import TorchEngine
-from src.rade_qnet.orchestration.pipelines.infer import InferPipeline
-from src.rade_qnet.orchestration.pipelines.train import TrainPipeline
-from src.rade_qnet.orchestration.serving import Agent, Predictor
-from src.rade_qnet.orchestration.stages.reload import load_bundle
-from src.rade_qnet.storage.runs.catalog import InMemoryCatalog
-from src.rade_qnet.testkit.fixtures import (
+from tranql.models.rade.rade_qnet.rade_qnet import api
+from tranql.models.rade.rade_qnet.rade_qnet.core.authoring.policy import PolicyModel
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.result import Predictions
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import ComponentError
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import (
+    engine as register_engine,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import model as register_model
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import BundleError, ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.engines.torch import TorchEngine
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.pipelines.infer import InferPipeline
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.pipelines.train import TrainPipeline
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.serving import Agent, Predictor
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.stages.reload import load_bundle
+from tranql.models.rade.rade_qnet.rade_qnet.storage.runs.catalog import InMemoryCatalog
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import (
     SyntheticEnvironment,
     isolated_registries,
     make_run_context,
 )
 
+from ..locations import module_name
 from .pipelines.support import (
     SyntheticSupervisedModel,
     make_spec,
@@ -224,7 +227,7 @@ class TestWhatIsAndIsNotReused:
             message = "the bundle was reopened"
             raise AssertionError(message)
 
-        monkeypatch.setattr("src.rade_qnet.orchestration.pipelines.infer.load_bundle", refuse)
+        monkeypatch.setattr(module_name("orchestration.pipelines.infer.load_bundle"), refuse)
         predictor.predict()
         predictor.predict()
 

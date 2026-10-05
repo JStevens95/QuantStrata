@@ -1,4 +1,4 @@
-# `src/rade_qnet/orchestration/stages`
+# `tranql/models/rade/rade_qnet/rade_qnet/orchestration/stages`
 
 5 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -12,7 +12,7 @@
 
 ---
 
-## 1. `src/rade_qnet/orchestration/stages/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/orchestration/stages/__init__.py`
 
 2391 bytes · SHA-256 `d4555a56cb073632`
 
@@ -70,7 +70,7 @@ __all__: tuple[str, ...] = ()
 
 ---
 
-## 2. `src/rade_qnet/orchestration/stages/reload.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/orchestration/stages/reload.py`
 
 15475 bytes · SHA-256 `fd1d9434a83b8a95`
 
@@ -525,7 +525,7 @@ def _state_type_for(
 
 ---
 
-## 3. `src/rade_qnet/orchestration/stages/resolve.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/orchestration/stages/resolve.py`
 
 4829 bytes · SHA-256 `52a0bf45099efed5`
 
@@ -659,7 +659,7 @@ def pipeline_for[PipelineT: type](
 
 ---
 
-## 4. `src/rade_qnet/orchestration/stages/scoring.py`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/orchestration/stages/scoring.py`
 
 16206 bytes · SHA-256 `2c240ae5ec2ff681`
 
@@ -1118,7 +1118,7 @@ def align(
 
 ---
 
-## 5. `src/rade_qnet/orchestration/stages/search.py`
+## 5. `tranql/models/rade/rade_qnet/rade_qnet/orchestration/stages/search.py`
 
 7996 bytes · SHA-256 `f3ffe459960cd03e`
 

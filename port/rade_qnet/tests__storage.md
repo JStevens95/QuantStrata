@@ -1,17 +1,17 @@
-# `tests/rade_qnet/storage`
+# `tranql/models/rade/rade_qnet/tests/storage`
 
 4 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 31 | 1382 | `3ccdb89a57a83475` |
-| 2 | `test_storage_bundle.py` | 411 | 14400 | `235c3977d0ba70ca` |
-| 3 | `test_storage_locking.py` | 288 | 9850 | `d2ca71c71c19d047` |
-| 4 | `test_storage_manifest.py` | 299 | 11217 | `b655369174dc00c0` |
+| 2 | `test_storage_bundle.py` | 414 | 14513 | `30d310a70aa3f3ab` |
+| 3 | `test_storage_locking.py` | 292 | 9933 | `b73beb8968131ac2` |
+| 4 | `test_storage_manifest.py` | 299 | 11292 | `c78f2996c4c37a29` |
 
 ---
 
-## 1. `tests/rade_qnet/storage/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/storage/__init__.py`
 
 1382 bytes · SHA-256 `3ccdb89a57a83475`
 
@@ -51,9 +51,9 @@ Planned modules
 
 ---
 
-## 2. `tests/rade_qnet/storage/test_storage_bundle.py`
+## 2. `tranql/models/rade/rade_qnet/tests/storage/test_storage_bundle.py`
 
-14400 bytes · SHA-256 `235c3977d0ba70ca`
+14513 bytes · SHA-256 `30d310a70aa3f3ab`
 
 ```python
 """
@@ -81,15 +81,15 @@ import shutil
 
 import pytest
 
-from src.rade_qnet.core.contract.bundle import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.bundle import (
     FITTED_STATE_DIRNAME,
     MANIFEST_FILENAME,
     SPEC_FILENAME,
     WEIGHTS_FILENAME,
     Manifest,
 )
-from src.rade_qnet.core.lifecycle.errors import BundleError
-from src.rade_qnet.storage.bundle import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import BundleError
+from tranql.models.rade.rade_qnet.rade_qnet.storage.bundle import (
     TEMPORARY_PREFIX,
     bundle_directory,
     load_fitted_state,
@@ -100,7 +100,10 @@ from src.rade_qnet.storage.bundle import (
     open_bundle,
     write_bundle,
 )
-from src.rade_qnet.testkit.fixtures import StandardisingState, make_model_bundle
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import (
+    StandardisingState,
+    make_model_bundle,
+)
 
 
 def _write_weights(path):
@@ -471,9 +474,9 @@ class TestNoPickling:
 
 ---
 
-## 3. `tests/rade_qnet/storage/test_storage_locking.py`
+## 3. `tranql/models/rade/rade_qnet/tests/storage/test_storage_locking.py`
 
-9850 bytes · SHA-256 `d2ca71c71c19d047`
+9933 bytes · SHA-256 `b73beb8968131ac2`
 
 ```python
 """
@@ -502,12 +505,16 @@ import os
 import subprocess
 import sys
 import time
-from pathlib import Path
 
 import pytest
 
-from src.rade_qnet.core.lifecycle.errors import BundleError
-from src.rade_qnet.storage.locking import exclusive_lock, retry_until_acquired
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import BundleError
+from tranql.models.rade.rade_qnet.rade_qnet.storage.locking import (
+    exclusive_lock,
+    retry_until_acquired,
+)
+
+from ..locations import IMPORT_ROOT, PACKAGE_NAME
 
 
 class TestTheRetryLoop:
@@ -712,7 +719,7 @@ import sys, time
 from pathlib import Path
 
 sys.path.insert(0, {root!r})
-from src.rade_qnet.storage.locking import exclusive_lock
+from {package}.storage.locking import exclusive_lock
 
 with exclusive_lock(Path({lock!r})):
     print("held", flush=True)
@@ -738,8 +745,8 @@ class TestMutualExclusion:
         of the lock working.
         """
         lock = tmp_path / "catalog.lock"
-        root = str(Path(__file__).resolve().parents[3])
-        script = _CHILD.format(root=root, lock=str(lock), hold=_HOLD_SECONDS)
+        root = str(IMPORT_ROOT)
+        script = _CHILD.format(package=PACKAGE_NAME, root=root, lock=str(lock), hold=_HOLD_SECONDS)
 
         child = subprocess.Popen(
             [sys.executable, "-c", script],
@@ -768,9 +775,9 @@ class TestMutualExclusion:
 
 ---
 
-## 4. `tests/rade_qnet/storage/test_storage_manifest.py`
+## 4. `tranql/models/rade/rade_qnet/tests/storage/test_storage_manifest.py`
 
-11217 bytes · SHA-256 `b655369174dc00c0`
+11292 bytes · SHA-256 `c78f2996c4c37a29`
 
 ```python
 """
@@ -792,9 +799,9 @@ from __future__ import annotations
 
 import pytest
 
-from src.rade_qnet.core.contract.bundle import BUNDLE_SCHEMA_VERSION
-from src.rade_qnet.core.lifecycle.errors import BundleError
-from src.rade_qnet.storage.manifest import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.bundle import BUNDLE_SCHEMA_VERSION
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import BundleError
+from tranql.models.rade.rade_qnet.rade_qnet.storage.manifest import (
     EXCLUDED_DIRECTORIES,
     EXCLUDED_NAMES,
     build_manifest,

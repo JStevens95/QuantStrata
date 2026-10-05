@@ -1,4 +1,4 @@
-# `src/rade_qnet/analysis/reports`
+# `tranql/models/rade/rade_qnet/rade_qnet/analysis/reports`
 
 6 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -13,7 +13,7 @@
 
 ---
 
-## 1. `src/rade_qnet/analysis/reports/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/analysis/reports/__init__.py`
 
 2487 bytes · SHA-256 `67191a456d8c17a9`
 
@@ -83,7 +83,7 @@ __all__ = [
 
 ---
 
-## 2. `src/rade_qnet/analysis/reports/base.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/analysis/reports/base.py`
 
 6366 bytes · SHA-256 `700a581a6ca0be3b`
 
@@ -281,7 +281,7 @@ class Report(ABC):
 
 ---
 
-## 3. `src/rade_qnet/analysis/reports/baselines.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/analysis/reports/baselines.py`
 
 11108 bytes · SHA-256 `1557a6382e2340f6`
 
@@ -613,7 +613,7 @@ class BaselinesReport(Report):
 
 ---
 
-## 4. `src/rade_qnet/analysis/reports/curves.py`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/analysis/reports/curves.py`
 
 6918 bytes · SHA-256 `dc286333a6cdc775`
 
@@ -824,7 +824,7 @@ def _has_validation(outcome: FitOutcome) -> bool:
 
 ---
 
-## 5. `src/rade_qnet/analysis/reports/quality.py`
+## 5. `tranql/models/rade/rade_qnet/rade_qnet/analysis/reports/quality.py`
 
 10915 bytes · SHA-256 `233491a91e32745d`
 
@@ -1150,7 +1150,7 @@ def _format_metric(name: str, value: float) -> str:
 
 ---
 
-## 6. `src/rade_qnet/analysis/reports/summary.py`
+## 6. `tranql/models/rade/rade_qnet/rade_qnet/analysis/reports/summary.py`
 
 10659 bytes · SHA-256 `7632b593c2015988`
 

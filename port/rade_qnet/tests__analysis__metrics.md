@@ -1,17 +1,17 @@
-# `tests/rade_qnet/analysis/metrics`
+# `tranql/models/rade/rade_qnet/tests/analysis/metrics`
 
 4 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 21 | 846 | `815690298ea5fb56` |
-| 2 | `test_metrics_drift.py` | 310 | 12239 | `894875d5d4e44445` |
-| 3 | `test_metrics_quality.py` | 306 | 11816 | `1ce48491f16e5376` |
-| 4 | `test_metrics_regression.py` | 331 | 12792 | `fb38f3bc008c07b8` |
+| 2 | `test_metrics_drift.py` | 310 | 12289 | `2b6c0fa30b125934` |
+| 3 | `test_metrics_quality.py` | 306 | 11841 | `0c70ea96252aee07` |
+| 4 | `test_metrics_regression.py` | 331 | 12842 | `c512c2990d0fee32` |
 
 ---
 
-## 1. `tests/rade_qnet/analysis/metrics/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/analysis/metrics/__init__.py`
 
 846 bytes · SHA-256 `815690298ea5fb56`
 
@@ -41,9 +41,9 @@ Planned modules
 
 ---
 
-## 2. `tests/rade_qnet/analysis/metrics/test_metrics_drift.py`
+## 2. `tranql/models/rade/rade_qnet/tests/analysis/metrics/test_metrics_drift.py`
 
-12239 bytes · SHA-256 `894875d5d4e44445`
+12289 bytes · SHA-256 `2b6c0fa30b125934`
 
 ```python
 """
@@ -68,7 +68,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.rade_qnet.analysis.metrics.drift import (
+from tranql.models.rade.rade_qnet.rade_qnet.analysis.metrics.drift import (
     DRIFT_THRESHOLDS,
     drift_metrics,
     drift_warnings,
@@ -76,7 +76,7 @@ from src.rade_qnet.analysis.metrics.drift import (
     mean_shift,
     population_stability_index,
 )
-from src.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
 
 #: Large enough that sampling noise sits well below every threshold, so a
 #: "quiet on identical distributions" test is asserting the measure rather
@@ -360,9 +360,9 @@ class TestPerFeature:
 
 ---
 
-## 3. `tests/rade_qnet/analysis/metrics/test_metrics_quality.py`
+## 3. `tranql/models/rade/rade_qnet/tests/analysis/metrics/test_metrics_quality.py`
 
-11816 bytes · SHA-256 `1ce48491f16e5376`
+11841 bytes · SHA-256 `0c70ea96252aee07`
 
 ```python
 """
@@ -397,7 +397,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.rade_qnet.analysis.metrics.quality import (
+from tranql.models.rade.rade_qnet.rade_qnet.analysis.metrics.quality import (
     column_completeness,
     completeness,
     entity_coverage,
@@ -675,9 +675,9 @@ class TestQualityWarnings:
 
 ---
 
-## 4. `tests/rade_qnet/analysis/metrics/test_metrics_regression.py`
+## 4. `tranql/models/rade/rade_qnet/tests/analysis/metrics/test_metrics_regression.py`
 
-12792 bytes · SHA-256 `fb38f3bc008c07b8`
+12842 bytes · SHA-256 `c512c2990d0fee32`
 
 ```python
 """
@@ -702,7 +702,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.rade_qnet.analysis.metrics.regression import (
+from tranql.models.rade.rade_qnet.rade_qnet.analysis.metrics.regression import (
     baseline_metrics,
     bias,
     directional_accuracy,
@@ -711,7 +711,7 @@ from src.rade_qnet.analysis.metrics.regression import (
     regression_metrics,
     root_mean_squared_error,
 )
-from src.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
 
 ALL_METRICS = (
     mean_absolute_error,

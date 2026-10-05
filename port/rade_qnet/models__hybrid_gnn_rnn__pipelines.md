@@ -1,4 +1,4 @@
-# `src/rade_qnet/models/hybrid_gnn_rnn/pipelines`
+# `tranql/models/rade/rade_qnet/rade_qnet/models/hybrid_gnn_rnn/pipelines`
 
 4 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -11,7 +11,7 @@
 
 ---
 
-## 1. `src/rade_qnet/models/hybrid_gnn_rnn/pipelines/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/models/hybrid_gnn_rnn/pipelines/__init__.py`
 
 2553 bytes · SHA-256 `2ee06142a0e2a995`
 
@@ -74,7 +74,7 @@ __all__ = ["HybridEvalPipeline", "HybridTrainPipeline", "HybridTunePipeline"]
 
 ---
 
-## 2. `src/rade_qnet/models/hybrid_gnn_rnn/pipelines/eval.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/models/hybrid_gnn_rnn/pipelines/eval.py`
 
 9716 bytes · SHA-256 `ec3525c753752a11`
 
@@ -343,7 +343,7 @@ def breakdown_notes(
 
 ---
 
-## 3. `src/rade_qnet/models/hybrid_gnn_rnn/pipelines/train.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/models/hybrid_gnn_rnn/pipelines/train.py`
 
 3264 bytes · SHA-256 `5e713339832a8ff7`
 
@@ -431,7 +431,7 @@ class HybridTrainPipeline(TrainPipeline):
 
 ---
 
-## 4. `src/rade_qnet/models/hybrid_gnn_rnn/pipelines/tune.py`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/models/hybrid_gnn_rnn/pipelines/tune.py`
 
 9384 bytes · SHA-256 `c6982aae644e43c9`
 

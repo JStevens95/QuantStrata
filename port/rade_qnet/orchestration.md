@@ -1,4 +1,4 @@
-# `src/rade_qnet/orchestration`
+# `tranql/models/rade/rade_qnet/rade_qnet/orchestration`
 
 2 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -9,7 +9,7 @@
 
 ---
 
-## 1. `src/rade_qnet/orchestration/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/orchestration/__init__.py`
 
 1227 bytes · SHA-256 `41743506e557df79`
 
@@ -48,7 +48,7 @@ __all__: tuple[str, ...] = ()
 
 ---
 
-## 2. `src/rade_qnet/orchestration/serving.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/orchestration/serving.py`
 
 17345 bytes · SHA-256 `c2ee35c80b1a71f6`
 

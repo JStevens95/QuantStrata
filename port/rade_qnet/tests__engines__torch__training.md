@@ -1,18 +1,18 @@
-# `tests/rade_qnet/engines/torch/training`
+# `tranql/models/rade/rade_qnet/tests/engines/torch/training`
 
 5 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 1 | 32 | `ea056fce628eee7f` |
-| 2 | `test_training_callbacks.py` | 402 | 15291 | `97c783702a4278fc` |
-| 3 | `test_training_checkpoint.py` | 225 | 8428 | `07ea0986a0ceb441` |
-| 4 | `test_training_loops.py` | 1003 | 34249 | `eee06920985be093` |
-| 5 | `test_training_losses.py` | 209 | 8874 | `ad6de8c53529ae7d` |
+| 2 | `test_training_callbacks.py` | 402 | 15366 | `ebe7d55b5f351cfa` |
+| 3 | `test_training_checkpoint.py` | 225 | 8503 | `b67c93de9d9c5ce0` |
+| 4 | `test_training_loops.py` | 1009 | 34500 | `7de83861839e99d3` |
+| 5 | `test_training_losses.py` | 209 | 8924 | `f24828d41fedd51f` |
 
 ---
 
-## 1. `tests/rade_qnet/engines/torch/training/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/engines/torch/training/__init__.py`
 
 32 bytes · SHA-256 `ea056fce628eee7f`
 
@@ -22,9 +22,9 @@
 
 ---
 
-## 2. `tests/rade_qnet/engines/torch/training/test_training_callbacks.py`
+## 2. `tranql/models/rade/rade_qnet/tests/engines/torch/training/test_training_callbacks.py`
 
-15291 bytes · SHA-256 `97c783702a4278fc`
+15366 bytes · SHA-256 `ebe7d55b5f351cfa`
 
 ```python
 """
@@ -53,13 +53,13 @@ import pytest
 import torch
 from torch import nn
 
-from src.rade_qnet.core.lifecycle.errors import EngineError
-from src.rade_qnet.core.spec.training import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import EngineError
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.training import (
     CheckpointSpec,
     EarlyStoppingSpec,
     SchedulerSpec,
 )
-from src.rade_qnet.engines.torch.training.callbacks import (
+from tranql.models.rade.rade_qnet.rade_qnet.engines.torch.training.callbacks import (
     BestCheckpoint,
     EarlyStopping,
     EpochContext,
@@ -433,9 +433,9 @@ class TestGradientNorms:
 
 ---
 
-## 3. `tests/rade_qnet/engines/torch/training/test_training_checkpoint.py`
+## 3. `tranql/models/rade/rade_qnet/tests/engines/torch/training/test_training_checkpoint.py`
 
-8428 bytes · SHA-256 `07ea0986a0ceb441`
+8503 bytes · SHA-256 `b67c93de9d9c5ce0`
 
 ```python
 """
@@ -468,9 +468,9 @@ import pytest
 import torch
 from torch import nn
 
-from src.rade_qnet.core.lifecycle.errors import EngineError
-from src.rade_qnet.engines.base import ModelHandle
-from src.rade_qnet.engines.torch.training.checkpoint import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import EngineError
+from tranql.models.rade.rade_qnet.rade_qnet.engines.base import ModelHandle
+from tranql.models.rade.rade_qnet.rade_qnet.engines.torch.training.checkpoint import (
     load_weights,
     restore_state_dict,
     save_weights,
@@ -667,9 +667,9 @@ class TestDefectTenPickledCheckpointsAreRefused:
 
 ---
 
-## 4. `tests/rade_qnet/engines/torch/training/test_training_loops.py`
+## 4. `tranql/models/rade/rade_qnet/tests/engines/torch/training/test_training_loops.py`
 
-34249 bytes · SHA-256 `eee06920985be093`
+34500 bytes · SHA-256 `7de83861839e99d3`
 
 ```python
 """
@@ -708,19 +708,25 @@ import pytest
 import torch
 from torch import nn
 
-from src.rade_qnet.core.contract.data import TARGET_KEY
-from src.rade_qnet.core.contract.signature import SpaceSpec
-from src.rade_qnet.core.lifecycle.errors import EngineError
-from src.rade_qnet.core.spec.training import CheckpointSpec, EarlyStoppingSpec
-from src.rade_qnet.engines.torch.training.callbacks import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.data import TARGET_KEY
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.signature import SpaceSpec
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import EngineError
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.training import (
+    CheckpointSpec,
+    EarlyStoppingSpec,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.engines.torch.training.callbacks import (
     BestCheckpoint,
     EarlyStopping,
     GradientNorms,
 )
-from src.rade_qnet.engines.torch.training.loops import fit_epochs, fit_steps
-from src.rade_qnet.sources.batching.rollout import RolloutSource
-from src.rade_qnet.sources.environment import StepOutcome
-from src.rade_qnet.testkit.fixtures import SyntheticTensorSource
+from tranql.models.rade.rade_qnet.rade_qnet.engines.torch.training.loops import (
+    fit_epochs,
+    fit_steps,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.sources.batching.rollout import RolloutSource
+from tranql.models.rade.rade_qnet.rade_qnet.sources.environment import StepOutcome
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import SyntheticTensorSource
 
 CPU = torch.device("cpu")
 
@@ -1679,9 +1685,9 @@ class TestTheStepDriverAndCallbacks:
 
 ---
 
-## 5. `tests/rade_qnet/engines/torch/training/test_training_losses.py`
+## 5. `tranql/models/rade/rade_qnet/tests/engines/torch/training/test_training_losses.py`
 
-8874 bytes · SHA-256 `ad6de8c53529ae7d`
+8924 bytes · SHA-256 `f24828d41fedd51f`
 
 ```python
 """
@@ -1710,8 +1716,8 @@ from __future__ import annotations
 import pytest
 import torch
 
-from src.rade_qnet.core.lifecycle.errors import EngineError
-from src.rade_qnet.engines.torch.training.losses import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import EngineError
+from tranql.models.rade.rade_qnet.rade_qnet.engines.torch.training.losses import (
     asymmetric_loss,
     build_loss,
     quantile_loss,

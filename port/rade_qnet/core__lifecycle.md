@@ -1,4 +1,4 @@
-# `src/rade_qnet/core/lifecycle`
+# `tranql/models/rade/rade_qnet/rade_qnet/core/lifecycle`
 
 7 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -14,7 +14,7 @@
 
 ---
 
-## 1. `src/rade_qnet/core/lifecycle/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/core/lifecycle/__init__.py`
 
 3145 bytes · SHA-256 `104b6ad947ef13b3`
 
@@ -84,7 +84,7 @@ __all__: tuple[str, ...] = ()
 
 ---
 
-## 2. `src/rade_qnet/core/lifecycle/components.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/core/lifecycle/components.py`
 
 9071 bytes · SHA-256 `5c564d38da6f6864`
 
@@ -430,7 +430,7 @@ def get_report(name: str) -> type:
 
 ---
 
-## 3. `src/rade_qnet/core/lifecycle/context.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/core/lifecycle/context.py`
 
 14062 bytes · SHA-256 `4626d883ff35448d`
 
@@ -842,7 +842,7 @@ class RunContext:
 
 ---
 
-## 4. `src/rade_qnet/core/lifecycle/errors.py`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/core/lifecycle/errors.py`
 
 5378 bytes · SHA-256 `f13eb08c3452f71f`
 
@@ -1004,7 +1004,7 @@ class StageError(RadeQNetError):
 
 ---
 
-## 5. `src/rade_qnet/core/lifecycle/hooks.py`
+## 5. `tranql/models/rade/rade_qnet/rade_qnet/core/lifecycle/hooks.py`
 
 5578 bytes · SHA-256 `b9db3f32f535c7ad`
 
@@ -1178,7 +1178,7 @@ class PipelineHook:
 
 ---
 
-## 6. `src/rade_qnet/core/lifecycle/pipeline.py`
+## 6. `tranql/models/rade/rade_qnet/rade_qnet/core/lifecycle/pipeline.py`
 
 9834 bytes · SHA-256 `9e58f9499eb4a1e1`
 
@@ -1454,7 +1454,7 @@ class Pipeline[ResultT](ABC):
 
 ---
 
-## 7. `src/rade_qnet/core/lifecycle/registry.py`
+## 7. `tranql/models/rade/rade_qnet/rade_qnet/core/lifecycle/registry.py`
 
 7872 bytes · SHA-256 `131cf36657c86a5d`
 

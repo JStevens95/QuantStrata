@@ -1,19 +1,19 @@
-# `tests/rade_qnet/sources/dataset/transforms`
+# `tranql/models/rade/rade_qnet/tests/sources/dataset/transforms`
 
 6 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 24 | 1073 | `2d244a830faebd42` |
-| 2 | `test_transforms_composite.py` | 283 | 11201 | `12a48b6a3e946c2a` |
-| 3 | `test_transforms_encoding.py` | 269 | 10787 | `12982d53c655169c` |
-| 4 | `test_transforms_reduction.py` | 235 | 9501 | `a4c587d5962eeb86` |
-| 5 | `test_transforms_scaling.py` | 206 | 7865 | `65d7e3db21ea29f0` |
-| 6 | `test_transforms_sequence.py` | 224 | 9057 | `8dbf39b6809d2186` |
+| 2 | `test_transforms_composite.py` | 286 | 11339 | `32678fa78e49e640` |
+| 3 | `test_transforms_encoding.py` | 272 | 10850 | `77ec92acc59bbfc4` |
+| 4 | `test_transforms_reduction.py` | 237 | 9560 | `efdc6746d5981dde` |
+| 5 | `test_transforms_scaling.py` | 206 | 7915 | `3ef1d50bfe25cc83` |
+| 6 | `test_transforms_sequence.py` | 224 | 9132 | `a72496bc7acf552b` |
 
 ---
 
-## 1. `tests/rade_qnet/sources/dataset/transforms/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/sources/dataset/transforms/__init__.py`
 
 1073 bytes · SHA-256 `2d244a830faebd42`
 
@@ -46,9 +46,9 @@ Planned modules
 
 ---
 
-## 2. `tests/rade_qnet/sources/dataset/transforms/test_transforms_composite.py`
+## 2. `tranql/models/rade/rade_qnet/tests/sources/dataset/transforms/test_transforms_composite.py`
 
-11201 bytes · SHA-256 `12a48b6a3e946c2a`
+11339 bytes · SHA-256 `32678fa78e49e640`
 
 ```python
 """
@@ -77,11 +77,14 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.lifecycle.errors import ContractError
-from src.rade_qnet.core.spec.data import ScalingSpec
-from src.rade_qnet.sources.dataset.transforms.composite import CompositeState, DatasetState
-from src.rade_qnet.sources.dataset.transforms.encoding import EncodingState
-from src.rade_qnet.sources.dataset.transforms.scaling import ScalingState
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.data import ScalingSpec
+from tranql.models.rade.rade_qnet.rade_qnet.sources.dataset.transforms.composite import (
+    CompositeState,
+    DatasetState,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.sources.dataset.transforms.encoding import EncodingState
+from tranql.models.rade.rade_qnet.rade_qnet.sources.dataset.transforms.scaling import ScalingState
 
 
 def scaler(*, scale_target: bool = True) -> ScalingState:
@@ -338,9 +341,9 @@ class TestDescription:
 
 ---
 
-## 3. `tests/rade_qnet/sources/dataset/transforms/test_transforms_encoding.py`
+## 3. `tranql/models/rade/rade_qnet/tests/sources/dataset/transforms/test_transforms_encoding.py`
 
-10787 bytes · SHA-256 `12982d53c655169c`
+10850 bytes · SHA-256 `77ec92acc59bbfc4`
 
 ```python
 """
@@ -375,8 +378,11 @@ import inspect
 
 import pytest
 
-from src.rade_qnet.core.lifecycle.errors import CapabilityError, ContractError
-from src.rade_qnet.sources.dataset.transforms.encoding import EncodingState
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import (
+    CapabilityError,
+    ContractError,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.sources.dataset.transforms.encoding import EncodingState
 
 UNIVERSE = ("EURUSD", "GBPUSD", "USDJPY")
 
@@ -616,9 +622,9 @@ class TestPersistence:
 
 ---
 
-## 4. `tests/rade_qnet/sources/dataset/transforms/test_transforms_reduction.py`
+## 4. `tranql/models/rade/rade_qnet/tests/sources/dataset/transforms/test_transforms_reduction.py`
 
-9501 bytes · SHA-256 `a4c587d5962eeb86`
+9560 bytes · SHA-256 `efdc6746d5981dde`
 
 ```python
 """
@@ -643,8 +649,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.spec.data import ReductionSpec
-from src.rade_qnet.sources.dataset.transforms.reduction import ReductionState
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.data import ReductionSpec
+from tranql.models.rade.rade_qnet.rade_qnet.sources.dataset.transforms.reduction import (
+    ReductionState,
+)
 
 
 @pytest.fixture
@@ -860,9 +868,9 @@ class TestPersistence:
 
 ---
 
-## 5. `tests/rade_qnet/sources/dataset/transforms/test_transforms_scaling.py`
+## 5. `tranql/models/rade/rade_qnet/tests/sources/dataset/transforms/test_transforms_scaling.py`
 
-7865 bytes · SHA-256 `65d7e3db21ea29f0`
+7915 bytes · SHA-256 `3ef1d50bfe25cc83`
 
 ```python
 """
@@ -884,8 +892,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.spec.data import ScalingSpec
-from src.rade_qnet.sources.dataset.transforms.scaling import ScalingState
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.data import ScalingSpec
+from tranql.models.rade.rade_qnet.rade_qnet.sources.dataset.transforms.scaling import ScalingState
 
 
 @pytest.fixture
@@ -1075,9 +1083,9 @@ class TestMethods:
 
 ---
 
-## 6. `tests/rade_qnet/sources/dataset/transforms/test_transforms_sequence.py`
+## 6. `tranql/models/rade/rade_qnet/tests/sources/dataset/transforms/test_transforms_sequence.py`
 
-9057 bytes · SHA-256 `8dbf39b6809d2186`
+9132 bytes · SHA-256 `a72496bc7acf552b`
 
 ```python
 """
@@ -1100,9 +1108,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.contract.data import SplitIndices
-from src.rade_qnet.core.lifecycle.errors import ContractError
-from src.rade_qnet.sources.dataset.transforms.sequence import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.data import SplitIndices
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.sources.dataset.transforms.sequence import (
     extract_windows,
     usable_labels,
     windows_stay_within,

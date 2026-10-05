@@ -1,4 +1,4 @@
-# `src/rade_qnet/sources/batching`
+# `tranql/models/rade/rade_qnet/rade_qnet/sources/batching`
 
 3 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -10,7 +10,7 @@
 
 ---
 
-## 1. `src/rade_qnet/sources/batching/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/sources/batching/__init__.py`
 
 1770 bytes · SHA-256 `705aee492f36f269`
 
@@ -61,7 +61,7 @@ __all__: tuple[str, ...] = ()
 
 ---
 
-## 2. `src/rade_qnet/sources/batching/dataset.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/sources/batching/dataset.py`
 
 15290 bytes · SHA-256 `e9bf1a479fecbcb8`
 
@@ -496,7 +496,7 @@ def sources_for(
 
 ---
 
-## 3. `src/rade_qnet/sources/batching/rollout.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/sources/batching/rollout.py`
 
 17912 bytes · SHA-256 `a23e2fda7fa4f1bb`
 

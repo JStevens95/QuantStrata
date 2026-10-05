@@ -1,17 +1,17 @@
-# `tests/rade_qnet/engines`
+# `tranql/models/rade/rade_qnet/tests/engines`
 
 4 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 15 | 581 | `17c5d2fc92ec9189` |
-| 2 | `test_engine_layout.py` | 261 | 10110 | `ccec6580fbb253cf` |
-| 3 | `test_engines_base.py` | 261 | 10333 | `99dda0aeda3cf4ad` |
-| 4 | `test_engines_loaders.py` | 180 | 7017 | `69e2fdf28f2f1d6e` |
+| 2 | `test_engine_layout.py` | 263 | 10103 | `bb1750b7e2f905e4` |
+| 3 | `test_engines_base.py` | 265 | 10400 | `951f4a6254bd4f2b` |
+| 4 | `test_engines_loaders.py` | 180 | 7092 | `367fbd5e980a80e5` |
 
 ---
 
-## 1. `tests/rade_qnet/engines/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/engines/__init__.py`
 
 581 bytes · SHA-256 `17c5d2fc92ec9189`
 
@@ -35,9 +35,9 @@ Planned modules
 
 ---
 
-## 2. `tests/rade_qnet/engines/test_engine_layout.py`
+## 2. `tranql/models/rade/rade_qnet/tests/engines/test_engine_layout.py`
 
-10110 bytes · SHA-256 `ccec6580fbb253cf`
+10103 bytes · SHA-256 `bb1750b7e2f905e4`
 
 ```python
 """
@@ -81,6 +81,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+
+from ..locations import PACKAGE_ROOT
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -144,7 +146,7 @@ HARDWARE_MODULES = frozenset(
 #: sklearn to reach it.
 FRAMEWORK_MODULES = frozenset({"__init__.py", "base.py", "loaders.py"})
 
-ENGINES_ROOT = Path(__file__).resolve().parents[3] / "src" / "rade_qnet" / "engines"
+ENGINES_ROOT = PACKAGE_ROOT / "engines"
 
 
 def engine_packages() -> Iterator[Path]:
@@ -305,9 +307,9 @@ class TestWhatTheShapeReports:
 
 ---
 
-## 3. `tests/rade_qnet/engines/test_engines_base.py`
+## 3. `tranql/models/rade/rade_qnet/tests/engines/test_engines_base.py`
 
-10333 bytes · SHA-256 `99dda0aeda3cf4ad`
+10400 bytes · SHA-256 `951f4a6254bd4f2b`
 
 ```python
 """
@@ -339,8 +341,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from src.rade_qnet.engines.base import Engine, EngineCapabilities, ModelHandle
-from src.rade_qnet.testkit.fixtures import SyntheticEngine
+from tranql.models.rade.rade_qnet.rade_qnet.engines.base import (
+    Engine,
+    EngineCapabilities,
+    ModelHandle,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import SyntheticEngine
 
 
 class TestEngineCapabilities:
@@ -575,9 +581,9 @@ class TestTheProtocol:
 
 ---
 
-## 4. `tests/rade_qnet/engines/test_engines_loaders.py`
+## 4. `tranql/models/rade/rade_qnet/tests/engines/test_engines_loaders.py`
 
-7017 bytes · SHA-256 `69e2fdf28f2f1d6e`
+7092 bytes · SHA-256 `367fbd5e980a80e5`
 
 ```python
 """
@@ -599,9 +605,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.lifecycle.errors import EngineError
-from src.rade_qnet.engines.loaders import drain, flatten, reject_static
-from src.rade_qnet.testkit.fixtures import SyntheticTensorSource
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import EngineError
+from tranql.models.rade.rade_qnet.rade_qnet.engines.loaders import drain, flatten, reject_static
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import SyntheticTensorSource
 
 
 def source(n_samples: int = 20, n_features: int = 3, **kwargs: object) -> SyntheticTensorSource:

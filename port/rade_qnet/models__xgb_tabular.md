@@ -1,4 +1,4 @@
-# `src/rade_qnet/models/xgb_tabular`
+# `tranql/models/rade/rade_qnet/rade_qnet/models/xgb_tabular`
 
 5 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -12,7 +12,7 @@
 
 ---
 
-## 1. `src/rade_qnet/models/xgb_tabular/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/models/xgb_tabular/__init__.py`
 
 647 bytes · SHA-256 `8a5273793dc9fa45`
 
@@ -43,7 +43,7 @@ __all__ = ["XgbTabularModel", "XgbTabularSpec"]
 
 ---
 
-## 2. `src/rade_qnet/models/xgb_tabular/data.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/models/xgb_tabular/data.py`
 
 2787 bytes · SHA-256 `cf2983dc854e17c0`
 
@@ -127,7 +127,7 @@ def data_module(spec: SupervisedRunSpec) -> TabularDataModule:
 
 ---
 
-## 3. `src/rade_qnet/models/xgb_tabular/model.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/models/xgb_tabular/model.py`
 
 2857 bytes · SHA-256 `c7cf7a7b0632cefd`
 
@@ -208,7 +208,7 @@ def build(settings: XgbTabularSpec) -> BoosterModel:
 
 ---
 
-## 4. `src/rade_qnet/models/xgb_tabular/register.py`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/models/xgb_tabular/register.py`
 
 2508 bytes · SHA-256 `292e398c993f0db6`
 
@@ -301,7 +301,7 @@ class XgbTabularModel(SupervisedModel):
 
 ---
 
-## 5. `src/rade_qnet/models/xgb_tabular/spec.py`
+## 5. `tranql/models/rade/rade_qnet/rade_qnet/models/xgb_tabular/spec.py`
 
 2332 bytes · SHA-256 `446633bfa7a1d14b`
 

@@ -1,4 +1,4 @@
-# `src/rade_qnet/models/lstm_tabular`
+# `tranql/models/rade/rade_qnet/rade_qnet/models/lstm_tabular`
 
 5 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -12,7 +12,7 @@
 
 ---
 
-## 1. `src/rade_qnet/models/lstm_tabular/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/models/lstm_tabular/__init__.py`
 
 2125 bytes · SHA-256 `8ed63db8039871d8`
 
@@ -68,7 +68,7 @@ __all__ = ["LstmTabular", "LstmTabularModel", "LstmTabularSpec"]
 
 ---
 
-## 2. `src/rade_qnet/models/lstm_tabular/data.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/models/lstm_tabular/data.py`
 
 2413 bytes · SHA-256 `78bb98d6c885d8aa`
 
@@ -146,7 +146,7 @@ def data_module(spec: SupervisedRunSpec) -> TabularDataModule:
 
 ---
 
-## 3. `src/rade_qnet/models/lstm_tabular/model.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/models/lstm_tabular/model.py`
 
 6756 bytes · SHA-256 `2db3a3716d364c54`
 
@@ -359,7 +359,7 @@ def _feature_width(signature: InputSignature) -> int:
 
 ---
 
-## 4. `src/rade_qnet/models/lstm_tabular/register.py`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/models/lstm_tabular/register.py`
 
 2744 bytes · SHA-256 `1e29ed34e6a56eb1`
 
@@ -456,7 +456,7 @@ class LstmTabularModel(SupervisedModel):
 
 ---
 
-## 5. `src/rade_qnet/models/lstm_tabular/spec.py`
+## 5. `tranql/models/rade/rade_qnet/rade_qnet/models/lstm_tabular/spec.py`
 
 720 bytes · SHA-256 `684004c8b0263ebe`
 

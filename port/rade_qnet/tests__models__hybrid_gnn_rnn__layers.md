@@ -1,4 +1,4 @@
-# `tests/rade_qnet/models/hybrid_gnn_rnn/layers`
+# `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/layers`
 
 7 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -6,15 +6,15 @@
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 9 | 433 | `74ed9a32e29b7cd6` |
 | 2 | `conftest.py` | 78 | 2501 | `22199b76430ed4c2` |
-| 3 | `test_attention.py` | 192 | 7869 | `e37200c730a5a76c` |
-| 4 | `test_fusion.py` | 192 | 7739 | `f62954d39045e6fb` |
-| 5 | `test_gnn.py` | 215 | 8859 | `db86619a1b40adb7` |
-| 6 | `test_projection.py` | 250 | 10191 | `1447669b64965f56` |
-| 7 | `test_rnn.py` | 125 | 5190 | `b3fb84a31c2521dc` |
+| 3 | `test_attention.py` | 194 | 7953 | `ccff859641dcee9d` |
+| 4 | `test_fusion.py` | 192 | 7814 | `fb100899a532acb1` |
+| 5 | `test_gnn.py` | 215 | 8934 | `c101232729666724` |
+| 6 | `test_projection.py` | 252 | 10275 | `0576d467a97225b6` |
+| 7 | `test_rnn.py` | 125 | 5265 | `e6647b6a8262d8f7` |
 
 ---
 
-## 1. `tests/rade_qnet/models/hybrid_gnn_rnn/layers/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/layers/__init__.py`
 
 433 bytes · SHA-256 `74ed9a32e29b7cd6`
 
@@ -32,7 +32,7 @@ contributes nothing indistinguishable from one that works.
 
 ---
 
-## 2. `tests/rade_qnet/models/hybrid_gnn_rnn/layers/conftest.py`
+## 2. `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/layers/conftest.py`
 
 2501 bytes · SHA-256 `22199b76430ed4c2`
 
@@ -119,9 +119,9 @@ def pnl_history() -> torch.Tensor:
 
 ---
 
-## 3. `tests/rade_qnet/models/hybrid_gnn_rnn/layers/test_attention.py`
+## 3. `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/layers/test_attention.py`
 
-7869 bytes · SHA-256 `e37200c730a5a76c`
+7953 bytes · SHA-256 `ccff859641dcee9d`
 
 ```python
 """Tests for the target attention layer."""
@@ -131,9 +131,11 @@ from __future__ import annotations
 import pytest
 import torch
 
-from src.rade_qnet.core.lifecycle.errors import ContractError
-from src.rade_qnet.models.hybrid_gnn_rnn.layers.attention import TargetAttentionLayer
-from src.rade_qnet.models.hybrid_gnn_rnn.spec import HybridModelSpec
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.layers.attention import (
+    TargetAttentionLayer,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.spec import HybridModelSpec
 
 from .conftest import BATCH, N_NODES, N_TARGETS, UNITS
 
@@ -320,9 +322,9 @@ class TestOptions:
 
 ---
 
-## 4. `tests/rade_qnet/models/hybrid_gnn_rnn/layers/test_fusion.py`
+## 4. `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/layers/test_fusion.py`
 
-7739 bytes · SHA-256 `f62954d39045e6fb`
+7814 bytes · SHA-256 `fb100899a532acb1`
 
 ```python
 """Tests for the fusion layer."""
@@ -332,9 +334,9 @@ from __future__ import annotations
 import pytest
 import torch
 
-from src.rade_qnet.core.lifecycle.errors import ContractError
-from src.rade_qnet.models.hybrid_gnn_rnn.layers.fusion import FusionLayer
-from src.rade_qnet.models.hybrid_gnn_rnn.spec import HybridModelSpec
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.layers.fusion import FusionLayer
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.spec import HybridModelSpec
 
 from .conftest import BATCH, N_NODES, UNITS
 
@@ -521,9 +523,9 @@ class TestMixing:
 
 ---
 
-## 5. `tests/rade_qnet/models/hybrid_gnn_rnn/layers/test_gnn.py`
+## 5. `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/layers/test_gnn.py`
 
-8859 bytes · SHA-256 `db86619a1b40adb7`
+8934 bytes · SHA-256 `c101232729666724`
 
 ```python
 """Tests for the graph block."""
@@ -533,8 +535,8 @@ from __future__ import annotations
 import pytest
 import torch
 
-from src.rade_qnet.core.lifecycle.errors import ContractError
-from src.rade_qnet.models.hybrid_gnn_rnn.layers.gnn import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.layers.gnn import (
     GnnBlock,
     GraphSage,
     MixedGraphSage,
@@ -542,7 +544,7 @@ from src.rade_qnet.models.hybrid_gnn_rnn.layers.gnn import (
     neighbour_max,
     neighbour_mean,
 )
-from src.rade_qnet.models.hybrid_gnn_rnn.spec import HybridModelSpec
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.spec import HybridModelSpec
 
 from .conftest import N_ATTRIBUTES, N_NODES, UNITS
 
@@ -745,9 +747,9 @@ class TestActivations:
 
 ---
 
-## 6. `tests/rade_qnet/models/hybrid_gnn_rnn/layers/test_projection.py`
+## 6. `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/layers/test_projection.py`
 
-10191 bytes · SHA-256 `1447669b64965f56`
+10275 bytes · SHA-256 `0576d467a97225b6`
 
 ```python
 """Tests for the output head."""
@@ -757,9 +759,11 @@ from __future__ import annotations
 import pytest
 import torch
 
-from src.rade_qnet.core.lifecycle.errors import ContractError
-from src.rade_qnet.models.hybrid_gnn_rnn.layers.projection import ProjectionLayer
-from src.rade_qnet.models.hybrid_gnn_rnn.spec import HybridModelSpec
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.layers.projection import (
+    ProjectionLayer,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.spec import HybridModelSpec
 
 from .conftest import BATCH, N_ATTRIBUTES, N_TARGETS, UNITS
 
@@ -1004,9 +1008,9 @@ class TestUnseenTargets:
 
 ---
 
-## 7. `tests/rade_qnet/models/hybrid_gnn_rnn/layers/test_rnn.py`
+## 7. `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/layers/test_rnn.py`
 
-5190 bytes · SHA-256 `b3fb84a31c2521dc`
+5265 bytes · SHA-256 `e6647b6a8262d8f7`
 
 ```python
 """Tests for the recurrent block."""
@@ -1016,9 +1020,9 @@ from __future__ import annotations
 import pytest
 import torch
 
-from src.rade_qnet.core.lifecycle.errors import ContractError
-from src.rade_qnet.models.hybrid_gnn_rnn.layers.rnn import RnnBlock
-from src.rade_qnet.models.hybrid_gnn_rnn.spec import HybridModelSpec
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.layers.rnn import RnnBlock
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.spec import HybridModelSpec
 
 from .conftest import BATCH, N_ELEMENTARY, SEQUENCE, UNITS
 

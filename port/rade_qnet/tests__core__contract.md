@@ -1,21 +1,21 @@
-# `tests/rade_qnet/core/contract`
+# `tranql/models/rade/rade_qnet/tests/core/contract`
 
 8 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 32 | 1381 | `455461a7d762debd` |
-| 2 | `test_contract_bundle.py` | 291 | 9501 | `e7f0fc8dc09c7503` |
-| 3 | `test_contract_data.py` | 275 | 9775 | `73b19d1e89316134` |
-| 4 | `test_contract_requirement.py` | 226 | 9536 | `6017b8f7ead178ed` |
-| 5 | `test_contract_result.py` | 336 | 12445 | `7a2525781c1cdef6` |
-| 6 | `test_contract_signature.py` | 320 | 12534 | `2ac93fb372973aef` |
-| 7 | `test_contract_source.py` | 244 | 8360 | `d6c4f0f4a3b93cb1` |
-| 8 | `test_contract_state.py` | 209 | 7845 | `85aeb1274d4d54a1` |
+| 2 | `test_contract_bundle.py` | 291 | 9595 | `2f6bca7bfc6aac68` |
+| 3 | `test_contract_data.py` | 275 | 9850 | `4b6c56618ee6b8a9` |
+| 4 | `test_contract_requirement.py` | 232 | 9637 | `5eb299b8a2a8a99f` |
+| 5 | `test_contract_result.py` | 336 | 12520 | `eebf5dcffee6a44d` |
+| 6 | `test_contract_signature.py` | 320 | 12584 | `6b5862db80e17356` |
+| 7 | `test_contract_source.py` | 247 | 8448 | `9119a7440c1661e1` |
+| 8 | `test_contract_state.py` | 212 | 7908 | `6cf4980731811d54` |
 
 ---
 
-## 1. `tests/rade_qnet/core/contract/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/core/contract/__init__.py`
 
 1381 bytes · SHA-256 `455461a7d762debd`
 
@@ -56,9 +56,9 @@ Planned modules
 
 ---
 
-## 2. `tests/rade_qnet/core/contract/test_contract_bundle.py`
+## 2. `tranql/models/rade/rade_qnet/tests/core/contract/test_contract_bundle.py`
 
-9501 bytes · SHA-256 `e7f0fc8dc09c7503`
+9595 bytes · SHA-256 `2f6bca7bfc6aac68`
 
 ```python
 """
@@ -67,7 +67,7 @@ Tests for the bundle contracts.
 A bundle is self-describing: given only a directory, the framework can say
 which model produced it, from which spec, against which data, at which code
 version. These tests cover the in-memory and metadata half of that claim; the
-filesystem half is covered under ``tests/rade_qnet/storage``.
+filesystem half is covered under ``tranql/models/rade/rade_qnet/tests/storage``.
 
 The manifest's content hashes are the part that turns "we think this bundle is
 intact" into something checkable, so corruption fails at load time with a
@@ -82,15 +82,15 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from src.rade_qnet.core.contract.bundle import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.bundle import (
     BUNDLE_SCHEMA_VERSION,
     FITTED_STATE_DIRNAME,
     Manifest,
     ManifestEntry,
     SavedBundle,
 )
-from src.rade_qnet.core.lifecycle.errors import BundleError
-from src.rade_qnet.testkit.fixtures import make_model_bundle
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import BundleError
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import make_model_bundle
 
 DIGEST = "a" * 64
 
@@ -356,9 +356,9 @@ class TestSavedBundle:
 
 ---
 
-## 3. `tests/rade_qnet/core/contract/test_contract_data.py`
+## 3. `tranql/models/rade/rade_qnet/tests/core/contract/test_contract_data.py`
 
-9775 bytes · SHA-256 `73b19d1e89316134`
+9850 bytes · SHA-256 `4b6c56618ee6b8a9`
 
 ```python
 """
@@ -379,15 +379,15 @@ from datetime import UTC, datetime
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.contract.data import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.data import (
     SPLIT_NAMES,
     DataBundle,
     DataLineage,
     SplitIndices,
     TensorBatchData,
 )
-from src.rade_qnet.core.lifecycle.errors import ContractError, SpecError
-from src.rade_qnet.testkit.fixtures import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError, SpecError
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import (
     make_lineage,
     make_signature,
     make_tensor_bundle,
@@ -640,9 +640,9 @@ class TestDataBundle:
 
 ---
 
-## 4. `tests/rade_qnet/core/contract/test_contract_requirement.py`
+## 4. `tranql/models/rade/rade_qnet/tests/core/contract/test_contract_requirement.py`
 
-9536 bytes · SHA-256 `6017b8f7ead178ed`
+9637 bytes · SHA-256 `5eb299b8a2a8a99f`
 
 ```python
 """
@@ -659,9 +659,15 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from src.rade_qnet.core.contract.requirement import InputRequirement, RequiredInput
-from src.rade_qnet.core.contract.signature import InputSignature, TensorSpec
-from src.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.requirement import (
+    InputRequirement,
+    RequiredInput,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.signature import (
+    InputSignature,
+    TensorSpec,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
 
 WINDOW = TensorSpec(shape=(None, 5, 4), dtype="float32")
 FLAT = TensorSpec(shape=(None, 4), dtype="float32")
@@ -875,9 +881,9 @@ class TestTheDeclarationItselfIsChecked:
 
 ---
 
-## 5. `tests/rade_qnet/core/contract/test_contract_result.py`
+## 5. `tranql/models/rade/rade_qnet/tests/core/contract/test_contract_result.py`
 
-12445 bytes · SHA-256 `7a2525781c1cdef6`
+12520 bytes · SHA-256 `eebf5dcffee6a44d`
 
 ```python
 """
@@ -901,15 +907,15 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from src.rade_qnet.core.contract.result import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.result import (
     EpochRecord,
     EvalResult,
     FitOutcome,
     Predictions,
     TrainingResult,
 )
-from src.rade_qnet.core.lifecycle.errors import ContractError
-from src.rade_qnet.testkit.fixtures import make_training_result
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import make_training_result
 
 
 def _history(*losses, val=True):
@@ -1220,9 +1226,9 @@ class TestPredictions:
 
 ---
 
-## 6. `tests/rade_qnet/core/contract/test_contract_signature.py`
+## 6. `tranql/models/rade/rade_qnet/tests/core/contract/test_contract_signature.py`
 
-12534 bytes · SHA-256 `2ac93fb372973aef`
+12584 bytes · SHA-256 `6b5862db80e17356`
 
 ```python
 """
@@ -1241,13 +1247,13 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from src.rade_qnet.core.contract.signature import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.signature import (
     InputSignature,
     PolicySignature,
     SpaceSpec,
     TensorSpec,
 )
-from src.rade_qnet.core.lifecycle.errors import ContractError, SpecError
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError, SpecError
 
 
 @pytest.fixture
@@ -1549,9 +1555,9 @@ class TestDescribeAndRoundTrip:
 
 ---
 
-## 7. `tests/rade_qnet/core/contract/test_contract_source.py`
+## 7. `tranql/models/rade/rade_qnet/tests/core/contract/test_contract_source.py`
 
-8360 bytes · SHA-256 `d6c4f0f4a3b93cb1`
+8448 bytes · SHA-256 `9119a7440c1661e1`
 
 ```python
 """
@@ -1573,9 +1579,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.contract.source import BatchSource
-from src.rade_qnet.testkit.conformance import check_source
-from src.rade_qnet.testkit.fixtures import SyntheticTensorSource, make_signature
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.source import BatchSource
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.conformance import check_source
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import (
+    SyntheticTensorSource,
+    make_signature,
+)
 
 
 @pytest.fixture
@@ -1802,9 +1811,9 @@ class TestConformanceAgreement:
 
 ---
 
-## 8. `tests/rade_qnet/core/contract/test_contract_state.py`
+## 8. `tranql/models/rade/rade_qnet/tests/core/contract/test_contract_state.py`
 
-7845 bytes · SHA-256 `85aeb1274d4d54a1`
+7908 bytes · SHA-256 `6cf4980731811d54`
 
 ```python
 """
@@ -1824,8 +1833,11 @@ import inspect
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.contract.state import FittedState, IdentityFittedState
-from src.rade_qnet.testkit.fixtures import StandardisingState
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.state import (
+    FittedState,
+    IdentityFittedState,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import StandardisingState
 
 
 class TestAbstractInterface:

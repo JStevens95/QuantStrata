@@ -1,21 +1,21 @@
-# `tests/rade_qnet/orchestration/jobs`
+# `tranql/models/rade/rade_qnet/tests/orchestration/jobs`
 
 8 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 22 | 986 | `db64606cfe41ff84` |
-| 2 | `support.py` | 194 | 6178 | `57bc8a00c87d9c9f` |
-| 3 | `test_jobs_fanout.py` | 279 | 9557 | `1bb24859e5431a8f` |
-| 4 | `test_jobs_groups.py` | 330 | 11800 | `caf6e448ee6e970d` |
-| 5 | `test_jobs_manifest.py` | 354 | 11521 | `98dc6b714ca46aec` |
-| 6 | `test_jobs_parity.py` | 346 | 12562 | `8f27a74433523325` |
-| 7 | `test_jobs_set.py` | 379 | 13317 | `e62c9a827ce52b21` |
-| 8 | `test_jobs_unit.py` | 265 | 9702 | `e3cb40ca51ccddfe` |
+| 2 | `support.py` | 194 | 6278 | `14c04f379adc0598` |
+| 3 | `test_jobs_fanout.py` | 282 | 9645 | `2d148b117a1194f3` |
+| 4 | `test_jobs_groups.py` | 334 | 11867 | `d4c5e354583927fe` |
+| 5 | `test_jobs_manifest.py` | 357 | 11609 | `fe895af0683815e5` |
+| 6 | `test_jobs_parity.py` | 350 | 12780 | `b229e68eea5e23a7` |
+| 7 | `test_jobs_set.py` | 390 | 13565 | `932ff6835e38e445` |
+| 8 | `test_jobs_unit.py` | 274 | 9916 | `411c6c12bb2d0a17` |
 
 ---
 
-## 1. `tests/rade_qnet/orchestration/jobs/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/orchestration/jobs/__init__.py`
 
 986 bytes · SHA-256 `db64606cfe41ff84`
 
@@ -46,9 +46,9 @@ Planned modules
 
 ---
 
-## 2. `tests/rade_qnet/orchestration/jobs/support.py`
+## 2. `tranql/models/rade/rade_qnet/tests/orchestration/jobs/support.py`
 
-6178 bytes · SHA-256 `57bc8a00c87d9c9f`
+6278 bytes · SHA-256 `14c04f379adc0598`
 
 ```python
 """
@@ -78,10 +78,10 @@ from pathlib import Path
 
 import numpy as np
 
-from src.rade_qnet.core.authoring.supervised import SupervisedModel
-from src.rade_qnet.sources.dataset.tables import read_table
-from src.rade_qnet.sources.dataset.tabular import TabularDataModule
-from src.rade_qnet.testkit.fixtures import LinearModel
+from tranql.models.rade.rade_qnet.rade_qnet.core.authoring.supervised import SupervisedModel
+from tranql.models.rade.rade_qnet.rade_qnet.sources.dataset.tables import read_table
+from tranql.models.rade.rade_qnet.rade_qnet.sources.dataset.tabular import TabularDataModule
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import LinearModel
 
 __all__ = [
     "DIRECTORY_MODEL_NAME",
@@ -249,9 +249,9 @@ class SyntheticDirectoryModel(SyntheticSupervisedModel):
 
 ---
 
-## 3. `tests/rade_qnet/orchestration/jobs/test_jobs_fanout.py`
+## 3. `tranql/models/rade/rade_qnet/tests/orchestration/jobs/test_jobs_fanout.py`
 
-9557 bytes · SHA-256 `1bb24859e5431a8f`
+9645 bytes · SHA-256 `2d148b117a1194f3`
 
 ```python
 """
@@ -275,12 +275,15 @@ import json
 
 import pytest
 
-from src.rade_qnet.orchestration.jobs.fanout import (
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.jobs.fanout import (
     fingerprint_tag,
     group_overrides,
     job_set_for_groups,
 )
-from src.rade_qnet.orchestration.jobs.groups import MANIFEST_FILENAME, read_group_set
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.jobs.groups import (
+    MANIFEST_FILENAME,
+    read_group_set,
+)
 
 #: Shared run-specification fragment. The flagship by name only: these tests
 #: expand and validate a job set, they do not train anything.
@@ -302,7 +305,7 @@ def _flagship():
     None
         For the duration of the test.
     """
-    import src.rade_qnet.models.hybrid_gnn_rnn.register  # noqa: F401, PLC0415
+    import tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.register  # noqa: F401, PLC0415
 
     yield
 
@@ -537,9 +540,9 @@ class TestTheOverrideFragment:
 
 ---
 
-## 4. `tests/rade_qnet/orchestration/jobs/test_jobs_groups.py`
+## 4. `tranql/models/rade/rade_qnet/tests/orchestration/jobs/test_jobs_groups.py`
 
-11800 bytes · SHA-256 `caf6e448ee6e970d`
+11867 bytes · SHA-256 `d4c5e354583927fe`
 
 ```python
 """
@@ -566,8 +569,12 @@ import json
 
 import pytest
 
-from src.rade_qnet.core.lifecycle.errors import SpecError
-from src.rade_qnet.orchestration.jobs.groups import MANIFEST_FILENAME, GroupSet, read_group_set
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import SpecError
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.jobs.groups import (
+    MANIFEST_FILENAME,
+    GroupSet,
+    read_group_set,
+)
 
 
 def write_group_set(root, groups=None):
@@ -876,9 +883,9 @@ class TestDescribing:
 
 ---
 
-## 5. `tests/rade_qnet/orchestration/jobs/test_jobs_manifest.py`
+## 5. `tranql/models/rade/rade_qnet/tests/orchestration/jobs/test_jobs_manifest.py`
 
-11521 bytes · SHA-256 `98dc6b714ca46aec`
+11609 bytes · SHA-256 `fe895af0683815e5`
 
 ```python
 """
@@ -910,13 +917,16 @@ from pathlib import Path
 
 import pytest
 
-from src.rade_qnet.orchestration.compute.base import WorkFailure, WorkResult
-from src.rade_qnet.orchestration.jobs.manifest import (
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.compute.base import (
+    WorkFailure,
+    WorkResult,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.jobs.manifest import (
     MANIFEST_FILENAME,
     JobRecord,
     JobSetManifest,
 )
-from src.rade_qnet.orchestration.jobs.unit import JobOutcome
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.jobs.unit import JobOutcome
 
 
 def outcome(job_id: str = "a", **overrides: object) -> JobOutcome:
@@ -1239,9 +1249,9 @@ class TestWritingAndReading:
 
 ---
 
-## 6. `tests/rade_qnet/orchestration/jobs/test_jobs_parity.py`
+## 6. `tranql/models/rade/rade_qnet/tests/orchestration/jobs/test_jobs_parity.py`
 
-12562 bytes · SHA-256 `8f27a74433523325`
+12780 bytes · SHA-256 `b229e68eea5e23a7`
 
 ```python
 """
@@ -1300,14 +1310,16 @@ from pathlib import Path
 
 import pytest
 
-from src.rade_qnet.core.contract.bundle import WEIGHTS_FILENAME
-from src.rade_qnet.core.spec.jobs import parse_job_set_spec
-from src.rade_qnet.orchestration.compute.local import LocalExecutor
-from src.rade_qnet.orchestration.compute.processes import ProcessExecutor
-from src.rade_qnet.orchestration.jobs.set import JobSetRunner
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.bundle import WEIGHTS_FILENAME
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.jobs import parse_job_set_spec
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.compute.local import LocalExecutor
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.compute.processes import ProcessExecutor
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.jobs.set import JobSetRunner
+
+from ...locations import GOLDEN_ROOT
 
 #: The Phase 0 capture's input, which the flagship model's data module reads.
-FIXTURE = Path("tests/fixtures/rade_qnet/golden/hybrid_gnn_rnn/input")
+FIXTURE = GOLDEN_ROOT / "hybrid_gnn_rnn" / "input"
 
 #: Fields of a job record that placement must not change. Listed rather than
 #: compared wholesale so that adding a field to `JobRecord` is a decision
@@ -1424,7 +1436,7 @@ def manifests(tmp_path_factory):
     """
     # Imported here rather than at module level for its registration side
     # effect, which is what makes `hybrid_gnn_rnn` resolvable by name.
-    import src.rade_qnet.models.hybrid_gnn_rnn.register  # noqa: F401, PLC0415
+    import tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.register  # noqa: F401, PLC0415
 
     sequential_root = tmp_path_factory.mktemp("sequential")
     pooled_root = tmp_path_factory.mktemp("pooled")
@@ -1567,7 +1579,9 @@ class TestTheExclusionsAreDeliberate:
         whole point of naming the lists rather than comparing records
         wholesale.
         """
-        from src.rade_qnet.orchestration.jobs.manifest import JobRecord  # noqa: PLC0415
+        from tranql.models.rade.rade_qnet.rade_qnet.orchestration.jobs.manifest import (  # noqa: PLC0415
+            JobRecord,
+        )
 
         assert set(JobRecord.model_fields) == set(COMPARED_FIELDS) | set(EXCLUDED_FIELDS)
 
@@ -1594,9 +1608,9 @@ def _weights(run: Run, job_id: str) -> bytes:
 
 ---
 
-## 7. `tests/rade_qnet/orchestration/jobs/test_jobs_set.py`
+## 7. `tranql/models/rade/rade_qnet/tests/orchestration/jobs/test_jobs_set.py`
 
-13317 bytes · SHA-256 `e62c9a827ce52b21`
+13565 bytes · SHA-256 `932ff6835e38e445`
 
 ```python
 """
@@ -1628,14 +1642,25 @@ from __future__ import annotations
 
 import pytest
 
-from src.rade_qnet.core.lifecycle.components import engine as register_engine
-from src.rade_qnet.core.lifecycle.components import model as register_model
-from src.rade_qnet.core.lifecycle.errors import SpecError
-from src.rade_qnet.core.spec.jobs import parse_job_set_spec
-from src.rade_qnet.orchestration.compute.local import LocalExecutor
-from src.rade_qnet.orchestration.jobs.manifest import MANIFEST_FILENAME, JobSetManifest
-from src.rade_qnet.orchestration.jobs.set import JOBS_SUBDIRECTORY, JobSetRunner
-from src.rade_qnet.testkit.fixtures import SyntheticEngine, isolated_registries
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import (
+    engine as register_engine,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import model as register_model
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import SpecError
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.jobs import parse_job_set_spec
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.compute.local import LocalExecutor
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.jobs.manifest import (
+    MANIFEST_FILENAME,
+    JobSetManifest,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.jobs.set import (
+    JOBS_SUBDIRECTORY,
+    JobSetRunner,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import (
+    SyntheticEngine,
+    isolated_registries,
+)
 
 from .support import (
     ENGINE_TAG,
@@ -1982,9 +2007,9 @@ class TestTheSetLevelContext:
 
 ---
 
-## 8. `tests/rade_qnet/orchestration/jobs/test_jobs_unit.py`
+## 8. `tranql/models/rade/rade_qnet/tests/orchestration/jobs/test_jobs_unit.py`
 
-9702 bytes · SHA-256 `e3cb40ca51ccddfe`
+9916 bytes · SHA-256 `411c6c12bb2d0a17`
 
 ```python
 """
@@ -2013,13 +2038,22 @@ import pickle
 
 import pytest
 
-from src.rade_qnet.core.lifecycle.components import engine as register_engine
-from src.rade_qnet.core.lifecycle.components import model as register_model
-from src.rade_qnet.core.lifecycle.errors import ComponentError
-from src.rade_qnet.core.spec.jobs import parse_job_set_spec
-from src.rade_qnet.orchestration.jobs.set import JobSetRunner
-from src.rade_qnet.orchestration.jobs.unit import JobOutcome, JobPayload, run_job
-from src.rade_qnet.testkit.fixtures import SyntheticEngine, isolated_registries
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import (
+    engine as register_engine,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import model as register_model
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ComponentError
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.jobs import parse_job_set_spec
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.jobs.set import JobSetRunner
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.jobs.unit import (
+    JobOutcome,
+    JobPayload,
+    run_job,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import (
+    SyntheticEngine,
+    isolated_registries,
+)
 
 from .support import (
     ENGINE_TAG,

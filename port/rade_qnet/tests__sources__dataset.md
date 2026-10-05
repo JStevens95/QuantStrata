@@ -1,18 +1,18 @@
-# `tests/rade_qnet/sources/dataset`
+# `tranql/models/rade/rade_qnet/tests/sources/dataset`
 
 5 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 26 | 1204 | `aca25b3ce8fb419d` |
-| 2 | `test_dataset_cache.py` | 197 | 7114 | `219df6062c0637eb` |
-| 3 | `test_dataset_module.py` | 435 | 18100 | `6a34cddc7ef22200` |
-| 4 | `test_dataset_splits.py` | 322 | 12446 | `34d44469c31c40c1` |
-| 5 | `test_dataset_tables.py` | 344 | 12810 | `4645567f20904486` |
+| 2 | `test_dataset_cache.py` | 203 | 7240 | `aaa06cc28e137895` |
+| 3 | `test_dataset_module.py` | 435 | 18200 | `ca08c25f1016ea36` |
+| 4 | `test_dataset_splits.py` | 322 | 12521 | `eabbe927b17d99a9` |
+| 5 | `test_dataset_tables.py` | 350 | 12986 | `da37954b5775424f` |
 
 ---
 
-## 1. `tests/rade_qnet/sources/dataset/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/sources/dataset/__init__.py`
 
 1204 bytes · SHA-256 `aca25b3ce8fb419d`
 
@@ -47,9 +47,9 @@ Planned modules
 
 ---
 
-## 2. `tests/rade_qnet/sources/dataset/test_dataset_cache.py`
+## 2. `tranql/models/rade/rade_qnet/tests/sources/dataset/test_dataset_cache.py`
 
-7114 bytes · SHA-256 `219df6062c0637eb`
+7240 bytes · SHA-256 `aaa06cc28e137895`
 
 ```python
 """
@@ -83,10 +83,16 @@ from datetime import UTC, datetime
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.contract.data import DataLineage, SplitIndices
-from src.rade_qnet.core.contract.signature import InputSignature, TensorSpec
-from src.rade_qnet.sources.dataset.cache import DatasetCache, PreparedDataset
-from src.rade_qnet.testkit.fixtures import StandardisingState
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.data import DataLineage, SplitIndices
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.signature import (
+    InputSignature,
+    TensorSpec,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.sources.dataset.cache import (
+    DatasetCache,
+    PreparedDataset,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import StandardisingState
 
 
 def write_csv(path, rows, columns=("a", "b", "target")):
@@ -253,9 +259,9 @@ class TestCachedStaticInputs:
 
 ---
 
-## 3. `tests/rade_qnet/sources/dataset/test_dataset_module.py`
+## 3. `tranql/models/rade/rade_qnet/tests/sources/dataset/test_dataset_module.py`
 
-18100 bytes · SHA-256 `6a34cddc7ef22200`
+18200 bytes · SHA-256 `ca08c25f1016ea36`
 
 ```python
 """
@@ -289,16 +295,16 @@ import csv
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.contract.data import SPLIT_NAMES
-from src.rade_qnet.core.spec.data import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.data import SPLIT_NAMES
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.data import (
     ChronologicalSplitSpec,
     PurgedKFoldSplitSpec,
     ScalingSpec,
     TabularSourceSpec,
     TransformsSpec,
 )
-from src.rade_qnet.sources.dataset.module import DataModule
-from src.rade_qnet.sources.dataset.tabular import TabularDataModule
+from tranql.models.rade.rade_qnet.rade_qnet.sources.dataset.module import DataModule
+from tranql.models.rade.rade_qnet.rade_qnet.sources.dataset.tabular import TabularDataModule
 
 
 @pytest.fixture
@@ -697,9 +703,9 @@ class TestTheTemplateIsAbstract:
 
 ---
 
-## 4. `tests/rade_qnet/sources/dataset/test_dataset_splits.py`
+## 4. `tranql/models/rade/rade_qnet/tests/sources/dataset/test_dataset_splits.py`
 
-12446 bytes · SHA-256 `34d44469c31c40c1`
+12521 bytes · SHA-256 `eabbe927b17d99a9`
 
 ```python
 """
@@ -726,14 +732,14 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.lifecycle.errors import SpecError
-from src.rade_qnet.core.spec.data import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import SpecError
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.data import (
     ChronologicalSplitSpec,
     ExplicitSplitSpec,
     GroupedSplitSpec,
     PurgedKFoldSplitSpec,
 )
-from src.rade_qnet.sources.dataset.splits import (
+from tranql.models.rade.rade_qnet.rade_qnet.sources.dataset.splits import (
     boundary_gap,
     split_by_group,
     split_chronologically,
@@ -1028,9 +1034,9 @@ class TestTheDispatcher:
 
 ---
 
-## 5. `tests/rade_qnet/sources/dataset/test_dataset_tables.py`
+## 5. `tranql/models/rade/rade_qnet/tests/sources/dataset/test_dataset_tables.py`
 
-12810 bytes · SHA-256 `4645567f20904486`
+12986 bytes · SHA-256 `da37954b5775424f`
 
 ```python
 """
@@ -1064,12 +1070,18 @@ from datetime import UTC, datetime
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.contract.data import DataLineage, SplitIndices
-from src.rade_qnet.core.contract.signature import InputSignature, TensorSpec
-from src.rade_qnet.core.lifecycle.errors import BundleError, SpecError
-from src.rade_qnet.sources.dataset.cache import PreparedDataset
-from src.rade_qnet.sources.dataset.tables import fingerprint_source, read_table
-from src.rade_qnet.testkit.fixtures import StandardisingState
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.data import DataLineage, SplitIndices
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.signature import (
+    InputSignature,
+    TensorSpec,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import BundleError, SpecError
+from tranql.models.rade.rade_qnet.rade_qnet.sources.dataset.cache import PreparedDataset
+from tranql.models.rade.rade_qnet.rade_qnet.sources.dataset.tables import (
+    fingerprint_source,
+    read_table,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import StandardisingState
 
 
 def write_csv(path, rows, columns=("a", "b", "target")):

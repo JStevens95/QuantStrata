@@ -1,16 +1,16 @@
-# `tests/rade_qnet/engines/torch/learners`
+# `tranql/models/rade/rade_qnet/tests/engines/torch/learners`
 
 3 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 25 | 979 | `347c5ed4a780e803` |
-| 2 | `test_learners_random.py` | 259 | 9553 | `65cfc15b18ea7679` |
-| 3 | `test_learners_supervised.py` | 383 | 14697 | `4304123ce66061d2` |
+| 2 | `test_learners_random.py` | 262 | 9691 | `2a44ac1a284abfd1` |
+| 3 | `test_learners_supervised.py` | 383 | 14847 | `7ea49e9ffc1d244b` |
 
 ---
 
-## 1. `tests/rade_qnet/engines/torch/learners/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/engines/torch/learners/__init__.py`
 
 979 bytes · SHA-256 `347c5ed4a780e803`
 
@@ -44,9 +44,9 @@ Planned modules
 
 ---
 
-## 2. `tests/rade_qnet/engines/torch/learners/test_learners_random.py`
+## 2. `tranql/models/rade/rade_qnet/tests/engines/torch/learners/test_learners_random.py`
 
-9553 bytes · SHA-256 `65cfc15b18ea7679`
+9691 bytes · SHA-256 `2a44ac1a284abfd1`
 
 ```python
 """
@@ -72,11 +72,14 @@ from __future__ import annotations
 import pytest
 import torch
 
-from src.rade_qnet.core.contract.data import TARGET_KEY
-from src.rade_qnet.core.contract.signature import PolicySignature, SpaceSpec
-from src.rade_qnet.core.lifecycle.components import get_learner
-from src.rade_qnet.core.lifecycle.errors import EngineError
-from src.rade_qnet.engines.torch.learners.random import RandomLearner
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.data import TARGET_KEY
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.signature import (
+    PolicySignature,
+    SpaceSpec,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import get_learner
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import EngineError
+from tranql.models.rade.rade_qnet.rade_qnet.engines.torch.learners.random import RandomLearner
 
 DISCRETE = PolicySignature(
     observation=SpaceSpec(kind="box", shape=(3,), dtype="float32"),
@@ -312,9 +315,9 @@ class TestItIsResolvedLikeAnyOtherLearner:
 
 ---
 
-## 3. `tests/rade_qnet/engines/torch/learners/test_learners_supervised.py`
+## 3. `tranql/models/rade/rade_qnet/tests/engines/torch/learners/test_learners_supervised.py`
 
-14697 bytes · SHA-256 `4304123ce66061d2`
+14847 bytes · SHA-256 `7ea49e9ffc1d244b`
 
 ```python
 """
@@ -342,15 +345,15 @@ import pytest
 import torch
 from torch import nn
 
-from src.rade_qnet.core.lifecycle.errors import EngineError
-from src.rade_qnet.core.spec.hardware import HardwareSpec
-from src.rade_qnet.engines.torch.hardware.devices import resolve_hardware
-from src.rade_qnet.engines.torch.learners.supervised import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import EngineError
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.hardware import HardwareSpec
+from tranql.models.rade.rade_qnet.rade_qnet.engines.torch.hardware.devices import resolve_hardware
+from tranql.models.rade.rade_qnet.rade_qnet.engines.torch.learners.supervised import (
     SupervisedLearner,
     align_with_target,
 )
-from src.rade_qnet.engines.torch.training.callbacks import GradientNorms
-from src.rade_qnet.engines.torch.training.losses import build_loss
+from tranql.models.rade.rade_qnet.rade_qnet.engines.torch.training.callbacks import GradientNorms
+from tranql.models.rade.rade_qnet.rade_qnet.engines.torch.training.losses import build_loss
 
 CPU_HARDWARE = resolve_hardware(HardwareSpec(device="cpu"))
 

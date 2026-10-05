@@ -1,4 +1,4 @@
-# `src/rade_qnet/sources/environment`
+# `tranql/models/rade/rade_qnet/rade_qnet/sources/environment`
 
 2 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -9,7 +9,7 @@
 
 ---
 
-## 1. `src/rade_qnet/sources/environment/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/sources/environment/__init__.py`
 
 3122 bytes · SHA-256 `8d8eb3deaf1ea40f`
 
@@ -87,7 +87,7 @@ __all__ = ["Environment", "StepOutcome"]
 
 ---
 
-## 2. `src/rade_qnet/sources/environment/protocol.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/sources/environment/protocol.py`
 
 6816 bytes · SHA-256 `b6c88ab23fb9cf73`
 

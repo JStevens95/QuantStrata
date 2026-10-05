@@ -1,4 +1,4 @@
-# `src/rade_qnet/orchestration/pipelines`
+# `tranql/models/rade/rade_qnet/rade_qnet/orchestration/pipelines`
 
 6 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -13,7 +13,7 @@
 
 ---
 
-## 1. `src/rade_qnet/orchestration/pipelines/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/orchestration/pipelines/__init__.py`
 
 2775 bytes · SHA-256 `67aa54d4ce6a7acf`
 
@@ -85,7 +85,7 @@ __all__: tuple[str, ...] = ()
 
 ---
 
-## 2. `src/rade_qnet/orchestration/pipelines/evaluate.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/orchestration/pipelines/evaluate.py`
 
 13992 bytes · SHA-256 `f9f065ad810b76dc`
 
@@ -489,7 +489,7 @@ class EvaluatePipeline(Pipeline[EvaluationResult]):
 
 ---
 
-## 3. `src/rade_qnet/orchestration/pipelines/infer.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/orchestration/pipelines/infer.py`
 
 18018 bytes · SHA-256 `85df0b89051a7a26`
 
@@ -1007,7 +1007,7 @@ class InferPipeline(Pipeline[Predictions]):
 
 ---
 
-## 4. `src/rade_qnet/orchestration/pipelines/reinforce.py`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/orchestration/pipelines/reinforce.py`
 
 22917 bytes · SHA-256 `96b510ee66d5fd62`
 
@@ -1643,7 +1643,7 @@ class ReinforcePipeline(Pipeline[TrainingResult]):
 
 ---
 
-## 5. `src/rade_qnet/orchestration/pipelines/train.py`
+## 5. `tranql/models/rade/rade_qnet/rade_qnet/orchestration/pipelines/train.py`
 
 24664 bytes · SHA-256 `f61cbb9d86175cd0`
 
@@ -2324,7 +2324,7 @@ class TrainPipeline(Pipeline[TrainingResult]):
 
 ---
 
-## 6. `src/rade_qnet/orchestration/pipelines/tune.py`
+## 6. `tranql/models/rade/rade_qnet/rade_qnet/orchestration/pipelines/tune.py`
 
 20832 bytes · SHA-256 `dd0d38b33938ebe7`
 

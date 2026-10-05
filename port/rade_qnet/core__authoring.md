@@ -1,4 +1,4 @@
-# `src/rade_qnet/core/authoring`
+# `tranql/models/rade/rade_qnet/rade_qnet/core/authoring`
 
 5 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -12,7 +12,7 @@
 
 ---
 
-## 1. `src/rade_qnet/core/authoring/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/core/authoring/__init__.py`
 
 3400 bytes · SHA-256 `da89724859285c14`
 
@@ -93,7 +93,7 @@ __all__: tuple[str, ...] = ()
 
 ---
 
-## 2. `src/rade_qnet/core/authoring/capabilities.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/core/authoring/capabilities.py`
 
 10203 bytes · SHA-256 `438101cea82e2646`
 
@@ -367,7 +367,7 @@ class Inductive(Protocol):
 
 ---
 
-## 3. `src/rade_qnet/core/authoring/definition.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/core/authoring/definition.py`
 
 12061 bytes · SHA-256 `4c391938e3356d06`
 
@@ -693,7 +693,7 @@ class PolicyDefinition(ModelDefinition):
 
 ---
 
-## 4. `src/rade_qnet/core/authoring/policy.py`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/core/authoring/policy.py`
 
 6127 bytes · SHA-256 `9bfa261bc0bb07fa`
 
@@ -869,7 +869,7 @@ class PolicyModel(PolicyDefinition):
 
 ---
 
-## 5. `src/rade_qnet/core/authoring/supervised.py`
+## 5. `tranql/models/rade/rade_qnet/rade_qnet/core/authoring/supervised.py`
 
 14782 bytes · SHA-256 `453ad8a21e99e6bd`
 

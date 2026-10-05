@@ -1,4 +1,4 @@
-# `src/rade_qnet/engines/sklearn`
+# `tranql/models/rade/rade_qnet/rade_qnet/engines/sklearn`
 
 2 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -9,7 +9,7 @@
 
 ---
 
-## 1. `src/rade_qnet/engines/sklearn/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/engines/sklearn/__init__.py`
 
 1378 bytes · SHA-256 `9687c52982db50ec`
 
@@ -51,7 +51,7 @@ __all__ = ["ENGINE_NAME", "SklearnEngine"]
 
 ---
 
-## 2. `src/rade_qnet/engines/sklearn/engine.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/engines/sklearn/engine.py`
 
 19332 bytes · SHA-256 `3da30705e4f82de9`
 

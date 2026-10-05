@@ -1,17 +1,17 @@
-# `tests/rade_qnet/engines/torch/hardware`
+# `tranql/models/rade/rade_qnet/tests/engines/torch/hardware`
 
 4 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 1 | 32 | `7860806c8e2de23b` |
-| 2 | `test_hardware_determinism.py` | 194 | 7502 | `47f5af4fd3eae9b5` |
-| 3 | `test_hardware_devices.py` | 283 | 10743 | `2ce882982db68491` |
-| 4 | `test_hardware_distributed.py` | 220 | 8690 | `217493ce9169d482` |
+| 2 | `test_hardware_determinism.py` | 197 | 7565 | `8d84ca2045db57b1` |
+| 3 | `test_hardware_devices.py` | 283 | 10818 | `4eb01b9957fdad4a` |
+| 4 | `test_hardware_distributed.py` | 220 | 8765 | `b32a07774b2a40d1` |
 
 ---
 
-## 1. `tests/rade_qnet/engines/torch/hardware/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/engines/torch/hardware/__init__.py`
 
 32 bytes · SHA-256 `7860806c8e2de23b`
 
@@ -21,9 +21,9 @@
 
 ---
 
-## 2. `tests/rade_qnet/engines/torch/hardware/test_hardware_determinism.py`
+## 2. `tranql/models/rade/rade_qnet/tests/engines/torch/hardware/test_hardware_determinism.py`
 
-7502 bytes · SHA-256 `47f5af4fd3eae9b5`
+7565 bytes · SHA-256 `8d84ca2045db57b1`
 
 ```python
 """
@@ -52,13 +52,16 @@ from __future__ import annotations
 import pytest
 import torch
 
-from src.rade_qnet.core.provenance.seeding import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.provenance.seeding import (
     register_seeder,
     registered_seeders,
     seed_everything,
     unregister_seeder,
 )
-from src.rade_qnet.engines.torch.hardware.determinism import SEEDER_NAME, seed_torch
+from tranql.models.rade.rade_qnet.rade_qnet.engines.torch.hardware.determinism import (
+    SEEDER_NAME,
+    seed_torch,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -224,9 +227,9 @@ class TestDeterminismLevels:
 
 ---
 
-## 3. `tests/rade_qnet/engines/torch/hardware/test_hardware_devices.py`
+## 3. `tranql/models/rade/rade_qnet/tests/engines/torch/hardware/test_hardware_devices.py`
 
-10743 bytes · SHA-256 `2ce882982db68491`
+10818 bytes · SHA-256 `4eb01b9957fdad4a`
 
 ```python
 """
@@ -255,9 +258,9 @@ import pytest
 import torch
 from torch import nn
 
-from src.rade_qnet.core.lifecycle.errors import EngineError
-from src.rade_qnet.core.spec.hardware import HardwareSpec
-from src.rade_qnet.engines.torch.hardware.devices import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import EngineError
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.hardware import HardwareSpec
+from tranql.models.rade.rade_qnet.rade_qnet.engines.torch.hardware.devices import (
     apply_thread_budget,
     autocast_for,
     available_accelerators,
@@ -516,9 +519,9 @@ class TestThreadBudget:
 
 ---
 
-## 4. `tests/rade_qnet/engines/torch/hardware/test_hardware_distributed.py`
+## 4. `tranql/models/rade/rade_qnet/tests/engines/torch/hardware/test_hardware_distributed.py`
 
-8690 bytes · SHA-256 `217493ce9169d482`
+8765 bytes · SHA-256 `b32a07774b2a40d1`
 
 ```python
 """
@@ -550,9 +553,9 @@ import pytest
 import torch
 from torch import nn
 
-from src.rade_qnet.core.lifecycle.errors import EngineError
-from src.rade_qnet.core.spec.hardware import HardwareSpec
-from src.rade_qnet.engines.torch.hardware.distributed import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import EngineError
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.hardware import HardwareSpec
+from tranql.models.rade.rade_qnet.rade_qnet.engines.torch.hardware.distributed import (
     distribute,
     is_distributed_run,
     local_rank,

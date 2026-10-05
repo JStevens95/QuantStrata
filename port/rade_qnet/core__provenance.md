@@ -1,4 +1,4 @@
-# `src/rade_qnet/core/provenance`
+# `tranql/models/rade/rade_qnet/rade_qnet/core/provenance`
 
 4 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -6,12 +6,12 @@
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 50 | 2311 | `b556b6e4ac00495d` |
 | 2 | `hashing.py` | 231 | 6505 | `f6d9f4a484edae26` |
-| 3 | `logging.py` | 262 | 9009 | `f107778d8a86e24c` |
+| 3 | `logging.py` | 275 | 9905 | `00e4746f8dd6ecf0` |
 | 4 | `seeding.py` | 240 | 7831 | `030643171325087b` |
 
 ---
 
-## 1. `src/rade_qnet/core/provenance/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/core/provenance/__init__.py`
 
 2311 bytes · SHA-256 `b556b6e4ac00495d`
 
@@ -70,7 +70,7 @@ __all__: tuple[str, ...] = ()
 
 ---
 
-## 2. `src/rade_qnet/core/provenance/hashing.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/core/provenance/hashing.py`
 
 6505 bytes · SHA-256 `f6d9f4a484edae26`
 
@@ -310,9 +310,9 @@ def abbreviate_digest(digest: str, *, length: int = 12) -> str:
 
 ---
 
-## 3. `src/rade_qnet/core/provenance/logging.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/core/provenance/logging.py`
 
-9009 bytes · SHA-256 `f107778d8a86e24c`
+9905 bytes · SHA-256 `00e4746f8dd6ecf0`
 
 ```python
 """
@@ -371,6 +371,14 @@ _CONTEXT_VARIABLES: Final = {"run_id": RUN_ID, "job_id": JOB_ID, "stage": STAGE}
 #: touching their own loggers.
 ROOT_LOGGER_NAME: Final = "rade_qnet"
 
+#: The name this package was actually imported under: ``tranql.models.rade.rade_qnet.rade_qnet`` from
+#: the repository, ``rade_qnet`` when installed, or a deeper name such as
+#: ``tranql.models.rade.rade_qnet.rade_qnet`` where it is vendored into a
+#: larger tree. Read off this module's own ``__name__`` rather than assumed,
+#: because the package's internal imports are all relative and so it can be
+#: mounted anywhere -- and the logger names must not depend on where.
+_IMPORTED_AS: Final = __name__.removesuffix(".core.provenance.logging")
+
 _LOG_FORMAT: Final = "%(asctime)s %(levelname)-7s [%(rade_qnet_context)s] %(name)s: %(message)s"
 _TIME_FORMAT: Final = "%Y-%m-%d %H:%M:%S"
 
@@ -425,9 +433,14 @@ def get_logger(name: str) -> logging.Logger:
     """
     if name == ROOT_LOGGER_NAME or name.startswith(f"{ROOT_LOGGER_NAME}."):
         return logging.getLogger(name)
-    # Strip the repository's import prefix so `src.rade_qnet.core.spec.run` and
-    # `rade_qnet.core.spec.run` produce the same logger name. The package is
-    # importable under both paths, and a log stream should not reveal which.
+    # Replace whatever the package was imported as with the root name, so
+    # `tranql.models.rade.rade_qnet.rade_qnet.core.spec.run`, `rade_qnet.core.spec.run` and a vendored
+    # `tranql....rade_qnet.core.spec.run` all log as `rade_qnet.core.spec.run`.
+    # A logging configuration written against `rade_qnet.core` must keep
+    # matching wherever the package is mounted, and a log stream should not
+    # reveal which mount produced it.
+    if name.startswith(f"{_IMPORTED_AS}."):
+        return logging.getLogger(f"{ROOT_LOGGER_NAME}.{name.removeprefix(f'{_IMPORTED_AS}.')}")
     trimmed = name.removeprefix("src.")
     if trimmed.startswith(f"{ROOT_LOGGER_NAME}."):
         return logging.getLogger(trimmed)
@@ -581,7 +594,7 @@ def apply_context_payload(payload: Mapping[str, str]) -> None:
 
 ---
 
-## 4. `src/rade_qnet/core/provenance/seeding.py`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/core/provenance/seeding.py`
 
 7831 bytes · SHA-256 `030643171325087b`
 

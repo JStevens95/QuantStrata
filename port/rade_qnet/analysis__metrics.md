@@ -1,4 +1,4 @@
-# `src/rade_qnet/analysis/metrics`
+# `tranql/models/rade/rade_qnet/rade_qnet/analysis/metrics`
 
 4 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -11,7 +11,7 @@
 
 ---
 
-## 1. `src/rade_qnet/analysis/metrics/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/analysis/metrics/__init__.py`
 
 1297 bytes · SHA-256 `6bc47bdcc1b578ae`
 
@@ -55,7 +55,7 @@ __all__: tuple[str, ...] = ()
 
 ---
 
-## 2. `src/rade_qnet/analysis/metrics/drift.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/analysis/metrics/drift.py`
 
 14437 bytes · SHA-256 `aba29d7c39dcf912`
 
@@ -465,7 +465,7 @@ def _finite_pair(
 
 ---
 
-## 3. `src/rade_qnet/analysis/metrics/quality.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/analysis/metrics/quality.py`
 
 9825 bytes · SHA-256 `24c242fef6bec8fe`
 
@@ -765,7 +765,7 @@ def quality_warnings(metrics: dict[str, float]) -> tuple[str, ...]:
 
 ---
 
-## 4. `src/rade_qnet/analysis/metrics/regression.py`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/analysis/metrics/regression.py`
 
 11131 bytes · SHA-256 `8d183bb0c63180c1`
 

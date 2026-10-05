@@ -1,15 +1,15 @@
-# `tests/rade_qnet/engines/xgboost`
+# `tranql/models/rade/rade_qnet/tests/engines/xgboost`
 
 2 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 15 | 610 | `d35aed8beca12275` |
-| 2 | `test_xgboost_engine.py` | 414 | 15911 | `7cfb06ea22f62526` |
+| 2 | `test_xgboost_engine.py` | 416 | 16167 | `b3d47617564b7f18` |
 
 ---
 
-## 1. `tests/rade_qnet/engines/xgboost/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/engines/xgboost/__init__.py`
 
 610 bytes · SHA-256 `d35aed8beca12275`
 
@@ -33,9 +33,9 @@ Planned modules
 
 ---
 
-## 2. `tests/rade_qnet/engines/xgboost/test_xgboost_engine.py`
+## 2. `tranql/models/rade/rade_qnet/tests/engines/xgboost/test_xgboost_engine.py`
 
-15911 bytes · SHA-256 `7cfb06ea22f62526`
+16167 bytes · SHA-256 `b3d47617564b7f18`
 
 ```python
 """
@@ -80,20 +80,22 @@ import pytest
 if find_spec("xgboost") is None:  # pragma: no cover - depends on the host
     pytest.skip("xgboost is not installed", allow_module_level=True)
 
-from src.rade_qnet.core.lifecycle.components import get_engine
-from src.rade_qnet.core.lifecycle.errors import EngineError
-from src.rade_qnet.core.spec.hardware import HardwareSpec
-from src.rade_qnet.core.spec.training import XGBoostTrainingSpec
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import get_engine
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import EngineError
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.hardware import HardwareSpec
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.training import XGBoostTrainingSpec
 
 # ``xgboost`` itself comes from the engine package rather than from a
 # direct import, for the ordering reason above.
-from src.rade_qnet.engines.xgboost import BoosterModel, XGBoostEngine
-from src.rade_qnet.engines.xgboost.engine import xgb
-from src.rade_qnet.testkit.conformance import check_engine
-from src.rade_qnet.testkit.fixtures import (
+from tranql.models.rade.rade_qnet.rade_qnet.engines.xgboost import BoosterModel, XGBoostEngine
+from tranql.models.rade.rade_qnet.rade_qnet.engines.xgboost.engine import xgb
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.conformance import check_engine
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import (
     SyntheticTensorSource,
     make_signature,
 )
+
+from ...locations import PACKAGE_ROOT, module_name
 
 N_FEATURES = 4
 N_SAMPLES = 128
@@ -225,7 +227,7 @@ class TestTheOpenMpWorkaround:
         loader actually cares about, since the first import is the one that
         decides which image owns the process.
         """
-        assert "src.rade_qnet.engines.xgboost" in sys.modules
+        assert module_name("engines.xgboost") in sys.modules
         assert "torch" in sys.modules
 
     def test_the_guard_is_still_in_the_source(self) -> None:
@@ -236,7 +238,7 @@ class TestTheOpenMpWorkaround:
         no visible reason and never referenced. The comment above it says
         so, and this test is the second line of defence.
         """
-        source = Path("src/rade_qnet/engines/xgboost/__init__.py").read_text()
+        source = (PACKAGE_ROOT / "engines" / "xgboost" / "__init__.py").read_text()
         assert 'find_spec("torch")' in source
         assert source.index("import torch") < source.index("from .engine")
 

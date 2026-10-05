@@ -1,21 +1,21 @@
-# `tests/rade_qnet/core/spec`
+# `tranql/models/rade/rade_qnet/tests/core/spec`
 
 8 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 27 | 1075 | `4cf0eee3c800d080` |
-| 2 | `test_spec_data.py` | 277 | 10239 | `cf59fa4befee87a3` |
-| 3 | `test_spec_hardware.py` | 153 | 5495 | `7beadfe09ad37b73` |
-| 4 | `test_spec_jobs.py` | 404 | 14709 | `73e15a3dde448b19` |
-| 5 | `test_spec_merge.py` | 316 | 12557 | `4f2d2383798d852e` |
-| 6 | `test_spec_reports.py` | 134 | 4694 | `6abb6cbdee9201df` |
-| 7 | `test_spec_run.py` | 348 | 12919 | `950ffd0f989e98d5` |
-| 8 | `test_spec_training.py` | 249 | 9181 | `0f30bc07b387cda5` |
+| 2 | `test_spec_data.py` | 277 | 10264 | `25bc288cac73d8ef` |
+| 3 | `test_spec_hardware.py` | 153 | 5520 | `b24058dee3eacc8b` |
+| 4 | `test_spec_jobs.py` | 404 | 14759 | `69029ff7f70932b0` |
+| 5 | `test_spec_merge.py` | 316 | 12582 | `debd5485278b451b` |
+| 6 | `test_spec_reports.py` | 134 | 4719 | `d65a989f17e7791e` |
+| 7 | `test_spec_run.py` | 348 | 12994 | `7bb254c2d6ff8f88` |
+| 8 | `test_spec_training.py` | 249 | 9206 | `cdcc067c7514717c` |
 
 ---
 
-## 1. `tests/rade_qnet/core/spec/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/core/spec/__init__.py`
 
 1075 bytes · SHA-256 `4cf0eee3c800d080`
 
@@ -51,9 +51,9 @@ Planned modules
 
 ---
 
-## 2. `tests/rade_qnet/core/spec/test_spec_data.py`
+## 2. `tranql/models/rade/rade_qnet/tests/core/spec/test_spec_data.py`
 
-10239 bytes · SHA-256 `cf59fa4befee87a3`
+10264 bytes · SHA-256 `25bc288cac73d8ef`
 
 ```python
 """
@@ -77,7 +77,7 @@ from __future__ import annotations
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from src.rade_qnet.core.spec.data import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.data import (
     CacheSpec,
     ChronologicalSplitSpec,
     ExplicitSplitSpec,
@@ -337,9 +337,9 @@ class TestRoundTrip:
 
 ---
 
-## 3. `tests/rade_qnet/core/spec/test_spec_hardware.py`
+## 3. `tranql/models/rade/rade_qnet/tests/core/spec/test_spec_hardware.py`
 
-5495 bytes · SHA-256 `7beadfe09ad37b73`
+5520 bytes · SHA-256 `b24058dee3eacc8b`
 
 ```python
 """
@@ -357,7 +357,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from src.rade_qnet.core.spec.hardware import HardwareSpec
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.hardware import HardwareSpec
 
 
 class TestDefaults:
@@ -499,9 +499,9 @@ class TestRoundTrip:
 
 ---
 
-## 4. `tests/rade_qnet/core/spec/test_spec_jobs.py`
+## 4. `tranql/models/rade/rade_qnet/tests/core/spec/test_spec_jobs.py`
 
-14709 bytes · SHA-256 `73e15a3dde448b19`
+14759 bytes · SHA-256 `69029ff7f70932b0`
 
 ```python
 """
@@ -532,8 +532,8 @@ import sys
 import pytest
 import yaml
 
-from src.rade_qnet.core.lifecycle.errors import SpecError
-from src.rade_qnet.core.spec.jobs import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import SpecError
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.jobs import (
     JobSetSpec,
     JobSpec,
     PlacementSpec,
@@ -912,9 +912,9 @@ class TestTheSpecIsNotASharedMutable:
 
 ---
 
-## 5. `tests/rade_qnet/core/spec/test_spec_merge.py`
+## 5. `tranql/models/rade/rade_qnet/tests/core/spec/test_spec_merge.py`
 
-12557 bytes · SHA-256 `4f2d2383798d852e`
+12582 bytes · SHA-256 `debd5485278b451b`
 
 ```python
 """
@@ -935,7 +935,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.rade_qnet.core.spec.merge import deep_merge, merge_all
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.merge import deep_merge, merge_all
 
 
 class TestSiblingsSurvive:
@@ -1237,9 +1237,9 @@ class TestAgainstRealSpecFragments:
 
 ---
 
-## 6. `tests/rade_qnet/core/spec/test_spec_reports.py`
+## 6. `tranql/models/rade/rade_qnet/tests/core/spec/test_spec_reports.py`
 
-4694 bytes · SHA-256 `6abb6cbdee9201df`
+4719 bytes · SHA-256 `d65a989f17e7791e`
 
 ```python
 """
@@ -1257,7 +1257,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from src.rade_qnet.core.spec.reports import ReportsSpec
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.reports import ReportsSpec
 
 
 class TestDefaults:
@@ -1380,9 +1380,9 @@ class TestStrictness:
 
 ---
 
-## 7. `tests/rade_qnet/core/spec/test_spec_run.py`
+## 7. `tranql/models/rade/rade_qnet/tests/core/spec/test_spec_run.py`
 
-12919 bytes · SHA-256 `950ffd0f989e98d5`
+12994 bytes · SHA-256 `7bb254c2d6ff8f88`
 
 ```python
 """
@@ -1402,9 +1402,9 @@ import json
 
 import pytest
 
-from src.rade_qnet.core.lifecycle.errors import SpecError
-from src.rade_qnet.core.provenance.hashing import digest_spec
-from src.rade_qnet.core.spec.run import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import SpecError
+from tranql.models.rade.rade_qnet.rade_qnet.core.provenance.hashing import digest_spec
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.run import (
     ComponentRef,
     ReinforcementRunSpec,
     SupervisedRunSpec,
@@ -1737,9 +1737,9 @@ class TestFileIo:
 
 ---
 
-## 8. `tests/rade_qnet/core/spec/test_spec_training.py`
+## 8. `tranql/models/rade/rade_qnet/tests/core/spec/test_spec_training.py`
 
-9181 bytes · SHA-256 `0f30bc07b387cda5`
+9206 bytes · SHA-256 `cdcc067c7514717c`
 
 ```python
 """
@@ -1763,7 +1763,7 @@ from __future__ import annotations
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from src.rade_qnet.core.spec.training import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.training import (
     CheckpointSpec,
     EarlyStoppingSpec,
     RlTrainingSpec,

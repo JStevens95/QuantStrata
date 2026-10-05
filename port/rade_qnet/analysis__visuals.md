@@ -1,4 +1,4 @@
-# `src/rade_qnet/analysis/visuals`
+# `tranql/models/rade/rade_qnet/rade_qnet/analysis/visuals`
 
 9 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -16,7 +16,7 @@
 
 ---
 
-## 1. `src/rade_qnet/analysis/visuals/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/analysis/visuals/__init__.py`
 
 2436 bytes · SHA-256 `c99bfeb943fc679d`
 
@@ -81,7 +81,7 @@ __all__: tuple[str, ...] = ()
 
 ---
 
-## 2. `src/rade_qnet/analysis/visuals/data.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/analysis/visuals/data.py`
 
 13658 bytes · SHA-256 `f707b3b1534e74a7`
 
@@ -502,7 +502,7 @@ def _column_labels(names: Sequence[str] | None, *, n_columns: int) -> list[str]:
 
 ---
 
-## 3. `src/rade_qnet/analysis/visuals/evaluation.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/analysis/visuals/evaluation.py`
 
 12470 bytes · SHA-256 `e527baf067f10b00`
 
@@ -863,7 +863,7 @@ def _aligned(
 
 ---
 
-## 4. `src/rade_qnet/analysis/visuals/export.py`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/analysis/visuals/export.py`
 
 3024 bytes · SHA-256 `99b281603eeebcac`
 
@@ -967,7 +967,7 @@ def save_figure(
 
 ---
 
-## 5. `src/rade_qnet/analysis/visuals/figures.py`
+## 5. `tranql/models/rade/rade_qnet/rade_qnet/analysis/visuals/figures.py`
 
 11268 bytes · SHA-256 `63e4127807280361`
 
@@ -1318,7 +1318,7 @@ def _as_float_array(values: Sequence[float | None]) -> NDArray[np.float64]:
 
 ---
 
-## 6. `src/rade_qnet/analysis/visuals/jobset.py`
+## 6. `tranql/models/rade/rade_qnet/rade_qnet/analysis/visuals/jobset.py`
 
 12064 bytes · SHA-256 `436a49c80ae60a51`
 
@@ -1678,7 +1678,7 @@ def _require(values: Mapping[str, object], *, what: str) -> None:
 
 ---
 
-## 7. `src/rade_qnet/analysis/visuals/style.py`
+## 7. `tranql/models/rade/rade_qnet/rade_qnet/analysis/visuals/style.py`
 
 3635 bytes · SHA-256 `f6b3228dede4416b`
 
@@ -1792,7 +1792,7 @@ def figure_style(overrides: Mapping[str, object] | None = None) -> Iterator[None
 
 ---
 
-## 8. `src/rade_qnet/analysis/visuals/training.py`
+## 8. `tranql/models/rade/rade_qnet/rade_qnet/analysis/visuals/training.py`
 
 12152 bytes · SHA-256 `55ea82a6c0e8096a`
 
@@ -2180,7 +2180,7 @@ def _losses(outcome: FitOutcome, name: str) -> NDArray[np.float64]:
 
 ---
 
-## 9. `src/rade_qnet/analysis/visuals/tuning.py`
+## 9. `tranql/models/rade/rade_qnet/rade_qnet/analysis/visuals/tuning.py`
 
 16758 bytes · SHA-256 `98bdfe633894c955`
 

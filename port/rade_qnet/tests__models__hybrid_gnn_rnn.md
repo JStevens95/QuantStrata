@@ -1,22 +1,22 @@
-# `tests/rade_qnet/models/hybrid_gnn_rnn`
+# `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn`
 
 9 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 1 | 51 | `5383ca55a0c3650b` |
-| 2 | `test_data.py` | 486 | 19684 | `0feb420fce707707` |
-| 3 | `test_model.py` | 295 | 11656 | `ff6a0baae70ffee0` |
-| 4 | `test_parity.py` | 350 | 13264 | `aaf1033a33d7e692` |
-| 5 | `test_register.py` | 157 | 5749 | `9342b6e363699dd7` |
-| 6 | `test_reports.py` | 186 | 6939 | `ca350f2d439381dd` |
-| 7 | `test_state.py` | 247 | 10322 | `2e526e1e4d6ddd1f` |
-| 8 | `test_universe.py` | 137 | 4858 | `fb508cf76c889e00` |
-| 9 | `test_visuals.py` | 148 | 4708 | `899e3486d7ebd733` |
+| 2 | `test_data.py` | 491 | 19791 | `e630fd59a0014469` |
+| 3 | `test_model.py` | 300 | 11886 | `1a0289dc02f4c4e4` |
+| 4 | `test_parity.py` | 355 | 13452 | `0937aea9a32f8f33` |
+| 5 | `test_register.py` | 159 | 5978 | `b193105cb59734a7` |
+| 6 | `test_reports.py` | 193 | 7129 | `0a0031459e0895d1` |
+| 7 | `test_state.py` | 252 | 10469 | `501cd328cd45e06b` |
+| 8 | `test_universe.py` | 137 | 4883 | `9cb3857df194e430` |
+| 9 | `test_visuals.py` | 150 | 4792 | `358c1bc5be3d1ee1` |
 
 ---
 
-## 1. `tests/rade_qnet/models/hybrid_gnn_rnn/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/__init__.py`
 
 51 bytes · SHA-256 `5383ca55a0c3650b`
 
@@ -26,9 +26,9 @@
 
 ---
 
-## 2. `tests/rade_qnet/models/hybrid_gnn_rnn/test_data.py`
+## 2. `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/test_data.py`
 
-19684 bytes · SHA-256 `0feb420fce707707`
+19791 bytes · SHA-256 `e630fd59a0014469`
 
 ```python
 """
@@ -49,8 +49,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.lifecycle.errors import ContractError
-from src.rade_qnet.core.spec.data import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.data import (
     ChronologicalSplitSpec,
     ExplicitSplitSpec,
     ModelSourceSpec,
@@ -58,10 +58,15 @@ from src.rade_qnet.core.spec.data import (
     SequenceSpec,
     TransformsSpec,
 )
-from src.rade_qnet.models.hybrid_gnn_rnn.data import HybridDataModule, _merge_attributes
-from src.rade_qnet.testkit.parity import compare_state, load_golden
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.data import (
+    HybridDataModule,
+    _merge_attributes,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.parity import compare_state, load_golden
 
-FIXTURE = Path(__file__).resolve().parents[3] / "fixtures" / "rade_qnet" / "golden"
+from ...locations import GOLDEN_ROOT
+
+FIXTURE = GOLDEN_ROOT
 HYBRID_FIXTURE = FIXTURE / "hybrid_gnn_rnn"
 
 SEQUENCE_LENGTH = 4
@@ -495,7 +500,7 @@ class TestParityAgainstTheBaseline:
                     "target_ids": list(state.universe.target_ids),
                 },
             },
-            load_golden("hybrid_gnn_rnn"),
+            load_golden("hybrid_gnn_rnn", root=GOLDEN_ROOT),
         )
         assert report.passed, str(report)
 
@@ -521,9 +526,9 @@ class TestParityAgainstTheBaseline:
 
 ---
 
-## 3. `tests/rade_qnet/models/hybrid_gnn_rnn/test_model.py`
+## 3. `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/test_model.py`
 
-11656 bytes · SHA-256 `ff6a0baae70ffee0`
+11886 bytes · SHA-256 `1a0289dc02f4c4e4`
 
 ```python
 """
@@ -541,11 +546,16 @@ import numpy as np
 import pytest
 import torch
 
-from src.rade_qnet.core.contract.signature import InputSignature, TensorSpec
-from src.rade_qnet.core.lifecycle.errors import ContractError
-from src.rade_qnet.models.hybrid_gnn_rnn.model import HybridGnnRnn
-from src.rade_qnet.models.hybrid_gnn_rnn.spec import HybridModelSpec
-from src.rade_qnet.testkit.parity import compare_forward, load_golden
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.signature import (
+    InputSignature,
+    TensorSpec,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.model import HybridGnnRnn
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.spec import HybridModelSpec
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.parity import compare_forward, load_golden
+
+from ...locations import GOLDEN_ROOT
 
 #: The golden fixture captured from the original implementation.
 FIXTURE = "hybrid_gnn_rnn"
@@ -582,7 +592,7 @@ def signature(
 @pytest.fixture
 def batch() -> dict[str, torch.Tensor]:
     """Return the captured training batch, keyed for the forward pass."""
-    golden = load_golden(FIXTURE)
+    golden = load_golden(FIXTURE, root=GOLDEN_ROOT)
     arrays = golden.arrays("level2_tensors/train_batch_000.npz")
     renamed = {"adjacency_dense_shape": "adjacency_shape"}
     # `elementary_indices` is dropped, not renamed. The original passed it
@@ -795,7 +805,7 @@ class TestParityAgainstTheBaseline:
         would build a model that cannot load its own predecessor's
         checkpoint, and the failure would surface only on reload.
         """
-        golden = load_golden(FIXTURE)
+        golden = load_golden(FIXTURE, root=GOLDEN_ROOT)
         expected = torch.load(golden.directory / "level3_forward/state_dict.pt", weights_only=True)
         produced = {name: tuple(t.shape) for name, t in model.state_dict().items()}
         assert produced == {name: tuple(t.shape) for name, t in expected.items()}
@@ -811,7 +821,7 @@ class TestParityAgainstTheBaseline:
         that way -- dropout active would make the comparison a record of
         the global random state rather than of the model.
         """
-        golden = load_golden(FIXTURE)
+        golden = load_golden(FIXTURE, root=GOLDEN_ROOT)
         model.load_state_dict(
             torch.load(golden.directory / "level3_forward/state_dict.pt", weights_only=True)
         )
@@ -825,9 +835,9 @@ class TestParityAgainstTheBaseline:
 
 ---
 
-## 4. `tests/rade_qnet/models/hybrid_gnn_rnn/test_parity.py`
+## 4. `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/test_parity.py`
 
-13264 bytes · SHA-256 `aaf1033a33d7e692`
+13452 bytes · SHA-256 `0937aea9a32f8f33`
 
 ```python
 """
@@ -867,13 +877,12 @@ optimiser and loss, same losses.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import numpy as np
 import pytest
 import torch
 
-from src.rade_qnet.core.spec.data import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.data import (
     ExplicitSplitSpec,
     LoaderSpec,
     ModelSourceSpec,
@@ -881,15 +890,21 @@ from src.rade_qnet.core.spec.data import (
     SequenceSpec,
     TransformsSpec,
 )
-from src.rade_qnet.models.hybrid_gnn_rnn.data import HybridDataModule
-from src.rade_qnet.models.hybrid_gnn_rnn.model import HybridGnnRnn
-from src.rade_qnet.models.hybrid_gnn_rnn.spec import HybridModelSpec
-from src.rade_qnet.sources.batching.dataset import sources_for
-from src.rade_qnet.testkit.parity import compare_curve, compare_tensors, load_golden
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.data import HybridDataModule
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.model import HybridGnnRnn
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.spec import HybridModelSpec
+from tranql.models.rade.rade_qnet.rade_qnet.sources.batching.dataset import sources_for
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.parity import (
+    compare_curve,
+    compare_tensors,
+    load_golden,
+)
+
+from ...locations import GOLDEN_ROOT
 
 #: The golden fixture captured from the original implementation.
 FIXTURE_NAME = "hybrid_gnn_rnn"
-FIXTURE = Path("tests/fixtures/rade_qnet/golden") / FIXTURE_NAME
+FIXTURE = GOLDEN_ROOT / FIXTURE_NAME
 
 #: The capture's settings, which the replay must match exactly. Named
 #: rather than inlined so that a mismatch reads as a changed constant
@@ -1025,7 +1040,7 @@ class TestLevel2Tensors:
         _, sources = replay
         report = compare_tensors(
             first_batches(sources),
-            load_golden(FIXTURE_NAME),
+            load_golden(FIXTURE_NAME, root=GOLDEN_ROOT),
             allow_missing=("elementary_indices",),
         )
         assert report.passed, report.summary()
@@ -1125,7 +1140,7 @@ class TestLevel4TrainingCurve:
                     )
                 )
 
-        report = compare_curve(curve, load_golden(FIXTURE_NAME))
+        report = compare_curve(curve, load_golden(FIXTURE_NAME, root=GOLDEN_ROOT))
         assert report.passed, report.summary()
 
 
@@ -1184,9 +1199,9 @@ def _step(model, optimiser, loss_function, inputs, target) -> float:
 
 ---
 
-## 5. `tests/rade_qnet/models/hybrid_gnn_rnn/test_register.py`
+## 5. `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/test_register.py`
 
-5749 bytes · SHA-256 `9342b6e363699dd7`
+5978 bytes · SHA-256 `b193105cb59734a7`
 
 ```python
 """
@@ -1205,31 +1220,33 @@ fails the first real run that imports only what it needs.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
-from src.rade_qnet.core.lifecycle.components import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import (
     ENGINES,
     MODELS,
     REPORTS,
     get_model,
 )
-from src.rade_qnet.core.spec.run import parse_run_spec
-from src.rade_qnet.models.hybrid_gnn_rnn.data import HybridDataModule
-from src.rade_qnet.models.hybrid_gnn_rnn.model import HybridGnnRnn
-from src.rade_qnet.models.hybrid_gnn_rnn.pipelines.train import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.run import parse_run_spec
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.data import HybridDataModule
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.model import HybridGnnRnn
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.pipelines.train import (
     HYBRID_REPORTS,
     HybridTrainPipeline,
 )
-from src.rade_qnet.models.hybrid_gnn_rnn.register import HybridGnnRnnModel
-from src.rade_qnet.models.hybrid_gnn_rnn.spec import HybridDataSpec, HybridModelSpec
-from src.rade_qnet.models.hybrid_gnn_rnn.state import HybridState
-from src.rade_qnet.orchestration.pipelines.train import TrainPipeline
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.register import HybridGnnRnnModel
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.spec import (
+    HybridDataSpec,
+    HybridModelSpec,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.state import HybridState
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.pipelines.train import TrainPipeline
 
+from ...locations import GOLDEN_ROOT
 from .test_model import signature
 
-FIXTURE = Path("tests/fixtures/rade_qnet/golden/hybrid_gnn_rnn/input")
+FIXTURE = GOLDEN_ROOT / "hybrid_gnn_rnn" / "input"
 
 
 def run_spec(**report_overrides: object):
@@ -1350,9 +1367,9 @@ class TestDefinition:
 
 ---
 
-## 6. `tests/rade_qnet/models/hybrid_gnn_rnn/test_reports.py`
+## 6. `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/test_reports.py`
 
-6939 bytes · SHA-256 `ca350f2d439381dd`
+7129 bytes · SHA-256 `0a0031459e0895d1`
 
 ```python
 """Tests for the graph diagnostics report."""
@@ -1365,19 +1382,26 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from src.rade_qnet.analysis.reports.base import ReportContext
-from src.rade_qnet.core.spec.data import (
+from tranql.models.rade.rade_qnet.rade_qnet.analysis.reports.base import ReportContext
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.data import (
     ModelSourceSpec,
     ReductionSpec,
     SequenceSpec,
     TransformsSpec,
 )
-from src.rade_qnet.models.hybrid_gnn_rnn.data import HybridDataModule
-from src.rade_qnet.models.hybrid_gnn_rnn.features.graph import SparseGraphState
-from src.rade_qnet.models.hybrid_gnn_rnn.reports import GRAPH_FILENAME, HybridGraphReport
-from src.rade_qnet.testkit.fixtures import StandardisingState
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.data import HybridDataModule
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.features.graph import (
+    SparseGraphState,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.reports import (
+    GRAPH_FILENAME,
+    HybridGraphReport,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import StandardisingState
 
-FIXTURE = Path("tests/fixtures/rade_qnet/golden/hybrid_gnn_rnn/input")
+from ...locations import GOLDEN_ROOT
+
+FIXTURE = GOLDEN_ROOT / "hybrid_gnn_rnn" / "input"
 
 #: Window length. Short, because this report never looks at a window.
 SEQUENCE_LENGTH = 4
@@ -1545,9 +1569,9 @@ class TestSkipping:
 
 ---
 
-## 7. `tests/rade_qnet/models/hybrid_gnn_rnn/test_state.py`
+## 7. `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/test_state.py`
 
-10322 bytes · SHA-256 `2e526e1e4d6ddd1f`
+10469 bytes · SHA-256 `501cd328cd45e06b`
 
 ```python
 """
@@ -1569,11 +1593,16 @@ from typing import Any
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.lifecycle.errors import BundleError
-from src.rade_qnet.models.hybrid_gnn_rnn.features.encoder import EntityEncoderState
-from src.rade_qnet.models.hybrid_gnn_rnn.features.graph import build_graph
-from src.rade_qnet.models.hybrid_gnn_rnn.spec import AttributeEncoderSpec, GraphSpec
-from src.rade_qnet.models.hybrid_gnn_rnn.state import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import BundleError
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.features.encoder import (
+    EntityEncoderState,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.features.graph import build_graph
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.spec import (
+    AttributeEncoderSpec,
+    GraphSpec,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.state import (
     HybridState,
     StandardScalerState,
     Universe,
@@ -1801,9 +1830,9 @@ class TestDescribe:
 
 ---
 
-## 8. `tests/rade_qnet/models/hybrid_gnn_rnn/test_universe.py`
+## 8. `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/test_universe.py`
 
-4858 bytes · SHA-256 `fb508cf76c889e00`
+4883 bytes · SHA-256 `9cb3857df194e430`
 
 ```python
 """
@@ -1822,7 +1851,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.rade_qnet.models.hybrid_gnn_rnn.state import Universe
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.state import Universe
 
 
 @pytest.fixture
@@ -1947,9 +1976,9 @@ class TestImmutability:
 
 ---
 
-## 9. `tests/rade_qnet/models/hybrid_gnn_rnn/test_visuals.py`
+## 9. `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/test_visuals.py`
 
-4708 bytes · SHA-256 `899e3486d7ebd733`
+4792 bytes · SHA-256 `358c1bc5be3d1ee1`
 
 ```python
 """Tests for the model's own figures."""
@@ -1960,9 +1989,11 @@ import numpy as np
 import pytest
 from matplotlib.figure import Figure
 
-from src.rade_qnet.core.lifecycle.errors import ContractError
-from src.rade_qnet.models.hybrid_gnn_rnn.features.graph import SparseGraphState
-from src.rade_qnet.models.hybrid_gnn_rnn.visuals import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.features.graph import (
+    SparseGraphState,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.visuals import (
     edge_weight_figure,
     neighbour_similarity_figure,
     node_degree_figure,

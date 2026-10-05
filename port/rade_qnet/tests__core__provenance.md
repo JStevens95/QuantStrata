@@ -1,17 +1,17 @@
-# `tests/rade_qnet/core/provenance`
+# `tranql/models/rade/rade_qnet/tests/core/provenance`
 
 4 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 1 | 43 | `17f398962e74a13b` |
-| 2 | `test_provenance_hashing.py` | 215 | 8554 | `550397124d3379c4` |
-| 3 | `test_provenance_logging.py` | 215 | 8350 | `0beb7c90ec33c592` |
-| 4 | `test_provenance_seeding.py` | 222 | 8306 | `164ef7aa60f3bcac` |
+| 2 | `test_provenance_hashing.py` | 217 | 8637 | `9d2d6f169633a478` |
+| 3 | `test_provenance_logging.py` | 233 | 9332 | `527238a773e1545c` |
+| 4 | `test_provenance_seeding.py` | 222 | 8356 | `736b32b4683d4832` |
 
 ---
 
-## 1. `tests/rade_qnet/core/provenance/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/core/provenance/__init__.py`
 
 43 bytes · SHA-256 `17f398962e74a13b`
 
@@ -21,9 +21,9 @@
 
 ---
 
-## 2. `tests/rade_qnet/core/provenance/test_provenance_hashing.py`
+## 2. `tranql/models/rade/rade_qnet/tests/core/provenance/test_provenance_hashing.py`
 
-8554 bytes · SHA-256 `550397124d3379c4`
+8637 bytes · SHA-256 `9d2d6f169633a478`
 
 ```python
 """
@@ -48,7 +48,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.provenance.hashing import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.provenance.hashing import (
     abbreviate_digest,
     canonical_json,
     digest_arrays,
@@ -56,7 +56,9 @@ from src.rade_qnet.core.provenance.hashing import (
     digest_payload,
     digest_spec,
 )
-from src.rade_qnet.core.spec.run import parse_run_spec
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.run import parse_run_spec
+
+from ...locations import IMPORT_ROOT, PACKAGE_NAME
 
 
 class TestCanonicalJson:
@@ -219,7 +221,7 @@ class TestArrayDigests:
 class TestStability:
     """The property that rules out Python's salted hash()."""
 
-    def test_digest_survives_a_fresh_interpreter(self, repository_root):
+    def test_digest_survives_a_fresh_interpreter(self):
         """
         The same payload digests identically in a separate process.
 
@@ -228,8 +230,8 @@ class TestStability:
         bundle provenance are both unreliable across runs.
         """
         program = (
-            f"import sys; sys.path.insert(0, {str(repository_root)!r});"
-            "from src.rade_qnet.core.provenance.hashing import digest_payload;"
+            f"import sys; sys.path.insert(0, {str(IMPORT_ROOT)!r});"
+            f"from {PACKAGE_NAME}.core.provenance.hashing import digest_payload;"
             "print(digest_payload({'model': 'demo', 'seed': 3, 'nested': {'a': [1, 2]}}))"
         )
         completed = subprocess.run(
@@ -245,9 +247,9 @@ class TestStability:
 
 ---
 
-## 3. `tests/rade_qnet/core/provenance/test_provenance_logging.py`
+## 3. `tranql/models/rade/rade_qnet/tests/core/provenance/test_provenance_logging.py`
 
-8350 bytes · SHA-256 `0beb7c90ec33c592`
+9332 bytes · SHA-256 `527238a773e1545c`
 
 ```python
 """
@@ -268,7 +270,8 @@ import logging
 
 import pytest
 
-from src.rade_qnet.core.provenance.logging import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.provenance import logging as logging_module
+from tranql.models.rade.rade_qnet.rade_qnet.core.provenance.logging import (
     ROOT_LOGGER_NAME,
     apply_context_payload,
     bound_context,
@@ -277,6 +280,8 @@ from src.rade_qnet.core.provenance.logging import (
     current_context,
     get_logger,
 )
+
+from ...locations import module_name
 
 
 @pytest.fixture(autouse=True)
@@ -298,16 +303,31 @@ class TestLoggerNaming:
         """One root means an application can configure the framework alone."""
         assert get_logger("rade_qnet.core.lifecycle.pipeline").name.startswith(ROOT_LOGGER_NAME)
 
-    def test_the_src_prefix_is_stripped(self):
+    def test_the_import_prefix_is_stripped(self):
         """
-        A module imported as ``src.rade_qnet...`` still logs as ``rade_qnet...``.
+        A module imported under the package's full name logs as ``rade_qnet...``.
 
-        The repository imports through ``src``, an installed distribution does
-        not. Without stripping, the same module logs under two different names
+        The repository imports through ``src``, a deployment may import
+        through a deeper name, and an installed distribution through neither.
+        Without stripping, the same module logs under different names
         depending on how it was imported, and a log filter configured for one
-        silently misses the other.
+        silently misses the others.
         """
-        assert get_logger("src.rade_qnet.storage.bundle").name == "rade_qnet.storage.bundle"
+        assert get_logger(module_name("storage.bundle")).name == "rade_qnet.storage.bundle"
+
+    def test_a_vendored_mount_logs_under_the_same_names(self, monkeypatch):
+        """
+        A deeply nested import name collapses to the framework root too.
+
+        Simulated by telling the module it was imported under a vendored
+        name, since the suite itself can only be imported one way at a
+        time. The failure this guards against is quiet: logging still
+        works, but every logger is named ``rade_qnet.tranql.models...`` and a
+        configuration written for ``rade_qnet.storage`` matches nothing.
+        """
+        vendored = "tranql.models.rade.rade_qnet.rade_qnet"
+        monkeypatch.setattr(logging_module, "_IMPORTED_AS", vendored)
+        assert get_logger(f"{vendored}.storage.bundle").name == "rade_qnet.storage.bundle"
 
 
 class TestConfiguration:
@@ -469,9 +489,9 @@ class TestContextPayload:
 
 ---
 
-## 4. `tests/rade_qnet/core/provenance/test_provenance_seeding.py`
+## 4. `tranql/models/rade/rade_qnet/tests/core/provenance/test_provenance_seeding.py`
 
-8306 bytes · SHA-256 `164ef7aa60f3bcac`
+8356 bytes · SHA-256 `736b32b4683d4832`
 
 ```python
 """
@@ -499,8 +519,8 @@ import random
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.lifecycle.errors import SpecError
-from src.rade_qnet.core.provenance.seeding import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import SpecError
+from tranql.models.rade.rade_qnet.rade_qnet.core.provenance.seeding import (
     derive_seed,
     register_seeder,
     registered_seeders,

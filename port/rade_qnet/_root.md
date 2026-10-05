@@ -1,18 +1,18 @@
-# `src/rade_qnet`
+# `tranql/models/rade/rade_qnet/rade_qnet`
 
 3 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
-| 1 | `__init__.py` | 85 | 3952 | `f0aa795153b0a74e` |
+| 1 | `__init__.py` | 85 | 3977 | `ed6532d66a586898` |
 | 2 | `api.py` | 887 | 30534 | `97da3806b2c8875e` |
-| 3 | `ruff.toml` | 111 | 5119 | `f84c1e95253049a7` |
+| 3 | `ruff.toml` | 111 | 5254 | `1cfe14c3882b84ad` |
 
 ---
 
-## 1. `src/rade_qnet/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/__init__.py`
 
-3952 bytes · SHA-256 `f0aa795153b0a74e`
+3977 bytes · SHA-256 `ed6532d66a586898`
 
 ```python
 """
@@ -80,7 +80,7 @@ Import convention
 Modules inside ``rade_qnet`` import each other with **explicit relative
 imports** (``from ..core.contract import DataBundle``).  This keeps the
 package relocatable: it behaves identically whether it is imported as
-``src.rade_qnet`` from the repository root or as ``rade_qnet`` from an installed
+``tranql.models.rade.rade_qnet.rade_qnet`` from the repository root or as ``rade_qnet`` from an installed
 distribution.  Code outside the package should use whichever absolute path
 matches how it was installed.
 
@@ -104,7 +104,7 @@ __all__: tuple[str, ...] = ("__version__",)
 
 ---
 
-## 2. `src/rade_qnet/api.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/api.py`
 
 30534 bytes · SHA-256 `97da3806b2c8875e`
 
@@ -1000,9 +1000,9 @@ def _definition_named(base: Mapping[str, object]) -> object | None:
 
 ---
 
-## 3. `src/rade_qnet/ruff.toml`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/ruff.toml`
 
-5119 bytes · SHA-256 `f84c1e95253049a7`
+5254 bytes · SHA-256 `1cfe14c3882b84ad`
 
 ```toml
 # Lint and format configuration for the rade_qnet package.
@@ -1013,15 +1013,15 @@ def _definition_named(base: Mapping[str, object]) -> object | None:
 # repository's older packages predate this standard and would drown a clean
 # run in pre-existing findings, which would make the signal worthless.
 #
-# `tests/rade_qnet/ruff.toml` extends this file, so the source tree and the test
+# `tranql/models/rade/rade_qnet/tests/ruff.toml` extends this file, so the source tree and the test
 # tree are held to one standard with the rules stated in a single place.
 #
 # A `ruff.toml` is used rather than a `pyproject.toml` so that no other tool
 # mistakes this directory for a project root.
 #
 # Usage:
-#   .venv/bin/python -m ruff check src/rade_qnet tests/rade_qnet
-#   .venv/bin/python -m ruff format --check src/rade_qnet tests/rade_qnet
+#   .venv/bin/python -m ruff check tranql/models/rade/rade_qnet/rade_qnet tranql/models/rade/rade_qnet/tests
+#   .venv/bin/python -m ruff format --check tranql/models/rade/rade_qnet/rade_qnet tranql/models/rade/rade_qnet/tests
 
 # Match the de facto width of the surrounding codebase rather than the 88 the
 # formatter defaults to; reflowing to 88 would make diffs against sibling
@@ -1079,7 +1079,7 @@ ignore = [
     "D107",
     # TID252 bans relative imports from parent modules.  This framework
     # requires them: internal relative imports are what keep the package
-    # relocatable, so it behaves identically imported as `src.rade_qnet` from
+    # relocatable, so it behaves identically imported as `tranql.models.rade.rade_qnet.rade_qnet` from
     # the repository or as `rade_qnet` from an installed distribution.  The rest
     # of the TID group (banned APIs and modules) stays enabled.
     "TID252",
@@ -1096,7 +1096,7 @@ convention = "numpy"
 # third-party imports, which misrepresents the dependency. Both spellings are
 # declared because the package is importable under either -- see the note on
 # relative imports above.
-known-first-party = ["rade_qnet", "src"]
+known-first-party = ["rade_qnet", "tranql"]
 
 [lint.pylint]
 # Defaults are tuned for application code.  A spec-heavy framework legitimately

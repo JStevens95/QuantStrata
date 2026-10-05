@@ -1,4 +1,4 @@
-# `src/rade_qnet/engines/torch/learners`
+# `tranql/models/rade/rade_qnet/rade_qnet/engines/torch/learners`
 
 3 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -10,7 +10,7 @@
 
 ---
 
-## 1. `src/rade_qnet/engines/torch/learners/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/engines/torch/learners/__init__.py`
 
 1871 bytes · SHA-256 `78173434fb32ab47`
 
@@ -65,7 +65,7 @@ __all__: tuple[str, ...] = ()
 
 ---
 
-## 2. `src/rade_qnet/engines/torch/learners/random.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/engines/torch/learners/random.py`
 
 12066 bytes · SHA-256 `ef1f1aa9f834ed2b`
 
@@ -348,7 +348,7 @@ class RandomLearner:
 
 ---
 
-## 3. `src/rade_qnet/engines/torch/learners/supervised.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/engines/torch/learners/supervised.py`
 
 10246 bytes · SHA-256 `7cccaac0f285b296`
 

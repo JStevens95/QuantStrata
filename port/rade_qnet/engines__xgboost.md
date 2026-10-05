@@ -1,4 +1,4 @@
-# `src/rade_qnet/engines/xgboost`
+# `tranql/models/rade/rade_qnet/rade_qnet/engines/xgboost`
 
 2 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -9,7 +9,7 @@
 
 ---
 
-## 1. `src/rade_qnet/engines/xgboost/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/engines/xgboost/__init__.py`
 
 3471 bytes · SHA-256 `d6ff5a7febff9ffa`
 
@@ -90,7 +90,7 @@ __all__ = ["ENGINE_NAME", "BoosterModel", "XGBoostEngine"]
 
 ---
 
-## 2. `src/rade_qnet/engines/xgboost/engine.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/engines/xgboost/engine.py`
 
 26144 bytes · SHA-256 `4e410e412fdc4a82`
 

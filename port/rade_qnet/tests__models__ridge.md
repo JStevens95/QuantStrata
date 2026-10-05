@@ -1,16 +1,16 @@
-# `tests/rade_qnet/models/ridge`
+# `tranql/models/rade/rade_qnet/tests/models/ridge`
 
 3 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 1 | 42 | `f92a7a31ce5f7c72` |
-| 2 | `test_model.py` | 70 | 2668 | `b4bbdc31a30aaafd` |
-| 3 | `test_register.py` | 95 | 3431 | `ce59e428145e17ed` |
+| 2 | `test_model.py` | 70 | 2718 | `f5e2c06ad8fa4475` |
+| 3 | `test_register.py` | 95 | 3556 | `dfb1bf05f9a86720` |
 
 ---
 
-## 1. `tests/rade_qnet/models/ridge/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/models/ridge/__init__.py`
 
 42 bytes · SHA-256 `f92a7a31ce5f7c72`
 
@@ -20,9 +20,9 @@
 
 ---
 
-## 2. `tests/rade_qnet/models/ridge/test_model.py`
+## 2. `tranql/models/rade/rade_qnet/tests/models/ridge/test_model.py`
 
-2668 bytes · SHA-256 `b4bbdc31a30aaafd`
+2718 bytes · SHA-256 `f5e2c06ad8fa4475`
 
 ```python
 """
@@ -43,8 +43,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from src.rade_qnet.models.ridge.model import build
-from src.rade_qnet.models.ridge.spec import RidgeSpec
+from tranql.models.rade.rade_qnet.rade_qnet.models.ridge.model import build
+from tranql.models.rade.rade_qnet.rade_qnet.models.ridge.spec import RidgeSpec
 
 
 class TestTheSpecRefusesNonsense:
@@ -99,9 +99,9 @@ class TestBuildIsAPureFunctionOfTheSettings:
 
 ---
 
-## 3. `tests/rade_qnet/models/ridge/test_register.py`
+## 3. `tranql/models/rade/rade_qnet/tests/models/ridge/test_register.py`
 
-3431 bytes · SHA-256 `ce59e428145e17ed`
+3556 bytes · SHA-256 `dfb1bf05f9a86720`
 
 ```python
 """
@@ -115,11 +115,11 @@ that fails tells you which.
 
 from __future__ import annotations
 
-from src.rade_qnet.core.lifecycle.components import MODELS, get_model
-from src.rade_qnet.core.spec.run import parse_run_spec
-from src.rade_qnet.models.ridge.register import RidgeModel
-from src.rade_qnet.models.ridge.spec import RidgeSpec
-from src.rade_qnet.sources.dataset.tabular import TabularDataModule
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import MODELS, get_model
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.run import parse_run_spec
+from tranql.models.rade.rade_qnet.rade_qnet.models.ridge.register import RidgeModel
+from tranql.models.rade.rade_qnet.rade_qnet.models.ridge.spec import RidgeSpec
+from tranql.models.rade.rade_qnet.rade_qnet.sources.dataset.tabular import TabularDataModule
 
 
 def specification(path: str) -> dict:

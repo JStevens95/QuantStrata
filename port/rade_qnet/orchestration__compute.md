@@ -1,4 +1,4 @@
-# `src/rade_qnet/orchestration/compute`
+# `tranql/models/rade/rade_qnet/rade_qnet/orchestration/compute`
 
 6 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -13,7 +13,7 @@
 
 ---
 
-## 1. `src/rade_qnet/orchestration/compute/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/orchestration/compute/__init__.py`
 
 2567 bytes · SHA-256 `e51e01a50744d04c`
 
@@ -89,7 +89,7 @@ __all__ = [
 
 ---
 
-## 2. `src/rade_qnet/orchestration/compute/base.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/orchestration/compute/base.py`
 
 11330 bytes · SHA-256 `4368fcdf46c5da38`
 
@@ -452,7 +452,7 @@ class ResultSummary:
 
 ---
 
-## 3. `src/rade_qnet/orchestration/compute/gpus.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/orchestration/compute/gpus.py`
 
 6859 bytes · SHA-256 `518ba800f9e96a02`
 
@@ -627,7 +627,7 @@ class GpuExecutor(ProcessExecutor):
 
 ---
 
-## 4. `src/rade_qnet/orchestration/compute/local.py`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/orchestration/compute/local.py`
 
 1914 bytes · SHA-256 `68231f2a0dd188a5`
 
@@ -704,7 +704,7 @@ class LocalExecutor:
 
 ---
 
-## 5. `src/rade_qnet/orchestration/compute/placement.py`
+## 5. `tranql/models/rade/rade_qnet/rade_qnet/orchestration/compute/placement.py`
 
 11438 bytes · SHA-256 `108efe6b640a3a0d`
 
@@ -1059,7 +1059,7 @@ def _reason(spec: PlacementSpec, *, name: ExecutorName, workers: int | None, n_j
 
 ---
 
-## 6. `src/rade_qnet/orchestration/compute/processes.py`
+## 6. `tranql/models/rade/rade_qnet/rade_qnet/orchestration/compute/processes.py`
 
 14300 bytes · SHA-256 `3b073ef3c554bdce`
 

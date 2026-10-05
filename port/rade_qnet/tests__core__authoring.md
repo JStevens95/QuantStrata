@@ -1,18 +1,18 @@
-# `tests/rade_qnet/core/authoring`
+# `tranql/models/rade/rade_qnet/tests/core/authoring`
 
 5 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 21 | 990 | `5fa0437358e278ef` |
-| 2 | `test_authoring_capabilities.py` | 209 | 6428 | `0a7e4938fcbfb1b8` |
-| 3 | `test_authoring_definition.py` | 267 | 9802 | `deb2cc813fc5215f` |
-| 4 | `test_authoring_policy.py` | 200 | 6257 | `fe80eb7d05705468` |
-| 5 | `test_authoring_supervised.py` | 292 | 10715 | `996747fa07aa4b1c` |
+| 2 | `test_authoring_capabilities.py` | 209 | 6453 | `d2243e7ba9bd5bc1` |
+| 3 | `test_authoring_definition.py` | 271 | 9944 | `0d6fc7f5663edc2b` |
+| 4 | `test_authoring_policy.py` | 206 | 6383 | `37f2b43dc508da7d` |
+| 5 | `test_authoring_supervised.py` | 295 | 10853 | `71f521468b68fc50` |
 
 ---
 
-## 1. `tests/rade_qnet/core/authoring/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/core/authoring/__init__.py`
 
 990 bytes · SHA-256 `5fa0437358e278ef`
 
@@ -42,9 +42,9 @@ Planned modules
 
 ---
 
-## 2. `tests/rade_qnet/core/authoring/test_authoring_capabilities.py`
+## 2. `tranql/models/rade/rade_qnet/tests/core/authoring/test_authoring_capabilities.py`
 
-6428 bytes · SHA-256 `0a7e4938fcbfb1b8`
+6453 bytes · SHA-256 `d2243e7ba9bd5bc1`
 
 ```python
 """
@@ -69,7 +69,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.rade_qnet.core.authoring.capabilities import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.authoring.capabilities import (
     CustomStep,
     Inductive,
     Precomputable,
@@ -260,9 +260,9 @@ class TestTheKnownLimit:
 
 ---
 
-## 3. `tests/rade_qnet/core/authoring/test_authoring_definition.py`
+## 3. `tranql/models/rade/rade_qnet/tests/core/authoring/test_authoring_definition.py`
 
-9802 bytes · SHA-256 `deb2cc813fc5215f`
+9944 bytes · SHA-256 `0d6fc7f5663edc2b`
 
 ```python
 """
@@ -286,16 +286,20 @@ import inspect
 
 import pytest
 
-from src.rade_qnet.core.authoring.definition import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.authoring.definition import (
     ModelDefinition,
     PolicyDefinition,
     PredictorDefinition,
     model,
 )
-from src.rade_qnet.core.contract.signature import InputSignature, PolicySignature, SpaceSpec
-from src.rade_qnet.core.contract.state import FittedState
-from src.rade_qnet.core.lifecycle.components import MODELS
-from src.rade_qnet.testkit.fixtures import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.signature import (
+    InputSignature,
+    PolicySignature,
+    SpaceSpec,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.state import FittedState
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import MODELS
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import (
     StandardisingState,
     isolated_registries,
     make_signature,
@@ -536,9 +540,9 @@ class TestRegistration:
 
 ---
 
-## 4. `tests/rade_qnet/core/authoring/test_authoring_policy.py`
+## 4. `tranql/models/rade/rade_qnet/tests/core/authoring/test_authoring_policy.py`
 
-6257 bytes · SHA-256 `fe80eb7d05705468`
+6383 bytes · SHA-256 `37f2b43dc508da7d`
 
 ```python
 """
@@ -560,10 +564,16 @@ from __future__ import annotations
 
 import pytest
 
-from src.rade_qnet.core.authoring.definition import PolicyDefinition
-from src.rade_qnet.core.authoring.policy import EnvironmentLike, PolicyModel
-from src.rade_qnet.core.contract.signature import PolicySignature, SpaceSpec
-from src.rade_qnet.core.lifecycle.errors import ComponentError
+from tranql.models.rade.rade_qnet.rade_qnet.core.authoring.definition import PolicyDefinition
+from tranql.models.rade.rade_qnet.rade_qnet.core.authoring.policy import (
+    EnvironmentLike,
+    PolicyModel,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.signature import (
+    PolicySignature,
+    SpaceSpec,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ComponentError
 
 OBSERVATION = SpaceSpec(kind="box", shape=(4,), dtype="float32", low=-1.0, high=1.0)
 ACTION = SpaceSpec(kind="discrete", n=2)
@@ -745,9 +755,9 @@ class TestWhatIsRefused:
 
 ---
 
-## 5. `tests/rade_qnet/core/authoring/test_authoring_supervised.py`
+## 5. `tranql/models/rade/rade_qnet/tests/core/authoring/test_authoring_supervised.py`
 
-10715 bytes · SHA-256 `996747fa07aa4b1c`
+10853 bytes · SHA-256 `71f521468b68fc50`
 
 ```python
 """
@@ -782,11 +792,14 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.authoring.supervised import DataModuleLike, SupervisedModel
-from src.rade_qnet.core.lifecycle.errors import ComponentError
-from src.rade_qnet.core.spec.data import TabularSourceSpec
-from src.rade_qnet.core.spec.run import SupervisedRunSpec
-from src.rade_qnet.sources.dataset.tabular import TabularDataModule
+from tranql.models.rade.rade_qnet.rade_qnet.core.authoring.supervised import (
+    DataModuleLike,
+    SupervisedModel,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ComponentError
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.data import TabularSourceSpec
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.run import SupervisedRunSpec
+from tranql.models.rade.rade_qnet.rade_qnet.sources.dataset.tabular import TabularDataModule
 
 
 @pytest.fixture

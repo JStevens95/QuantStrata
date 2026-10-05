@@ -1,4 +1,4 @@
-# `src/rade_qnet/engines/torch/hardware`
+# `tranql/models/rade/rade_qnet/rade_qnet/engines/torch/hardware`
 
 4 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -11,7 +11,7 @@
 
 ---
 
-## 1. `src/rade_qnet/engines/torch/hardware/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/engines/torch/hardware/__init__.py`
 
 1388 bytes · SHA-256 `0f5c6d3c17c4d67f`
 
@@ -51,7 +51,7 @@ __all__: tuple[str, ...] = ()
 
 ---
 
-## 2. `src/rade_qnet/engines/torch/hardware/determinism.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/engines/torch/hardware/determinism.py`
 
 5690 bytes · SHA-256 `0e3900bc3906f0c3`
 
@@ -184,7 +184,7 @@ register_seeder(SEEDER_NAME, seed_torch, replace=True)
 
 ---
 
-## 3. `src/rade_qnet/engines/torch/hardware/devices.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/engines/torch/hardware/devices.py`
 
 12856 bytes · SHA-256 `f5fbc3699eba7e1b`
 
@@ -562,7 +562,7 @@ def compile_if_requested(model: torch.nn.Module, *, spec: HardwareSpec) -> torch
 
 ---
 
-## 4. `src/rade_qnet/engines/torch/hardware/distributed.py`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/engines/torch/hardware/distributed.py`
 
 9488 bytes · SHA-256 `9addadb978642a89`
 

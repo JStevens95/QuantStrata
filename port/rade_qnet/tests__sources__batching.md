@@ -1,16 +1,16 @@
-# `tests/rade_qnet/sources/batching`
+# `tranql/models/rade/rade_qnet/tests/sources/batching`
 
 3 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 27 | 1224 | `75d38714d92fee51` |
-| 2 | `test_batching_dataset.py` | 437 | 16207 | `cf9c39982bb47805` |
-| 3 | `test_batching_rollout.py` | 378 | 14281 | `c78fa44a1e733357` |
+| 2 | `test_batching_dataset.py` | 444 | 16387 | `6dd0c4578f5be157` |
+| 3 | `test_batching_rollout.py` | 378 | 14431 | `105e8d47ec66ea68` |
 
 ---
 
-## 1. `tests/rade_qnet/sources/batching/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/sources/batching/__init__.py`
 
 1224 bytes · SHA-256 `75d38714d92fee51`
 
@@ -46,9 +46,9 @@ Planned modules
 
 ---
 
-## 2. `tests/rade_qnet/sources/batching/test_batching_dataset.py`
+## 2. `tranql/models/rade/rade_qnet/tests/sources/batching/test_batching_dataset.py`
 
-16207 bytes · SHA-256 `cf9c39982bb47805`
+16387 bytes · SHA-256 `6dd0c4578f5be157`
 
 ```python
 """
@@ -84,12 +84,19 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.contract.data import TARGET_KEY
-from src.rade_qnet.core.contract.source import BatchSource, OrderedSource
-from src.rade_qnet.core.lifecycle.errors import ContractError
-from src.rade_qnet.core.spec.data import LoaderSpec, SequenceSpec, TabularSourceSpec
-from src.rade_qnet.sources.batching.dataset import DatasetSource, sources_for
-from src.rade_qnet.sources.dataset.tabular import TabularDataModule
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.data import TARGET_KEY
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.source import BatchSource, OrderedSource
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.data import (
+    LoaderSpec,
+    SequenceSpec,
+    TabularSourceSpec,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.sources.batching.dataset import (
+    DatasetSource,
+    sources_for,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.sources.dataset.tabular import TabularDataModule
 
 
 @pytest.fixture
@@ -492,9 +499,9 @@ class TestSourcesFor:
 
 ---
 
-## 3. `tests/rade_qnet/sources/batching/test_batching_rollout.py`
+## 3. `tranql/models/rade/rade_qnet/tests/sources/batching/test_batching_rollout.py`
 
-14281 bytes · SHA-256 `c78fa44a1e733357`
+14431 bytes · SHA-256 `105e8d47ec66ea68`
 
 ```python
 """
@@ -527,11 +534,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.contract.data import TARGET_KEY
-from src.rade_qnet.core.contract.signature import SpaceSpec
-from src.rade_qnet.core.contract.source import BatchSource
-from src.rade_qnet.core.lifecycle.errors import ContractError
-from src.rade_qnet.sources.batching.rollout import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.data import TARGET_KEY
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.signature import SpaceSpec
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.source import BatchSource
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.sources.batching.rollout import (
     ACTION_KEY,
     NEXT_OBSERVATION_KEY,
     OBSERVATION_KEY,
@@ -539,7 +546,7 @@ from src.rade_qnet.sources.batching.rollout import (
     TRUNCATED_KEY,
     RolloutSource,
 )
-from src.rade_qnet.sources.environment import StepOutcome
+from tranql.models.rade.rade_qnet.rade_qnet.sources.environment import StepOutcome
 
 
 class Counter:

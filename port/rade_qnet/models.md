@@ -1,16 +1,16 @@
-# `src/rade_qnet/models`
+# `tranql/models/rade/rade_qnet/rade_qnet/models`
 
 1 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
-| 1 | `__init__.py` | 114 | 5182 | `40e2314b287e5a4a` |
+| 1 | `__init__.py` | 114 | 5201 | `09411121b750cab6` |
 
 ---
 
-## 1. `src/rade_qnet/models/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/models/__init__.py`
 
-5182 bytes · SHA-256 `40e2314b287e5a4a`
+5201 bytes · SHA-256 `09411121b750cab6`
 
 ```python
 """
@@ -55,7 +55,7 @@ rearranged::
 and two optional files at any tier: ``reports.py`` and ``visuals.py``, for
 artefacts only this model can produce.
 
-The layout is enforced by ``tests/rade_qnet/models/test_model_layout.py``, so
+The layout is enforced by ``tranql/models/rade/rade_qnet/tests/models/test_model_layout.py``, so
 a file named anything else is a failing test rather than a convention
 somebody did not know about.
 

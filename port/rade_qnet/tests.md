@@ -1,28 +1,29 @@
-# `tests/rade_qnet`
+# `tranql/models/rade/rade_qnet/tests`
 
-7 file(s). Create the directory, then create each file below with the exact contents of its block.
+8 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
-| 1 | `__init__.py` | 32 | 1147 | `9b77412d766c78e0` |
-| 2 | `conftest.py` | 194 | 7154 | `2024111b6cc910e5` |
-| 3 | `ruff.toml` | 50 | 2385 | `4f63ed66941eacb9` |
-| 4 | `test_api.py` | 621 | 22634 | `1a5abd1e0ce7b27a` |
-| 5 | `test_documentation.py` | 120 | 4315 | `82debfd68b1f8421` |
-| 6 | `test_extensibility.py` | 341 | 12334 | `dbbe2e645c40c432` |
-| 7 | `test_scaffold.py` | 711 | 28236 | `36449874bb76d417` |
+| 1 | `__init__.py` | 32 | 1216 | `01e950fac0ad5abe` |
+| 2 | `conftest.py` | 198 | 7384 | `81d71ab5fafa422c` |
+| 3 | `locations.py` | 78 | 3231 | `59c4e2876f572acb` |
+| 4 | `ruff.toml` | 50 | 2453 | `81fd794fd26156fb` |
+| 5 | `test_api.py` | 628 | 22881 | `bdd9c331304761db` |
+| 6 | `test_documentation.py` | 121 | 4376 | `a4784275d63c97e5` |
+| 7 | `test_extensibility.py` | 346 | 12606 | `09b30ee0351cac76` |
+| 8 | `test_scaffold.py` | 713 | 28364 | `6f2109cbb0ec4c83` |
 
 ---
 
-## 1. `tests/rade_qnet/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/__init__.py`
 
-1147 bytes · SHA-256 `9b77412d766c78e0`
+1216 bytes · SHA-256 `01e950fac0ad5abe`
 
 ```python
 """
 Unit tests for the rade_qnet framework.
 
-The tree below mirrors ``src/rade_qnet`` one directory at a time.  Mirroring is
+The tree below mirrors ``tranql/models/rade/rade_qnet/rade_qnet`` one directory at a time.  Mirroring is
 not tidiness for its own sake: it means the question "is this component
 tested?" is answered by looking at one predictable path, and an untested
 sub-package shows up as an empty directory rather than as an absence nobody
@@ -30,7 +31,7 @@ notices.
 
 Tests are built in the same order as the framework, so that each phase is
 verified against components already proven in the phase before it.  See
-``src/rade_qnet/docs/IMPLEMENTATION.md`` for the order and for each phase's
+``tranql/models/rade/rade_qnet/rade_qnet/docs/IMPLEMENTATION.md`` for the order and for each phase's
 definition of done.
 
 Scope
@@ -49,15 +50,15 @@ Running
 -------
 From the repository root::
 
-    .venv/bin/python -m pytest tests/rade_qnet -q
+    .venv/bin/python -m pytest tranql/models/rade/rade_qnet/tests -q
 """
 ```
 
 ---
 
-## 2. `tests/rade_qnet/conftest.py`
+## 2. `tranql/models/rade/rade_qnet/tests/conftest.py`
 
-7154 bytes · SHA-256 `2024111b6cc910e5`
+7384 bytes · SHA-256 `81d71ab5fafa422c`
 
 ```python
 """
@@ -71,12 +72,16 @@ relevant sub-package ``conftest.py`` as each phase lands.
 
 The suite is run from the repository root::
 
-    .venv/bin/python -m pytest tests/rade_qnet -q
+    .venv/bin/python -m pytest tranql/models/rade/rade_qnet/tests -q
 
 Running it that way puts the repository root on ``sys.path``, which is what
-makes the ``src.rade_qnet`` import path resolve.  The package itself uses
-relative imports internally, so it is equally importable as ``rade_qnet`` from an
-installed distribution; the tests simply follow the repository's convention.
+makes the ``tranql.models.rade.rade_qnet.rade_qnet`` import path resolve.  The package itself uses
+relative imports internally, so it is equally importable under any name.
+
+The fixtures below do not assume that layout.  Every location comes from
+:mod:`.locations`, which derives it from the imported package -- so the same
+suite runs unchanged where the package imports under a deeper name, with the
+tests in a sibling directory.
 """
 
 from __future__ import annotations
@@ -87,14 +92,9 @@ from pathlib import Path
 
 import pytest
 
-from src.rade_qnet.core.provenance.logging import ROOT_LOGGER_NAME
+from tranql.models.rade.rade_qnet.rade_qnet.core.provenance.logging import ROOT_LOGGER_NAME
 
-# Resolved once at import time.  ``parents`` indexes from this file outwards:
-# [0] is tests/rade_qnet, [1] is tests, [2] is the repository root.
-_REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-
-#: The captured baseline the parity tests compare against.
-_GOLDEN_ROOT = _REPOSITORY_ROOT / "tests" / "fixtures" / "rade_qnet" / "golden"
+from .locations import GOLDEN_ROOT, IMPORT_ROOT, PACKAGE_ROOT, TEST_ROOT
 
 #: Artifacts whose presence stands for the whole capture.
 #:
@@ -107,8 +107,8 @@ _GOLDEN_ROOT = _REPOSITORY_ROOT / "tests" / "fixtures" / "rade_qnet" / "golden"
 #: A presence check, not an integrity check: the manifest's digests are what
 #: prove a fixture is the one it claims to be.
 _GOLDEN_ARTIFACTS = (
-    _GOLDEN_ROOT / "hybrid_gnn_rnn" / "manifest.json",
-    _GOLDEN_ROOT / "hybrid_gnn_rnn" / "input" / "elementary_pnl.npy",
+    GOLDEN_ROOT / "hybrid_gnn_rnn" / "manifest.json",
+    GOLDEN_ROOT / "hybrid_gnn_rnn" / "input" / "elementary_pnl.npy",
 )
 
 
@@ -187,22 +187,27 @@ def requires_golden() -> None:
             pytest.skip(
                 f"golden fixture not captured: {artifact} is missing. "
                 f"Capture it with examples/rade_qnet/phase0_capture_baseline.py, "
+                f"or point RADE_QNET_GOLDEN_ROOT at an existing capture, "
                 f"and note that a partial copy is worse than none -- the text "
                 f"files alone stop these tests skipping without letting them pass"
             )
 
 
 @pytest.fixture(scope="session")
-def repository_root() -> Path:
+def import_root() -> Path:
     """
-    Return the absolute path to the repository root.
+    Return the directory that must be on ``sys.path`` to import the package.
+
+    The repository root here; the directory holding the top-level package
+    wherever the package imports under a deeper name. What a subprocess needs
+    on its path to import the package by name.
 
     Returns
     -------
     Path
-        Directory containing ``src`` and ``tests``.
+        See :data:`.locations.IMPORT_ROOT`.
     """
-    return _REPOSITORY_ROOT
+    return IMPORT_ROOT
 
 
 @pytest.fixture(scope="session")
@@ -213,9 +218,9 @@ def package_root() -> Path:
     Returns
     -------
     Path
-        The ``src/rade_qnet`` directory.
+        The directory holding ``core``, ``engines`` and the rest.
     """
-    return _REPOSITORY_ROOT / "src" / "rade_qnet"
+    return PACKAGE_ROOT
 
 
 @pytest.fixture(scope="session")
@@ -226,9 +231,9 @@ def test_root() -> Path:
     Returns
     -------
     Path
-        The ``tests/rade_qnet`` directory.
+        The directory holding this ``conftest.py``.
     """
-    return _REPOSITORY_ROOT / "tests" / "rade_qnet"
+    return TEST_ROOT
 
 
 @pytest.fixture
@@ -258,9 +263,96 @@ def run_directory(tmp_path: Path) -> Iterator[Path]:
 
 ---
 
-## 3. `tests/rade_qnet/ruff.toml`
+## 3. `tranql/models/rade/rade_qnet/tests/locations.py`
 
-2385 bytes · SHA-256 `4f63ed66941eacb9`
+3231 bytes · SHA-256 `59c4e2876f572acb`
+
+```python
+"""
+Where the package under test and its test tree live, worked out rather than assumed.
+
+Why this module exists
+----------------------
+The suite runs in two places with two different layouts. In this repository
+the package imports as ``tranql.models.rade.rade_qnet.rade_qnet`` and the tests sit at
+``tranql/models/rade/rade_qnet/tests``. Where it is deployed, the same files import as something
+like ``tranql.models.rade.rade_qnet.rade_qnet``, with the tests in a sibling
+package. A path such as ``Path("tranql/models/rade/rade_qnet/rade_qnet/models")`` is right in one and
+wrong in the other, and it is also wrong here the moment pytest is started
+from any directory but the repository root.
+
+So nothing in the suite spells out a location. Every path and every dotted
+name a test needs is derived here, from the one thing that is true in every
+layout: the package imported successfully, so ``__name__`` and ``__file__``
+say exactly where it is.
+
+The import below is the only line in this module that names the package, and
+the porting script rewrites it along with every other ``from tranql.models.rade.rade_qnet.rade_qnet``
+import. Everything else follows from it.
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+from typing import Final
+
+import tranql.models.rade.rade_qnet.rade_qnet as package
+
+#: The package's dotted import name: ``tranql.models.rade.rade_qnet.rade_qnet`` here, the deployment's
+#: own name elsewhere. Used wherever a test has to name a module as a string --
+#: a ``monkeypatch`` target, an ``__import__``, a ``sys.modules`` key, or a
+#: line of code handed to a fresh interpreter.
+PACKAGE_NAME: Final = package.__name__
+
+#: The package's directory, holding ``core``, ``engines``, ``docs`` and the rest.
+PACKAGE_ROOT: Final = Path(package.__file__).resolve().parent
+
+#: The directory that has to be on ``sys.path`` for :data:`PACKAGE_NAME` to
+#: import. One level above the package per dotted component: the repository
+#: root for ``tranql.models.rade.rade_qnet.rade_qnet``, the directory holding ``tranql`` for a deeper
+#: name. A subprocess given this on its path can import the package by name.
+IMPORT_ROOT: Final = PACKAGE_ROOT.parents[PACKAGE_NAME.count(".")]
+
+#: The test tree's own directory.
+TEST_ROOT: Final = Path(__file__).resolve().parent
+
+#: Where the captured parity baseline lives. ``RADE_QNET_GOLDEN_ROOT`` wins
+#: when set, which is the escape hatch for a deployment that keeps the arrays
+#: somewhere of its own; otherwise the repository's convention, beneath
+#: :data:`IMPORT_ROOT`. The testkit's ``load_golden`` honours the same
+#: variable, so the tests and the loader can never disagree about where to
+#: look.
+GOLDEN_ROOT: Final = Path(
+    os.environ.get(
+        "RADE_QNET_GOLDEN_ROOT", IMPORT_ROOT / "tests" / "fixtures" / "rade_qnet" / "golden"
+    )
+)
+
+
+def module_name(relative: str) -> str:
+    """
+    Return the full dotted name of a module inside the package.
+
+    Parameters
+    ----------
+    relative
+        The module's name relative to the package, such as
+        ``"orchestration.pipelines.infer"``.
+
+    Returns
+    -------
+    str
+        The name it is importable under in this layout.
+    """
+    return f"{PACKAGE_NAME}.{relative}"
+```
+
+---
+
+## 4. `tranql/models/rade/rade_qnet/tests/ruff.toml`
+
+2453 bytes · SHA-256 `81fd794fd26156fb`
 
 ```toml
 # Lint configuration for the rade_qnet test tree.
@@ -270,9 +362,9 @@ def run_directory(tmp_path: Path) -> Iterator[Path]:
 # handful of rules that are genuinely wrong for tests are relaxed below.
 #
 # Ruff resolves configuration by walking up from each linted file, and the test
-# tree sits outside `src/rade_qnet`; without this file, tests would silently fall
+# tree sits outside `tranql/models/rade/rade_qnet/rade_qnet`; without this file, tests would silently fall
 # back to Ruff's defaults and the standard would apply to half the code.
-extend = "../../src/rade_qnet/ruff.toml"
+extend = "../rade_qnet/ruff.toml"
 
 [lint]
 extend-ignore = [
@@ -281,7 +373,7 @@ extend-ignore = [
     # without adding safety.  The remaining annotation rules are relaxed for
     # the same reason and no other: a test module's helpers and fakes are
     # read beside their single call site, and their docstrings already carry
-    # a Returns section.  Annotations stay mandatory in `src/rade_qnet`, which
+    # a Returns section.  Annotations stay mandatory in `tranql/models/rade/rade_qnet/rade_qnet`, which
     # is the code anyone outside this repository actually calls.
     "ANN001",
     "ANN002",
@@ -298,7 +390,7 @@ extend-ignore = [
     # capability protocol, callbacks handed to a writer, hooks recording that
     # they fired.  Their signatures are dictated by the interface they stand
     # in for, so ignoring an argument is the normal case rather than an
-    # oversight.  In `src/rade_qnet` these stay enabled, and the one deliberate
+    # oversight.  In `tranql/models/rade/rade_qnet/rade_qnet` these stay enabled, and the one deliberate
     # case there is written as an explicit `del` with its reason.
     "ARG002",
     "ARG003",
@@ -317,9 +409,9 @@ extend-ignore = [
 
 ---
 
-## 4. `tests/rade_qnet/test_api.py`
+## 5. `tranql/models/rade/rade_qnet/tests/test_api.py`
 
-22634 bytes · SHA-256 `1a5abd1e0ce7b27a`
+22881 bytes · SHA-256 `bdd9c331304761db`
 
 ```python
 """
@@ -345,13 +437,18 @@ import json
 import pytest
 import yaml
 
-from src.rade_qnet import api
-from src.rade_qnet.core.lifecycle.components import engine as register_engine
-from src.rade_qnet.core.lifecycle.components import model as register_model
-from src.rade_qnet.core.lifecycle.errors import SpecError
-from src.rade_qnet.orchestration.compute.local import LocalExecutor
-from src.rade_qnet.orchestration.jobs.groups import MANIFEST_FILENAME
-from src.rade_qnet.testkit.fixtures import SyntheticEngine, isolated_registries
+from tranql.models.rade.rade_qnet.rade_qnet import api
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import (
+    engine as register_engine,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import model as register_model
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import SpecError
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.compute.local import LocalExecutor
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.jobs.groups import MANIFEST_FILENAME
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import (
+    SyntheticEngine,
+    isolated_registries,
+)
 
 from .orchestration.jobs.support import (
     DIRECTORY_MODEL_NAME,
@@ -472,7 +569,9 @@ class TestTrainingOneModel:
         it in an instance test raises rather than returning `False` -- a
         mistake no passing test would reveal by accident.
         """
-        from src.rade_qnet.core.spec.run import parse_run_spec  # noqa: PLC0415
+        from tranql.models.rade.rade_qnet.rade_qnet.core.spec.run import (  # noqa: PLC0415
+            parse_run_spec,
+        )
 
         spec = parse_run_spec(run_payload(dataset, tmp_path / "out"))
 
@@ -947,9 +1046,9 @@ class TestSearchingASpace:
 
 ---
 
-## 5. `tests/rade_qnet/test_documentation.py`
+## 6. `tranql/models/rade/rade_qnet/tests/test_documentation.py`
 
-4315 bytes · SHA-256 `82debfd68b1f8421`
+4376 bytes · SHA-256 `a4784275d63c97e5`
 
 ````python
 """
@@ -973,15 +1072,16 @@ to verify explanatory text would be a test nobody could keep passing.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 import pytest
 import yaml
 
-from src.rade_qnet.core.spec.jobs import parse_job_set_spec
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.jobs import parse_job_set_spec
+
+from .locations import PACKAGE_ROOT
 
 #: The document under test.
-ARCHITECTURE = Path("src/rade_qnet/docs/ARCHITECTURE.md")
+ARCHITECTURE = PACKAGE_ROOT / "docs" / "ARCHITECTURE.md"
 
 #: The example's filename, used to find its block rather than relying on
 #: the block's position -- which changes whenever a section is added above.
@@ -1000,7 +1100,7 @@ def job_set():
     """
     # Imported for its registration side effect: the example names the
     # flagship, and validating it means resolving that name.
-    import src.rade_qnet.models.hybrid_gnn_rnn.register  # noqa: F401, PLC0415
+    import tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.register  # noqa: F401, PLC0415
 
     text = ARCHITECTURE.read_text(encoding="utf-8")
     match = re.search(rf"```yaml\n# {re.escape(JOB_SET_EXAMPLE)}\n(.*?)```", text, re.DOTALL)
@@ -1076,9 +1176,9 @@ class TestTheDocumentedJobSet:
 
 ---
 
-## 6. `tests/rade_qnet/test_extensibility.py`
+## 7. `tranql/models/rade/rade_qnet/tests/test_extensibility.py`
 
-12334 bytes · SHA-256 `dbbe2e645c40c432`
+12606 bytes · SHA-256 `09b30ee0351cac76`
 
 ```python
 """
@@ -1136,16 +1236,21 @@ from pydantic import Field
 from sklearn.ensemble import RandomForestRegressor
 
 # The five public names a third-party model needs, and nothing else.
-from src.rade_qnet.api import evaluate, infer, train
-from src.rade_qnet.core.authoring.supervised import SupervisedModel
-from src.rade_qnet.core.lifecycle.components import engine as register_engine
-from src.rade_qnet.core.lifecycle.components import get_engine, model
-from src.rade_qnet.core.lifecycle.errors import SpecError
-from src.rade_qnet.core.spec.base import Spec
-from src.rade_qnet.core.spec.run import parse_run_spec
-from src.rade_qnet.engines import sklearn as _sklearn_engine  # noqa: F401
-from src.rade_qnet.sources.dataset.tabular import TabularDataModule
-from src.rade_qnet.testkit.fixtures import SyntheticEngine, isolated_registries
+from tranql.models.rade.rade_qnet.rade_qnet.api import evaluate, infer, train
+from tranql.models.rade.rade_qnet.rade_qnet.core.authoring.supervised import SupervisedModel
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import (
+    engine as register_engine,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import get_engine, model
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import SpecError
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.base import Spec
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.run import parse_run_spec
+from tranql.models.rade.rade_qnet.rade_qnet.engines import sklearn as _sklearn_engine  # noqa: F401
+from tranql.models.rade.rade_qnet.rade_qnet.sources.dataset.tabular import TabularDataModule
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.fixtures import (
+    SyntheticEngine,
+    isolated_registries,
+)
 
 #: The name the out-of-tree model claims. Registered inside a fixture rather
 #: than at import, so that collecting this module does not leave a component
@@ -1426,9 +1531,9 @@ class TestTheBoundaryOfWhatPlugsIn:
 
 ---
 
-## 7. `tests/rade_qnet/test_scaffold.py`
+## 8. `tranql/models/rade/rade_qnet/tests/test_scaffold.py`
 
-28236 bytes · SHA-256 `36449874bb76d417`
+28364 bytes · SHA-256 `6f2109cbb0ec4c83`
 
 ```python
 """
@@ -1458,13 +1563,13 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from src import rade_qnet
-from src.rade_qnet.core.spec.base import Spec
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.base import Spec
 
-# The package under test, located through the imported module rather than by
-# walking relative paths, so these tests keep working if the suite is invoked
-# from somewhere unexpected.
-PACKAGE_ROOT = Path(rade_qnet.__file__).resolve().parent
+from .locations import PACKAGE_NAME, PACKAGE_ROOT
+
+# The package under test, under whatever name it was imported as.
+rade_qnet = importlib.import_module(PACKAGE_NAME)
+
 TEST_ROOT = Path(__file__).resolve().parent
 
 # The top-level packages that make up the framework, in dependency order.
@@ -1709,9 +1814,10 @@ def _layer_of(dotted_name: str) -> str | None:
     """
     Return the framework layer a dotted name belongs to, if any.
 
-    Both ``rade_qnet.core.spec`` and the repository-prefixed
-    ``src.rade_qnet.core.spec`` resolve to ``"core"``, so the answer does not
-    depend on how the package was imported.  A name that is not inside
+    Both ``rade_qnet.core.spec`` and the same module under the name the
+    package was actually imported as -- ``tranql.models.rade.rade_qnet.rade_qnet.core.spec`` here, or
+    something deeper where it is vendored -- resolve to ``"core"``, so the
+    answer does not depend on how the package was imported.  A name that is not inside
     ``rade_qnet``, or that is a top-level module such as ``rade_qnet.api``, has no
     layer.
 
@@ -1726,8 +1832,9 @@ def _layer_of(dotted_name: str) -> str | None:
         The layer name, or ``None`` if the name sits outside the layered tree.
     """
     parts = dotted_name.split(".")
-    if parts[:2] == ["src", "rade_qnet"]:
-        parts = parts[1:]
+    prefix = PACKAGE_NAME.split(".")
+    if parts[: len(prefix)] == prefix:
+        parts = ["rade_qnet", *parts[len(prefix) :]]
     if parts[0] != "rade_qnet" or len(parts) < 2:
         return None
     return parts[1] if parts[1] in ALLOWED_DEPENDENCIES else None
@@ -1765,7 +1872,7 @@ def _import_every_spec_module() -> None:
         # importing the containing package would not necessarily import the
         # module that defines the specs.
         parts = (*relative.parts[:-1], relative.stem)
-        importlib.import_module(".".join(("src", "rade_qnet", *parts)))
+        importlib.import_module(".".join((PACKAGE_NAME, *parts)))
 
 
 def _all_spec_types() -> list[type[Spec]]:
@@ -1973,7 +2080,7 @@ class TestDependencyLayering:
                 for imported in _imported_modules(source_file)
                 if (distribution := _distribution_of(imported)) not in sys.stdlib_module_names
                 and distribution not in CORE_PERMITTED_THIRD_PARTY
-                and distribution not in {"rade_qnet", "src"}
+                and distribution not in {"rade_qnet", PACKAGE_NAME.split(".")[0]}
             }
         )
         assert not forbidden, (

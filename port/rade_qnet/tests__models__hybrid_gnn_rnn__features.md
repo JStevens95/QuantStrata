@@ -1,4 +1,4 @@
-# `tests/rade_qnet/models/hybrid_gnn_rnn/features`
+# `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/features`
 
 5 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -6,13 +6,13 @@
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 1 | 60 | `7cd332b12fc0f4a5` |
 | 2 | `conftest.py` | 74 | 2170 | `c03a6d739771af29` |
-| 3 | `test_basis.py` | 223 | 9332 | `0b76004077b2312f` |
-| 4 | `test_encoder.py` | 308 | 12897 | `1d82585a0612a1bf` |
-| 5 | `test_graph.py` | 348 | 14270 | `a4dd3f259a1f2a62` |
+| 3 | `test_basis.py` | 226 | 9395 | `8591510cb75cc9e8` |
+| 4 | `test_encoder.py` | 308 | 12972 | `b9189e00a51b762a` |
+| 5 | `test_graph.py` | 353 | 14417 | `23f7649ad5faa458` |
 
 ---
 
-## 1. `tests/rade_qnet/models/hybrid_gnn_rnn/features/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/features/__init__.py`
 
 60 bytes · SHA-256 `7cd332b12fc0f4a5`
 
@@ -22,7 +22,7 @@
 
 ---
 
-## 2. `tests/rade_qnet/models/hybrid_gnn_rnn/features/conftest.py`
+## 2. `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/features/conftest.py`
 
 2170 bytes · SHA-256 `c03a6d739771af29`
 
@@ -105,9 +105,9 @@ def attributes() -> Mapping[str, Sequence[Any]]:
 
 ---
 
-## 3. `tests/rade_qnet/models/hybrid_gnn_rnn/features/test_basis.py`
+## 3. `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/features/test_basis.py`
 
-9332 bytes · SHA-256 `0b76004077b2312f`
+9395 bytes · SHA-256 `8591510cb75cc9e8`
 
 ```python
 """
@@ -124,8 +124,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.lifecycle.errors import ContractError
-from src.rade_qnet.models.hybrid_gnn_rnn.features.basis import effective_rank, select_basis
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.features.basis import (
+    effective_rank,
+    select_basis,
+)
 
 N_SCENARIOS = 200
 
@@ -337,9 +340,9 @@ class TestSelection:
 
 ---
 
-## 4. `tests/rade_qnet/models/hybrid_gnn_rnn/features/test_encoder.py`
+## 4. `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/features/test_encoder.py`
 
-12897 bytes · SHA-256 `1d82585a0612a1bf`
+12972 bytes · SHA-256 `b9189e00a51b762a`
 
 ```python
 """
@@ -360,12 +363,12 @@ from typing import Any
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.lifecycle.errors import ContractError
-from src.rade_qnet.models.hybrid_gnn_rnn.features.encoder import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.features.encoder import (
     EntityEncoderState,
     decay_lambdas,
 )
-from src.rade_qnet.models.hybrid_gnn_rnn.spec import AttributeEncoderSpec
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.spec import AttributeEncoderSpec
 
 
 @pytest.fixture
@@ -654,9 +657,9 @@ class TestRoundTrip:
 
 ---
 
-## 5. `tests/rade_qnet/models/hybrid_gnn_rnn/features/test_graph.py`
+## 5. `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/features/test_graph.py`
 
-14270 bytes · SHA-256 `a4dd3f259a1f2a62`
+14417 bytes · SHA-256 `23f7649ad5faa458`
 
 ```python
 """
@@ -677,15 +680,20 @@ from typing import Any
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.lifecycle.errors import ContractError
-from src.rade_qnet.models.hybrid_gnn_rnn.features.encoder import EntityEncoderState
-from src.rade_qnet.models.hybrid_gnn_rnn.features.graph import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.features.encoder import (
+    EntityEncoderState,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.features.graph import (
     SparseGraphState,
     build_graph,
     weighted_features,
 )
-from src.rade_qnet.models.hybrid_gnn_rnn.spec import AttributeEncoderSpec, GraphSpec
-from src.rade_qnet.testkit.parity import ADJACENCY_VALUE_ATOL
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.spec import (
+    AttributeEncoderSpec,
+    GraphSpec,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.testkit.parity import ADJACENCY_VALUE_ATOL
 
 N_INSTRUMENTS = 6
 

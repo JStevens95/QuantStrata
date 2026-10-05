@@ -1,4 +1,4 @@
-# `src/rade_qnet/storage`
+# `tranql/models/rade/rade_qnet/rade_qnet/storage`
 
 4 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -11,7 +11,7 @@
 
 ---
 
-## 1. `src/rade_qnet/storage/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/storage/__init__.py`
 
 2948 bytes · SHA-256 `5ba06be2a276cadf`
 
@@ -87,7 +87,7 @@ __all__: tuple[str, ...] = ()
 
 ---
 
-## 2. `src/rade_qnet/storage/bundle.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/storage/bundle.py`
 
 16121 bytes · SHA-256 `fcaf136ba9d57f84`
 
@@ -625,7 +625,7 @@ def _read_contract[ContractT: BaseModel](path: Path, contract_type: type[Contrac
 
 ---
 
-## 3. `src/rade_qnet/storage/locking.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/storage/locking.py`
 
 10008 bytes · SHA-256 `a6dcb2a486d49d91`
 
@@ -909,7 +909,7 @@ def exclusive_lock(path: Path) -> Iterator[IO[str]]:
 
 ---
 
-## 4. `src/rade_qnet/storage/manifest.py`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/storage/manifest.py`
 
 7319 bytes · SHA-256 `593c50e7d6217c29`
 

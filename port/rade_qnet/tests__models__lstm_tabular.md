@@ -1,15 +1,15 @@
-# `tests/rade_qnet/models/lstm_tabular`
+# `tranql/models/rade/rade_qnet/tests/models/lstm_tabular`
 
 2 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 1 | 49 | `e19dbdeabb5b7af6` |
-| 2 | `test_model.py` | 101 | 4131 | `d020a24094b900d1` |
+| 2 | `test_model.py` | 104 | 4219 | `902ae0ea45c6da22` |
 
 ---
 
-## 1. `tests/rade_qnet/models/lstm_tabular/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/models/lstm_tabular/__init__.py`
 
 49 bytes · SHA-256 `e19dbdeabb5b7af6`
 
@@ -19,9 +19,9 @@
 
 ---
 
-## 2. `tests/rade_qnet/models/lstm_tabular/test_model.py`
+## 2. `tranql/models/rade/rade_qnet/tests/models/lstm_tabular/test_model.py`
 
-4131 bytes · SHA-256 `d020a24094b900d1`
+4219 bytes · SHA-256 `902ae0ea45c6da22`
 
 ```python
 """
@@ -38,9 +38,12 @@ from __future__ import annotations
 import pytest
 import torch
 
-from src.rade_qnet.core.lifecycle.errors import ContractError
-from src.rade_qnet.models.lstm_tabular.model import LstmTabular, _sequence_of
-from src.rade_qnet.models.lstm_tabular.spec import LstmTabularSpec
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError
+from tranql.models.rade.rade_qnet.rade_qnet.models.lstm_tabular.model import (
+    LstmTabular,
+    _sequence_of,
+)
+from tranql.models.rade.rade_qnet.rade_qnet.models.lstm_tabular.spec import LstmTabularSpec
 
 
 class TestTheNetworkReadsAWindow:

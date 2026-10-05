@@ -1,4 +1,4 @@
-# `src/rade_qnet/sources/dataset`
+# `tranql/models/rade/rade_qnet/rade_qnet/sources/dataset`
 
 7 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -14,7 +14,7 @@
 
 ---
 
-## 1. `src/rade_qnet/sources/dataset/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/sources/dataset/__init__.py`
 
 2621 bytes · SHA-256 `bf7f3fb0f0814d67`
 
@@ -82,7 +82,7 @@ __all__: tuple[str, ...] = ()
 
 ---
 
-## 2. `src/rade_qnet/sources/dataset/cache.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/sources/dataset/cache.py`
 
 13232 bytes · SHA-256 `a0eab4ed54f687d8`
 
@@ -446,7 +446,7 @@ class DatasetCache:
 
 ---
 
-## 3. `src/rade_qnet/sources/dataset/module.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/sources/dataset/module.py`
 
 22367 bytes · SHA-256 `1336d3633e002262`
 
@@ -1085,7 +1085,7 @@ class DataModule[RawT](ABC):
 
 ---
 
-## 4. `src/rade_qnet/sources/dataset/rebuild.py`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/sources/dataset/rebuild.py`
 
 9229 bytes · SHA-256 `aa447d0e624c00f6`
 
@@ -1344,7 +1344,7 @@ def _splits_from(lineage: DataLineage, *, n_rows: int) -> SplitIndices:
 
 ---
 
-## 5. `src/rade_qnet/sources/dataset/splits.py`
+## 5. `tranql/models/rade/rade_qnet/rade_qnet/sources/dataset/splits.py`
 
 21260 bytes · SHA-256 `bcb1ada5e215aa5b`
 
@@ -1906,7 +1906,7 @@ def split_explicitly(spec: ExplicitSplitSpec, *, n_scenarios: int) -> SplitIndic
 
 ---
 
-## 6. `src/rade_qnet/sources/dataset/tables.py`
+## 6. `tranql/models/rade/rade_qnet/rade_qnet/sources/dataset/tables.py`
 
 16069 bytes · SHA-256 `4aecedb17e4a109a`
 
@@ -2388,7 +2388,7 @@ def fingerprint_source(path: Path | None, *, extra: Mapping[str, object] | None 
 
 ---
 
-## 7. `src/rade_qnet/sources/dataset/tabular.py`
+## 7. `tranql/models/rade/rade_qnet/rade_qnet/sources/dataset/tabular.py`
 
 12287 bytes · SHA-256 `329f5b278aac36a3`
 

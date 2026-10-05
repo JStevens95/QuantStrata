@@ -1,21 +1,21 @@
-# `src/rade_qnet/docs`
+# `tranql/models/rade/rade_qnet/rade_qnet/docs`
 
 6 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
-| 1 | `ARCHITECTURE.md` | 1243 | 56125 | `7abe69d46e761658` |
-| 2 | `CODING_STANDARDS.md` | 394 | 16316 | `ec30f7f0c0938f7a` |
-| 3 | `GUIDE.md` | 1149 | 45007 | `3d856f8f56c6f0ee` |
-| 4 | `IMPLEMENTATION.md` | 445 | 21865 | `457874a795d914f9` |
-| 5 | `MODEL_IMPLEMENTATION.md` | 851 | 37306 | `a82b8b93fd0d7a64` |
-| 6 | `README.md` | 54 | 2552 | `26205bc095821e81` |
+| 1 | `ARCHITECTURE.md` | 1243 | 56163 | `fe7f964400db00b9` |
+| 2 | `CODING_STANDARDS.md` | 394 | 16492 | `36ccc834b3a6e610` |
+| 3 | `GUIDE.md` | 1149 | 45270 | `c82a3b4e2f97e0a3` |
+| 4 | `IMPLEMENTATION.md` | 445 | 22286 | `ab00d7895cb5df61` |
+| 5 | `MODEL_IMPLEMENTATION.md` | 851 | 37552 | `94ad0612437a98ee` |
+| 6 | `README.md` | 54 | 2659 | `ef24e3568f6a7890` |
 
 ---
 
-## 1. `src/rade_qnet/docs/ARCHITECTURE.md`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/docs/ARCHITECTURE.md`
 
-56125 bytes · SHA-256 `7abe69d46e761658`
+56163 bytes · SHA-256 `fe7f964400db00b9`
 
 ````markdown
 # rade_qnet — Architecture
@@ -156,7 +156,7 @@ flowchart TD
 ```
 
 The permitted dependencies are not a convention. They are encoded in
-`ALLOWED_DEPENDENCIES` in `tests/rade_qnet/test_scaffold.py` and checked by
+`ALLOWED_DEPENDENCIES` in `tranql/models/rade/rade_qnet/tests/test_scaffold.py` and checked by
 walking the abstract syntax tree of every module in the package. Architectural
 boundaries are rarely broken by a decision to break them; they are broken by
 one convenient import in a hurry. The test turns that import into a CI failure
@@ -820,7 +820,7 @@ models/<name>/
 
 There are no loose modules under `models/` and no category sub-folders:
 `rade_qnet.models.<name>` is a model, always. The vocabulary above is closed
-and `tests/rade_qnet/models/test_model_layout.py` enforces it, so a file named
+and `tranql/models/rade/rade_qnet/tests/models/test_model_layout.py` enforces it, so a file named
 anything else is a failing test rather than a convention somebody did not
 know about.
 
@@ -1265,9 +1265,9 @@ Full detail: [`phases/PHASE_0_BASELINE.md`](phases/PHASE_0_BASELINE.md).
 
 ---
 
-## 2. `src/rade_qnet/docs/CODING_STANDARDS.md`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/docs/CODING_STANDARDS.md`
 
-16316 bytes · SHA-256 `ec30f7f0c0938f7a`
+16492 bytes · SHA-256 `36ccc834b3a6e610`
 
 ````markdown
 # rade_qnet — Coding Standards
@@ -1306,17 +1306,17 @@ Three things make this document worth reading rather than skimming:
 
 ```bash
 # Lint — must report zero findings.
-.venv/bin/python -m ruff check src/rade_qnet tests/rade_qnet
+.venv/bin/python -m ruff check tranql/models/rade/rade_qnet/rade_qnet tranql/models/rade/rade_qnet/tests
 
 # Format — must report zero files needing change.
-.venv/bin/python -m ruff format --check src/rade_qnet tests/rade_qnet
+.venv/bin/python -m ruff format --check tranql/models/rade/rade_qnet/rade_qnet tranql/models/rade/rade_qnet/tests
 
 # Test — must pass.
-.venv/bin/python -m pytest tests/rade_qnet -q
+.venv/bin/python -m pytest tranql/models/rade/rade_qnet/tests -q
 ```
 
 Configuration lives in [`../ruff.toml`](../ruff.toml), with the test tree's
-[`tests/rade_qnet/ruff.toml`](../../../tests/rade_qnet/ruff.toml) extending it so
+[`tranql/models/rade/rade_qnet/tests/ruff.toml`](../../tests/ruff.toml) extending it so
 both trees are held to one standard stated in one place.
 
 Two deliberate choices about that configuration:
@@ -1469,7 +1469,7 @@ split-boundary arithmetic, the device-visibility dance before import, the merge
 rules for job overrides. Straightforward construction and delegation code
 carries few comments and needs none.
 
-As a calibration: `tests/rade_qnet/test_scaffold.py` is commented at roughly the
+As a calibration: `tranql/models/rade/rade_qnet/tests/test_scaffold.py` is commented at roughly the
 intended density. Every constant that encodes a decision explains that
 decision; the loops that walk directories do not.
 
@@ -1605,7 +1605,7 @@ from ...core.lifecycle.errors import StageError
 ```
 
 This is what keeps the package **relocatable**: it behaves identically imported
-as `src.rade_qnet` from this repository or as `rade_qnet` from an installed
+as `tranql.models.rade.rade_qnet.rade_qnet` from this repository or as `rade_qnet` from an installed
 distribution. Absolute self-imports would pin it to one of those and break the
 other. (`TID252`, which bans parent-relative imports, is therefore switched off
 with that reasoning recorded in the config.)
@@ -1648,7 +1648,7 @@ Mechanical:
 
 - [ ] `ruff check` reports zero findings.
 - [ ] `ruff format --check` reports zero files needing change.
-- [ ] `pytest tests/rade_qnet` passes.
+- [ ] `pytest tranql/models/rade/rade_qnet/tests` passes.
 - [ ] New packages have a charter; new modules have a docstring.
 - [ ] `test_scaffold.py` still passes — layering and mirroring intact.
 
@@ -1668,9 +1668,9 @@ Judgement:
 
 ---
 
-## 3. `src/rade_qnet/docs/GUIDE.md`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/docs/GUIDE.md`
 
-45007 bytes · SHA-256 `3d856f8f56c6f0ee`
+45270 bytes · SHA-256 `c82a3b4e2f97e0a3`
 
 ````markdown
 # rade_qnet — The Guide
@@ -1848,7 +1848,7 @@ Here is a complete, registered, production-usable model: three short files
 plus a charter, shown minus their docstrings.
 
 ```python
-# src/rade_qnet/models/ridge/spec.py        — what can be configured
+# tranql/models/rade/rade_qnet/rade_qnet/models/ridge/spec.py        — what can be configured
 
 class RidgeSpec(Spec):
     alpha: float = Field(default=1.0, gt=0.0)
@@ -1856,7 +1856,7 @@ class RidgeSpec(Spec):
 ```
 
 ```python
-# src/rade_qnet/models/ridge/model.py       — what is computed
+# tranql/models/rade/rade_qnet/rade_qnet/models/ridge/model.py       — what is computed
 # Imports no registry, no run spec, no engine. Callable from a notebook.
 
 def build(settings: RidgeSpec) -> Ridge:
@@ -1864,7 +1864,7 @@ def build(settings: RidgeSpec) -> Ridge:
 ```
 
 ```python
-# src/rade_qnet/models/ridge/data.py        — what data is required, and from where
+# tranql/models/rade/rade_qnet/rade_qnet/models/ridge/data.py        — what data is required, and from where
 # REQUIRES is checked against the data build before the model is constructed.
 REQUIRES = InputRequirement.unconstrained()   # ridge flattens whatever it is given
 
@@ -1875,7 +1875,7 @@ def data_module(spec: SupervisedRunSpec) -> TabularDataModule:
 ```
 
 ```python
-# src/rade_qnet/models/ridge/register.py    — how it plugs in
+# tranql/models/rade/rade_qnet/rade_qnet/models/ridge/register.py    — how it plugs in
 from ...engines import sklearn as _engine  # noqa: F401  — registers the engine
 from .data import REQUIRES, data_module
 
@@ -1896,7 +1896,7 @@ class RidgeModel(SupervisedModel):
 ```
 
 ```python
-# src/rade_qnet/models/ridge/__init__.py    — the charter
+# tranql/models/rade/rade_qnet/rade_qnet/models/ridge/__init__.py    — the charter
 from .register import RidgeModel
 from .spec import RidgeSpec
 ```
@@ -1978,7 +1978,7 @@ here. `lstm_tabular` is a recurrent network written from scratch and it is
 four files, the same four as `ridge`.
 
 ```python
-# src/rade_qnet/models/lstm_tabular/  (abridged)
+# tranql/models/rade/rade_qnet/rade_qnet/models/lstm_tabular/  (abridged)
 
 class LstmTabular(nn.Module):
     def __init__(self, settings: LstmTabularSpec, *, n_features: int) -> None:
@@ -2060,7 +2060,7 @@ the mathematics finds registration boilerplate first and gives up.
 ### The registration
 
 ```python
-# src/rade_qnet/models/hybrid_gnn_rnn/register.py  (abridged)
+# tranql/models/rade/rade_qnet/rade_qnet/models/hybrid_gnn_rnn/register.py  (abridged)
 
 @model("hybrid_gnn_rnn", engine="torch")
 class HybridGnnRnnModel(SupervisedModel):
@@ -2296,7 +2296,7 @@ the successful bundles are on disk.
 sequentially produces bit-identical metrics, provided the thread budget is
 pinned in the specification. This is a tested gate, not an aspiration:
 
-> `tests/rade_qnet/orchestration/jobs/test_jobs_parity.py`
+> `tranql/models/rade/rade_qnet/tests/orchestration/jobs/test_jobs_parity.py`
 
 The reason `threads_per_worker: 1` appears in the defaults above is exactly
 this: the thread count fixes the order a floating-point reduction accumulates
@@ -2576,7 +2576,7 @@ Six public names is the entire surface: `SupervisedModel`, `model`, `Spec`, a
 data module, the engine package, and `api`. Everything in §12 — the bundle,
 the lineage, the reports, exact re-scoring — comes with it.
 
-This is pinned by `tests/rade_qnet/test_extensibility.py`, which deliberately
+This is pinned by `tranql/models/rade/rade_qnet/tests/test_extensibility.py`, which deliberately
 uses only those public names. If any of them moves, that test fails, which is
 the point: it is a test of whether the public surface is *sufficient*, not of
 whether the internals exist.
@@ -2820,15 +2820,15 @@ each is invisible without the guard.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — why the framework is shaped this way
 - [`IMPLEMENTATION.md`](IMPLEMENTATION.md) — the phase plan and current status
 - `examples/rade_qnet/` — runnable scripts for every phase, in order
-- `src/rade_qnet/models/ridge/` — the shortest complete model in the codebase
-- `src/rade_qnet/testkit/conformance.py` — the suite your custom components must pass
+- `tranql/models/rade/rade_qnet/rade_qnet/models/ridge/` — the shortest complete model in the codebase
+- `tranql/models/rade/rade_qnet/rade_qnet/testkit/conformance.py` — the suite your custom components must pass
 ````
 
 ---
 
-## 4. `src/rade_qnet/docs/IMPLEMENTATION.md`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/docs/IMPLEMENTATION.md`
 
-21865 bytes · SHA-256 `457874a795d914f9`
+22286 bytes · SHA-256 `ab00d7895cb5df61`
 
 ````markdown
 # rade_qnet — Implementation Plan
@@ -2884,17 +2884,17 @@ route from "where does X live?" to the right document.
 
 | Delivered | Where |
 | --- | --- |
-| Package tree, 9 top-level packages, every directory a documented package | `src/rade_qnet/` |
-| Charter docstring in all 33 `__init__.py` files, naming modules and phases | `src/rade_qnet/**/__init__.py` |
-| Architecture, coding standard, this plan, 8 phase documents | `src/rade_qnet/docs/` |
-| Lint and format configuration, scoped to the package | `src/rade_qnet/ruff.toml` |
-| Test tree mirroring the source tree, with planned modules listed | `tests/rade_qnet/` |
-| Structural test suite: layering, mirroring, documentation, charters | `tests/rade_qnet/test_scaffold.py` |
+| Package tree, 9 top-level packages, every directory a documented package | `tranql/models/rade/rade_qnet/rade_qnet/` |
+| Charter docstring in all 33 `__init__.py` files, naming modules and phases | `tranql/models/rade/rade_qnet/rade_qnet/**/__init__.py` |
+| Architecture, coding standard, this plan, 8 phase documents | `tranql/models/rade/rade_qnet/rade_qnet/docs/` |
+| Lint and format configuration, scoped to the package | `tranql/models/rade/rade_qnet/rade_qnet/ruff.toml` |
+| Test tree mirroring the source tree, with planned modules listed | `tranql/models/rade/rade_qnet/tests/` |
+| Structural test suite: layering, mirroring, documentation, charters | `tranql/models/rade/rade_qnet/tests/test_scaffold.py` |
 
 ```bash
-.venv/bin/python -m ruff check src/rade_qnet tests/rade_qnet     # zero findings
-.venv/bin/python -m ruff format --check src/rade_qnet tests/rade_qnet
-.venv/bin/python -m pytest tests/rade_qnet -q                  # all pass
+.venv/bin/python -m ruff check tranql/models/rade/rade_qnet/rade_qnet tranql/models/rade/rade_qnet/tests     # zero findings
+.venv/bin/python -m ruff format --check tranql/models/rade/rade_qnet/rade_qnet tranql/models/rade/rade_qnet/tests
+.venv/bin/python -m pytest tranql/models/rade/rade_qnet/tests -q                  # all pass
 ```
 
 No framework logic exists yet. `test_scaffold.py` is already load-bearing: its
@@ -3016,15 +3016,15 @@ phase is not complete until all of them hold.
 
 ### Code
 
-- [ ] `ruff check src/rade_qnet tests/rade_qnet` — zero findings.
-- [ ] `ruff format --check src/rade_qnet tests/rade_qnet` — zero changes needed.
+- [ ] `ruff check tranql/models/rade/rade_qnet/rade_qnet tranql/models/rade/rade_qnet/tests` — zero findings.
+- [ ] `ruff format --check tranql/models/rade/rade_qnet/rade_qnet tranql/models/rade/rade_qnet/tests` — zero changes needed.
 - [ ] Every new module has a docstring; every new package has a charter.
 - [ ] Every signature fully annotated; no bare `Any`.
 - [ ] [`CODING_STANDARDS.md`](CODING_STANDARDS.md) §10 checklist satisfied.
 
 ### Tests
 
-- [ ] `pytest tests/rade_qnet` passes.
+- [ ] `pytest tranql/models/rade/rade_qnet/tests` passes.
 - [ ] Every new module has a corresponding test module.
 - [ ] Failure paths tested, not only happy paths.
 - [ ] Tests deterministic: fixed seeds, no clock, no network, no shared state.
@@ -3242,14 +3242,14 @@ optional extra per engine (`torch`, `xgboost`, `sklearn`), plus `hybrid`,
 pattern so the sibling packages under `src/` are not swept in -- so it installs
 with `pip install -e .` and imports as `rade_qnet`. `rade_qnet` uses relative
 imports internally, so it behaves identically under either path; the test
-suite keeps importing `src.rade_qnet` to match the rest of the repository.
+suite keeps importing `tranql.models.rade.rade_qnet.rade_qnet` to match the rest of the repository.
 
 ### 7.3 No continuous integration
 
 Nothing currently runs the lint and test commands automatically. The definition
 of done is therefore enforced by discipline. A minimal workflow running the
-three commands in [§2](#2-current-state) against `src/rade_qnet` and
-`tests/rade_qnet` would make it enforced by machine. Recommended before Phase 2,
+three commands in [§2](#2-current-state) against `tranql/models/rade/rade_qnet/rade_qnet` and
+`tranql/models/rade/rade_qnet/tests` would make it enforced by machine. Recommended before Phase 2,
 when the code starts to matter.
 
 ### 7.4 Comment density
@@ -3280,15 +3280,15 @@ Legend: ⬜ not started · 🟡 in progress · ✅ complete
 
 ---
 
-## 5. `src/rade_qnet/docs/MODEL_IMPLEMENTATION.md`
+## 5. `tranql/models/rade/rade_qnet/rade_qnet/docs/MODEL_IMPLEMENTATION.md`
 
-37306 bytes · SHA-256 `a82b8b93fd0d7a64`
+37552 bytes · SHA-256 `94ad0612437a98ee`
 
 ````markdown
 # Implementing a Model in `rade_qnet`
 
 **Document type** Procedure · **Audience** Anyone adding a model · **Status** Normative
-**Enforced by** `tests/rade_qnet/models/test_model_layout.py` · **Companion** [`GUIDE.md`](GUIDE.md) (concepts), [`ARCHITECTURE.md`](ARCHITECTURE.md) (design rationale)
+**Enforced by** `tranql/models/rade/rade_qnet/tests/models/test_model_layout.py` · **Companion** [`GUIDE.md`](GUIDE.md) (concepts), [`ARCHITECTURE.md`](ARCHITECTURE.md) (design rationale)
 
 ---
 
@@ -3352,7 +3352,7 @@ flowchart TD
     H -- "2" --> I["§5.2 add state.py"] --> N
     H -- "3" --> J["§5.3 custom DataModule in data.py (+ layers/, features/)"] --> N
     H -- "4" --> K["§5.4 add pipelines/"] --> N
-    N --> O["§8 pytest tests/rade_qnet/models/test_model_layout.py"]
+    N --> O["§8 pytest tranql/models/rade/rade_qnet/tests/models/test_model_layout.py"]
     O --> P["§9 Sign-off checklist"]
 ```
 
@@ -3385,7 +3385,7 @@ That one check is what keeps the three columns above true over time.
 The practical payoff is in the test suite. Compare:
 
 ```python
-# tests/rade_qnet/models/ridge/test_model.py — no framework at all
+# tranql/models/rade/rade_qnet/tests/models/ridge/test_model.py — no framework at all
 estimator = build(RidgeSpec(alpha=0.25, fit_intercept=False))
 assert estimator.alpha == 0.25
 ```
@@ -3742,8 +3742,8 @@ reload path cannot work.
 ### 5.1 Tier 1 — walkthrough
 
 ```bash
-cp -r src/rade_qnet/models/ridge src/rade_qnet/models/your_model
-mkdir -p tests/rade_qnet/models/your_model
+cp -r tranql/models/rade/rade_qnet/rade_qnet/models/ridge tranql/models/rade/rade_qnet/rade_qnet/models/your_model
+mkdir -p tranql/models/rade/rade_qnet/tests/models/your_model
 ```
 
 | # | Step | File |
@@ -3753,7 +3753,7 @@ mkdir -p tests/rade_qnet/models/your_model
 | 3 | Write `REQUIRES`; leave `data_module` returning `TabularDataModule()` | `data.py` |
 | 4 | Rename the class, bind `requires`/`spec`, set `@model("your_model", engine=…)`, import the engine | `register.py` |
 | 5 | Rewrite the charter; fix the re-exports | `__init__.py` |
-| 6 | Add `"models/your_model"` to `DELIVERED_TEST_SUBTREES` | `tests/rade_qnet/test_scaffold.py` |
+| 6 | Add `"models/your_model"` to `DELIVERED_TEST_SUBTREES` | `tranql/models/rade/rade_qnet/tests/test_scaffold.py` |
 | 7 | Add `test_model.py` (no framework) and `test_register.py` (wiring only) | `tests/…/your_model/` |
 
 Then §7 and §8.
@@ -3965,7 +3965,7 @@ sequenceDiagram
 
 ## 8. Conformance: what is actually enforced
 
-`tests/rade_qnet/models/test_model_layout.py` runs against **every** model
+`tranql/models/rade/rade_qnet/tests/models/test_model_layout.py` runs against **every** model
 package automatically — adding a package adds the checks.
 
 | Check | Fails when |
@@ -3986,8 +3986,8 @@ it fails, something above the model now demands boilerplate. Raising the
 budget to make it pass deletes the only signal that said so.
 
 ```bash
-pytest tests/rade_qnet/models/test_model_layout.py -q
-ruff check src/rade_qnet/models/your_model
+pytest tranql/models/rade/rade_qnet/tests/models/test_model_layout.py -q
+ruff check tranql/models/rade/rade_qnet/rade_qnet/models/your_model
 ```
 
 ---
@@ -4029,9 +4029,9 @@ ruff check src/rade_qnet/models/your_model
 - [ ] `save`/`load` round-trip exactly; reload re-scores **identically**
 
 **Tests**
-- [ ] `tests/rade_qnet/models/<name>/` with `test_model.py` and `test_register.py`
+- [ ] `tranql/models/rade/rade_qnet/tests/models/<name>/` with `test_model.py` and `test_register.py`
 - [ ] `"models/<name>"` added to `DELIVERED_TEST_SUBTREES`
-- [ ] `pytest tests/rade_qnet -q` green; `ruff check` clean
+- [ ] `pytest tranql/models/rade/rade_qnet/tests -q` green; `ruff check` clean
 
 **Proof of life**
 - [ ] `train` → `evaluate(bundle)` returns the **same** metric
@@ -4140,9 +4140,9 @@ would be making a promise it cannot keep.
 
 ---
 
-## 6. `src/rade_qnet/docs/README.md`
+## 6. `tranql/models/rade/rade_qnet/rade_qnet/docs/README.md`
 
-2552 bytes · SHA-256 `26205bc095821e81`
+2659 bytes · SHA-256 `ef24e3568f6a7890`
 
 ````markdown
 # rade_qnet — Documentation
@@ -4192,9 +4192,9 @@ route from "where does X live?" to the right document.
 ## Checks
 
 ```bash
-.venv/bin/python -m ruff check  src/rade_qnet tests/rade_qnet
-.venv/bin/python -m ruff format --check src/rade_qnet tests/rade_qnet
-.venv/bin/python -m pytest tests/rade_qnet -q
+.venv/bin/python -m ruff check  tranql/models/rade/rade_qnet/rade_qnet tranql/models/rade/rade_qnet/tests
+.venv/bin/python -m ruff format --check tranql/models/rade/rade_qnet/rade_qnet tranql/models/rade/rade_qnet/tests
+.venv/bin/python -m pytest tranql/models/rade/rade_qnet/tests -q
 ```
 
 All three must be clean for any phase to be considered complete. Configuration

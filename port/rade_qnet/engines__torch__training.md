@@ -1,4 +1,4 @@
-# `src/rade_qnet/engines/torch/training`
+# `tranql/models/rade/rade_qnet/rade_qnet/engines/torch/training`
 
 5 file(s). Create the directory, then create each file below with the exact contents of its block.
 
@@ -12,7 +12,7 @@
 
 ---
 
-## 1. `src/rade_qnet/engines/torch/training/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/rade_qnet/engines/torch/training/__init__.py`
 
 1832 bytes · SHA-256 `1513f7834fd4c319`
 
@@ -60,7 +60,7 @@ __all__: tuple[str, ...] = ()
 
 ---
 
-## 2. `src/rade_qnet/engines/torch/training/callbacks.py`
+## 2. `tranql/models/rade/rade_qnet/rade_qnet/engines/torch/training/callbacks.py`
 
 21962 bytes · SHA-256 `4f364430b3ee327c`
 
@@ -758,7 +758,7 @@ class GradientNorms:
 
 ---
 
-## 3. `src/rade_qnet/engines/torch/training/checkpoint.py`
+## 3. `tranql/models/rade/rade_qnet/rade_qnet/engines/torch/training/checkpoint.py`
 
 10642 bytes · SHA-256 `df134fb5e194563f`
 
@@ -1067,7 +1067,7 @@ def load_weights(model: object, path: Path) -> torch.nn.Module:
 
 ---
 
-## 4. `src/rade_qnet/engines/torch/training/loops.py`
+## 4. `tranql/models/rade/rade_qnet/rade_qnet/engines/torch/training/loops.py`
 
 31738 bytes · SHA-256 `4cb0b2dc45846113`
 
@@ -1984,7 +1984,7 @@ def _log_block(record: EpochRecord, *, steps_taken: int, total_steps: int) -> No
 
 ---
 
-## 5. `src/rade_qnet/engines/torch/training/losses.py`
+## 5. `tranql/models/rade/rade_qnet/rade_qnet/engines/torch/training/losses.py`
 
 9946 bytes · SHA-256 `e2df8fc6f1313596`
 

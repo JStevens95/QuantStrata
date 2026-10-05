@@ -1,15 +1,15 @@
-# `tests/rade_qnet/sources/environment`
+# `tranql/models/rade/rade_qnet/tests/sources/environment`
 
 2 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 26 | 1053 | `ff225df9a8ee5c59` |
-| 2 | `test_environment_protocol.py` | 156 | 5332 | `92c969f3d0c70188` |
+| 2 | `test_environment_protocol.py` | 156 | 5382 | `19062baa2f665154` |
 
 ---
 
-## 1. `tests/rade_qnet/sources/environment/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/sources/environment/__init__.py`
 
 1053 bytes · SHA-256 `ff225df9a8ee5c59`
 
@@ -44,9 +44,9 @@ Planned modules
 
 ---
 
-## 2. `tests/rade_qnet/sources/environment/test_environment_protocol.py`
+## 2. `tranql/models/rade/rade_qnet/tests/sources/environment/test_environment_protocol.py`
 
-5332 bytes · SHA-256 `92c969f3d0c70188`
+5382 bytes · SHA-256 `19062baa2f665154`
 
 ```python
 """
@@ -72,8 +72,8 @@ import dataclasses
 import numpy as np
 import pytest
 
-from src.rade_qnet.core.contract.signature import SpaceSpec
-from src.rade_qnet.sources.environment import Environment, StepOutcome
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.signature import SpaceSpec
+from tranql.models.rade.rade_qnet.rade_qnet.sources.environment import Environment, StepOutcome
 
 OBSERVATION = SpaceSpec(kind="box", shape=(2,), dtype="float32")
 ACTION = SpaceSpec(kind="discrete", n=3)

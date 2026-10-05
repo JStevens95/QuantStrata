@@ -1,17 +1,17 @@
-# `tests/rade_qnet/models/hybrid_gnn_rnn/pipelines`
+# `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/pipelines`
 
 4 file(s). Create the directory, then create each file below with the exact contents of its block.
 
 | # | File | Lines | Bytes | SHA-256 |
 | --- | --- | ---: | ---: | --- |
 | 1 | `__init__.py` | 13 | 575 | `460b7d1c67ae53f9` |
-| 2 | `test_pipelines_eval.py` | 201 | 7989 | `387ee1e438d8a501` |
-| 3 | `test_pipelines_train.py` | 86 | 3493 | `4c34861fc5eedc96` |
-| 4 | `test_pipelines_tune.py` | 249 | 9226 | `e1f2bf7610d37101` |
+| 2 | `test_pipelines_eval.py` | 201 | 8064 | `89d17d7ac49b0874` |
+| 3 | `test_pipelines_train.py` | 86 | 3568 | `188d734e5e26bca9` |
+| 4 | `test_pipelines_tune.py` | 249 | 9351 | `5bd05794926fdea4` |
 
 ---
 
-## 1. `tests/rade_qnet/models/hybrid_gnn_rnn/pipelines/__init__.py`
+## 1. `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/pipelines/__init__.py`
 
 575 bytes · SHA-256 `460b7d1c67ae53f9`
 
@@ -33,9 +33,9 @@ framework's step granularity rather than about this model.
 
 ---
 
-## 2. `tests/rade_qnet/models/hybrid_gnn_rnn/pipelines/test_pipelines_eval.py`
+## 2. `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/pipelines/test_pipelines_eval.py`
 
-7989 bytes · SHA-256 `387ee1e438d8a501`
+8064 bytes · SHA-256 `89d17d7ac49b0874`
 
 ```python
 """Tests for the hybrid model's eval-pipeline override."""
@@ -44,13 +44,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from src.rade_qnet.core.contract.result import EvalResult, EvaluationResult
-from src.rade_qnet.models.hybrid_gnn_rnn.pipelines.eval import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.contract.result import EvalResult, EvaluationResult
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.pipelines.eval import (
     HybridEvalPipeline,
     breakdown_notes,
     per_target_errors,
 )
-from src.rade_qnet.orchestration.pipelines.evaluate import EvaluatePipeline
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.pipelines.evaluate import EvaluatePipeline
 
 
 def evaluation(**overrides: object) -> EvaluationResult:
@@ -243,21 +243,21 @@ class TestTheBreakdownAgreesWithTheAggregate:
 
 ---
 
-## 3. `tests/rade_qnet/models/hybrid_gnn_rnn/pipelines/test_pipelines_train.py`
+## 3. `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/pipelines/test_pipelines_train.py`
 
-3493 bytes · SHA-256 `4c34861fc5eedc96`
+3568 bytes · SHA-256 `188d734e5e26bca9`
 
 ```python
 """Tests for the hybrid model's train-pipeline override."""
 
 from __future__ import annotations
 
-from src.rade_qnet.core.lifecycle.components import get_report
-from src.rade_qnet.models.hybrid_gnn_rnn.pipelines.train import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.components import get_report
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.pipelines.train import (
     HYBRID_REPORTS,
     HybridTrainPipeline,
 )
-from src.rade_qnet.orchestration.pipelines.train import TrainPipeline
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.pipelines.train import TrainPipeline
 
 from ..test_register import run_spec
 
@@ -338,9 +338,9 @@ class TestTrainOverride:
 
 ---
 
-## 4. `tests/rade_qnet/models/hybrid_gnn_rnn/pipelines/test_pipelines_tune.py`
+## 4. `tranql/models/rade/rade_qnet/tests/models/hybrid_gnn_rnn/pipelines/test_pipelines_tune.py`
 
-9226 bytes · SHA-256 `e1f2bf7610d37101`
+9351 bytes · SHA-256 `5bd05794926fdea4`
 
 ```python
 """Tests for the hybrid model's tune-pipeline override."""
@@ -349,14 +349,14 @@ from __future__ import annotations
 
 import pytest
 
-from src.rade_qnet.core.lifecycle.errors import ContractError, SpecError
-from src.rade_qnet.core.spec.tune import parse_tune_spec
-from src.rade_qnet.models.hybrid_gnn_rnn.pipelines.tune import (
+from tranql.models.rade.rade_qnet.rade_qnet.core.lifecycle.errors import ContractError, SpecError
+from tranql.models.rade.rade_qnet.rade_qnet.core.spec.tune import parse_tune_spec
+from tranql.models.rade.rade_qnet.rade_qnet.models.hybrid_gnn_rnn.pipelines.tune import (
     HybridTunePipeline,
     is_buildable,
 )
-from src.rade_qnet.orchestration.pipelines.tune import TunePipeline
-from src.rade_qnet.orchestration.stages.search import expand
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.pipelines.tune import TunePipeline
+from tranql.models.rade.rade_qnet.rade_qnet.orchestration.stages.search import expand
 
 from ..test_register import FIXTURE, run_spec
 
