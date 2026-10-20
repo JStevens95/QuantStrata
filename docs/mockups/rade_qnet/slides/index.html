@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>QNet - deck preview</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: #06080c; color: #8ea3b8;
+    font: 13px/1.4 Inter, "Segoe UI", Helvetica, Arial, sans-serif;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+    padding: 24px;
+  }
+  #slide { width: min(100%, calc((100vh - 110px) * 16 / 9)); }
+  #grid { display: none; width: min(100%, 1400px); grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 18px; }
+  body.is-grid #slide, body.is-grid nav { display: none; }
+  body.is-grid #grid { display: grid; }
+  nav { display: flex; align-items: center; gap: 10px; }
+  button {
+    background: transparent; color: #4da3ff; border: 1px solid #2d5680; border-radius: 999px;
+    padding: 4px 12px; font: inherit; cursor: pointer;
+  }
+  button:hover { background: #12263d; }
+  #count { min-width: 60px; text-align: center; }
+</style>
+</head>
+<body>
+<div id="slide"></div>
+<div id="grid"></div>
+<nav>
+  <button id="prev">←</button>
+  <span id="count"></span>
+  <button id="next">→</button>
+  <button id="all">All slides</button>
+</nav>
+<script>
+  const files = [
+    "00_qnet_title.md",
+    "01_qnet_problem.md",
+    "02_qnet_what_it_is.md",
+    "03_qnet_what_it_can_do.md",
+    "04_qnet_trust.md",
+    "05_qnet_value.md",
+    "07_qnet_execution.md",
+  ];
+  const slide = document.getElementById("slide");
+  const count = document.getElementById("count");
+  let sources = [];
+  let index = Math.max(0, Math.min(files.length - 1, Number(location.hash.slice(1)) || 0));
+
+  const grid = document.getElementById("grid");
+
+  // Only one view is in the document at a time: slides carry ids and radio
+  // groups, and a second copy would share them.
+  function show(next) {
+    index = (next + files.length) % files.length;
+    grid.innerHTML = "";
+    document.body.classList.remove("is-grid");
+    slide.innerHTML = sources[index];
+    count.textContent = `${index + 1} / ${files.length}`;
+    history.replaceState(null, "", `#${index}`);
+  }
+
+  function showAll() {
+    slide.innerHTML = "";
+    grid.innerHTML = sources.map((text) => `<div>${text}</div>`).join("");
+    document.body.classList.add("is-grid");
+  }
+
+  Promise.all(files.map((name) => fetch(name).then((response) => response.text()))).then((texts) => {
+    sources = texts;
+    if (new URLSearchParams(location.search).has("all")) showAll();
+    else show(index);
+  });
+
+  document.getElementById("prev").onclick = () => show(index - 1);
+  document.getElementById("next").onclick = () => show(index + 1);
+  document.getElementById("all").onclick = showAll;
+  document.addEventListener("keydown", (event) => {
+    if (event.target instanceof HTMLButtonElement && (event.key === " " || event.key === "Enter")) return;
+    if (event.key === "Escape") {
+      if (document.body.classList.contains("is-grid")) show(index);
+      else showAll();
+      return;
+    }
+    if (event.key === "ArrowRight" || event.key === " ") show(index + 1);
+    if (event.key === "ArrowLeft") show(index - 1);
+  });
+</script>
+</body>
+</html>
