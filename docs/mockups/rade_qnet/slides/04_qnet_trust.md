@@ -1,15 +1,16 @@
 <!--
   QNet deck - 04 Why you can trust it.
 
-  Message: QNet makes the two things a validator asks about structural:
-  a test score is honest because nothing is fitted on future data, and
-  every result can be rebuilt from what was saved.
+  Message, read left to right as a model's life: on the way in, every
+  model is tested against the same contract suite, which catches the bugs that still
+  report plausible numbers; afterwards, an independent validator re-running
+  from the saved bundle gets exactly the number the developer got.
 
-  A shuffled split shows the leak first (test days between training days);
-  then QNet's forward split draws and the fitting bracket lands on the
-  training window only. The bundle's files tick in one by one. The HTML
-  has no blank lines on purpose: Markdown ends an HTML block at the first
-  blank line.
+  The checks tick in and one fails with a precise diagnostic; then the two
+  runs fill, both land on the same expected shortfall and weights digest,
+  and the verdict confirms the match. The figures are illustrative. The
+  HTML has no blank lines on purpose: Markdown ends an HTML block at the
+  first blank line.
 -->
 
 <style>
@@ -56,6 +57,8 @@
   @keyframes qs04-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
   .qs04__bracket { stroke-dasharray: 400; stroke-dashoffset: 400; animation: qs04-draw 0.8s ease-out 2.1s forwards; }
   @keyframes qs04-draw { to { stroke-dashoffset: 0; } }
+  .qs04__pop { transform-box: fill-box; transform-origin: center; animation: qs04-pop 0.35s cubic-bezier(0.3, 1.6, 0.5, 1) both; animation-delay: var(--d); }
+  @keyframes qs04-pop { from { transform: scale(0); opacity: 0; } to { transform: none; opacity: 1; } }
   .qs04__late { animation: qs-rise 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: var(--d); }
   .qs04__files { margin: 1.4cqw 0 0; padding: 0; list-style: none; display: grid; gap: 0.75cqw; }
   .qs04__files li {
@@ -185,56 +188,89 @@
     </svg>
     <p class="qs__kicker qs-in">04 · Why you can trust it</p>
     <h1 class="qs__title qs-in" style="--i:1">Numbers a validator can sign off</h1>
-    <p class="qs__sub qs-in" style="--i:2">Honest by construction. Rebuildable on demand.</p>
+    <p class="qs__sub qs-in" style="--i:2">Checked on the way in. Reproducible on demand.</p>
     <div class="qs__stage qs04__stage">
       <section class="qs04__panel qs-in" style="--i:3">
-        <h2>Backtests you can believe</h2>
-        <p>Training never sees the future, so a test score means what it says.</p>
-        <svg viewBox="0 0 520 262" fill="none" role="img" aria-label="A shuffled split leaks future days into training and flatters the score; QNet splits forward in time and fits scalers on the training window only">
-          <g class="qs04__late" style="--d:0.4s">
-            <text x="20" y="18" fill="#f0a8a3" font-size="13" font-weight="700" letter-spacing="2">SHUFFLED SPLIT</text>
-            <g fill-opacity="0.5">
-              <rect x="20" y="30" width="44" height="26" rx="5" fill="#2f86e6"/>
-              <rect x="68" y="30" width="20" height="26" rx="5" fill="#2e8a43"/>
-              <rect x="92" y="30" width="64" height="26" rx="5" fill="#2f86e6"/>
-              <rect x="160" y="30" width="20" height="26" rx="5" fill="#2e8a43"/>
-              <rect x="184" y="30" width="80" height="26" rx="5" fill="#2f86e6"/>
-              <rect x="268" y="30" width="20" height="26" rx="5" fill="#2e8a43"/>
-              <rect x="292" y="30" width="52" height="26" rx="5" fill="#2f86e6"/>
-              <rect x="348" y="30" width="20" height="26" rx="5" fill="#2e8a43"/>
-              <rect x="372" y="30" width="60" height="26" rx="5" fill="#2f86e6"/>
-            </g>
-            <circle cx="458" cy="43" r="13" fill="#3a1a1c" stroke="#f85149" stroke-width="2"/>
-            <path d="M452 37 L464 49 M464 37 L452 49" stroke="#f85149" stroke-width="2.4" stroke-linecap="round"/>
-            <text x="20" y="80" fill="#8ea3b8" font-size="14">Test days sit between training days: the score is flattered.</text>
+        <h2>Checked on the way in</h2>
+        <p>Every model is tested against the same contract suite before onboarding.</p>
+        <svg viewBox="0 0 520 262" fill="none" role="img" aria-label="A contract suite checks a new model; one check fails with a precise diagnostic and the model is blocked until it is fixed">
+          <g class="qs04__late" style="--d:0.3s" font-size="12" font-weight="700" letter-spacing="2" fill="#5d7086">
+            <text x="56" y="16">CHECK</text>
+            <text x="500" y="16" text-anchor="end">WITHOUT IT</text>
           </g>
-          <path class="qs04__late" style="--d:0.8s" d="M20 100 H500" stroke="#2a3340" stroke-width="1"/>
-          <text class="qs04__late" style="--d:0.9s" x="20" y="122" fill="#4da3ff" font-size="13" font-weight="700" letter-spacing="2">QNET: FORWARD IN TIME</text>
-          <path class="qs04__bracket" d="M24 172 V160 H326 V172" stroke="#4da3ff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-          <text class="qs04__late" style="--d:2.6s" x="175" y="152" fill="#cfe5ff" font-size="14" font-weight="600" text-anchor="middle">Scalers and feature selection fitted here only</text>
-          <rect class="qs04__bar" style="--d:1.1s" x="20" y="180" width="310" height="40" rx="8" fill="#2f86e6"/>
-          <rect class="qs04__bar" style="--d:1.5s" x="336" y="180" width="84" height="40" rx="8" fill="#4b5f78"/>
-          <rect class="qs04__bar" style="--d:1.8s" x="426" y="180" width="74" height="40" rx="8" fill="#2e8a43"/>
-          <g font-size="16" font-weight="600" fill="#e8eef5">
-            <text class="qs04__late" style="--d:1.2s" x="175" y="206" text-anchor="middle">Train</text>
-            <text class="qs04__late" style="--d:1.6s" x="378" y="206" text-anchor="middle">Validate</text>
-            <text class="qs04__late" style="--d:1.9s" x="463" y="206" text-anchor="middle">Test</text>
+          <g class="qs04__late" style="--d:0.50s">
+            <path d="M20 67 H500" stroke="#1c232d" stroke-width="1"/>
+            <text x="56" y="54" fill="#e8eef5" font-size="17">Splits never overlap</text>
+            <text x="500" y="54" fill="#5d7086" font-size="14" text-anchor="end">test rows leak into training</text>
           </g>
-          <path d="M20 240 H492" stroke="#5d7086" stroke-width="1.5"/>
-          <path d="M484 234 L494 240 L484 246" stroke="#5d7086" stroke-width="1.5" stroke-linejoin="round"/>
-          <text x="20" y="260" fill="#5d7086" font-size="12" letter-spacing="2">TIME</text>
+          <g class="qs04__pop" style="--d:0.75s"><circle cx="32" cy="48" r="11" fill="#173d24" stroke="#3fb950" stroke-width="1.5"/><path d="M26.5 48 L30.5 52 L37.5 44" stroke="#3fb950" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></g>
+          <g class="qs04__late" style="--d:0.85s">
+            <path d="M20 103 H500" stroke="#1c232d" stroke-width="1"/>
+            <text x="56" y="90" fill="#e8eef5" font-size="17">Inverse transform is exact</text>
+            <text x="500" y="90" fill="#f0a8a3" font-size="14" text-anchor="end">metrics in the wrong units</text>
+          </g>
+          <g class="qs04__pop" style="--d:1.10s"><circle cx="32" cy="84" r="11" fill="#3a1a1c" stroke="#f85149" stroke-width="1.5"/><path d="M28 80 L36 88 M36 80 L28 88" stroke="#f85149" stroke-width="2.2" stroke-linecap="round"/></g>
+          <g class="qs04__late" style="--d:1.20s">
+            <path d="M20 139 H500" stroke="#1c232d" stroke-width="1"/>
+            <text x="56" y="126" fill="#e8eef5" font-size="17">Weights reload identically</text>
+            <text x="500" y="126" fill="#5d7086" font-size="14" text-anchor="end">saved model ≠ tested model</text>
+          </g>
+          <g class="qs04__pop" style="--d:1.45s"><circle cx="32" cy="120" r="11" fill="#173d24" stroke="#3fb950" stroke-width="1.5"/><path d="M26.5 120 L30.5 124 L37.5 116" stroke="#3fb950" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></g>
+          <g class="qs04__late" style="--d:1.55s">
+            <path d="M20 175 H500" stroke="#1c232d" stroke-width="1"/>
+            <text x="56" y="162" fill="#e8eef5" font-size="17">Data can be read again</text>
+            <text x="500" y="162" fill="#5d7086" font-size="14" text-anchor="end">later epochs train on nothing</text>
+          </g>
+          <g class="qs04__pop" style="--d:1.80s"><circle cx="32" cy="156" r="11" fill="#173d24" stroke="#3fb950" stroke-width="1.5"/><path d="M26.5 156 L30.5 160 L37.5 152" stroke="#3fb950" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></g>
+          <g class="qs04__late" style="--d:2.10s">
+            <rect x="20" y="198" width="480" height="58" rx="8" fill="#2a1416" stroke="#f85149" stroke-opacity="0.6"/>
+            <text x="36" y="222" fill="#f0a8a3" font-size="15" font-weight="700">Caught in testing, before onboarding</text>
+            <text x="36" y="242" fill="#cfd8e3" font-size="12" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">fitted_state.inverse off by 3.1e-1 at column vol_1y</text>
+          </g>
         </svg>
       </section>
       <section class="qs04__panel qs-in" style="--i:4">
-        <h2>Every result rebuilds</h2>
-        <p>A saved model carries everything needed to reproduce it.</p>
-        <ul class="qs04__files">
-          <li style="--i:1"><i>✓</i><code>weights</code>the trained model</li>
-          <li style="--i:2"><i>✓</i><code>spec</code>the exact configuration</li>
-          <li style="--i:3"><i>✓</i><code>fitted_state</code>scalers, encoders, graph</li>
-          <li style="--i:4"><i>✓</i><code>lineage</code>data fingerprint, code version</li>
-          <li style="--i:5"><i>✓</i><code>manifest</code>a hash of every file</li>
-        </ul>
+        <h2>Same number, every time</h2>
+        <p>An independent re-run from the saved bundle matches exactly.</p>
+        <svg viewBox="0 0 520 262" fill="none" role="img" aria-label="The model developer and an independent validator, re-running months later from the saved bundle, produce the same expected shortfall and the same weights">
+          <g class="qs04__late" style="--d:2.60s">
+            <rect x="150" y="4" width="220" height="34" rx="17" fill="#12171e" stroke="#2d5680"/>
+            <text x="260" y="26" fill="#cfe5ff" font-size="14" font-weight="600" text-anchor="middle">same spec + same data</text>
+            <path d="M215 38 C215 56 135 52 135 70 M305 38 C305 56 385 52 385 70" stroke="#3b4a5c" stroke-width="1.5"/>
+          </g>
+          <g class="qs04__late" style="--d:2.80s">
+            <rect x="20" y="70" width="230" height="114" rx="10" fill="#12171e" stroke="#2a3340"/>
+            <text x="36" y="92" fill="#e8eef5" font-size="15" font-weight="700">Model developer</text>
+            <text x="36" y="109" fill="#8ea3b8" font-size="12">today</text>
+            <rect x="36" y="118" width="198" height="6" rx="3" fill="#1c232d"/>
+          </g>
+          <rect class="qs04__bar" style="--d:3.00s; animation-duration: 1.2s" x="36" y="118" width="198" height="6" rx="3" fill="#4da3ff"/>
+          <g class="qs04__late" style="--d:4.30s">
+            <text x="36" y="153" fill="#8ea3b8" font-size="12">Desk 99% ES</text>
+            <text x="234" y="155" fill="#ffffff" font-size="20" font-weight="700" text-anchor="end">£4.82m</text>
+            <text x="36" y="173" fill="#5d7086" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">weights 9c2e51ab07fd</text>
+          </g>
+          <g class="qs04__late" style="--d:2.80s">
+            <rect x="270" y="70" width="230" height="114" rx="10" fill="#12171e" stroke="#2a3340"/>
+            <text x="286" y="92" fill="#e8eef5" font-size="15" font-weight="700">Independent validation</text>
+            <text x="286" y="109" fill="#8ea3b8" font-size="12">months later, from the bundle</text>
+            <rect x="286" y="118" width="198" height="6" rx="3" fill="#1c232d"/>
+          </g>
+          <rect class="qs04__bar" style="--d:3.00s; animation-duration: 0.9s" x="286" y="118" width="198" height="6" rx="3" fill="#3fb950"/>
+          <g class="qs04__late" style="--d:4.30s">
+            <text x="286" y="153" fill="#8ea3b8" font-size="12">Desk 99% ES</text>
+            <text x="484" y="155" fill="#ffffff" font-size="20" font-weight="700" text-anchor="end">£4.82m</text>
+            <text x="286" y="173" fill="#5d7086" font-size="11" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">weights 9c2e51ab07fd</text>
+          </g>
+          <path class="qs04__late" style="--d:4.60s" d="M135 184 V198 M385 184 V198" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="3 3"/>
+          <g class="qs04__late" style="--d:4.80s">
+            <rect x="20" y="198" width="480" height="58" rx="8" fill="#12251a" stroke="#3fb950" stroke-opacity="0.6"/>
+            <circle cx="44" cy="227" r="11" fill="#173d24" stroke="#3fb950" stroke-width="1.5"/>
+            <path d="M38.5 227 L42.5 231 L49.5 223" stroke="#3fb950" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <text x="66" y="222" fill="#7ee08f" font-size="15" font-weight="700">Same number, to the last digit</text>
+            <text x="66" y="242" fill="#cfd8e3" font-size="12" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">£4.82m = £4.82m · weights identical</text>
+          </g>
+        </svg>
       </section>
     </div>
     <div class="qs__foot"><span>RADE ANALYTICS · INTERNAL</span><span>04</span></div>
